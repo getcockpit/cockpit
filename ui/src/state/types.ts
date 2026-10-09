@@ -90,4 +90,6 @@ export type AppState = {
   workspaces: { id: string; name: string; configDir: string | null }[];
   theme: string;
   clef: ClefMeter;
+  account: { checked: boolean; signedIn: boolean; plan: string | null };
+  onboarded: boolean;
 };

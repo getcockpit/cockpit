@@ -48,5 +48,5 @@ export function TerminalPane({ s, onExit }: { s: SessionState; onExit: () => voi
 export function SignInPane({ workspace, onExit }: { workspace: string; onExit: () => void }) {
   return <XTermView termKey={`login:${workspace}`} onExit={onExit}
     open={(cols, rows) => invoke("workspace_sign_in", { id: workspace, cols, rows })}
-    hint={<>Type <b className="mr-mono">/login</b> and follow the browser sign-in, then <b className="mr-mono">/exit</b>. This workspace keeps its own memory and history.</>} />;
+    hint={<>Type <b className="mr-mono">/login</b> and follow the browser sign-in, then <b className="mr-mono">/exit</b>.{workspace === "personal" ? " This is the official claude app; the sign-in happens in your browser." : " This workspace keeps its own memory and history."}</>} />;
 }

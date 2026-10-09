@@ -186,3 +186,12 @@ test("plan limits arrive before any session runs", () => {
   expect(st.usage).toEqual({ fiveHour: 0.15, weekly: 0.56, resetsAt: 1791586200 });
   expect(replay([{ id: "L1", session_id: null, kind: "sidecar.limits", payload: { available: false, error: "x" }, anchor: null, created_at: 1 }]).usage.fiveHour).toBeNull();
 });
+
+test("onboarding shows until finished, and limits double as the sign-in check", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind, payload, anchor: null, created_at: 1 });
+  expect(replay([]).onboarded).toBe(false);
+  expect(replay([e("O1", "ui.onboarded", {})]).onboarded).toBe(true);
+  expect(replay([e("O1", "ui.onboarded", {}), e("O2", "ui.onboarding_reset", {})]).onboarded).toBe(false);
+  expect(replay([e("L1", "sidecar.limits", { available: false, error: "not logged in" })]).account).toEqual({ checked: true, signedIn: false, plan: null });
+  expect(replay([e("L1", "sidecar.limits", { available: true, plan: "max", five_hour: null, seven_day: null })]).account).toEqual({ checked: true, signedIn: true, plan: "max" });
+});

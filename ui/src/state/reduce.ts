@@ -10,6 +10,8 @@ export const initialState: AppState = {
   workspaces: [{ id: "personal", name: "Personal", configDir: null }],
   theme: "control-room",
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
+  account: { checked: false, signedIn: false, plan: null },
+  onboarded: false,
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
@@ -35,10 +37,14 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     }
     return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
   }
+  if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };
+  if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false };
   if (ev.kind === "sidecar.limits") {
-    if (!p.available) return next;
+    // Limits double as the sign-in check: they're only available to a signed-in subscription.
+    const account = { checked: true, signedIn: !!p.available, plan: (p.plan as string) ?? null };
+    if (!p.available) return { ...next, account };
     const f = p.five_hour as { utilization: number; resetsAt: number | null } | null, w = p.seven_day as { utilization: number } | null;
-    return { ...next, usage: { fiveHour: f?.utilization ?? next.usage.fiveHour, weekly: w?.utilization ?? next.usage.weekly, resetsAt: f?.resetsAt ?? next.usage.resetsAt } };
+    return { ...next, account, usage: { fiveHour: f?.utilization ?? next.usage.fiveHour, weekly: w?.utilization ?? next.usage.weekly, resetsAt: f?.resetsAt ?? next.usage.resetsAt } };
   }
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
