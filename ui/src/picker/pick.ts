@@ -57,6 +57,14 @@ export function pickDecision(ask: PendingAsk): { spec: DecisionSpec; record: Ren
   return { spec, record: { component: spec.component, layer: "code", source: ask.requestId, ms: performance.now() - t0 } };
 }
 
+/** The prose item layer 1 can't place: a finished turn's last words, no "?", not yet classified. */
+export function needsLayer2(s: SessionState): { id: string; text: string } | null {
+  if (s.status !== "idle") return null;
+  const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);
+  if (!last || last.kind !== "text" || s.kinds[last.id] || /\?\s*$/.test(last.text.trim())) return null;
+  return { id: last.id, text: last.text };
+}
+
 export function pickTile(s: SessionState): TileSpec {
   const total = s.todos.length;
   const done = s.todos.filter((t) => t.status === "completed").length;
@@ -66,7 +74,10 @@ export function pickTile(s: SessionState): TileSpec {
   const lastText = [...s.transcript].reverse().find((t) => t.kind === "text");
   // A finished turn whose last words are a question is waiting on the user, even without a card.
   const lastItem = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);
-  const askedInProse = s.status === "idle" && lastItem?.kind === "text" && /\?\s*$/.test(lastItem.text.trim());
+  // Layer 1 is the trailing "?"; layer 2 (Clef) catches questions, plans and blockers phrased without one.
+  const kind = lastItem ? s.kinds[lastItem.id] : undefined;
+  const modelSaysWaiting = !!kind && kind.layer === "model" && kind.p >= 0.6 && ["question", "plan", "blocked"].includes(kind.label);
+  const askedInProse = s.status === "idle" && lastItem?.kind === "text" && (/\?\s*$/.test(lastItem.text.trim()) || modelSaysWaiting);
   const state: TileSpec["state"] =
     s.status === "needs_you" || askedInProse ? "needs_you"
     : s.status === "error" ? "error"

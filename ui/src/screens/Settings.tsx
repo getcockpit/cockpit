@@ -24,10 +24,14 @@ export function Settings({ state, onClose }: { state: AppState; onClose: () => v
   const [builds, setBuilds] = useState<Build[]>([]);
   const [msg, setMsg] = useState("");
   const [building, setBuilding] = useState<string | null>(null);
+  const [clefOn, setClefOn] = useState<boolean | null>(null);
+  const [acct, setAcct] = useState("");
+  const [token, setToken] = useState("");
 
   const load = () => {
     invoke<History>("personal_history").then(setHist).catch((e) => setMsg(String(e)));
     invoke<Build[]>("selfbuild_list").then(setBuilds).catch(() => {});
+    api.layer2Status().then((r) => setClefOn(r.configured)).catch(() => setClefOn(false));
   };
   useEffect(() => {
     load();
@@ -92,6 +96,27 @@ export function Settings({ state, onClose }: { state: AppState; onClose: () => v
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        <section data-mr="ClefSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <h2 className="mr-h">Picker model <span className="mr-dim" style={{ fontWeight: 400 }}>Cloudflare Clef-flash reads unclear prose; without it the app uses its own rules</span></h2>
+          {(() => {
+            const m = state.clef.day === new Date().toISOString().slice(0, 10) ? state.clef : { calls: 0, tokens: 0, errors: 0 };
+            return (
+              <div className="mr-row" style={{ gap: 16 }}>
+                <span style={{ color: clefOn ? "var(--mr-done)" : "var(--mr-ink-2)" }}>{clefOn === null ? "…" : clefOn ? "● Connected" : "○ Not connected"}</span>
+                <span className="mr-mono">{m.calls} calls today</span>
+                <span className="mr-mono">~{m.tokens.toLocaleString()} tokens · ${(m.tokens * 0.09 / 1e6).toFixed(4)}</span>
+                {m.errors > 0 && <span style={{ color: "var(--mr-error)" }}>{m.errors} failed, fell back to rules</span>}
+                <span className="mr-dim">Free tier: 10,000 neurons a day, resets 00:00 UTC</span>
+              </div>
+            );
+          })()}
+          <div className="mr-row" style={{ gap: 8 }}>
+            <input aria-label="Cloudflare account ID" placeholder="Account ID" value={acct} onChange={(e) => setAcct(e.target.value)} style={{ flex: 1, font: "inherit", padding: "6px 8px", background: "var(--mr-well)", border: 0, color: "var(--mr-ink)" }} />
+            <input aria-label="Cloudflare API token" placeholder="API token (Workers AI: read)" type="password" value={token} onChange={(e) => setToken(e.target.value)} style={{ flex: 1, font: "inherit", padding: "6px 8px", background: "var(--mr-well)", border: 0, color: "var(--mr-ink)" }} />
+            <Key onClick={() => { if (acct.trim() && token.trim()) void act(() => api.layer2Save(acct, token).then(() => { setAcct(""); setToken(""); }), "Saved to the Keychain."); }}>Save</Key>
           </div>
         </section>
 

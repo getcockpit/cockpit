@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { needsLayer2 } from "./picker/pick";
 import { WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import type { AppState } from "./state/types";
@@ -23,6 +24,16 @@ export default function App() {
   // The theme is part of the log (synced, durable); applying it is just a data attribute.
   useEffect(() => { document.documentElement.dataset.theme = all.theme === "control-room" ? "" : all.theme; }, [all.theme]);
   useEffect(() => { try { localStorage.setItem("mr.workspace", workspace); } catch { /* per-viewer convenience */ } }, [workspace]);
+  // Picker layer 2: classify a finished turn's prose once; the answer comes back as a picker.layer2 event.
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    for (const sess of Object.values(all.sessions)) {
+      const item = needsLayer2(sess);
+      if (!item || asked.current.has(item.id)) continue;
+      asked.current.add(item.id);
+      api.classify(sess.id, item.id, item.text).catch(() => {});
+    }
+  }, [all.sessions]);
   // Each workspace sees only its own sessions and docs (decision 24).
   const state: AppState = useMemo(() => {
     const order = all.order.filter((id) => all.sessions[id].workspace === workspace);
