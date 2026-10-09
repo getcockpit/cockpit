@@ -1,0 +1,50 @@
+[
+  {
+    "toolName": "AskUserQuestion",
+    "input": {
+      "questions": [
+        {
+          "question": "Which color do you choose?",
+          "header": "Color",
+          "options": [
+            {
+              "label": "red",
+              "description": "Choose red"
+            },
+            {
+              "label": "blue",
+              "description": "Choose blue"
+            }
+          ],
+          "multiSelect": false
+        }
+      ]
+    },
+    "suggestions": null,
+    "decisionReason": null,
+    "mcpServer": null
+  },
+  {
+    "toolName": "mcp__mr__doc_read",
+    "input": {
+      "block_id": "goal"
+    },
+    "suggestions": [
+      {
+        "type": "addRules",
+        "rules": [
+          {
+            "toolName": "mcp__mr__doc_read"
+          }
+        ],
+        "behavior": "allow",
+        "destination": "localSettings"
+      }
+    ],
+    "decisionReason": null,
+    "mcpServer": {
+      "name": "mr",
+      "source": "sdk"
+    }
+  }
+]
