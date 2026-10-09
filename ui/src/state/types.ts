@@ -27,8 +27,11 @@ export type Todo = { content: string; status: "pending" | "in_progress" | "compl
 
 export type FileChange = { path: string; added: number; removed: number; isNew: boolean; lastAt: number };
 
+export type SessionKind = "review" | "address" | "plan" | "blank";
+
 export type SessionState = {
   id: string;
+  kind: SessionKind;
   title: string;
   cwd: string;
   sdkSessionId: string | null;

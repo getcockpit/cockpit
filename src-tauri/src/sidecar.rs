@@ -76,13 +76,14 @@ pub fn session_start(
     prompt: String,
     resume: Option<String>,
     tools: Option<serde_json::Value>,
+    kind: Option<String>,
 ) -> Result<String, String> {
     let cwd = expand_home(&app, &cwd);
     if !std::path::Path::new(&cwd).is_dir() {
         return Err(format!("not a folder: {cwd}"));
     }
     let session = ulid::Ulid::new().to_string();
-    crate::eventlog::record(&app, Some(&session), "ui.session_requested", &serde_json::json!({ "cwd": cwd, "prompt": prompt, "resume": resume }), None);
+    crate::eventlog::record(&app, Some(&session), "ui.session_requested", &serde_json::json!({ "cwd": cwd, "prompt": prompt, "resume": resume, "kind": kind.unwrap_or_else(|| "blank".into()) }), None);
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
     if let Some(r) = resume {
         msg["resume"] = r.into();
@@ -147,7 +148,7 @@ pub fn tool_result(
     )
 }
 
-fn expand_home(app: &AppHandle, path: &str) -> String {
+pub fn expand_home(app: &AppHandle, path: &str) -> String {
     match (path.strip_prefix("~"), app.path().home_dir()) {
         (Some(rest), Ok(home)) if rest.is_empty() || rest.starts_with('/') => format!("{}{}", home.display(), rest),
         _ => path.to_owned(),

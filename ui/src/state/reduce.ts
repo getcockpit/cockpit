@@ -1,4 +1,4 @@
-import type { AppState, FileChange, MrEvent, PendingAsk, SessionState, Todo, TranscriptItem } from "./types";
+import type { AppState, FileChange, MrEvent, PendingAsk, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
@@ -8,9 +8,9 @@ export const initialState: AppState = {
   lastEventId: null,
 };
 
-function newSession(id: string, at: number, title = "", cwd = ""): SessionState {
+function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, title, cwd, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
+    id, kind, title, cwd, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
     pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null,
   };
 }
@@ -27,8 +27,10 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
   if (ev.kind === "ui.session_requested" && sid) {
-    if (next.sessions[sid]) return next;
-    return { ...next, sessions: { ...next.sessions, [sid]: newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? "")) }, order: [...next.order, sid] };
+    const kind = (["review", "address", "plan", "blank"].includes(String(p.kind)) ? p.kind : "blank") as SessionKind;
+    const existing = next.sessions[sid];
+    if (existing) return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? "") } } };
+    return { ...next, sessions: { ...next.sessions, [sid]: newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind) }, order: [...next.order, sid] };
   }
   if (!sid) return next;
 
