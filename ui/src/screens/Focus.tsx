@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Bar, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
 import { api } from "../state/store";
@@ -10,7 +11,15 @@ import { pointer } from "../components/pointer";
 import { ChangeMap } from "./ChangeMap";
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void }) {
+export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void }) {
+  const [isApp, setIsApp] = useState(false);
+  useEffect(() => {
+    // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
+    invoke<string>("app_repo_path").then((repo) => {
+      const name = repo.split("/").filter(Boolean).pop() ?? "";
+      setIsApp(s.cwd.startsWith(repo) || (!!s.repo && s.repo === repo) || s.cwd.includes(`/${name}-worktrees/`));
+    }).catch(() => setIsApp(false));
+  }, [s.cwd, s.repo]);
   const tile = useMemo(() => pickTile(s), [s]);
   const [showRaw, setShowRaw] = useState(false);
   const [text, setText] = useState("");
@@ -37,6 +46,7 @@ export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: D
         <span className="mr-grow" />
         <StateMark s={tile.state} />
         <span className="mr-mono mr-ink2">{tile.progressLabel || tile.step}</span>
+        {isApp && <Key k="⌘⇧B" tone="needs" onClick={() => onBuild(s.cwd)}>Rebuild & relaunch</Key>}
         <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Transcript"}</Key>
       </header>
 
