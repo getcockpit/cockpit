@@ -10,7 +10,7 @@ export const initialState: AppState = {
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, kind, title, cwd, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
+    id, kind, title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
     pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null,
   };
 }
@@ -23,14 +23,26 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   const next: AppState = { ...state, lastEventId: ev.id };
   const sid = ev.session_id;
 
-  if (ev.kind === "sidecar.ready") return { ...next, sidecar: { up: true, claude: (p.claude as string) ?? null } };
+  if (ev.kind === "sidecar.ready") {
+    // A fresh sidecar means any session still running before it died with the old one.
+    const sessions = { ...next.sessions };
+    for (const [id, s] of Object.entries(sessions)) {
+      if (!["ended", "error", "interrupted"].includes(s.status)) sessions[id] = { ...s, status: "interrupted", pending: [] };
+    }
+    return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
+  }
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
   if (ev.kind === "ui.session_requested" && sid) {
     const kind = (["review", "address", "plan", "blank"].includes(String(p.kind)) ? p.kind : "blank") as SessionKind;
     const existing = next.sessions[sid];
-    if (existing) return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? "") } } };
-    return { ...next, sessions: { ...next.sessions, [sid]: newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind) }, order: [...next.order, sid] };
+    const where = { repo: (p.repo as string) ?? null, branch: (p.branch as string) ?? null };
+    if (existing) {
+      // A resume (or a request logged after early sidecar events): keep history, restart the status.
+      const resumed = p.resume ? { status: "starting" as const, error: null } : {};
+      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch } } };
+    }
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where } }, order: [...next.order, sid] };
   }
   if (!sid) return next;
 
