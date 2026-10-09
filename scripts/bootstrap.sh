@@ -9,3 +9,4 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/sidecar" && bun install --silent)
 (cd "$root/ui" && bun install --silent)
 "$root/scripts/build-sidecar.sh"
+"$root/scripts/build-dictate.sh"
