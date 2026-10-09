@@ -9,7 +9,7 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const needs = (ws: string) => {
-    const sessions = Object.values(state.sessions).filter((s) => s.workspace === ws);
+    const sessions = Object.values(state.sessions).filter((s) => s.workspace === ws && !s.archivedAt);
     const ids = new Set(sessions.map((s) => s.id));
     return sessions.reduce((a, s) => a + s.pending.length, 0) + docs.filter((d) => (d.session_id ? ids.has(d.session_id) : ws === "personal")).reduce((a, d) => a + Object.values(d.blocks).filter(isOpenQuestion).length, 0);
   };
