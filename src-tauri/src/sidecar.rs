@@ -57,3 +57,67 @@ pub fn sidecar_send(state: State<'_, Sidecar>, message: serde_json::Value) -> Re
     line.push('\n');
     child.write(line.as_bytes()).map_err(|e| e.to_string())
 }
+
+/// Starts a Claude Code session in `cwd`; returns the app's session id (a ULID).
+#[tauri::command]
+pub fn session_start(
+    state: State<'_, Sidecar>,
+    cwd: String,
+    prompt: String,
+    resume: Option<String>,
+    tools: Option<serde_json::Value>,
+) -> Result<String, String> {
+    let session = ulid::Ulid::new().to_string();
+    let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
+    if let Some(r) = resume {
+        msg["resume"] = r.into();
+    }
+    if let Some(t) = tools {
+        msg["tools"] = t;
+    }
+    sidecar_send(state, msg)?;
+    Ok(session)
+}
+
+#[tauri::command]
+pub fn session_send(state: State<'_, Sidecar>, session: String, text: String) -> Result<(), String> {
+    sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }))
+}
+
+#[tauri::command]
+pub fn session_interrupt(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    sidecar_send(state, serde_json::json!({ "type": "interrupt", "session": session }))
+}
+
+#[tauri::command]
+pub fn session_stop(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    sidecar_send(state, serde_json::json!({ "type": "stop", "session": session }))
+}
+
+/// Answers a permission request: `decision` is `{behavior:"allow", updatedInput?}` or `{behavior:"deny", message}`.
+#[tauri::command]
+pub fn permission_respond(
+    state: State<'_, Sidecar>,
+    session: String,
+    request_id: String,
+    decision: serde_json::Value,
+) -> Result<(), String> {
+    sidecar_send(
+        state,
+        serde_json::json!({ "type": "permission_response", "session": session, "request_id": request_id, "decision": decision }),
+    )
+}
+
+#[tauri::command]
+pub fn tool_result(
+    state: State<'_, Sidecar>,
+    session: String,
+    call_id: String,
+    text: String,
+    is_error: Option<bool>,
+) -> Result<(), String> {
+    sidecar_send(
+        state,
+        serde_json::json!({ "type": "tool_result", "session": session, "call_id": call_id, "text": text, "is_error": is_error.unwrap_or(false) }),
+    )
+}
