@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { pickDecision, pickTile, bashRisk } from "../picker/pick";
+import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import type { MrEvent } from "./types";
 
 // Builds the event-log rows the Rust core would have stored for the real MR-2 probe session.
@@ -112,6 +112,27 @@ test("a turn that ends with a question in prose shows as needs-you", () => {
   const tile = pickTile(st.sessions.s);
   expect(tile.state).toBe("needs_you");
   expect(tile.doing).toBe("Asks: Which one do you prefer?");
+});
+
+test("layer 2 catches a question asked without a question mark, and meters the call", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: Date.UTC(2026, 9, 9) });
+  const base = [
+    ev("C1", "ui.session_requested", { prompt: "p", cwd: "/w" }),
+    ev("C2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "I can do A or B. Let me know which you prefer." }] } } }),
+    ev("C3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "x" } }),
+  ];
+  const before = replay(base);
+  expect(pickTile(before.sessions.s).state).toBe("idle");
+  expect(needsLayer2(before.sessions.s)).toEqual({ id: "C2:0", text: "I can do A or B. Let me know which you prefer." });
+  const after = replay([...base, ev("C4", "picker.layer2", { item_id: "C2:0", label: "question", p: 0.93, layer: "model", tokens: 140 })]);
+  expect(pickTile(after.sessions.s).state).toBe("needs_you");
+  expect(needsLayer2(after.sessions.s)).toBeNull();
+  expect(after.sessions.s.lastActivity).toBe(before.sessions.s.lastActivity);
+  expect(after.clef).toEqual({ day: "2026-10-09", calls: 1, tokens: 140, errors: 0 });
+  // The code fallback records a label too, so the item isn't re-asked, but it never overrides layer 1.
+  const fallback = replay([...base, ev("C4", "picker.layer2", { item_id: "C2:0", label: "other", p: 1, layer: "code", tokens: 0 })]);
+  expect(pickTile(fallback.sessions.s).state).toBe("idle");
+  expect(fallback.clef.calls).toBe(0);
 });
 
 test("workspaces are created from the log and sessions stay in theirs", () => {
