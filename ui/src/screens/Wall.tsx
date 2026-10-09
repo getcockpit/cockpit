@@ -173,7 +173,7 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
         )}
       </main>
       <footer className="mr-band mr-row mr-dim" style={{ padding: "8px 24px", fontSize: 12 }}>
-        <span>⌘K start · click focus · ⌘-click deeper · ⌥-click discover · esc back · ⌘. interrupt</span>
+        <span>⌘K start · click focus · ⌘-click deeper · ⌥-click discover · ⌘⇧G god mode · ⌘⇧B builds</span>
         {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-2)" }}>Daily driver {daily.streak}/{daily.goal}</span>}
         <span className="mr-grow" />
         <Key k="⌘K" onClick={onStart}>Start</Key>
