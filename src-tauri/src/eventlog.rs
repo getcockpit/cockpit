@@ -5,7 +5,9 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
+#[cfg(test)]
+use rusqlite::OptionalExtension;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]

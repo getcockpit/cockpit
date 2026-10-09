@@ -1,82 +1,128 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { useEffect, useMemo, useState } from "react";
+import { Bar, DecisionCard, Key, Lamp, Lamps, Sparkline, StateMark, type Answer } from "./components";
+import { pickDecision, pickTile } from "./picker/pick";
+import { api, useAppState } from "./state/store";
+import type { PendingAsk, SessionState } from "./state/types";
 
-type SidecarEvent = { type: string; [k: string]: unknown };
-type Link = "starting" | "ready" | "down";
+const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
 
-// MR-1 shell: proves UI ⇄ Rust ⇄ sidecar round-trips, in the Control Room look.
 export default function App() {
-  const [link, setLink] = useState<Link>("starting");
-  const [runtime, setRuntime] = useState<string>("");
-  const [rttMs, setRttMs] = useState<number | null>(null);
-  const [log, setLog] = useState<SidecarEvent[]>([]);
+  const state = useAppState();
+  const sessions = state.order.map((id) => state.sessions[id]);
+  const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
+  const asks = sessions.flatMap((s) => s.pending.map((a) => ({ s, a })));
+  const count = (k: string) => tiles.filter((t) => t.tile.state === k).length;
 
-  useEffect(() => {
-    const sent = new Map<string, number>();
-    (window as unknown as { __mrSent: Map<string, number> }).__mrSent = sent;
-    const unlisten = listen<SidecarEvent>("sidecar", ({ payload }) => {
-      setLog((l) => [payload, ...l].slice(0, 8));
-      if (payload.type === "ready") {
-        setLink("ready");
-        setRuntime(String(payload.runtime ?? ""));
-      }
-      if (payload.type === "terminated") setLink("down");
-      if (payload.type === "pong" && typeof payload.id === "string" && sent.has(payload.id)) {
-        setRttMs(Math.round(performance.now() - sent.get(payload.id)!));
-      }
-    });
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, []);
-
-  async function ping() {
-    const id = crypto.randomUUID();
-    (window as unknown as { __mrSent: Map<string, number> }).__mrSent.set(id, performance.now());
-    await invoke("sidecar_send", { message: { type: "ping", id } });
-  }
-
-  const lit = link === "ready";
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 24px", background: "var(--mr-band)" }}>
+      <header className="mr-band mr-row" style={{ padding: "14px 24px" }}>
         <strong style={{ fontSize: 15 }}>Minority report</strong>
-        <span style={{ color: "var(--mr-ink-3)" }}>scaffold</span>
+        <span className="mr-dim">Wall</span>
+        <span className="mr-grow" />
+        <span className="mr-mono mr-ink2">5-hour {pct(state.usage.fiveHour)}</span>
+        <span className="mr-mono mr-dim" title={state.sidecar.claude ?? ""}>{state.sidecar.up ? "● sidecar" : "○ sidecar"}</span>
       </header>
 
-      <section aria-label="Status lamps" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "var(--mr-gap)", padding: "12px 24px", background: "var(--mr-band)" }}>
-        <Lamp on={link === "down"} tone="error" value={link === "down" ? "1" : "0"} label="Sidecar down" />
-        <Lamp on={lit} tone="done" value={lit ? "Up" : "…"} label="Sidecar" />
-        <Lamp on={rttMs !== null} tone="plain" value={rttMs === null ? "—" : `${rttMs} ms`} label="Round trip" />
-      </section>
+      <Lamps>
+        <Lamp value={asks.length} label="Needs you" on={asks.length > 0 && "needs"} />
+        <Lamp value={count("error")} label="Errors" on={count("error") > 0 && "error"} />
+        <Lamp value={count("almost")} label="Almost done" on={count("almost") > 0 && "plain"} />
+        <Lamp value={count("working") + count("starting")} label="Running" on={count("working") > 0 && "plain"} />
+        <Lamp value={count("idle") + count("done")} label="To review" on={count("idle") + count("done") > 0 && "plain"} />
+      </Lamps>
 
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16, padding: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button type="button" onClick={ping} disabled={!lit}
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 40, padding: "0 16px", border: 0, borderRadius: "var(--mr-radius)", background: lit ? "var(--mr-ink)" : "var(--mr-lamp-off)", color: "var(--mr-tile)", fontWeight: 700, cursor: lit ? "pointer" : "default" }}>
-            <kbd style={{ fontFamily: "var(--mr-mono)", padding: "0 5px", background: "rgba(255,255,255,.15)" }}>P</kbd>
-            Ping the sidecar
-          </button>
-          <span style={{ color: "var(--mr-ink-3)", fontFamily: "var(--mr-mono)" }}>{runtime}</span>
-        </div>
-        <ol aria-label="Sidecar events" style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
-          {log.map((e, i) => (
-            <li key={i} style={{ padding: "8px 12px", background: "var(--mr-tile)", fontFamily: "var(--mr-mono)", fontSize: 12 }}>{JSON.stringify(e)}</li>
-          ))}
-        </ol>
+      <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
+        <StartBar />
+
+        {asks.length > 0 && (
+          <section aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you <span className="mr-dim">{asks.length}</span></h2>
+            <div className="mr-queue">
+              {asks.map(({ s, a }) => <AskRow key={a.requestId} s={s} a={a} />)}
+            </div>
+          </section>
+        )}
+
+        <section aria-label="Sessions" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <h2 className="mr-h">Sessions <span className="mr-dim">{sessions.length}</span></h2>
+          {sessions.length === 0 ? (
+            <p className="mr-dim" style={{ margin: 0 }}>No sessions yet. Start one above.</p>
+          ) : (
+            <div className="mr-grid">
+              {tiles.map(({ s, tile }) => (
+                <div key={s.id} className="mr-tile" data-s={tile.state}>
+                  <div className="mr-flag" />
+                  <div className="mr-tbody">
+                    <div className="mr-row" style={{ alignItems: "baseline" }}>
+                      <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{s.title || "Untitled"}</strong>
+                      <StateMark s={tile.state} />
+                    </div>
+                    <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{s.cwd}</span>
+                    <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>
+                    <div className="mr-row" style={{ alignItems: "flex-end" }}>
+                      <span className="mr-grow mr-ink2">{tile.doing}</span>
+                      <Sparkline values={s.activity} />
+                    </div>
+                    <SessionControls s={s} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
 }
 
-function Lamp({ on, tone, value, label }: { on: boolean; tone: "error" | "done" | "plain"; value: string; label: string }) {
-  const bg = !on ? "var(--mr-lamp-off)" : tone === "error" ? "var(--mr-error)" : tone === "done" ? "var(--mr-tile)" : "var(--mr-tile)";
-  const fg = !on ? "var(--mr-ink-3)" : tone === "error" ? "var(--mr-tile)" : "var(--mr-ink)";
+function AskRow({ s, a }: { s: SessionState; a: PendingAsk }) {
+  const { spec } = useMemo(() => pickDecision(a), [a]);
+  const answer = (x: Answer) => {
+    const decision =
+      x.kind === "deny" ? { behavior: "deny", message: x.note ?? "The user denied this." }
+      : x.kind === "answer" ? { behavior: "allow", updatedInput: { ...a.input, answers: x.answers } }
+      : { behavior: "allow", updatedInput: a.input, ...(x.always && a.kind === "permission" && a.suggestions ? { updatedPermissions: a.suggestions } : {}) };
+    void api.respond(s.id, a.requestId, decision);
+  };
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "10px 8px", background: bg, color: fg }}>
-      <span style={{ fontFamily: "var(--mr-mono)", fontSize: 22, fontWeight: 700 }}>{value}</span>
-      <span style={{ fontWeight: 600 }}>{label}</span>
+    <div className="mr-qrow">
+      <div className="mr-flag" />
+      <div className="mr-qbody">
+        <span className="mr-mono mr-dim">{s.cwd.split("/").slice(-2).join("/")} / {s.title.slice(0, 60)}</span>
+        <DecisionCard spec={spec} onAnswer={answer} />
+      </div>
     </div>
+  );
+}
+
+function SessionControls({ s }: { s: SessionState }) {
+  const [text, setText] = useState("");
+  const live = s.status !== "ended" && s.status !== "error";
+  if (!live) return null;
+  return (
+    <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>
+      <input className="mr-input" style={{ minHeight: 32, fontSize: 13, background: "var(--mr-well)" }} placeholder="Steer this session…" value={text} onChange={(e) => setText(e.target.value)} aria-label={`Message ${s.title}`} />
+      <Key k="esc" onClick={() => void api.interrupt(s.id)}>Interrupt</Key>
+    </form>
+  );
+}
+
+function StartBar() {
+  const [cwd, setCwd] = useState(() => { try { return localStorage.getItem("mr.cwd") ?? "~/"; } catch { return "~/"; } });
+  const [prompt, setPrompt] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => { try { localStorage.setItem("mr.cwd", cwd); } catch { /* per-viewer convenience only */ } }, [cwd]);
+  const start = async () => {
+    setError("");
+    try { await api.start(cwd, prompt.trim()); setPrompt(""); } catch (e) { setError(String(e)); }
+  };
+  return (
+    <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (prompt.trim()) void start(); }} style={{ flexWrap: "wrap" }}>
+      <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>⌘K</span>
+      <input className="mr-input mr-mono" style={{ flex: "0 1 260px", fontSize: 13 }} value={cwd} onChange={(e) => setCwd(e.target.value)} aria-label="Project folder" />
+      <input className="mr-input" placeholder="What should Claude do?" value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Prompt" />
+      <Key k="↵" tone="primary" disabled={!prompt.trim()}>Start</Key>
+      {error && <span style={{ color: "var(--mr-error)", width: "100%" }}>{error}</span>}
+    </form>
   );
 }
