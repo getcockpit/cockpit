@@ -55,7 +55,8 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
-      if (typing || e.metaKey || e.ctrlKey || !asks.length) return;
+      // An overlay (intro, picker, settings) owns the keyboard while it's open.
+      if (typing || e.metaKey || e.ctrlKey || !asks.length || document.querySelector('[role="dialog"]')) return;
       const cur = asks[sel];
       if (keyOf(e) === "j") { e.preventDefault(); setSel((x) => Math.min(asks.length - 1, x + 1)); }
       else if (keyOf(e) === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
