@@ -125,7 +125,14 @@ pub fn session_start(
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
-    msg["tools"] = tools.unwrap_or_else(crate::docs::tool_specs);
+    msg["tools"] = tools.unwrap_or_else(|| {
+        let mut specs = crate::docs::tool_specs().as_array().cloned().unwrap_or_default();
+        specs.extend(crate::flows::tool_specs(&kind));
+        serde_json::Value::Array(specs)
+    });
+    if let Some(p) = crate::flows::system_prompt(&kind) {
+        msg["append_system_prompt"] = p.into();
+    }
     state.live.lock().unwrap().insert(session.clone());
     sidecar_send(state, msg)?;
     Ok(session)
@@ -196,9 +203,12 @@ pub fn expand_home(app: &AppHandle, path: &str) -> String {
 fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     let session = payload["session"].as_str().unwrap_or_default().to_owned();
     let call_id = payload["call_id"].as_str().unwrap_or_default().to_owned();
-    let docs = app.state::<crate::docs::Docs>();
-    let (events, text, is_error) =
-        crate::docs::handle_tool(&docs, Some(&session), payload["tool"].as_str().unwrap_or_default(), &payload["args"]);
+    let tool = payload["tool"].as_str().unwrap_or_default();
+    let (events, text, is_error) = if crate::flows::is_flow_tool(tool) {
+        crate::flows::handle_tool(tool, &payload["args"])
+    } else {
+        crate::docs::handle_tool(&app.state::<crate::docs::Docs>(), Some(&session), tool, &payload["args"])
+    };
     for (kind, p) in events {
         let anchor = p["doc_id"].as_str().map(|d| format!("doc:{d}"));
         crate::eventlog::record(app, Some(&session), &kind, &p, anchor.as_deref());

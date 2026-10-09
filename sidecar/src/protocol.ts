@@ -5,11 +5,11 @@ export type PermissionDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] }
   | { behavior: "deny"; message: string; interrupt?: boolean };
 
-export type ToolSpec = { name: string; description: string; params: Record<string, "string" | "number" | "boolean" | "object"> };
+export type ToolSpec = { name: string; description: string; params: Record<string, "string" | "number" | "boolean" | "object" | "array"> };
 
 export type Inbound =
   | { type: "ping"; id?: string }
-  | { type: "start"; session: string; cwd: string; prompt: string; resume?: string; model?: string; tools?: ToolSpec[] }
+  | { type: "start"; session: string; cwd: string; prompt: string; resume?: string; model?: string; tools?: ToolSpec[]; append_system_prompt?: string }
   | { type: "send"; session: string; text: string }
   | { type: "interrupt"; session: string }
   | { type: "stop"; session: string }
