@@ -11,7 +11,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null,
+    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null,
   };
 }
 
@@ -75,6 +75,19 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       break;
     case "sidecar.sdk":
       applySdk(s, p.message as Record<string, unknown>, ev, next);
+      break;
+    case "flow.review_overview":
+    case "flow.review_snippet":
+    case "flow.review_publish_ready":
+    case "ui.review_noted":
+      s.review = reviewStep(s.review, ev.kind, p);
+      break;
+    case "flow.address_threads":
+    case "flow.address_thread":
+    case "flow.address_proof":
+    case "flow.address_reply":
+    case "ui.address_chosen":
+      s.address = addressStep(s.address, ev.kind, p);
       break;
     case "sidecar.session_ended":
       s.status = p.ok ? "ended" : "error";
@@ -150,4 +163,24 @@ function trackFile(s: SessionState, tool: string, input: Record<string, unknown>
 
 export function replay(events: MrEvent[], from: AppState = initialState): AppState {
   return events.reduce(reduce, from);
+}
+
+function reviewStep(r: SessionState["review"], kind: string, p: Record<string, unknown>): NonNullable<SessionState["review"]> {
+  const f = r ?? { snippets: {}, current: null, noted: [] };
+  if (kind === "flow.review_overview") return { ...f, overview: p as never };
+  if (kind === "flow.review_snippet") { const n = Number(p.n ?? 0); return { ...f, snippets: { ...f.snippets, [n]: { ...(p as object), n } as never }, current: n }; }
+  if (kind === "flow.review_publish_ready") return { ...f, publish: p as never, current: null };
+  if (kind === "ui.review_noted") { const id = String(p.finding_id); return { ...f, noted: f.noted.includes(id) ? f.noted : [...f.noted, id] }; }
+  return f;
+}
+
+function addressStep(a: SessionState["address"], kind: string, p: Record<string, unknown>): NonNullable<SessionState["address"]> {
+  const f = a ?? { threads: {}, proofs: {}, replies: {}, current: null, chosen: {} };
+  const id = String(p.id ?? "");
+  if (kind === "flow.address_threads") return { ...f, list: p as never };
+  if (kind === "flow.address_thread") return { ...f, threads: { ...f.threads, [id]: p as never }, current: id };
+  if (kind === "flow.address_proof") return { ...f, proofs: { ...f.proofs, [id]: (p.checks ?? []) as never } };
+  if (kind === "flow.address_reply") return { ...f, replies: { ...f.replies, [id]: p as never } };
+  if (kind === "ui.address_chosen") return { ...f, chosen: { ...f.chosen, [id]: String(p.option) } };
+  return f;
 }

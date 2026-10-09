@@ -5,7 +5,8 @@ import type { McpFactory } from "./sessions";
 // Builds the in-process `mr` MCP server for one session. Every tool call is relayed to the
 // Rust core (which owns docs and state) and answered with whatever text it sends back.
 export const relayMcp: McpFactory = (_session, specs, call) => {
-  const zt = { string: z.string(), number: z.number(), boolean: z.boolean(), object: z.record(z.string(), z.unknown()) } as const;
+  // Params are optional so Claude can update a single field; the core validates what it needs.
+  const zt = { string: z.string().optional(), number: z.number().optional(), boolean: z.boolean().optional(), object: z.record(z.string(), z.unknown()).optional(), array: z.array(z.unknown()).optional() } as const;
   return createSdkMcpServer({
     name: "mr",
     version: "0.1.0",

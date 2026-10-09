@@ -1,5 +1,6 @@
 mod docs;
 mod eventlog;
+mod flows;
 mod gh;
 mod selftest;
 mod sidecar;

@@ -74,6 +74,7 @@ export class Sessions {
       resume: m.resume,
       model: m.model,
       pathToClaudeCodeExecutable: this.claudePath,
+      systemPrompt: m.append_system_prompt ? { type: "preset", preset: "claude_code", append: m.append_system_prompt } : undefined,
       mcpServers: mcpServer ? { mr: mcpServer } : undefined,
       canUseTool: (tool: string, input: Record<string, unknown>, opts: { signal?: AbortSignal; suggestions?: unknown[]; decisionReason?: string; mcpServer?: { name: string; source: string } }) =>
         new Promise<PermissionDecision>((resolve) => {
