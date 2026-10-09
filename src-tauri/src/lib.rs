@@ -1,3 +1,4 @@
+mod docs;
 mod eventlog;
 mod gh;
 mod selftest;
@@ -18,7 +19,14 @@ pub fn run() {
                 _ => app.path().app_data_dir()?,
             };
             std::fs::create_dir_all(&dir)?;
-            app.manage(eventlog::EventLog::open(&dir.join("events.sqlite"))?);
+            let log = eventlog::EventLog::open(&dir.join("events.sqlite"))?;
+            // Rebuild docs by replaying the log; afterwards record() keeps them current.
+            let docs = docs::Docs::default();
+            for ev in log.list(None, None, i64::MAX)? {
+                docs.apply(&ev);
+            }
+            app.manage(log);
+            app.manage(docs);
             sidecar::start(app.handle())?;
             if selftest::enabled() {
                 selftest::run(app.handle().clone());
@@ -35,7 +43,9 @@ pub fn run() {
             sidecar::tool_result,
             eventlog::event_append,
             eventlog::events_list,
-            gh::gh_prs
+            gh::gh_prs,
+            docs::docs_list,
+            docs::doc_feedback
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

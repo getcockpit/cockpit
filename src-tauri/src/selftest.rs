@@ -6,8 +6,16 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static RESULTS: AtomicUsize = AtomicUsize::new(0);
+
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc")
+}
+
+fn doc_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "doc")
 }
 
 pub fn run(app: AppHandle) {
@@ -20,7 +28,11 @@ pub fn run(app: AppHandle) {
             app.clone(),
             state,
             dir.display().to_string(),
-            "Use the AskUserQuestion tool to ask me to choose between the options alpha and beta. Then create an empty file named selftest-<my choice>.txt in the current directory, then reply with exactly: SELFTEST DONE".into(),
+            if doc_mode() {
+                "Create a working document titled 'Selftest plan' with the mr doc_create tool. Add a goal block (block_id goal) whose takeaway is 'Prove the doc loop works', and an open question block (section question, block_id q1, takeaway 'Pick a colour') with data options red and blue. Don't decide it. Then reply with exactly: SELFTEST DONE".into()
+            } else {
+                "Use the AskUserQuestion tool to ask me to choose between the options alpha and beta. Then create an empty file named selftest-<my choice>.txt in the current directory, then reply with exactly: SELFTEST DONE".into()
+            },
             None,
             None,
             Some("blank".into()),
@@ -57,6 +69,20 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 payload["request_id"].as_str().unwrap_or_default().into(),
                 decision,
             );
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && doc_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
+            // Round 2: act like the user on the doc map — decide, note, Regenerate.
+            let docs = app.state::<crate::docs::Docs>();
+            let Some(doc) = docs.list().into_iter().find(|d| d.title == "Selftest plan") else {
+                eprintln!("[selftest] Claude did not create the doc");
+                std::process::exit(1);
+            };
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            let anchor = format!("doc:{}", doc.id);
+            crate::eventlog::record(app, Some(&session), "ui.doc_decision", &serde_json::json!({ "doc_id": doc.id, "block_id": "q1", "choice": "blue" }), Some(&anchor));
+            crate::eventlog::record(app, Some(&session), "ui.doc_note", &serde_json::json!({ "doc_id": doc.id, "block_id": "goal", "text": "Mention that the colour is blue in the goal's key detail." }), Some(&anchor));
+            let msg = crate::docs::doc_feedback(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), true).unwrap_or_default();
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nWhen done, reply with exactly: SELFTEST DONE"));
         }
         Some("sdk") if payload["message"]["type"] == "result" => {
             let ok = payload["message"]["is_error"] == false;
