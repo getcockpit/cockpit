@@ -27,6 +27,24 @@ export type Todo = { content: string; status: "pending" | "in_progress" | "compl
 
 export type FileChange = { path: string; added: number; removed: number; isNew: boolean; lastAt: number };
 
+export type ReviewFinding = { id: string; severity: string; at?: string; text: string };
+export type ReviewFlow = {
+  overview?: { pr?: string; title?: string; tier?: number; tier_label?: string; summary?: string; nodes?: { label: string; mark?: string; finding?: string | null }[]; novelty?: { label: string; what: string; where?: string }[]; questions?: string[]; prior_threads?: number; total_snippets?: number };
+  snippets: Record<number, { n: number; total?: number; area?: string; title?: string; file?: string; code?: string; explain?: string; good?: string; findings?: ReviewFinding[] }>;
+  current: number | null;
+  noted: string[];
+  publish?: { comments?: { severity: string; at?: string; text: string; suggestion?: string }[]; verdict?: string; dropped?: number; note?: string };
+};
+export type AddressThread = { id: string; at?: string; reviewer?: string; short?: string; state?: string };
+export type AddressFlow = {
+  list?: { pr?: string; round?: string; moved_commits?: number; threads?: AddressThread[] };
+  threads: Record<string, { id: string; reviewer?: string; at?: string; body?: string; verdict?: string; evidence_file?: string; evidence_code?: string; options?: { id: string; label: string; detail?: string; recommended?: boolean }[] }>;
+  proofs: Record<string, { label: string; ok: boolean | null; proof?: string }[]>;
+  replies: Record<string, { text?: string; sha?: string; posted?: boolean }>;
+  current: string | null;
+  chosen: Record<string, string>;
+};
+
 export type SessionKind = "review" | "address" | "plan" | "blank";
 
 export type SessionState = {
@@ -48,6 +66,8 @@ export type SessionState = {
   activity: number[]; // events per minute, last 30 minutes (sparkline)
   costUsd: number;
   error: string | null;
+  review: ReviewFlow | null;
+  address: AddressFlow | null;
 };
 
 export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null };
