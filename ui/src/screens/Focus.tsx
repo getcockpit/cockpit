@@ -5,6 +5,7 @@ import { api } from "../state/store";
 import type { SessionState, TranscriptItem } from "../state/types";
 import type { Doc } from "../state/docs";
 import { AskRow } from "./AskRow";
+import { AddressView, ReviewView } from "./Flows";
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
 export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void }) {
@@ -52,7 +53,7 @@ export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: D
           ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{s.error}</span></div></div>}
-          <Transcript items={s.transcript} raw={showRaw} />
+          {!showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} />}
           {live && (
             <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>
               <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
