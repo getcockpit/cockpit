@@ -7,6 +7,7 @@ mod gh;
 mod selfbuild;
 mod selftest;
 mod sidecar;
+mod terminal;
 mod worktree;
 
 use tauri::Manager;
@@ -17,6 +18,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .manage(sidecar::Sidecar::default())
+        .manage(terminal::Terminals::default())
         .setup(|app| {
             // MR_DATA_DIR keeps tests and self-builds away from the real event log.
             let dir = match std::env::var("MR_DATA_DIR") {
@@ -58,6 +60,9 @@ pub fn run() {
             selfbuild::selfbuild_start,
             selfbuild::selfbuild_list,
             selfbuild::selfbuild_relaunch,
+            terminal::term_open,
+            terminal::term_write,
+            terminal::term_resize,
             docs::doc_feedback
         ])
         .run(tauri::generate_context!())
