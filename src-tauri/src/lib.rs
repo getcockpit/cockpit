@@ -4,6 +4,7 @@ mod docs;
 mod eventlog;
 mod flows;
 mod gh;
+mod selfbuild;
 mod selftest;
 mod sidecar;
 mod worktree;
@@ -54,6 +55,9 @@ pub fn run() {
             changes::session_diff,
             changes::app_repo_path,
             changes::godmode_save_mark,
+            selfbuild::selfbuild_start,
+            selfbuild::selfbuild_list,
+            selfbuild::selfbuild_relaunch,
             docs::doc_feedback
         ])
         .run(tauri::generate_context!())
