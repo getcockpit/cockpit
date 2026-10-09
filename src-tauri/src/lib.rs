@@ -4,6 +4,7 @@ mod docs;
 mod eventlog;
 mod flows;
 mod gh;
+mod layer3;
 mod layer2;
 mod personal;
 mod selfbuild;
@@ -67,6 +68,7 @@ pub fn run() {
             selfbuild::selfbuild_relaunch,
             personal::personal_history,
             layer2::layer2_classify,
+            layer3::layer3_diagram,
             layer2::layer2_status,
             layer2::layer2_save_credentials,
             personal::personal_apply,
