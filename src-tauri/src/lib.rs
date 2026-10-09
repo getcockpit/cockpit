@@ -4,6 +4,7 @@ mod docs;
 mod eventlog;
 mod flows;
 mod gh;
+mod folders;
 mod layer3;
 mod layer2;
 mod personal;
@@ -22,6 +23,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(sidecar::Sidecar::default())
         .manage(terminal::Terminals::default())
         .manage(voice::Voice::default())
@@ -69,6 +71,8 @@ pub fn run() {
             personal::personal_history,
             layer2::layer2_classify,
             layer3::layer3_diagram,
+            sidecar::limits_refresh,
+            folders::recent_folders,
             layer2::layer2_status,
             layer2::layer2_save_credentials,
             personal::personal_apply,

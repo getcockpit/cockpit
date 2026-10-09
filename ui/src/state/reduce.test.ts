@@ -180,3 +180,9 @@ test("the flow layout ranks by longest path and survives cycles", () => {
   expect(pos.get("b")!.x).toBeLessThan(pos.get("d")!.x);
   expect(pos.size).toBe(4);
 });
+
+test("plan limits arrive before any session runs", () => {
+  const st = replay([{ id: "L1", session_id: null, kind: "sidecar.limits", payload: { available: true, five_hour: { utilization: 0.15, resetsAt: 1791586200 }, seven_day: { utilization: 0.56, resetsAt: 1 } }, anchor: null, created_at: 1 }]);
+  expect(st.usage).toEqual({ fiveHour: 0.15, weekly: 0.56, resetsAt: 1791586200 });
+  expect(replay([{ id: "L1", session_id: null, kind: "sidecar.limits", payload: { available: false, error: "x" }, anchor: null, created_at: 1 }]).usage.fiveHour).toBeNull();
+});

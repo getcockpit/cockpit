@@ -1,3 +1,5 @@
+import { keyOf } from "../components/keys";
+import { FolderPicker } from "../components/FolderPicker";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
@@ -63,11 +65,11 @@ export function StartPicker({ state, onClose, onStarted, initialText = "" }: { s
   };
 
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") { e.preventDefault(); onClose(); }
-    else if (e.metaKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); setMode(MODES[Number(e.key) - 1].id); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setSel((x) => Math.min(items.length - 1, x + 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
-    else if (e.key === "Enter" && !text.trim() && items[sel]) { e.preventDefault(); void start(items[sel].value); }
+    if (keyOf(e) === "Escape") { e.preventDefault(); onClose(); }
+    else if (e.metaKey && ["1", "2", "3", "4"].includes(keyOf(e))) { e.preventDefault(); setMode(MODES[Number(keyOf(e)) - 1].id); }
+    else if (keyOf(e) === "ArrowDown") { e.preventDefault(); setSel((x) => Math.min(items.length - 1, x + 1)); }
+    else if (keyOf(e) === "ArrowUp") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
+    else if (keyOf(e) === "Enter" && !text.trim() && items[sel]) { e.preventDefault(); void start(items[sel].value); }
   };
 
   const m = MODES.find((x) => x.id === mode)!;
@@ -77,7 +79,7 @@ export function StartPicker({ state, onClose, onStarted, initialText = "" }: { s
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)" }} onSubmit={(e) => { e.preventDefault(); void start(text); }}>
-          <input className="mr-input mr-mono" style={{ flex: "0 1 220px", fontSize: 13, background: "var(--mr-well)" }} value={cwd} onChange={(e) => setCwd(e.target.value)} aria-label="Project folder" />
+          <FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[...new Set(state.order.map((id) => state.sessions[id]).reverse().map((x) => x.repo ?? x.cwd))].slice(0, 5)} />
           <input ref={input} className="mr-input" style={{ fontSize: 17, background: "var(--mr-well)" }} placeholder={m.placeholder} value={text} onChange={(e) => setText(e.target.value)} aria-label={m.placeholder} />
           <Key k="↵" tone="primary" disabled={!text.trim() && !items[sel]}>Start</Key>
         </form>

@@ -1,3 +1,4 @@
+import { keyOf } from "../components/keys";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { Markdown } from "../components/Markdown";
@@ -32,11 +33,11 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
       if (typing) return;
-      if (e.key === "Escape") { e.preventDefault(); if (step) setStep(0); else onBack(); }
-      if (e.key === " ") { e.preventDefault(); setStep((s) => (s >= blocks.length ? 0 : s + 1)); }
-      if (e.key === "ArrowLeft") setStep((s) => Math.max(0, s - 1));
-      if (e.key === "ArrowRight") setStep((s) => Math.min(blocks.length, s + 1));
-      if (e.key.toLowerCase() === "o") setStep(0);
+      if (keyOf(e) === "Escape") { e.preventDefault(); if (step) setStep(0); else onBack(); }
+      if (keyOf(e) === " ") { e.preventDefault(); setStep((s) => (s >= blocks.length ? 0 : s + 1)); }
+      if (keyOf(e) === "ArrowLeft") setStep((s) => Math.max(0, s - 1));
+      if (keyOf(e) === "ArrowRight") setStep((s) => Math.min(blocks.length, s + 1));
+      if (keyOf(e) === "o") setStep(0);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

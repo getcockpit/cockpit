@@ -1,3 +1,4 @@
+import { keyOf } from "../components/keys";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bar, Key, StateMark } from "../components";
@@ -32,10 +33,10 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      if (e.key === "Escape" && !typing) { e.preventDefault(); onBack(); }
-      if (e.key === "." && e.metaKey && live) { e.preventDefault(); void api.interrupt(s.id); }
-      if (e.key === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
-      if (e.key === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => !x); }
+      if (keyOf(e) === "Escape" && !typing) { e.preventDefault(); onBack(); }
+      if (keyOf(e) === "." && e.metaKey && live) { e.preventDefault(); void api.interrupt(s.id); }
+      if (keyOf(e) === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
+      if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => !x); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
