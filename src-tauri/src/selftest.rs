@@ -11,7 +11,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild")
+}
+
+fn selfbuild_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "selfbuild")
 }
 
 fn flow_mode() -> bool {
@@ -27,6 +31,9 @@ fn doc_mode() -> bool {
 }
 
 pub fn run(app: AppHandle) {
+    if selfbuild_mode() {
+        return run_selfbuild(app);
+    }
     tauri::async_runtime::spawn(async move {
         tokio_sleep(Duration::from_secs(2)).await;
         let dir = std::env::temp_dir().join(format!("mr-selftest-{}", ulid::Ulid::new()));
@@ -142,4 +149,40 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
 
 async fn tokio_sleep(d: Duration) {
     tauri::async_runtime::spawn_blocking(move || std::thread::sleep(d)).await.ok();
+}
+
+/// Self-build check: build this checkout, relaunch into the new build, and let the new build prove
+/// it's healthy (it writes the marker on sidecar ready, then exits).
+fn run_selfbuild(app: AppHandle) {
+    std::thread::spawn(move || {
+        if std::env::var("MR_FALLBACK").is_ok() {
+            eprintln!("[selftest] running as the fallback: the new build failed");
+            app.exit(1);
+            return;
+        }
+        if std::env::var("MR_BUILD_ID").is_ok() {
+            std::thread::sleep(Duration::from_secs(4));
+            app.exit(0);
+            return;
+        }
+        let repo = crate::changes::app_repo().expect("app repo");
+        let id = crate::selfbuild::selfbuild_start(app.clone(), repo.display().to_string()).expect("build start");
+        let marker = crate::selfbuild::data_dir(&app).join("builds").join(&id).join("build.json");
+        let log = app.state::<crate::eventlog::EventLog>();
+        for _ in 0..900 {
+            let failed = log.list(None, None, i64::MAX).unwrap_or_default().into_iter().any(|e| e.kind == "selfbuild.finished" && e.payload["ok"] == false);
+            if failed {
+                eprintln!("[selftest] build failed");
+                std::process::exit(1);
+            }
+            if marker.exists() {
+                eprintln!("[selftest] build {id} stored; relaunching");
+                let _ = crate::selfbuild::selfbuild_relaunch(app.clone(), id);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        eprintln!("[selftest] build timed out");
+        std::process::exit(1);
+    });
 }

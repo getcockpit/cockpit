@@ -42,6 +42,9 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         let kind = format!("sidecar.{}", payload["type"].as_str().unwrap_or("unknown"));
                         let session = payload["session"].as_str().map(str::to_owned);
                         crate::eventlog::record(&handle, session.as_deref(), &kind, &payload, None);
+                        if payload["type"] == "ready" {
+                            crate::selfbuild::on_ready(&handle);
+                        }
                         if payload["type"] == "session_ended" {
                             if let Some(id) = payload["session"].as_str() {
                                 handle.state::<Sidecar>().live.lock().unwrap().remove(id);
