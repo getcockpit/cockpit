@@ -14,6 +14,18 @@ function findTarget(n: EventTarget | null): Target | null {
   return { el, component: el.dataset.mr ?? "?", source: el.dataset.mrSource ?? "", layer: el.dataset.mrLayer ?? "code", rect: el.getBoundingClientRect() };
 }
 
+// Right-click must work everywhere: elements without a data-mr tag fall back to the nearest
+// meaningful container (button, heading, section, dialog…), and finally the whole screen.
+function anyTarget(n: EventTarget | null): Target {
+  const tagged = findTarget(n);
+  if (tagged) return tagged;
+  const start = n as HTMLElement | null;
+  const el = (start?.closest?.("button, a, h1, h2, h3, li, header, section, main, aside, [role=dialog], [role=listbox], [role=menu], figure, form") as HTMLElement | null) ?? document.body;
+  const name = el.getAttribute("aria-label") ?? el.querySelector("h1, h2, strong")?.textContent ?? (el.innerText ?? "").trim().split("\n")[0];
+  const component = el === document.body ? "Screen" : `${el.getAttribute("role") ?? el.tagName.toLowerCase()}${name ? ` “${name.slice(0, 32)}”` : ""}`;
+  return { el, component, source: "", layer: "untagged", rect: el.getBoundingClientRect() };
+}
+
 export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: boolean; onOpen: () => void; onClose: () => void; view: string; onOpenSession: (id: string) => void }) {
   const [hover, setHover] = useState<Target | null>(null);
   const [marked, setMarked] = useState<Target | null>(null);
@@ -25,9 +37,9 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: bool
   useEffect(() => {
     const ctx = (e: MouseEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el?.closest?.("input, textarea, [contenteditable=true], .xterm, [data-godmode-ui]")) return;
-      const t = findTarget(el);
-      if (!t) return;
+      // Text fields and the terminal keep the native menu (copy, paste, spelling).
+      if (el?.closest?.("input, textarea, [contenteditable=true], .xterm, [data-mr-menu]")) return;
+      const t = anyTarget(el);
       e.preventDefault();
       setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 190), t, origin: el! });
     };
@@ -42,11 +54,10 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: bool
 
   useEffect(() => {
     if (!on) { setHover(null); setMarked(null); return; }
-    const move = (e: MouseEvent) => { if (!marked) setHover(findTarget(e.target)); };
+    const move = (e: MouseEvent) => { if (!marked) setHover(anyTarget(e.target)); };
     const click = (e: MouseEvent) => {
       if ((e.target as HTMLElement)?.closest?.("[data-godmode-ui]")) return;
-      const t = findTarget(e.target);
-      if (!t) return;
+      const t = anyTarget(e.target);
       e.preventDefault(); e.stopPropagation();
       setMarked(t); setHover(null);
     };
