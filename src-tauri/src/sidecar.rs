@@ -1,5 +1,6 @@
 //! Supervises the SDK sidecar: one child process speaking NDJSON over stdio.
-//! Every line the sidecar prints is forwarded to the UI as a `sidecar` event.
+//! Every line the sidecar prints is first appended to the event log, then forwarded to the UI
+//! (as the stored event on `mr-event`, and raw on `sidecar`).
 
 use std::sync::Mutex;
 
@@ -32,6 +33,9 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let payload = serde_json::from_str::<serde_json::Value>(line)
                             .unwrap_or_else(|_| serde_json::json!({ "type": "raw", "line": line }));
+                        let kind = format!("sidecar.{}", payload["type"].as_str().unwrap_or("unknown"));
+                        let session = payload["session"].as_str().map(str::to_owned);
+                        crate::eventlog::record(&handle, session.as_deref(), &kind, &payload, None);
                         let _ = handle.emit("sidecar", payload);
                     }
                 }
@@ -39,7 +43,9 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("[sidecar] {}", String::from_utf8_lossy(&bytes).trim_end());
                 }
                 CommandEvent::Terminated(status) => {
-                    let _ = handle.emit("sidecar", serde_json::json!({ "type": "terminated", "code": status.code }));
+                    let payload = serde_json::json!({ "type": "terminated", "code": status.code });
+                    crate::eventlog::record(&handle, None, "sidecar.terminated", &payload, None);
+                    let _ = handle.emit("sidecar", payload);
                 }
                 _ => {}
             }
