@@ -6,6 +6,7 @@ import type { SessionState, TranscriptItem } from "../state/types";
 import type { Doc } from "../state/docs";
 import { AskRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
+import { pointer } from "../components/pointer";
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
 export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void }) {
@@ -53,7 +54,7 @@ export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: D
           ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{s.error}</span></div></div>}
-          {!showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} />}
+          {!showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
           {live && (
             <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>
               <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
@@ -94,7 +95,7 @@ export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: D
 }
 
 // The structured transcript (decision 13): readable rows, not terminal text. ⌘R shows raw JSON.
-function Transcript({ items, raw }: { items: TranscriptItem[]; raw: boolean }) {
+function Transcript({ items, raw, onDiscover }: { items: TranscriptItem[]; raw: boolean; onDiscover: (what: string) => void }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [items.length]);
   if (items.length === 0) return <div className="mr-dim" style={{ padding: 12, background: "var(--mr-tile)" }}>Waiting for the first message…</div>;
@@ -109,21 +110,21 @@ function Transcript({ items, raw }: { items: TranscriptItem[]; raw: boolean }) {
       ) : t.kind === "result" ? (
         <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}</div>
       ) : (
-        <ToolRow key={t.id} t={t} />
+        <ToolRow key={t.id} t={t} onDiscover={onDiscover} />
       ))}
       <div ref={end} />
     </div>
   );
 }
 
-function ToolRow({ t }: { t: Extract<TranscriptItem, { kind: "tool" }> }) {
+function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" }>; onDiscover: (what: string) => void }) {
   const [open, setOpen] = useState(false);
   const detail = t.input.command ?? t.input.file_path ?? t.input.pattern ?? t.input.url ?? t.input.query ?? t.input.description ?? "";
   const result = t.result as Record<string, unknown> | string | undefined;
   const out = typeof result === "string" ? result : result ? String(result.stdout ?? result.content ?? JSON.stringify(result)) : "";
   return (
     <div style={{ background: "var(--mr-tile)" }}>
-      <button type="button" onClick={() => setOpen((x) => !x)} className="mr-row" style={{ width: "100%", padding: "8px 14px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" }}>
+      <button type="button" onClick={pointer({ open: () => setOpen((x) => !x), deeper: () => setOpen(true), discover: () => onDiscover(`the ${t.name} call ${JSON.stringify(t.input).slice(0, 300)}`) })} className="mr-row" style={{ width: "100%", padding: "8px 14px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" }}>
         <span className="mr-mono" style={{ fontWeight: 700, minWidth: 90 }}>{t.name.replace(/^mcp__/, "")}</span>
         <span className="mr-mono mr-ink2 mr-grow mr-ellipsis" style={{ fontSize: 12 }}>{String(detail)}</span>
         <span className="mr-mono" style={{ fontSize: 12, color: t.isError ? "var(--mr-error)" : t.result === undefined ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.isError ? "✕" : t.result === undefined ? "…" : "✓"}</span>
