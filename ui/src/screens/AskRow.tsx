@@ -18,7 +18,7 @@ export function AskRow({ s, a, selected, onOpen }: { s: SessionState; a: Pending
   const { spec } = useMemo(() => pickDecision(a), [a]);
   const answer = (x: Answer) => void answerAsk(s, a, x);
   return (
-    <div className="mr-qrow" aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined} onDoubleClick={onOpen}>
+    <div className="mr-qrow" data-mr={spec.component} data-mr-source={`${s.id}:${a.requestId}`} data-mr-layer="code" aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined} onDoubleClick={onOpen}>
       <div className="mr-flag" />
       <div className="mr-qbody">
         <span className="mr-row" style={{ gap: 6 }}>

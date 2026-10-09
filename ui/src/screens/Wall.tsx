@@ -89,7 +89,7 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
         <section aria-label="Suggested next" className="mr-row" style={{ flexWrap: "wrap", gap: 8, padding: "12px 24px 0" }}>
           <span className="mr-dim">Suggested</span>
           {suggestions.map((g) => (
-            <span key={g.id} className="mr-row" style={{ gap: 0, background: "var(--mr-tile)" }}>
+            <span key={g.id} data-mr="Suggestion" data-mr-source={g.id} className="mr-row" style={{ gap: 0, background: "var(--mr-tile)" }}>
               <button type="button" onClick={() => void act(g)} className="mr-row" style={{ gap: 8, padding: "6px 10px", border: 0, background: "transparent", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }} title={g.what}>
                 <span className="mr-dim">{g.why} ·</span><strong>{g.label}</strong>
               </button>
@@ -184,7 +184,7 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
 
 function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; onOpen: (id: string) => void; onDiscover: () => void }) {
   return (
-    <button type="button" className="mr-tile" data-s={tile.state} onClick={pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })} aria-label={`Open ${s.title}`}>
+    <button type="button" className="mr-tile" data-mr="Tile" data-mr-source={s.id} data-mr-layer="code" data-s={tile.state} onClick={pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })} aria-label={`Open ${s.title}`}>
       <div className="mr-flag" />
       <div className="mr-tbody">
         <div className="mr-row" style={{ alignItems: "baseline" }}>
