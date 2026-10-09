@@ -17,7 +17,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {},
+    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null,
   };
 }
 
@@ -58,7 +58,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const where = { repo: (p.repo as string) ?? null, branch: (p.branch as string) ?? null, workspace: (p.workspace as string) ?? "personal" };
     if (existing) {
       // A resume (or a request logged after early sidecar events): keep history, restart the status.
-      const resumed = p.resume ? { status: "starting" as const, error: null } : {};
+      const resumed = p.resume ? { status: "starting" as const, error: null, archivedAt: null } : {};
       return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch } } };
     }
     return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where } }, order: [...next.order, sid] };
@@ -72,6 +72,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     if (!s) return { ...next, clef };
     const kind: ProseKind = { label: p.label as ProseKind["label"], p: Number(p.p ?? 0), layer: p.layer === "model" ? "model" : "code" };
     return { ...next, clef, sessions: { ...next.sessions, [sid]: { ...s, kinds: { ...s.kinds, [String(p.item_id)]: kind } } } };
+  }
+  if ((ev.kind === "ui.session_archived" || ev.kind === "ui.session_unarchived") && sid && next.sessions[sid]) {
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...next.sessions[sid], archivedAt: ev.kind === "ui.session_archived" ? ev.created_at : null } } };
   }
   if (ev.kind === "picker.layer3" && sid) {
     const s = next.sessions[sid];

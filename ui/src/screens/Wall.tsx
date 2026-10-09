@@ -17,7 +17,7 @@ import { answerAsk, AskRow } from "./AskRow";
 
 const REVIEW = new Set<TileSpec["state"]>(["idle", "done", "interrupted", "error"]);
 
-export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppState; docs: Doc[]; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: () => void }) {
+export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onStart }: { state: AppState; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   const asks = sessions.flatMap((s) => s.pending.map((a) => ({ s, a })));
@@ -163,10 +163,11 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
             <h2 className="mr-h">Ready to review <span className="mr-dim">{review.length}</span></h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))", gap: "var(--mr-gap)" }}>
               {review.map(({ s, tile }) => (
-                <button key={s.id} type="button" className="mr-row" onClick={() => onOpen(s.id)} style={{ padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>
+                <button key={s.id} type="button" className="mr-row" data-mr="ReviewRow" data-mr-source={s.id} onClick={() => onOpen(s.id)} style={{ padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>
                   <StateMark s={tile.state} />
                   <span className="mr-grow mr-ellipsis">{s.title || "Untitled"}</span>
                   <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{Object.keys(s.files).length} files</span>
+                  <span className="mr-key" role="button" tabIndex={0} title="Mark done and move to the archive" style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.archive(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.archive(s); } }}>Done ✓</span>
                   {s.status === "interrupted" && s.sdkSessionId && <span className="mr-key" role="button" tabIndex={0} style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.resume(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.resume(s); } }}>Resume ↻</span>}
                 </button>
               ))}
@@ -178,6 +179,7 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
         <span>⌘K start · click focus · ⌘-click deeper · ⌥-click discover · ⌘⇧G god mode · ⌘⇧B builds</span>
         {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-2)" }}>Daily driver {daily.streak}/{daily.goal}</span>}
         <span className="mr-grow" />
+        <Key k="⌘⇧A" onClick={onArchive}>Archive{archived ? ` · ${archived}` : ""}</Key>
         <Key k="⌘K" onClick={onStart}>Start</Key>
       </footer>
     </div>
