@@ -4,13 +4,17 @@ import { pickTile } from "./picker/pick";
 import { AskRow } from "./screens/AskRow";
 import { Focus } from "./screens/Focus";
 import { StartPicker } from "./screens/StartPicker";
+import { DocMap } from "./screens/DocMap";
+import { isOpenQuestion, useDocs, type Doc } from "./state/docs";
 import { useAppState } from "./state/store";
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
 
 export default function App() {
   const state = useAppState();
+  const docs = useDocs();
   const [focus, setFocus] = useState<string | null>(null);
+  const [docId, setDocId] = useState<string | null>(null);
   const [picker, setPicker] = useState(false);
 
   useEffect(() => {
@@ -21,17 +25,20 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const overlay = picker && <StartPicker state={state} onClose={() => setPicker(false)} onStarted={(id) => { setPicker(false); setFocus(id); }} />;
+  const overlay = picker && <StartPicker state={state} onClose={() => setPicker(false)} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
+  const doc = docId ? docs.find((d) => d.id === docId) : null;
+  if (doc) return <>{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}{overlay}</>;
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return <>{<Focus s={focused} onBack={() => setFocus(null)} />}{overlay}</>;
-  return <><Wall state={state} onOpen={setFocus} onStart={() => setPicker(true)} />{overlay}</>;
+  if (focused) return <>{<Focus s={focused} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBack={() => setFocus(null)} />}{overlay}</>;
+  return <><Wall state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onStart={() => setPicker(true)} />{overlay}</>;
 }
 
-function Wall({ state, onOpen, onStart }: { state: ReturnType<typeof useAppState>; onOpen: (id: string) => void; onStart: () => void }) {
+function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: ReturnType<typeof useAppState>; docs: Doc[]; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   const asks = sessions.flatMap((s) => s.pending.map((a) => ({ s, a })));
   const count = (k: string) => tiles.filter((t) => t.tile.state === k).length;
+  const openQs = docs.flatMap((d) => Object.values(d.blocks).filter(isOpenQuestion).map((b) => ({ d, b })));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
@@ -44,7 +51,7 @@ function Wall({ state, onOpen, onStart }: { state: ReturnType<typeof useAppState
       </header>
 
       <Lamps>
-        <Lamp value={asks.length} label="Needs you" on={asks.length > 0 && "needs"} />
+        <Lamp value={asks.length + openQs.length} label="Needs you" on={asks.length + openQs.length > 0 && "needs"} />
         <Lamp value={count("error")} label="Errors" on={count("error") > 0 && "error"} />
         <Lamp value={count("almost")} label="Almost done" on={count("almost") > 0 && "plain"} />
         <Lamp value={count("working") + count("starting")} label="Running" on={count("working") > 0 && "plain"} />
@@ -56,6 +63,45 @@ function Wall({ state, onOpen, onStart }: { state: ReturnType<typeof useAppState
           <section aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you <span className="mr-dim">{asks.length}</span></h2>
             <div className="mr-queue">{asks.map(({ s, a }) => <AskRow key={a.requestId} s={s} a={a} />)}</div>
+          </section>
+        )}
+
+        {openQs.length > 0 && (
+          <section aria-label="Open questions" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Open questions in docs <span className="mr-dim">{openQs.length}</span></h2>
+            <div className="mr-queue">
+              {openQs.map(({ d, b }) => (
+                <button key={`${d.id}:${b.id}`} type="button" className="mr-qrow" onClick={() => onOpenDoc(d.id)} style={{ border: 0, padding: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+                  <div className="mr-flag" />
+                  <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center" }}>
+                    <div className="mr-grow" style={{ display: "flex", flexDirection: "column" }}><span className="mr-ink2">{d.title}</span><span className="mr-ask">{b.takeaway}</span></div>
+                    <span className="mr-key">Decide ↵</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {docs.length > 0 && (
+          <section aria-label="Working docs" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <h2 className="mr-h">Working docs <span className="mr-dim">{docs.length}</span></h2>
+            <div className="mr-grid">
+              {docs.map((d) => {
+                const blocks = Object.values(d.blocks);
+                const open = blocks.filter(isOpenQuestion).length;
+                return (
+                  <button key={d.id} type="button" className="mr-tile" data-s={open ? "needs_you" : "working"} onClick={() => onOpenDoc(d.id)} style={{ minHeight: 96 }}>
+                    <div className="mr-flag" />
+                    <div className="mr-tbody">
+                      <strong style={{ fontSize: 15 }}>{d.title}</strong>
+                      <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>v{d.version} · {blocks.length} blocks{open ? ` · ${open} open question${open === 1 ? "" : "s"}` : ""}</span>
+                      <span className="mr-ink2 mr-ellipsis">{blocks.find((b) => b.section === "goal")?.takeaway ?? ""}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </section>
         )}
 
