@@ -10,7 +10,15 @@ pub fn run() {
             sidecar::start(app.handle())?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![sidecar::sidecar_send])
+        .invoke_handler(tauri::generate_handler![
+            sidecar::sidecar_send,
+            sidecar::session_start,
+            sidecar::session_send,
+            sidecar::session_interrupt,
+            sidecar::session_stop,
+            sidecar::permission_respond,
+            sidecar::tool_result
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
