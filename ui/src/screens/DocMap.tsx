@@ -160,7 +160,7 @@ function BlockCard(props: {
   };
   if (!open) {
     return (
-      <button type="button" style={{ ...style, height: H, border: 0, borderLeft: style.borderLeft, padding: "28px 32px", textAlign: "left", font: "inherit", color: "var(--mr-ink)", cursor: "zoom-in", display: "flex", flexDirection: "column", justifyContent: "center", gap: 10 }} onClick={props.onClick} aria-label={`Open ${kicker}: ${b.takeaway}`}>
+      <button type="button" data-mr="DocBlock" data-mr-source={`${doc.id}:${b.id}`} style={{ ...style, height: H, border: 0, borderLeft: style.borderLeft, padding: "28px 32px", textAlign: "left", font: "inherit", color: "var(--mr-ink)", cursor: "zoom-in", display: "flex", flexDirection: "column", justifyContent: "center", gap: 10 }} onClick={props.onClick} aria-label={`Open ${kicker}: ${b.takeaway}`}>
         <span style={{ fontSize: 26, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{openQ ? "◆ " : b.decision ? "✓ " : ""}{kicker}</span>
         <span style={{ fontSize: 40, lineHeight: 1.1, fontWeight: 700, letterSpacing: "-0.02em" }}>{b.takeaway || "(no takeaway)"}</span>
         <span style={{ fontSize: 28, color: "var(--mr-ink-2)" }}>{b.decision ? `→ ${b.decision}` : b.key}</span>
@@ -169,7 +169,7 @@ function BlockCard(props: {
     );
   }
   return (
-    <div style={{ ...style, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 12, zIndex: 2 }}>
+    <div data-mr="DocBlockOpen" data-mr-source={`${doc.id}:${b.id}`} style={{ ...style, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 12, zIndex: 2 }}>
       <div className="mr-row" style={{ alignItems: "baseline" }}>
         <span className="mr-grow" contentEditable suppressContentEditableWarning spellCheck={false} aria-label="Edit takeaway"
           onBlur={(e) => { const v = e.currentTarget.textContent ?? ""; if (v.trim() && v !== b.takeaway) void docApi.edit(doc, b.id, "takeaway", v.trim()); }}
