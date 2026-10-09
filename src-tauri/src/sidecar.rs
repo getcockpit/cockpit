@@ -53,6 +53,8 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         crate::eventlog::record(&handle, session.as_deref(), &kind, &payload, None);
                         if payload["type"] == "ready" {
                             crate::selfbuild::on_ready(&handle);
+                            // Show plan limits straight away, not only once a session reports them.
+                            let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "limits" }));
                         }
                         if payload["type"] == "session_ended" {
                             if let Some(id) = payload["session"].as_str() {
@@ -92,6 +94,12 @@ pub fn sidecar_send(state: State<'_, Sidecar>, message: serde_json::Value) -> Re
     let mut line = serde_json::to_string(&message).map_err(|e| e.to_string())?;
     line.push('\n');
     child.write(line.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Re-reads plan limits (the UI calls this every few minutes); the answer arrives as `sidecar.limits`.
+#[tauri::command]
+pub fn limits_refresh(state: State<'_, Sidecar>) -> Result<(), String> {
+    sidecar_send(state, serde_json::json!({ "type": "limits" }))
 }
 
 /// Runs one tool-less, unsaved turn in the sidecar and waits for its text (blocking; call off the UI thread).

@@ -1,3 +1,4 @@
+import { keyOf } from "../components/keys";
 import { useEffect } from "react";
 import { Key } from "../components";
 import { api } from "../state/store";
@@ -49,8 +50,8 @@ export function ReviewView({ s }: { s: SessionState }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.metaKey) return;
-      if (e.key === " " && snip) { e.preventDefault(); reply("next"); }
-      if (/^[1-9]$/.test(e.key) && snip?.findings?.[Number(e.key) - 1]) { e.preventDefault(); note(snip.findings[Number(e.key) - 1].id); }
+      if (keyOf(e) === " " && snip) { e.preventDefault(); reply("next"); }
+      if (/^[1-9]$/.test(keyOf(e)) && snip?.findings?.[Number(keyOf(e)) - 1]) { e.preventDefault(); note(snip.findings[Number(keyOf(e)) - 1].id); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

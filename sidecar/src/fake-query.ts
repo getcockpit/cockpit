@@ -22,5 +22,6 @@ export const fakeQuery: QueryFn = ({ prompt, options }) => {
     }
   }
   const it = run();
-  return Object.assign(it, { interrupt: async () => { interrupted = true; }, close: () => {} });
+  const usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET = async () => ({ rate_limits_available: true, subscription_type: "max", rate_limits: { five_hour: { utilization: 42, resets_at: "2026-10-09T20:00:00Z" }, seven_day: { utilization: 7, resets_at: null } } });
+  return Object.assign(it, { interrupt: async () => { interrupted = true; }, close: () => {}, usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET });
 };
