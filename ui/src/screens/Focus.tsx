@@ -9,6 +9,8 @@ import { AskRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
 import { pointer } from "../components/pointer";
 import { ChangeMap } from "./ChangeMap";
+import { lazy, Suspense } from "react";
+const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
 export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void }) {
@@ -22,6 +24,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
   }, [s.cwd, s.repo]);
   const tile = useMemo(() => pickTile(s), [s]);
   const [showRaw, setShowRaw] = useState(false);
+  const [term, setTerm] = useState(false);
   const [text, setText] = useState("");
   const live = s.status !== "ended" && s.status !== "error";
 
@@ -31,6 +34,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
       if (e.key === "Escape" && !typing) { e.preventDefault(); onBack(); }
       if (e.key === "." && e.metaKey && live) { e.preventDefault(); void api.interrupt(s.id); }
       if (e.key === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
+      if (e.key === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => !x); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -47,6 +51,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
         <StateMark s={tile.state} />
         <span className="mr-mono mr-ink2">{tile.progressLabel || tile.step}</span>
         {isApp && <Key k="⌘⇧B" tone="needs" onClick={() => onBuild(s.cwd)}>Rebuild & relaunch</Key>}
+        {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => !x)}>{term ? "Back to visual" : "Take over in terminal"}</Key>}
         <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Transcript"}</Key>
       </header>
 
@@ -63,7 +68,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
           ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{s.error}</span></div></div>}
-          {!showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
+          {term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
           {live && (
             <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>
               <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>

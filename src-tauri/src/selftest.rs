@@ -11,7 +11,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal")
+}
+
+fn terminal_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "terminal")
 }
 
 fn selfbuild_mode() -> bool {
@@ -48,7 +52,9 @@ pub fn run(app: AppHandle) {
             app.clone(),
             state,
             dir.display().to_string(),
-            if flow_mode() {
+            if terminal_mode() {
+                "Remember the word MANGO. Reply with exactly: OK".into()
+            } else if flow_mode() {
                 "This is a UI test of the review tools, not a real review. Pretend you are reviewing a tiny change that adds a retry loop to fetch.ts. Call review_overview (tier 2, one '+' node 'retry loop', one net-new novelty item, total_snippets 1), then call review_snippet for snippet 1 of 1 with a short 3-line diff and exactly one finding with id f1, severity Important. Then stop and wait for my reply as the tool says.".into()
             } else if resume_mode() {
                 "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
@@ -95,6 +101,23 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 payload["request_id"].as_str().unwrap_or_default().into(),
                 decision,
             );
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && terminal_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
+            // Take over in a real terminal, then type /exit like a user would.
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            let log = app.state::<crate::eventlog::EventLog>();
+            let events = log.list(Some(&session), None, 1000).unwrap_or_default();
+            let sdk = events.iter().find(|e| e.kind == "sidecar.session_started").and_then(|e| e.payload["sdk_session_id"].as_str().map(str::to_owned)).unwrap_or_default();
+            let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
+            let app2 = app.clone();
+            std::thread::spawn(move || {
+                let r = crate::terminal::term_open(app2.clone(), app2.state::<crate::terminal::Terminals>(), session.clone(), sdk, cwd, 100, 30);
+                if let Err(e) = r { eprintln!("[selftest] term_open failed: {e}"); std::process::exit(1); }
+                std::thread::sleep(Duration::from_secs(8));
+                let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session.clone(), "/exit".into());
+                std::thread::sleep(Duration::from_millis(600));
+                let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session, "\r".into());
+            });
         }
         Some("sdk") if payload["message"]["type"] == "result" && flow_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
