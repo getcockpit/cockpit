@@ -84,3 +84,19 @@ test("risk heuristics", () => {
   expect(bashRisk("rm -rf dist").risk).toBe("high");
   expect(bashRisk("terraform apply").risk).toBe("high");
 });
+
+test("sessions running when the sidecar restarts become interrupted, and resume restarts them", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = "s"): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: 1 });
+  const before = replay([
+    ev("A1", "sidecar.ready", {}, null),
+    ev("A2", "ui.session_requested", { prompt: "p", cwd: "/w/repo-worktrees/x", kind: "blank", branch: "mr/x-ab12", repo: "/w/repo" }),
+    ev("A3", "sidecar.session_started", { sdk_session_id: "sdk-1" }),
+  ]);
+  expect(before.sessions.s.branch).toBe("mr/x-ab12");
+  const after = replay([ev("A4", "sidecar.ready", {}, null)], before);
+  expect(after.sessions.s.status).toBe("interrupted");
+  expect(pickTile(after.sessions.s).state).toBe("interrupted");
+  const resumed = replay([ev("A5", "ui.session_requested", { prompt: "Continue", cwd: "/w/repo-worktrees/x", kind: "blank", resume: "sdk-1" })], after);
+  expect(resumed.sessions.s.status).toBe("starting");
+  expect(resumed.order).toEqual(["s"]);
+});

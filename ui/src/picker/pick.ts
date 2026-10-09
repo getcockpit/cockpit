@@ -12,7 +12,7 @@ export type DecisionSpec =
   | { component: "ToolCard"; requestId: string; tool: string; summary: string; risk: Risk; why: string };
 
 export type TileSpec = {
-  state: "needs_you" | "working" | "almost" | "idle" | "done" | "error" | "starting";
+  state: "needs_you" | "working" | "almost" | "idle" | "done" | "error" | "starting" | "interrupted";
   step: string;
   progress: number | null; // 0..1 from todos, null when unknown
   progressLabel: string;
@@ -69,11 +69,13 @@ export function pickTile(s: SessionState): TileSpec {
     : s.status === "error" ? "error"
     : s.status === "ended" ? "done"
     : s.status === "starting" ? "starting"
+    : s.status === "interrupted" ? "interrupted"
     : s.status === "idle" ? "idle"
     : total && (done >= total - 1 || done / total >= 0.8) ? "almost"
     : "working";
   const ask = s.pending[0];
-  const doing = ask
+  const doing = s.status === "interrupted" ? "Stopped when the app closed. Resume continues the same conversation."
+    : ask
     ? ask.kind === "question" ? `Asks: ${ask.questions[0]?.question ?? "a question"}` : `Wants to use ${ask.tool}`
     : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${String(lastTool.input.file_path).split("/").pop()}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");
   return {

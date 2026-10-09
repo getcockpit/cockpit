@@ -38,7 +38,9 @@ export function useAppState(): AppState {
 }
 
 export const api = {
-  start: (cwd: string, prompt: string, kind: string = "blank") => invoke<string>("session_start", { cwd, prompt, kind }),
+  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean) => invoke<string>("session_start", { cwd, prompt, kind, worktree }),
+  resume: (s: { id: string; cwd: string; kind: string; sdkSessionId: string | null }) =>
+    invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
   prs: (cwd: string, mode: "review" | "address") => invoke<Pr[]>("gh_prs", { cwd, mode }),
   send: (session: string, text: string) => invoke("session_send", { session, text }),
   interrupt: (session: string) => invoke("session_interrupt", { session }),

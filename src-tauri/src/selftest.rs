@@ -11,7 +11,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume")
+}
+
+fn resume_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "resume")
 }
 
 fn doc_mode() -> bool {
@@ -23,12 +27,19 @@ pub fn run(app: AppHandle) {
         tokio_sleep(Duration::from_secs(2)).await;
         let dir = std::env::temp_dir().join(format!("mr-selftest-{}", ulid::Ulid::new()));
         let _ = std::fs::create_dir_all(&dir);
+        if resume_mode() {
+            for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
+                let _ = std::process::Command::new("git").arg("-C").arg(&dir).args(&args).status();
+            }
+        }
         let state = app.state::<crate::sidecar::Sidecar>();
         let res = crate::sidecar::session_start(
             app.clone(),
             state,
             dir.display().to_string(),
-            if doc_mode() {
+            if resume_mode() {
+                "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
+            } else if doc_mode() {
                 "Create a working document titled 'Selftest plan' with the mr doc_create tool. Add a goal block (block_id goal) whose takeaway is 'Prove the doc loop works', and an open question block (section question, block_id q1, takeaway 'Pick a colour') with data options red and blue. Don't decide it. Then reply with exactly: SELFTEST DONE".into()
             } else {
                 "Use the AskUserQuestion tool to ask me to choose between the options alpha and beta. Then create an empty file named selftest-<my choice>.txt in the current directory, then reply with exactly: SELFTEST DONE".into()
@@ -36,6 +47,8 @@ pub fn run(app: AppHandle) {
             None,
             None,
             Some("blank".into()),
+            Some(resume_mode()),
+            None,
         );
         if let Err(e) = res {
             eprintln!("[selftest] start failed: {e}");
@@ -69,6 +82,25 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 payload["request_id"].as_str().unwrap_or_default().into(),
                 decision,
             );
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && resume_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
+            // Round 1 done: stop the session; session_ended triggers the resume below.
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            let _ = crate::sidecar::session_stop(app.state::<crate::sidecar::Sidecar>(), session);
+        }
+        Some("session_ended") if resume_mode() && RESULTS.load(Ordering::SeqCst) == 1 => {
+            RESULTS.fetch_add(1, Ordering::SeqCst);
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            let log = app.state::<crate::eventlog::EventLog>();
+            let events = log.list(Some(&session), None, 1000).unwrap_or_default();
+            let sdk = events.iter().find(|e| e.kind == "sidecar.session_started").and_then(|e| e.payload["sdk_session_id"].as_str().map(str::to_owned));
+            let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
+            let res = crate::sidecar::session_start(
+                app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd,
+                "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(),
+                sdk, None, Some("blank".into()), Some(false), Some(session),
+            );
+            if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
         }
         Some("sdk") if payload["message"]["type"] == "result" && doc_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 2: act like the user on the doc map — decide, note, Regenerate.

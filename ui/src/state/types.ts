@@ -9,7 +9,7 @@ export type MrEvent = {
   created_at: number;
 };
 
-export type SessionStatus = "starting" | "working" | "needs_you" | "idle" | "ended" | "error";
+export type SessionStatus = "starting" | "working" | "needs_you" | "idle" | "ended" | "error" | "interrupted";
 
 export type PendingAsk =
   | { kind: "permission"; requestId: string; tool: string; input: Record<string, unknown>; suggestions: unknown[] | null; reason: string | null; at: number }
@@ -34,6 +34,8 @@ export type SessionState = {
   kind: SessionKind;
   title: string;
   cwd: string;
+  repo: string | null;
+  branch: string | null;
   sdkSessionId: string | null;
   model: string | null;
   status: SessionStatus;
