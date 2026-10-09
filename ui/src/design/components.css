@@ -71,3 +71,19 @@
 /* Wall → focus zoom (200–300 ms, decision 15); Reduce Motion disables it via tokens.css. */
 @keyframes mr-zoom-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
 .mr-zoom-in { animation: mr-zoom-in var(--mr-zoom) cubic-bezier(.2, .7, .2, 1); transform-origin: 50% 30%; }
+
+/* Onboarding motion (MR-38). Reduced-motion users get none of it (tokens.css). */
+@keyframes mr-onb-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes mr-onb-pulse { 0%, 100% { box-shadow: inset 0 0 0 3px var(--mr-needs); } 50% { box-shadow: inset 0 0 0 3px var(--mr-needs), 0 0 0 6px color-mix(in srgb, var(--mr-needs) 35%, transparent); } }
+@keyframes mr-onb-nudge { 0%, 100% { transform: none; } 50% { transform: translateX(4px); } }
+@keyframes mr-onb-pop { 0% { transform: scale(.4); } 70% { transform: scale(1.15); } 100% { transform: none; } }
+@keyframes mr-onb-bit { from { transform: none; opacity: 1; } to { transform: translate(var(--dx), var(--dy)) rotate(200deg); opacity: 0; } }
+@keyframes mr-onb-grow { from { width: 0; } }
+.mr-onb-rise { animation: mr-onb-rise .35s ease-out both; }
+.mr-onb-pulse { animation: mr-onb-pulse 1.4s ease-in-out infinite; }
+.mr-onb-nudge { display: inline-block; animation: mr-onb-nudge 1.2s ease-in-out infinite; }
+.mr-onb-pop { animation: mr-onb-pop .4s ease-out both; }
+.mr-onb-bit { animation: mr-onb-bit .8s ease-out both; }
+.mr-onb-grow { animation: mr-onb-grow .9s ease-out both; }
+.mr-onb-lift { transition: transform .15s, box-shadow .15s; }
+.mr-onb-lift:hover { transform: translateY(-3px); box-shadow: inset 0 -4px 0 var(--mr-needs); }
