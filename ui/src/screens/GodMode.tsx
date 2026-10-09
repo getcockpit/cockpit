@@ -26,7 +26,7 @@ function anyTarget(n: EventTarget | null): Target {
   return { el, component, source: "", layer: "untagged", rect: el.getBoundingClientRect() };
 }
 
-export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: boolean; onOpen: () => void; onClose: () => void; view: string; onOpenSession: (id: string) => void }) {
+export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionAction }: { on: boolean; onOpen: () => void; onClose: () => void; view: string; onOpenSession: (id: string) => void; sessionAction?: (source: string) => { label: string; run: () => void } | null }) {
   const [hover, setHover] = useState<Target | null>(null);
   const [marked, setMarked] = useState<Target | null>(null);
   const [note, setNote] = useState("");
@@ -78,6 +78,7 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: bool
         { label: "Go deeper", hint: "⌘-click", run: () => click(menu.origin, { metaKey: true }) },
         { label: "Discover in a side session", hint: "⌥-click", run: () => click(menu.origin, { altKey: true }) },
         { label: "Inspect everything", hint: "⌘⇧G", run: () => onOpen() },
+        ...(() => { const a = menu.t.source ? sessionAction?.(menu.t.source) : null; return a ? [{ label: a.label, hint: "", run: a.run }] : []; })(),
       ].map((it) => (
         <button key={it.label} type="button" role="menuitem" className="mr-row" onClick={() => { setMenu(null); it.run(); }}
           style={{ border: 0, background: "transparent", font: "inherit", color: "var(--mr-ink)", textAlign: "left", padding: "7px 8px", cursor: "pointer" }}

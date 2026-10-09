@@ -4,6 +4,7 @@ import { needsLayer2, wantsDiagram } from "./picker/pick";
 import { WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
+import { Archive } from "./screens/Archive";
 import type { AppState } from "./state/types";
 const SignInPane = lazy(() => import("./screens/Terminal").then((m) => ({ default: m.SignInPane })));
 import { Focus } from "./screens/Focus";
@@ -47,8 +48,10 @@ export default function App() {
   }, [all.sessions]);
   // Each workspace sees only its own sessions and docs (decision 24).
   const state: AppState = useMemo(() => {
-    const order = all.order.filter((id) => all.sessions[id].workspace === workspace);
-    return { ...all, order, sessions: Object.fromEntries(order.map((id) => [id, all.sessions[id]])) };
+    // Archived sessions stay reachable (focus, archive) but leave the wall's order.
+    const mine = all.order.filter((id) => all.sessions[id].workspace === workspace);
+    const order = mine.filter((id) => !all.sessions[id].archivedAt);
+    return { ...all, order, sessions: Object.fromEntries(mine.map((id) => [id, all.sessions[id]])) };
   }, [all, workspace]);
   const docs = useMemo(() => allDocs.filter((d) => (d.session_id ? all.sessions[d.session_id]?.workspace === workspace : workspace === "personal")), [allDocs, all, workspace]);
   const [focus, setFocus] = useState<string | null>(null);
@@ -57,6 +60,7 @@ export default function App() {
   const [god, setGod] = useState(false);
   const [builds, setBuilds] = useState<string | null>(null); // worktree to build, "" = app repo
   const [pickerText, setPickerText] = useState("");
+  const [archive, setArchive] = useState(false);
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
   const [introClosed, setIntroClosed] = useState(false);
   const intro = all.lastEventId !== null && !all.onboarded && !introClosed && <Onboarding state={all} onDone={() => setIntroClosed(true)} onStart={() => setPicker(true)} />;
@@ -66,6 +70,7 @@ export default function App() {
       if (e.metaKey && keyOf(e) === "k") { e.preventDefault(); setPicker(true); }
       if (e.metaKey && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
       if (e.metaKey && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
+      if (e.metaKey && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
       if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); setBuilds((x) => (x === null ? "" : null)); }
       if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
         const ws = all.workspaces[Number(keyOf(e)) - 1];
@@ -77,7 +82,7 @@ export default function App() {
   }, [all.workspaces]);
 
   const view = docId ? "doc map" : focus ? "focus" : "wall";
-  const godmode = <GodMode on={god} onOpen={() => setGod(true)} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
+  const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src) => { const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
   // Point + talk: which session does the thing under the pointer belong to?
   const resolve = (t: PointTarget) => {
     const label = (id: string) => `“${(state.sessions[id]?.title ?? "session").slice(0, 40)}”`;
@@ -99,10 +104,12 @@ export default function App() {
   );
   const voice = <VoiceController resolve={resolve} send={(sid, text) => void api.send(sid, text)} onFallback={(text) => { setPickerText(text); setPicker(true); }} />;
   const buildsPanel = builds !== null && <Builds defaultWorktree={builds || undefined} onClose={() => setBuilds(null)} />;
+  const archived = Object.values(state.sessions).filter((x) => x.archivedAt);
+  const archivePanel = archive && <Archive sessions={archived} onClose={() => setArchive(false)} onOpen={(id) => { setArchive(false); setDocId(null); setFocus(id); }} />;
   const overlay = picker && <StartPicker state={state} initialText={pickerText} onClose={() => { setPicker(false); setPickerText(""); }} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
   const doc = docId ? docs.find((d) => d.id === docId) : null;
-  if (doc) return <>{tabs}{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{godmode}{voice}{intro}</>;
+  if (doc) return <>{tabs}{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return <>{tabs}{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{godmode}{voice}{intro}</>;
-  return <>{tabs}<Wall state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onStart={() => setPicker(true)} />{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{godmode}{voice}{intro}</>;
+  if (focused) return <>{tabs}{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
+  return <>{tabs}<Wall state={state} docs={docs} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={() => setPicker(true)} />{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
 }

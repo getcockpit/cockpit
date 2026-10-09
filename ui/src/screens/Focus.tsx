@@ -15,7 +15,7 @@ import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void }) {
+export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -35,6 +35,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
       if (keyOf(e) === "Escape" && !typing) { e.preventDefault(); onBack(); }
       if (keyOf(e) === "." && e.metaKey && live) { e.preventDefault(); void api.interrupt(s.id); }
+      if (keyOf(e) === "d" && e.metaKey && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
       if (keyOf(e) === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
       if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => !x); }
     };
@@ -55,6 +56,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
         {isApp && <Key k="⌘⇧B" tone="needs" onClick={() => onBuild(s.cwd)}>Rebuild & relaunch</Key>}
         {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => !x)}>{term ? "Back to visual" : "Take over in terminal"}</Key>}
         <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Transcript"}</Key>
+        {s.archivedAt ? <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Archived · restore</Key> : <Key k="⌘⇧D" tone="primary" onClick={onDone}>Mark done</Key>}
       </header>
 
       <main style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: 16, padding: "16px 24px" }}>
