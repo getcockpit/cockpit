@@ -36,6 +36,9 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         let kind = format!("sidecar.{}", payload["type"].as_str().unwrap_or("unknown"));
                         let session = payload["session"].as_str().map(str::to_owned);
                         crate::eventlog::record(&handle, session.as_deref(), &kind, &payload, None);
+                        if payload["type"] == "tool_call" {
+                            answer_tool_call(&handle, &payload);
+                        }
                         if crate::selftest::enabled() {
                             crate::selftest::on_message(&handle, &payload);
                         }
@@ -88,9 +91,7 @@ pub fn session_start(
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
-    if let Some(t) = tools {
-        msg["tools"] = t;
-    }
+    msg["tools"] = tools.unwrap_or_else(crate::docs::tool_specs);
     sidecar_send(state, msg)?;
     Ok(session)
 }
@@ -136,6 +137,7 @@ pub fn permission_respond(
 
 #[tauri::command]
 pub fn tool_result(
+    _app: AppHandle,
     state: State<'_, Sidecar>,
     session: String,
     call_id: String,
@@ -153,4 +155,18 @@ pub fn expand_home(app: &AppHandle, path: &str) -> String {
         (Some(rest), Ok(home)) if rest.is_empty() || rest.starts_with('/') => format!("{}{}", home.display(), rest),
         _ => path.to_owned(),
     }
+}
+
+/// Answers a relayed `mr` MCP tool call from the core's own state (docs), then replies to the sidecar.
+fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
+    let session = payload["session"].as_str().unwrap_or_default().to_owned();
+    let call_id = payload["call_id"].as_str().unwrap_or_default().to_owned();
+    let docs = app.state::<crate::docs::Docs>();
+    let (events, text, is_error) =
+        crate::docs::handle_tool(&docs, Some(&session), payload["tool"].as_str().unwrap_or_default(), &payload["args"]);
+    for (kind, p) in events {
+        let anchor = p["doc_id"].as_str().map(|d| format!("doc:{d}"));
+        crate::eventlog::record(app, Some(&session), &kind, &p, anchor.as_deref());
+    }
+    let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error));
 }
