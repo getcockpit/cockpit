@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bar, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
+import { summarizeTool } from "../picker/toolSummary";
 import { api } from "../state/store";
 import type { Diagram, SessionState, TranscriptItem } from "../state/types";
 import type { Doc } from "../state/docs";
@@ -142,13 +143,15 @@ function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" 
   const detail = t.input.command ?? t.input.file_path ?? t.input.pattern ?? t.input.url ?? t.input.query ?? t.input.description ?? "";
   const result = t.result as Record<string, unknown> | string | undefined;
   const out = typeof result === "string" ? result : result ? String(result.stdout ?? result.content ?? JSON.stringify(result)) : "";
+  const summary = summarizeTool(t.name, t.input);
   return (
     <div data-mr="ToolRow" data-mr-source={t.toolUseId} style={{ background: "var(--mr-tile)" }}>
       <button type="button" onClick={pointer({ open: () => setOpen((x) => !x), deeper: () => setOpen(true), discover: () => onDiscover(`the ${t.name} call ${JSON.stringify(t.input).slice(0, 300)}`) })} className="mr-row" style={{ width: "100%", padding: "8px 14px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" }}>
         <span className="mr-mono" style={{ fontWeight: 700, minWidth: 90 }}>{t.name.replace(/^mcp__/, "")}</span>
-        <span className="mr-mono mr-ink2 mr-grow mr-ellipsis" style={{ fontSize: 12 }}>{String(detail)}</span>
+        <span className="mr-ink2 mr-grow mr-ellipsis" title={String(detail)}>{summary}</span>
         <span className="mr-mono" style={{ fontSize: 12, color: t.isError ? "var(--mr-error)" : t.result === undefined ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.isError ? "✕" : t.result === undefined ? "…" : "✓"}</span>
       </button>
+      {open && detail && String(detail) !== summary && <pre className="mr-code" style={{ margin: "0 14px 6px", whiteSpace: "pre-wrap", fontSize: 12 }}>{String(detail)}</pre>}
       {open && out && <pre className="mr-code" style={{ margin: "0 14px 10px", maxHeight: 260, overflow: "auto", fontSize: 12 }}>{out.slice(0, 4000)}</pre>}
     </div>
   );
