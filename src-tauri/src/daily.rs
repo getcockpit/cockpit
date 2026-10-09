@@ -115,9 +115,15 @@ pub fn compute(files: &[(String, i64)], app_ids: &HashSet<String>, now_ms: i64, 
 }
 
 #[tauri::command]
-pub fn daily_driver(log: tauri::State<'_, crate::eventlog::EventLog>) -> Result<DailyDriver, String> {
+pub fn daily_driver(app: tauri::AppHandle, log: tauri::State<'_, crate::eventlog::EventLog>) -> Result<DailyDriver, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let files = scan(&Path::new(&home).join(".claude/projects"));
+    let mut files = scan(&Path::new(&home).join(".claude/projects"));
+    // Isolated workspaces keep their own transcripts (decision 24).
+    if let Ok(rd) = std::fs::read_dir(crate::selfbuild::data_dir(&app).join("workspaces")) {
+        for ws in rd.flatten() {
+            files.extend(scan(&ws.path().join("claude/projects")));
+        }
+    }
     let app_ids: HashSet<String> = log
         .list(None, None, i64::MAX)
         .map_err(|e| e.to_string())?

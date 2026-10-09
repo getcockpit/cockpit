@@ -50,6 +50,7 @@ export type SessionKind = "review" | "address" | "plan" | "blank";
 export type SessionState = {
   id: string;
   kind: SessionKind;
+  workspace: string;
   title: string;
   cwd: string;
   repo: string | null;
@@ -79,4 +80,5 @@ export type AppState = {
   sidecar: { up: boolean; claude: string | null };
   lastEventId: string | null;
   dismissed: string[];
+  workspaces: { id: string; name: string; configDir: string | null }[];
 };

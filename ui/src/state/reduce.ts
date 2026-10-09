@@ -7,11 +7,12 @@ export const initialState: AppState = {
   sidecar: { up: false, claude: null },
   lastEventId: null,
   dismissed: [],
+  workspaces: [{ id: "personal", name: "Personal", configDir: null }],
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, kind, title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
+    id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
     pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null,
   };
 }
@@ -34,11 +35,13 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
+  if (ev.kind === "ui.workspace_created") return { ...next, workspaces: [...next.workspaces, { id: String(p.id), name: String(p.name), configDir: (p.config_dir as string) ?? null }] };
+  if (ev.kind === "ui.workspace_renamed") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, name: String(p.name) } : w)) };
   if (ev.kind === "ui.suggestion_dismissed") return { ...next, dismissed: [...next.dismissed, String(p.id)] };
   if (ev.kind === "ui.session_requested" && sid) {
     const kind = (["review", "address", "plan", "blank"].includes(String(p.kind)) ? p.kind : "blank") as SessionKind;
     const existing = next.sessions[sid];
-    const where = { repo: (p.repo as string) ?? null, branch: (p.branch as string) ?? null };
+    const where = { repo: (p.repo as string) ?? null, branch: (p.branch as string) ?? null, workspace: (p.workspace as string) ?? "personal" };
     if (existing) {
       // A resume (or a request logged after early sidecar events): keep history, restart the status.
       const resumed = p.resume ? { status: "starting" as const, error: null } : {};
