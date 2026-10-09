@@ -81,4 +81,5 @@ export type AppState = {
   lastEventId: string | null;
   dismissed: string[];
   workspaces: { id: string; name: string; configDir: string | null }[];
+  theme: string;
 };

@@ -126,3 +126,9 @@ test("workspaces are created from the log and sessions stay in theirs", () => {
   expect(st.sessions.s1.workspace).toBe("ws_a");
   expect(st.sessions.s2.workspace).toBe("personal");
 });
+
+test("the theme is set through the log", () => {
+  const st = replay([{ id: "T1", session_id: null, kind: "ui.theme_set", payload: { theme: "transit" }, anchor: null, created_at: 1 }]);
+  expect(st.theme).toBe("transit");
+  expect(replay([]).theme).toBe("control-room");
+});
