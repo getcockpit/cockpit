@@ -69,7 +69,12 @@ export type SessionState = {
   error: string | null;
   review: ReviewFlow | null;
   address: AddressFlow | null;
+  kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
+
+export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "other"; p: number; layer: "model" | "code" };
+// Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
+export type ClefMeter = { day: string; calls: number; tokens: number; errors: number };
 
 export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null };
 
@@ -82,4 +87,5 @@ export type AppState = {
   dismissed: string[];
   workspaces: { id: string; name: string; configDir: string | null }[];
   theme: string;
+  clef: ClefMeter;
 };
