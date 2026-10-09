@@ -67,3 +67,9 @@ test("a per-session env reaches the Claude Code process (workspace isolation)", 
   const init = out.find((m) => m.type === "sdk" && (m.message as { subtype?: string }).subtype === "init") as { message: { config_dir: string } };
   expect(init.message.config_dir).toBe("/tmp/ws-a/claude");
 });
+
+test("a one-shot runs one tool-less turn and returns its text, without a session", async () => {
+  const out = await run([{ type: "oneshot", id: "o1", prompt: "diagram this", system: "json only" }], ["ready", "oneshot_result"]);
+  expect(out.find((m) => m.type === "oneshot_result")).toMatchObject({ id: "o1", ok: true, text: "echo: diagram this" });
+  expect(out.some((m) => m.type === "permission_request" || m.type === "session_started")).toBe(false);
+});
