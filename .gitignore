@@ -1,5 +1,7 @@
 *.log
 .DS_Store
 node_modules/
-target/
 dist/
+target/
+src-tauri/binaries/
+src-tauri/gen/
