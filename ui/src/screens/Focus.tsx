@@ -3,10 +3,11 @@ import { Bar, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
 import { api } from "../state/store";
 import type { SessionState, TranscriptItem } from "../state/types";
+import type { Doc } from "../state/docs";
 import { AskRow } from "./AskRow";
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, onBack }: { s: SessionState; onBack: () => void }) {
+export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void }) {
   const tile = useMemo(() => pickTile(s), [s]);
   const [showRaw, setShowRaw] = useState(false);
   const [text, setText] = useState("");
@@ -40,6 +41,15 @@ export function Focus({ s, onBack }: { s: SessionState; onBack: () => void }) {
 
       <main style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: 16, padding: "16px 24px" }}>
         <section style={{ flex: "999 1 560px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+          {docs.map((d) => (
+            <button key={d.id} type="button" className="mr-qrow" onClick={() => onOpenDoc(d.id)} style={{ border: 0, padding: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+              <div className="mr-flag" style={{ background: "var(--mr-selected)" }} />
+              <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center" }}>
+                <div className="mr-grow" style={{ display: "flex", flexDirection: "column" }}><span className="mr-dim">Working doc · v{d.version} · {Object.keys(d.blocks).length} blocks</span><strong style={{ fontSize: 17 }}>{d.title}</strong></div>
+                <span className="mr-key">Open map ↵</span>
+              </div>
+            </button>
+          ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{s.error}</span></div></div>}
           <Transcript items={s.transcript} raw={showRaw} />

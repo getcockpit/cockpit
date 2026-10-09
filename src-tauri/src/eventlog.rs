@@ -22,6 +22,8 @@ pub struct Event {
 
 pub struct EventLog {
     conn: Mutex<Connection>,
+    /// Monotonic within a millisecond, so id order is always append order.
+    ids: Mutex<ulid::Generator>,
 }
 
 impl EventLog {
@@ -48,7 +50,7 @@ impl EventLog {
              CREATE INDEX IF NOT EXISTS events_session ON events (session_id, id);
              CREATE INDEX IF NOT EXISTS events_kind ON events (kind, id);",
         )?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self { conn: Mutex::new(conn), ids: Mutex::new(ulid::Generator::new()) })
     }
 
     /// Appends one event and returns it. ULIDs sort by time, so `id` order is event order.
@@ -59,7 +61,7 @@ impl EventLog {
         payload: &serde_json::Value,
         anchor: Option<&str>,
     ) -> rusqlite::Result<Event> {
-        let id = ulid::Ulid::new();
+        let id = self.ids.lock().unwrap().generate().unwrap_or_else(|_| ulid::Ulid::new());
         let created_at = id.timestamp_ms() as i64;
         let id = id.to_string();
         self.conn.lock().unwrap().execute(
@@ -121,6 +123,9 @@ pub fn record(
     let log = app.try_state::<EventLog>()?;
     match log.append(session_id, kind, payload, anchor) {
         Ok(ev) => {
+            if let Some(docs) = app.try_state::<crate::docs::Docs>() {
+                docs.apply(&ev);
+            }
             let _ = app.emit("mr-event", &ev);
             Some(ev)
         }
@@ -182,6 +187,15 @@ mod tests {
         let after_a: Vec<_> = log.list(None, Some(&a.id), 100).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(after_a, vec![b.id, c.id.clone()]);
         assert_eq!(log.last_id().unwrap(), Some(c.id));
+    }
+
+    #[test]
+    fn ids_stay_in_append_order_within_one_millisecond() {
+        let log = EventLog::in_memory().unwrap();
+        let ids: Vec<String> = (0..500).map(|i| log.append(None, "k", &json!(i), None).unwrap().id).collect();
+        let mut sorted = ids.clone();
+        sorted.sort();
+        assert_eq!(ids, sorted);
     }
 
     #[test]
