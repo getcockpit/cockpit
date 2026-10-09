@@ -1,4 +1,5 @@
 mod eventlog;
+mod gh;
 mod selftest;
 mod sidecar;
 
@@ -33,7 +34,8 @@ pub fn run() {
             sidecar::permission_respond,
             sidecar::tool_result,
             eventlog::event_append,
-            eventlog::events_list
+            eventlog::events_list,
+            gh::gh_prs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
