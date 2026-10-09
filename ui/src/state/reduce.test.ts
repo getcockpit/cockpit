@@ -195,3 +195,13 @@ test("onboarding shows until finished, and limits double as the sign-in check", 
   expect(replay([e("L1", "sidecar.limits", { available: false, error: "not logged in" })]).account).toEqual({ checked: true, signedIn: false, plan: null });
   expect(replay([e("L1", "sidecar.limits", { available: true, plan: "max", five_hour: null, seven_day: null })]).account).toEqual({ checked: true, signedIn: true, plan: "max" });
 });
+
+test("marking a session done archives it; restore and resume bring it back", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown> = {}): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: Number(id.slice(1)) * 1000 });
+  const base = [ev("A1", "ui.session_requested", { prompt: "p", cwd: "/w" }), ev("A2", "sidecar.session_started", { sdk_session_id: "sdk-1" })];
+  const done = replay([...base, ev("A3", "ui.session_archived")]);
+  expect(done.sessions.s.archivedAt).toBe(3000);
+  expect(done.sessions.s.lastActivity).toBe(2000);
+  expect(replay([...base, ev("A3", "ui.session_archived"), ev("A4", "ui.session_unarchived")]).sessions.s.archivedAt).toBeNull();
+  expect(replay([...base, ev("A3", "ui.session_archived"), ev("A4", "ui.session_requested", { prompt: "Continue", cwd: "/w", resume: "sdk-1" })]).sessions.s.archivedAt).toBeNull();
+});
