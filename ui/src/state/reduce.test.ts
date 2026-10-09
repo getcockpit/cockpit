@@ -113,3 +113,16 @@ test("a turn that ends with a question in prose shows as needs-you", () => {
   expect(tile.state).toBe("needs_you");
   expect(tile.doing).toBe("Asks: Which one do you prefer?");
 });
+
+test("workspaces are created from the log and sessions stay in theirs", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: 1 });
+  const st = replay([
+    ev("W1", "ui.workspace_created", { id: "ws_a", name: "Client A", config_dir: "/d/ws_a/claude" }),
+    ev("W2", "ui.session_requested", { prompt: "p1", cwd: "/w", workspace: "ws_a" }, "s1"),
+    ev("W3", "ui.session_requested", { prompt: "p2", cwd: "/w" }, "s2"),
+    ev("W4", "ui.workspace_renamed", { id: "ws_a", name: "Acme" }),
+  ]);
+  expect(st.workspaces.map((w) => w.name)).toEqual(["Personal", "Acme"]);
+  expect(st.sessions.s1.workspace).toBe("ws_a");
+  expect(st.sessions.s2.workspace).toBe("personal");
+});

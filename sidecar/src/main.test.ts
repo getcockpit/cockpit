@@ -61,3 +61,9 @@ test("malformed lines don't kill the process", async () => {
   const lines = (await new Response(proc.stdout).text()).trim().split("\n").map((l) => JSON.parse(l));
   expect(lines.map((l) => l.type)).toEqual(["ready", "error", "pong"]);
 });
+
+test("a per-session env reaches the Claude Code process (workspace isolation)", async () => {
+  const out = await run([{ type: "start", session: "w1", cwd: "/tmp", prompt: "hi", env: { CLAUDE_CONFIG_DIR: "/tmp/ws-a/claude" } }], ["ready", "session_started", "sdk"]);
+  const init = out.find((m) => m.type === "sdk" && (m.message as { subtype?: string }).subtype === "init") as { message: { config_dir: string } };
+  expect(init.message.config_dir).toBe("/tmp/ws-a/claude");
+});

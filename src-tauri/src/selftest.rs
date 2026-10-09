@@ -11,7 +11,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace")
+}
+
+fn workspace_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "workspace")
 }
 
 fn terminal_mode() -> bool {
@@ -47,6 +51,7 @@ pub fn run(app: AppHandle) {
                 let _ = std::process::Command::new("git").arg("-C").arg(&dir).args(&args).status();
             }
         }
+        let ws = if workspace_mode() { Some(crate::workspaces::workspace_create(app.clone(), "Selftest".into()).expect("workspace")) } else { None };
         let state = app.state::<crate::sidecar::Sidecar>();
         let res = crate::sidecar::session_start(
             app.clone(),
@@ -68,6 +73,7 @@ pub fn run(app: AppHandle) {
             Some(if flow_mode() { "review".into() } else { "blank".into() }),
             Some(resume_mode()),
             None,
+            ws,
         );
         if let Err(e) = res {
             eprintln!("[selftest] start failed: {e}");
@@ -102,6 +108,17 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 decision,
             );
         }
+        Some("sdk") if payload["message"]["type"] == "result" && workspace_mode() => {
+            // A fresh workspace isn't signed in: proof that Claude ran in its own config folder.
+            let text = payload["message"]["result"].as_str().unwrap_or_default().to_owned();
+            eprintln!("[selftest] workspace result: {text}");
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(300)).await; app.exit(if text.to_lowercase().contains("not logged in") { 0 } else { 1 }); });
+        }
+        Some("session_ended") if workspace_mode() => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(500)).await; app.exit(1); });
+        }
         Some("sdk") if payload["message"]["type"] == "result" && terminal_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Take over in a real terminal, then type /exit like a user would.
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
@@ -111,7 +128,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
             let app2 = app.clone();
             std::thread::spawn(move || {
-                let r = crate::terminal::term_open(app2.clone(), app2.state::<crate::terminal::Terminals>(), session.clone(), sdk, cwd, 100, 30);
+                let r = crate::terminal::term_open(app2.clone(), session.clone(), sdk, cwd, 100, 30);
                 if let Err(e) = r { eprintln!("[selftest] term_open failed: {e}"); std::process::exit(1); }
                 std::thread::sleep(Duration::from_secs(8));
                 let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session.clone(), "/exit".into());
@@ -139,7 +156,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let res = crate::sidecar::session_start(
                 app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd,
                 "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(),
-                sdk, None, Some("blank".into()), Some(false), Some(session),
+                sdk, None, Some("blank".into()), Some(false), Some(session), None,
             );
             if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
         }

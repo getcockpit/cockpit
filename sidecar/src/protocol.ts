@@ -9,7 +9,7 @@ export type ToolSpec = { name: string; description: string; params: Record<strin
 
 export type Inbound =
   | { type: "ping"; id?: string }
-  | { type: "start"; session: string; cwd: string; prompt: string; resume?: string; model?: string; tools?: ToolSpec[]; append_system_prompt?: string }
+  | { type: "start"; session: string; cwd: string; prompt: string; resume?: string; model?: string; tools?: ToolSpec[]; append_system_prompt?: string; env?: Record<string, string> }
   | { type: "send"; session: string; text: string }
   | { type: "interrupt"; session: string }
   | { type: "stop"; session: string }
