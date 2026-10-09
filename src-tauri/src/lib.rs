@@ -1,4 +1,5 @@
 mod eventlog;
+mod selftest;
 mod sidecar;
 
 use tauri::Manager;
@@ -10,10 +11,17 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(sidecar::Sidecar::default())
         .setup(|app| {
-            let dir = app.path().app_data_dir()?;
+            // MR_DATA_DIR keeps tests and self-builds away from the real event log.
+            let dir = match std::env::var("MR_DATA_DIR") {
+                Ok(d) if !d.is_empty() => std::path::PathBuf::from(d),
+                _ => app.path().app_data_dir()?,
+            };
             std::fs::create_dir_all(&dir)?;
             app.manage(eventlog::EventLog::open(&dir.join("events.sqlite"))?);
             sidecar::start(app.handle())?;
+            if selftest::enabled() {
+                selftest::run(app.handle().clone());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

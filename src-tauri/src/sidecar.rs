@@ -36,6 +36,9 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         let kind = format!("sidecar.{}", payload["type"].as_str().unwrap_or("unknown"));
                         let session = payload["session"].as_str().map(str::to_owned);
                         crate::eventlog::record(&handle, session.as_deref(), &kind, &payload, None);
+                        if crate::selftest::enabled() {
+                            crate::selftest::on_message(&handle, &payload);
+                        }
                         let _ = handle.emit("sidecar", payload);
                     }
                 }
@@ -67,13 +70,19 @@ pub fn sidecar_send(state: State<'_, Sidecar>, message: serde_json::Value) -> Re
 /// Starts a Claude Code session in `cwd`; returns the app's session id (a ULID).
 #[tauri::command]
 pub fn session_start(
+    app: AppHandle,
     state: State<'_, Sidecar>,
     cwd: String,
     prompt: String,
     resume: Option<String>,
     tools: Option<serde_json::Value>,
 ) -> Result<String, String> {
+    let cwd = expand_home(&app, &cwd);
+    if !std::path::Path::new(&cwd).is_dir() {
+        return Err(format!("not a folder: {cwd}"));
+    }
     let session = ulid::Ulid::new().to_string();
+    crate::eventlog::record(&app, Some(&session), "ui.session_requested", &serde_json::json!({ "cwd": cwd, "prompt": prompt, "resume": resume }), None);
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
     if let Some(r) = resume {
         msg["resume"] = r.into();
@@ -86,12 +95,14 @@ pub fn session_start(
 }
 
 #[tauri::command]
-pub fn session_send(state: State<'_, Sidecar>, session: String, text: String) -> Result<(), String> {
+pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, text: String) -> Result<(), String> {
+    crate::eventlog::record(&app, Some(&session), "ui.message_sent", &serde_json::json!({ "text": text }), None);
     sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }))
 }
 
 #[tauri::command]
-pub fn session_interrupt(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+pub fn session_interrupt(app: AppHandle, state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    crate::eventlog::record(&app, Some(&session), "ui.interrupted", &serde_json::json!({}), None);
     sidecar_send(state, serde_json::json!({ "type": "interrupt", "session": session }))
 }
 
@@ -103,11 +114,19 @@ pub fn session_stop(state: State<'_, Sidecar>, session: String) -> Result<(), St
 /// Answers a permission request: `decision` is `{behavior:"allow", updatedInput?}` or `{behavior:"deny", message}`.
 #[tauri::command]
 pub fn permission_respond(
+    app: AppHandle,
     state: State<'_, Sidecar>,
     session: String,
     request_id: String,
     decision: serde_json::Value,
 ) -> Result<(), String> {
+    crate::eventlog::record(
+        &app,
+        Some(&session),
+        "ui.permission_answered",
+        &serde_json::json!({ "request_id": request_id, "decision": decision }),
+        Some(&format!("decision:{request_id}")),
+    );
     sidecar_send(
         state,
         serde_json::json!({ "type": "permission_response", "session": session, "request_id": request_id, "decision": decision }),
@@ -126,4 +145,11 @@ pub fn tool_result(
         state,
         serde_json::json!({ "type": "tool_result", "session": session, "call_id": call_id, "text": text, "is_error": is_error.unwrap_or(false) }),
     )
+}
+
+fn expand_home(app: &AppHandle, path: &str) -> String {
+    match (path.strip_prefix("~"), app.path().home_dir()) {
+        (Some(rest), Ok(home)) if rest.is_empty() || rest.starts_with('/') => format!("{}{}", home.display(), rest),
+        _ => path.to_owned(),
+    }
 }
