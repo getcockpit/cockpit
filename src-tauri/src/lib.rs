@@ -9,6 +9,7 @@ mod selftest;
 mod sidecar;
 mod terminal;
 mod voice;
+mod workspaces;
 mod worktree;
 
 use tauri::Manager;
@@ -67,6 +68,9 @@ pub fn run() {
             terminal::term_resize,
             voice::voice_start,
             voice::voice_stop,
+            workspaces::workspace_create,
+            workspaces::workspace_rename,
+            workspaces::workspace_sign_in,
             docs::doc_feedback
         ])
         .run(tauri::generate_context!())

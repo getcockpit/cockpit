@@ -10,7 +10,7 @@ export const fakeQuery: QueryFn = ({ prompt, options }) => {
   async function* run() {
     let first = true;
     for await (const user of prompt) {
-      if (first) { yield { type: "system", subtype: "init", session_id: "sdk-fake-1", model: "fake", cwd: options.cwd }; first = false; }
+      if (first) { yield { type: "system", subtype: "init", session_id: "sdk-fake-1", model: "fake", cwd: options.cwd, config_dir: (options.env as Record<string, string> | undefined)?.CLAUDE_CONFIG_DIR ?? null }; first = false; }
       const text = (user as { message: { content: string } }).message.content;
       const decision = await canUseTool("Bash", { command: "touch made-by-fake.txt" }, {});
       yield { type: "assistant", message: { content: [{ type: "tool_use", name: "Bash", input: { command: "touch made-by-fake.txt" } }] } };

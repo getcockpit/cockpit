@@ -72,6 +72,8 @@ export class Sessions {
     const options: Record<string, unknown> = {
       cwd: m.cwd,
       resume: m.resume,
+      // Per-workspace Claude config (CLAUDE_CONFIG_DIR) keeps memories and transcripts apart.
+      env: m.env ? { ...process.env, ...m.env } : undefined,
       model: m.model,
       pathToClaudeCodeExecutable: this.claudePath,
       systemPrompt: m.append_system_prompt ? { type: "preset", preset: "claude_code", append: m.append_system_prompt } : undefined,
