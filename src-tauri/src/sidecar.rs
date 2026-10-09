@@ -99,6 +99,7 @@ pub fn session_start(
     kind: Option<String>,
     worktree: Option<bool>,
     session_id: Option<String>,
+    workspace: Option<String>,
 ) -> Result<String, String> {
     let mut cwd = expand_home(&app, &cwd);
     if !std::path::Path::new(&cwd).is_dir() {
@@ -119,7 +120,9 @@ pub fn session_start(
         extra = serde_json::json!({ "repo": wt.repo, "worktree": wt.path, "branch": wt.branch });
         cwd = wt.path.display().to_string();
     }
-    let mut payload = serde_json::json!({ "cwd": cwd, "prompt": prompt, "resume": resume, "kind": kind });
+    // Resumes stay in the workspace they started in.
+    let workspace = workspace.unwrap_or_else(|| if resume.is_some() { crate::workspaces::workspace_of(&app, &session) } else { crate::workspaces::PERSONAL.into() });
+    let mut payload = serde_json::json!({ "cwd": cwd, "prompt": prompt, "resume": resume, "kind": kind, "workspace": workspace });
     if let (Some(p), Some(e)) = (payload.as_object_mut(), extra.as_object()) {
         p.extend(e.clone());
     }
@@ -133,6 +136,9 @@ pub fn session_start(
         specs.extend(crate::flows::tool_specs(&kind));
         serde_json::Value::Array(specs)
     });
+    if let Some(dir) = crate::workspaces::config_dir(&app, &workspace) {
+        msg["env"] = serde_json::json!({ "CLAUDE_CONFIG_DIR": dir });
+    }
     if let Some(p) = crate::flows::system_prompt(&kind) {
         msg["append_system_prompt"] = p.into();
     }

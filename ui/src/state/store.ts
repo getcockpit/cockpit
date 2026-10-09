@@ -38,7 +38,7 @@ export function useAppState(): AppState {
 }
 
 export const api = {
-  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean) => invoke<string>("session_start", { cwd, prompt, kind, worktree }),
+  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean, workspace?: string) => invoke<string>("session_start", { cwd, prompt, kind, worktree, workspace: workspace ?? currentWorkspace() }),
   resume: (s: { id: string; cwd: string; kind: string; sdkSessionId: string | null }) =>
     invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
   prs: (cwd: string, mode: "review" | "address") => invoke<Pr[]>("gh_prs", { cwd, mode }),
@@ -48,3 +48,8 @@ export const api = {
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
   log: (kind: string, payload: Record<string, unknown>, sessionId?: string, anchor?: string) => invoke("event_append", { sessionId, kind, payload, anchor }),
 };
+
+// The active workspace tab (a per-viewer convenience; the data itself lives in the event log).
+export function currentWorkspace(): string {
+  try { return localStorage.getItem("mr.workspace") ?? "personal"; } catch { return "personal"; }
+}

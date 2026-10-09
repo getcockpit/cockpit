@@ -29,22 +29,29 @@ pub fn claude_path() -> String {
     if std::path::Path::new(&native).exists() { native } else { "claude".into() }
 }
 
-/// Opens a terminal for `session`: stops the SDK run, then starts `claude --resume <sdk id>` in its folder.
-#[tauri::command]
-pub fn term_open(app: AppHandle, terms: State<'_, Terminals>, session: String, sdk_session_id: String, cwd: String, cols: u16, rows: u16) -> Result<(), String> {
-    if terms.terms.lock().unwrap().contains_key(&session) {
+/// Runs `argv` in a PTY under `key`, streaming output as `term-data` and calling `on_exit` when it ends.
+pub fn open_command_with(
+    app: &AppHandle,
+    key: &str,
+    argv: Vec<String>,
+    cwd: &str,
+    env: Vec<(String, String)>,
+    cols: u16,
+    rows: u16,
+    on_exit: Box<dyn FnOnce(&AppHandle) + Send>,
+) -> Result<(), String> {
+    let terms = app.state::<Terminals>();
+    if terms.terms.lock().unwrap().contains_key(key) {
         return Ok(());
     }
-    let _ = crate::sidecar::session_stop(app.state::<crate::sidecar::Sidecar>(), session.clone());
-    crate::eventlog::record(&app, Some(&session), "ui.terminal_opened", &serde_json::json!({ "sdk_session_id": sdk_session_id }), None);
-    // Let the SDK run release the conversation before the CLI picks it up.
-    std::thread::sleep(std::time::Duration::from_millis(800));
-
     let pty = native_pty_system().openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }).map_err(|e| e.to_string())?;
-    let mut cmd = CommandBuilder::new(claude_path());
-    cmd.args(["--resume", &sdk_session_id]);
-    cmd.cwd(&cwd);
+    let mut cmd = CommandBuilder::new(&argv[0]);
+    cmd.args(&argv[1..]);
+    cmd.cwd(cwd);
     for (k, v) in std::env::vars() {
+        cmd.env(k, v);
+    }
+    for (k, v) in env {
         cmd.env(k, v);
     }
     cmd.env("TERM", "xterm-256color");
@@ -52,32 +59,54 @@ pub fn term_open(app: AppHandle, terms: State<'_, Terminals>, session: String, s
     drop(pty.slave);
     let mut reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
-    terms.terms.lock().unwrap().insert(session.clone(), Term { writer, master: pty.master });
+    terms.terms.lock().unwrap().insert(key.to_owned(), Term { writer, master: pty.master });
 
-    let (app2, sid) = (app.clone(), session.clone());
+    let (app2, k2) = (app.clone(), key.to_owned());
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         while let Ok(n) = reader.read(&mut buf) {
             if n == 0 {
                 break;
             }
-            let _ = app2.emit("term-data", serde_json::json!({ "session": sid, "data": String::from_utf8_lossy(&buf[..n]) }));
+            let _ = app2.emit("term-data", serde_json::json!({ "session": k2, "data": String::from_utf8_lossy(&buf[..n]) }));
         }
     });
-    let (app3, sid3, cwd3) = (app.clone(), session, cwd);
+    let (app3, k3) = (app.clone(), key.to_owned());
     std::thread::spawn(move || {
         let _ = child.wait();
-        app3.state::<Terminals>().terms.lock().unwrap().remove(&sid3);
-        crate::eventlog::record(&app3, Some(&sid3), "ui.terminal_closed", &serde_json::json!({}), None);
-        let _ = app3.emit("term-exit", serde_json::json!({ "session": sid3 }));
-        // Hand the conversation back to the app.
-        let _ = crate::sidecar::session_start(
-            app3.clone(), app3.state::<crate::sidecar::Sidecar>(), cwd3,
-            "I'm back from the terminal. Say in one line what changed there, then continue.".into(),
-            Some(sdk_session_id), None, None, Some(false), Some(sid3),
-        );
+        app3.state::<Terminals>().terms.lock().unwrap().remove(&k3);
+        let _ = app3.emit("term-exit", serde_json::json!({ "session": k3 }));
+        on_exit(&app3);
     });
     Ok(())
+}
+
+pub fn open_command(app: &AppHandle, key: &str, argv: Vec<String>, cwd: &str, env: Vec<(String, String)>, cols: u16, rows: u16) -> Result<(), String> {
+    open_command_with(app, key, argv, cwd, env, cols, rows, Box::new(|_| {}))
+}
+
+/// Opens a terminal for `session`: stops the SDK run, then starts `claude --resume <sdk id>` in its
+/// folder (and its workspace's Claude config), handing it back to the SDK on exit.
+#[tauri::command]
+pub fn term_open(app: AppHandle, session: String, sdk_session_id: String, cwd: String, cols: u16, rows: u16) -> Result<(), String> {
+    if app.state::<Terminals>().terms.lock().unwrap().contains_key(&session) {
+        return Ok(());
+    }
+    let workspace = crate::workspaces::workspace_of(&app, &session);
+    let env: Vec<(String, String)> = crate::workspaces::config_dir(&app, &workspace).map(|c| vec![("CLAUDE_CONFIG_DIR".into(), c.display().to_string())]).unwrap_or_default();
+    let _ = crate::sidecar::session_stop(app.state::<crate::sidecar::Sidecar>(), session.clone());
+    crate::eventlog::record(&app, Some(&session), "ui.terminal_opened", &serde_json::json!({ "sdk_session_id": sdk_session_id }), None);
+    // Let the SDK run release the conversation before the CLI picks it up.
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    let (sid, cwd2, sdk) = (session.clone(), cwd.clone(), sdk_session_id.clone());
+    open_command_with(&app, &session, vec![claude_path(), "--resume".into(), sdk_session_id], &cwd, env, cols, rows, Box::new(move |app: &AppHandle| {
+        crate::eventlog::record(app, Some(&sid), "ui.terminal_closed", &serde_json::json!({}), None);
+        let _ = crate::sidecar::session_start(
+            app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd2,
+            "I'm back from the terminal. Say in one line what changed there, then continue.".into(),
+            Some(sdk), None, None, Some(false), Some(sid), Some(workspace),
+        );
+    }))
 }
 
 #[tauri::command]
