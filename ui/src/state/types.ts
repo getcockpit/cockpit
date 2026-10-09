@@ -78,4 +78,5 @@ export type AppState = {
   usage: Usage;
   sidecar: { up: boolean; claude: string | null };
   lastEventId: string | null;
+  dismissed: string[];
 };

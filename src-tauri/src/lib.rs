@@ -1,3 +1,4 @@
+mod daily;
 mod docs;
 mod eventlog;
 mod flows;
@@ -47,6 +48,7 @@ pub fn run() {
             eventlog::events_list,
             gh::gh_prs,
             docs::docs_list,
+            daily::daily_driver,
             docs::doc_feedback
         ])
         .run(tauri::generate_context!())
