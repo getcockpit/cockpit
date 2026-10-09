@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { pointer } from "../components/pointer";
+import { suggest, type Suggestion } from "../picker/suggest";
+import { promptFor } from "./StartPicker";
+import type { Pr } from "../state/store";
 import { Bar, Key, Lamp, Lamps, Sparkline, StateMark } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
 import { isOpenQuestion, type Doc } from "../state/docs";
@@ -20,6 +25,30 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
   const review = tiles.filter((t) => REVIEW.has(t.tile.state));
   const count = (k: TileSpec["state"]) => tiles.filter((t) => t.tile.state === k).length;
   const [sel, setSel] = useState(0);
+  const [prs, setPrs] = useState<{ review: Pr[]; mine: Pr[] }>({ review: [], mine: [] });
+  const [daily, setDaily] = useState<{ streak: number; goal: number } | null>(null);
+  const cwd = (() => { try { return localStorage.getItem("mr.cwd") ?? "~/"; } catch { return "~/"; } })();
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      Promise.allSettled([api.prs(cwd, "review"), api.prs(cwd, "address")]).then(([r, m]) => alive && setPrs({ review: r.status === "fulfilled" ? r.value : [], mine: m.status === "fulfilled" ? m.value : [] }));
+      invoke<{ streak: number; goal: number }>("daily_driver").then((d) => alive && setDaily(d)).catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 5 * 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [cwd]);
+
+  const suggestions = useMemo(() => suggest(state, docs, prs, new Set(state.dismissed)), [state, docs, prs]);
+  const act = async (g: Suggestion) => {
+    const a = g.action;
+    if (a.kind === "open_session") onOpen(a.id);
+    else if (a.kind === "open_doc") onOpenDoc(a.id);
+    else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
+    else onOpen(await api.start(cwd, promptFor(a.mode, a.value), a.mode));
+  };
+  const discover = async (s: SessionState) => onOpen(await api.start(s.cwd, `Side thread about the session "${s.title}" (working in ${s.cwd}). Without changing anything, look at what it has done so far (git diff, files) and report briefly: risks, anything it may have missed, and simpler alternatives.`, "blank", false));
 
   useEffect(() => { if (sel >= asks.length) setSel(Math.max(0, asks.length - 1)); }, [asks.length, sel]);
   useEffect(() => {
@@ -56,6 +85,20 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
         <Lamp value={review.length} label="To review" on={review.length > 0 && "plain"} />
       </Lamps>
 
+      {suggestions.length > 0 && (
+        <section aria-label="Suggested next" className="mr-row" style={{ flexWrap: "wrap", gap: 8, padding: "12px 24px 0" }}>
+          <span className="mr-dim">Suggested</span>
+          {suggestions.map((g) => (
+            <span key={g.id} className="mr-row" style={{ gap: 0, background: "var(--mr-tile)" }}>
+              <button type="button" onClick={() => void act(g)} className="mr-row" style={{ gap: 8, padding: "6px 10px", border: 0, background: "transparent", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }} title={g.what}>
+                <span className="mr-dim">{g.why} ·</span><strong>{g.label}</strong>
+              </button>
+              <button type="button" aria-label="Dismiss suggestion" onClick={() => void api.log("ui.suggestion_dismissed", { id: g.id })} style={{ padding: "6px 8px", border: 0, background: "transparent", color: "var(--mr-ink-3)", cursor: "pointer" }}>×</button>
+            </span>
+          ))}
+        </section>
+      )}
+
       <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
         {asks.length > 0 && (
           <section aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -84,7 +127,7 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
         <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h">Running <span className="mr-dim">{running.length}</span></h2>
           <div className="mr-grid">
-            {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} onOpen={onOpen} />)}
+            {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
             <button type="button" className="mr-tile" onClick={onStart} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
               <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>⌘K</kbd>Start something</span>
             </button>
@@ -130,7 +173,8 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
         )}
       </main>
       <footer className="mr-band mr-row mr-dim" style={{ padding: "8px 24px", fontSize: 12 }}>
-        <span>⌘K start · click a tile to focus · esc back · ⌘. interrupt</span>
+        <span>⌘K start · click focus · ⌘-click deeper · ⌥-click discover · esc back · ⌘. interrupt</span>
+        {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-2)" }}>Daily driver {daily.streak}/{daily.goal}</span>}
         <span className="mr-grow" />
         <Key k="⌘K" onClick={onStart}>Start</Key>
       </footer>
@@ -138,9 +182,9 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
   );
 }
 
-function Tile({ s, tile, onOpen }: { s: SessionState; tile: TileSpec; onOpen: (id: string) => void }) {
+function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; onOpen: (id: string) => void; onDiscover: () => void }) {
   return (
-    <button type="button" className="mr-tile" data-s={tile.state} onClick={() => onOpen(s.id)} aria-label={`Open ${s.title}`}>
+    <button type="button" className="mr-tile" data-s={tile.state} onClick={pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })} aria-label={`Open ${s.title}`}>
       <div className="mr-flag" />
       <div className="mr-tbody">
         <div className="mr-row" style={{ alignItems: "baseline" }}>

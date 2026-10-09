@@ -6,6 +6,7 @@ export const initialState: AppState = {
   usage: { fiveHour: null, weekly: null, resetsAt: null },
   sidecar: { up: false, claude: null },
   lastEventId: null,
+  dismissed: [],
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
@@ -33,6 +34,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
+  if (ev.kind === "ui.suggestion_dismissed") return { ...next, dismissed: [...next.dismissed, String(p.id)] };
   if (ev.kind === "ui.session_requested" && sid) {
     const kind = (["review", "address", "plan", "blank"].includes(String(p.kind)) ? p.kind : "blank") as SessionKind;
     const existing = next.sessions[sid];
