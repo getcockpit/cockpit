@@ -55,9 +55,10 @@ pub fn workspace_rename(app: AppHandle, id: String, name: String) -> Result<(), 
 /// Opens an interactive `claude` in this workspace's config folder so the user can run /login once.
 #[tauri::command]
 pub fn workspace_sign_in(app: AppHandle, id: String, cols: u16, rows: u16) -> Result<String, String> {
-    let config = config_dir(&app, &id).ok_or("the Personal workspace uses your normal login")?;
+    // Personal signs in to your normal Claude Code config; other workspaces to their own folder.
+    let env = config_dir(&app, &id).map(|c| vec![("CLAUDE_CONFIG_DIR".to_string(), c.display().to_string())]).unwrap_or_default();
     let key = format!("login:{id}");
-    crate::terminal::open_command(&app, &key, vec![crate::terminal::claude_path()], &std::env::var("HOME").unwrap_or_default(), vec![("CLAUDE_CONFIG_DIR".into(), config.display().to_string())], cols, rows)?;
+    crate::terminal::open_command(&app, &key, vec![crate::terminal::claude_path()], &std::env::var("HOME").unwrap_or_default(), env, cols, rows)?;
     Ok(key)
 }
 
