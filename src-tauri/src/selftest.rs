@@ -23,6 +23,7 @@ pub fn run(app: AppHandle) {
             "Use the AskUserQuestion tool to ask me to choose between the options alpha and beta. Then create an empty file named selftest-<my choice>.txt in the current directory, then reply with exactly: SELFTEST DONE".into(),
             None,
             None,
+            Some("blank".into()),
         );
         if let Err(e) = res {
             eprintln!("[selftest] start failed: {e}");

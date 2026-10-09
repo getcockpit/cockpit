@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { initialState, reduce, replay } from "./reduce";
 import type { AppState, MrEvent } from "./types";
 
+export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string };
+
 type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent };
 
 function reducer(state: AppState, a: Action): AppState {
@@ -36,7 +38,8 @@ export function useAppState(): AppState {
 }
 
 export const api = {
-  start: (cwd: string, prompt: string) => invoke<string>("session_start", { cwd, prompt }),
+  start: (cwd: string, prompt: string, kind: string = "blank") => invoke<string>("session_start", { cwd, prompt, kind }),
+  prs: (cwd: string, mode: "review" | "address") => invoke<Pr[]>("gh_prs", { cwd, mode }),
   send: (session: string, text: string) => invoke("session_send", { session, text }),
   interrupt: (session: string) => invoke("session_interrupt", { session }),
   stop: (session: string) => invoke("session_stop", { session }),
