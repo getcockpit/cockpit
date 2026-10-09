@@ -1,3 +1,4 @@
+import { keyOf } from "../components/keys";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { pointer } from "../components/pointer";
@@ -56,11 +57,11 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
       if (typing || e.metaKey || e.ctrlKey || !asks.length) return;
       const cur = asks[sel];
-      if (e.key === "j") { e.preventDefault(); setSel((x) => Math.min(asks.length - 1, x + 1)); }
-      else if (e.key === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
-      else if (e.key === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
-      else if (e.key === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
-      else if (e.key === "Enter") { e.preventDefault(); onOpen(cur.s.id); }
+      if (keyOf(e) === "j") { e.preventDefault(); setSel((x) => Math.min(asks.length - 1, x + 1)); }
+      else if (keyOf(e) === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
+      else if (keyOf(e) === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
+      else if (keyOf(e) === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
+      else if (keyOf(e) === "Enter") { e.preventDefault(); onOpen(cur.s.id); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -165,7 +166,7 @@ export function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: AppSt
                   <StateMark s={tile.state} />
                   <span className="mr-grow mr-ellipsis">{s.title || "Untitled"}</span>
                   <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{Object.keys(s.files).length} files</span>
-                  {s.status === "interrupted" && s.sdkSessionId && <span className="mr-key" role="button" tabIndex={0} style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.resume(s); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); void api.resume(s); } }}>Resume ↻</span>}
+                  {s.status === "interrupted" && s.sdkSessionId && <span className="mr-key" role="button" tabIndex={0} style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.resume(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.resume(s); } }}>Resume ↻</span>}
                 </button>
               ))}
             </div>

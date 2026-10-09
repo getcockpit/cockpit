@@ -1,3 +1,4 @@
+import { keyOf } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2, wantsDiagram } from "./picker/pick";
 import { WorkspaceTabs } from "./screens/Workspaces";
@@ -24,6 +25,8 @@ export default function App() {
   // The theme is part of the log (synced, durable); applying it is just a data attribute.
   useEffect(() => { document.documentElement.dataset.theme = all.theme === "control-room" ? "" : all.theme; }, [all.theme]);
   useEffect(() => { try { localStorage.setItem("mr.workspace", workspace); } catch { /* per-viewer convenience */ } }, [workspace]);
+  // Plan limits: the sidecar reads them on start; refresh every 5 minutes after that.
+  useEffect(() => { const t = setInterval(() => void api.refreshLimits().catch(() => {}), 5 * 60_000); return () => clearInterval(t); }, []);
   // Picker layer 2: classify a finished turn's prose once; the answer comes back as a picker.layer2 event.
   const asked = useRef(new Set<string>());
   useEffect(() => {
@@ -56,12 +59,12 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key.toLowerCase() === "k") { e.preventDefault(); setPicker(true); }
-      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === "g") { e.preventDefault(); setGod((x) => !x); }
-      if (e.metaKey && e.key === ",") { e.preventDefault(); setSettings((x) => !x); }
-      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === "b") { e.preventDefault(); setBuilds((x) => (x === null ? "" : null)); }
-      if (e.metaKey && /^[1-9]$/.test(e.key) && !e.shiftKey) {
-        const ws = all.workspaces[Number(e.key) - 1];
+      if (e.metaKey && keyOf(e) === "k") { e.preventDefault(); setPicker(true); }
+      if (e.metaKey && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
+      if (e.metaKey && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
+      if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); setBuilds((x) => (x === null ? "" : null)); }
+      if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
+        const ws = all.workspaces[Number(keyOf(e)) - 1];
         if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); setFocus(null); setDocId(null); setWorkspace(ws.id); }
       }
     };
@@ -70,7 +73,7 @@ export default function App() {
   }, [all.workspaces]);
 
   const view = docId ? "doc map" : focus ? "focus" : "wall";
-  const godmode = <GodMode on={god} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
+  const godmode = <GodMode on={god} onOpen={() => setGod(true)} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
   // Point + talk: which session does the thing under the pointer belong to?
   const resolve = (t: PointTarget) => {
     const label = (id: string) => `“${(state.sessions[id]?.title ?? "session").slice(0, 40)}”`;

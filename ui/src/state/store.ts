@@ -38,6 +38,7 @@ export function useAppState(): AppState {
 }
 
 export const api = {
+  refreshLimits: () => invoke("limits_refresh"),
   diagram: (session: string, itemId: string, text: string) => invoke("layer3_diagram", { session, itemId, text }),
   classify: (session: string, itemId: string, text: string) => invoke("layer2_classify", { session, itemId, text }),
   layer2Status: () => invoke<{ configured: boolean }>("layer2_status"),
