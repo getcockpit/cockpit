@@ -1,0 +1,45 @@
+/* Control Room theme (decision 15). Every component reads these variables and never a raw hex,
+   so another theme can replace this file at runtime (MR-26). Signal roles are fixed names. */
+:root {
+  --mr-base: #d3d6d9;
+  --mr-band: #c3c7cb;
+  --mr-tile: #e4e7ea;
+  --mr-well: #c9cdd1;
+  --mr-lamp-off: #b5babf;
+
+  --mr-ink: #15181b;
+  --mr-ink-2: #3a4046;
+  --mr-ink-3: #545b61;
+
+  --mr-needs: #ffb300;
+  --mr-needs-ink: #8a5b00;
+  --mr-error: #c62828;
+  --mr-selected: #0e6e78;
+  --mr-done: #1e7a4c;
+
+  --mr-font: "Atkinson Hyperlegible Next", -apple-system, sans-serif;
+  --mr-mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+  --mr-radius: 2px;
+  --mr-gap: 4px;
+  --mr-fast: 100ms;
+  --mr-zoom: 260ms;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; margin: 0; }
+
+body {
+  background: var(--mr-base);
+  color: var(--mr-ink);
+  font-family: var(--mr-font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
