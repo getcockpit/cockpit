@@ -64,8 +64,11 @@ export function pickTile(s: SessionState): TileSpec {
   const progress = total ? done / total : null;
   const lastTool = [...s.transcript].reverse().find((t) => t.kind === "tool");
   const lastText = [...s.transcript].reverse().find((t) => t.kind === "text");
+  // A finished turn whose last words are a question is waiting on the user, even without a card.
+  const lastItem = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);
+  const askedInProse = s.status === "idle" && lastItem?.kind === "text" && /\?\s*$/.test(lastItem.text.trim());
   const state: TileSpec["state"] =
-    s.status === "needs_you" ? "needs_you"
+    s.status === "needs_you" || askedInProse ? "needs_you"
     : s.status === "error" ? "error"
     : s.status === "ended" ? "done"
     : s.status === "starting" ? "starting"
@@ -75,6 +78,7 @@ export function pickTile(s: SessionState): TileSpec {
     : "working";
   const ask = s.pending[0];
   const doing = s.status === "interrupted" ? "Stopped when the app closed. Resume continues the same conversation."
+    : askedInProse && lastItem?.kind === "text" ? `Asks: ${lastItem.text.trim().split("\n").filter(Boolean).at(-1)?.slice(0, 120)}`
     : ask
     ? ask.kind === "question" ? `Asks: ${ask.questions[0]?.question ?? "a question"}` : `Wants to use ${ask.tool}`
     : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${String(lastTool.input.file_path).split("/").pop()}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");

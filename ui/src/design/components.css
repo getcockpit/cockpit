@@ -67,3 +67,7 @@
 /* Inputs */
 .mr-input { flex: 1; min-width: 0; min-height: 40px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-tile); color: var(--mr-ink); font: inherit; font-size: 15px; outline: none; }
 .mr-input:focus { box-shadow: inset 0 -2px 0 var(--mr-selected); }
+
+/* Wall → focus zoom (200–300 ms, decision 15); Reduce Motion disables it via tokens.css. */
+@keyframes mr-zoom-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+.mr-zoom-in { animation: mr-zoom-in var(--mr-zoom) cubic-bezier(.2, .7, .2, 1); transform-origin: 50% 30%; }
