@@ -1,4 +1,4 @@
-import type { AppState, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
+import type { AppState, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
@@ -15,7 +15,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {},
+    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {},
   };
 }
 
@@ -61,6 +61,11 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     if (!s) return { ...next, clef };
     const kind: ProseKind = { label: p.label as ProseKind["label"], p: Number(p.p ?? 0), layer: p.layer === "model" ? "model" : "code" };
     return { ...next, clef, sessions: { ...next.sessions, [sid]: { ...s, kinds: { ...s.kinds, [String(p.item_id)]: kind } } } };
+  }
+  if (ev.kind === "picker.layer3" && sid) {
+    const s = next.sessions[sid];
+    if (!s) return next;
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...s, diagrams: { ...s.diagrams, [String(p.item_id)]: (p.diagram as Diagram | null) ?? null } } } };
   }
   if (!sid) return next;
 

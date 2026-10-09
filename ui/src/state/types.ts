@@ -69,9 +69,11 @@ export type SessionState = {
   error: string | null;
   review: ReviewFlow | null;
   address: AddressFlow | null;
+  diagrams: Record<string, Diagram | null>; // transcript item id → layer-3 diagram (null: nothing worth drawing)
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 
+export type Diagram = { title?: string | null; nodes: { id: string; label: string; kind: "step" | "decision" | "done" | "risk" }[]; edges: { from: string; to: string; label?: string | null }[] };
 export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "other"; p: number; layer: "model" | "code" };
 // Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
 export type ClefMeter = { day: string; calls: number; tokens: number; errors: number };

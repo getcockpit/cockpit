@@ -3,11 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { Bar, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
 import { api } from "../state/store";
-import type { SessionState, TranscriptItem } from "../state/types";
+import type { Diagram, SessionState, TranscriptItem } from "../state/types";
 import type { Doc } from "../state/docs";
 import { AskRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
 import { pointer } from "../components/pointer";
+import { FlowDiagram } from "../components/FlowDiagram";
 import { ChangeMap } from "./ChangeMap";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
@@ -68,7 +69,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
           ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{s.error}</span></div></div>}
-          {term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
+          {term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
           {live && (
             <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>
               <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
@@ -98,8 +99,9 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild }: { s: SessionState
 }
 
 // The structured transcript (decision 13): readable rows, not terminal text. ⌘R shows raw JSON.
-function Transcript({ items, raw, onDiscover }: { items: TranscriptItem[]; raw: boolean; onDiscover: (what: string) => void }) {
+function Transcript({ items, raw, diagrams, onDiagram, onDiscover }: { items: TranscriptItem[]; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void }) {
   const end = useRef<HTMLDivElement>(null);
+  const [drawing, setDrawing] = useState<Set<string>>(new Set());
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [items.length]);
   if (items.length === 0) return <div className="mr-dim" style={{ padding: 12, background: "var(--mr-tile)" }}>Waiting for the first message…</div>;
   return (
@@ -107,7 +109,19 @@ function Transcript({ items, raw, onDiscover }: { items: TranscriptItem[]; raw: 
       {items.map((t) => raw ? (
         <pre key={t.id} className="mr-code" style={{ fontSize: 11 }}>{JSON.stringify(t, null, 1)}</pre>
       ) : t.kind === "text" ? (
-        <div key={t.id} style={{ padding: "12px 14px", background: "var(--mr-tile)", whiteSpace: "pre-wrap" }}>{t.text}</div>
+        <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          {diagrams[t.id] && <FlowDiagram d={diagrams[t.id]!} />}
+          <div style={{ position: "relative", padding: "12px 14px", background: "var(--mr-tile)", whiteSpace: "pre-wrap" }}>
+            {t.text}
+            {t.text.length >= 200 && !diagrams[t.id] && (
+              <span style={{ position: "absolute", top: 6, right: 8 }}>
+                <Key onClick={() => { setDrawing((d) => new Set(d).add(t.id)); onDiagram(t); }} disabled={drawing.has(t.id) && !(t.id in diagrams)}>
+                  {drawing.has(t.id) && !(t.id in diagrams) ? "Drawing…" : t.id in diagrams ? "No flow to draw · retry" : "Diagram"}
+                </Key>
+              </span>
+            )}
+          </div>
+        </div>
       ) : t.kind === "user" ? (
         <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)" }}><span className="mr-mono mr-dim">you →</span><span>{t.text}</span></div>
       ) : t.kind === "result" ? (

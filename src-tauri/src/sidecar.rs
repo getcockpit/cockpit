@@ -13,6 +13,8 @@ pub struct Sidecar {
     child: Mutex<Option<CommandChild>>,
     /// App session ids currently running in the sidecar (for the cap).
     live: Mutex<std::collections::HashSet<String>>,
+    /// Waiters for one-shot replies, by request id.
+    oneshots: Mutex<std::collections::HashMap<String, std::sync::mpsc::Sender<serde_json::Value>>>,
 }
 
 fn session_cap() -> usize {
@@ -39,6 +41,13 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let payload = serde_json::from_str::<serde_json::Value>(line)
                             .unwrap_or_else(|_| serde_json::json!({ "type": "raw", "line": line }));
+                        if payload["type"] == "oneshot_result" {
+                            // The app's own helper calls: hand back to the waiter, never logged as session activity.
+                            if let Some(tx) = payload["id"].as_str().and_then(|id| handle.state::<Sidecar>().oneshots.lock().unwrap().remove(id)) {
+                                let _ = tx.send(payload);
+                            }
+                            continue;
+                        }
                         let kind = format!("sidecar.{}", payload["type"].as_str().unwrap_or("unknown"));
                         let session = payload["session"].as_str().map(str::to_owned);
                         crate::eventlog::record(&handle, session.as_deref(), &kind, &payload, None);
@@ -83,6 +92,28 @@ pub fn sidecar_send(state: State<'_, Sidecar>, message: serde_json::Value) -> Re
     let mut line = serde_json::to_string(&message).map_err(|e| e.to_string())?;
     line.push('\n');
     child.write(line.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Runs one tool-less, unsaved turn in the sidecar and waits for its text (blocking; call off the UI thread).
+pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout: std::time::Duration) -> Result<String, String> {
+    let id = ulid::Ulid::new().to_string();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let state = app.state::<Sidecar>();
+    state.oneshots.lock().unwrap().insert(id.clone(), tx);
+    let msg = serde_json::json!({ "type": "oneshot", "id": id, "prompt": prompt, "system": system, "model": model });
+    if let Err(e) = sidecar_send(state.clone(), msg) {
+        state.oneshots.lock().unwrap().remove(&id);
+        return Err(e);
+    }
+    let reply = rx.recv_timeout(timeout).map_err(|_| {
+        app.state::<Sidecar>().oneshots.lock().unwrap().remove(&id);
+        "timed out".to_string()
+    })?;
+    if reply["ok"].as_bool() == Some(true) {
+        Ok(reply["text"].as_str().unwrap_or("").to_owned())
+    } else {
+        Err(reply["error"].as_str().unwrap_or("one-shot failed").to_owned())
+    }
 }
 
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
