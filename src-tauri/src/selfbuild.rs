@@ -86,6 +86,7 @@ pub fn selfbuild_start(app: AppHandle, worktree: String) -> Result<String, Strin
             std::fs::create_dir_all(&dest)?;
             std::fs::copy(target.join("minority-report"), dest.join("minority-report"))?;
             std::fs::copy(target.join("mr-sidecar"), dest.join("mr-sidecar"))?;
+            std::fs::copy(target.join("mr-dictate"), dest.join("mr-dictate"))?;
             let meta = serde_json::json!({ "id": id2, "sha": format!("{sha}{}", if dirty { "+dirty" } else { "" }), "branch": branch, "worktree": dir, "at": ulid::Ulid::from_string(&id2).map(|u| u.timestamp_ms() as i64).unwrap_or(0) });
             std::fs::write(dest.join("build.json"), meta.to_string())
         };

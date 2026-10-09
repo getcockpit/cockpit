@@ -22,9 +22,9 @@ export function promptFor(mode: SessionKind, text: string): string {
 
 type Item = { ref: string; title: string; meta: string; hot: boolean; value: string };
 
-export function StartPicker({ state, onClose, onStarted }: { state: AppState; onClose: () => void; onStarted: (id: string) => void }) {
-  const [mode, setMode] = useState<SessionKind>("review");
-  const [text, setText] = useState("");
+export function StartPicker({ state, onClose, onStarted, initialText = "" }: { state: AppState; onClose: () => void; onStarted: (id: string) => void; initialText?: string }) {
+  const [mode, setMode] = useState<SessionKind>(initialText ? "blank" : "review");
+  const [text, setText] = useState(initialText);
   const [cwd, setCwd] = useState(() => { try { return localStorage.getItem("mr.cwd") ?? "~/"; } catch { return "~/"; } });
   const [prs, setPrs] = useState<Pr[] | null>(null);
   const [error, setError] = useState("");

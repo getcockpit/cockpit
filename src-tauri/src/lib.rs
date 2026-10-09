@@ -8,6 +8,7 @@ mod selfbuild;
 mod selftest;
 mod sidecar;
 mod terminal;
+mod voice;
 mod worktree;
 
 use tauri::Manager;
@@ -19,6 +20,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(sidecar::Sidecar::default())
         .manage(terminal::Terminals::default())
+        .manage(voice::Voice::default())
         .setup(|app| {
             // MR_DATA_DIR keeps tests and self-builds away from the real event log.
             let dir = match std::env::var("MR_DATA_DIR") {
@@ -63,6 +65,8 @@ pub fn run() {
             terminal::term_open,
             terminal::term_write,
             terminal::term_resize,
+            voice::voice_start,
+            voice::voice_stop,
             docs::doc_feedback
         ])
         .run(tauri::generate_context!())
