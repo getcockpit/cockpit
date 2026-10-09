@@ -1,4 +1,4 @@
-import type { AppState, FileChange, MrEvent, PendingAsk, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
+import type { AppState, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
@@ -9,12 +9,13 @@ export const initialState: AppState = {
   dismissed: [],
   workspaces: [{ id: "personal", name: "Personal", configDir: null }],
   theme: "control-room",
+  clef: { day: "", calls: 0, tokens: 0, errors: 0 },
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null,
+    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {},
   };
 }
 
@@ -50,6 +51,16 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch } } };
     }
     return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where } }, order: [...next.order, sid] };
+  }
+  if (ev.kind === "picker.layer2" && sid) {
+    // A render decision, not session activity: annotate the item and tick the meter, nothing else.
+    const day = new Date(ev.created_at).toISOString().slice(0, 10);
+    const m = next.clef.day === day ? next.clef : { day, calls: 0, tokens: 0, errors: 0 };
+    const clef = p.layer === "model" ? { ...m, calls: m.calls + 1, tokens: m.tokens + Number(p.tokens ?? 0) } : p.error ? { ...m, errors: m.errors + 1 } : m;
+    const s = next.sessions[sid];
+    if (!s) return { ...next, clef };
+    const kind: ProseKind = { label: p.label as ProseKind["label"], p: Number(p.p ?? 0), layer: p.layer === "model" ? "model" : "code" };
+    return { ...next, clef, sessions: { ...next.sessions, [sid]: { ...s, kinds: { ...s.kinds, [String(p.item_id)]: kind } } } };
   }
   if (!sid) return next;
 
