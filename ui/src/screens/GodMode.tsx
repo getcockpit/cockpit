@@ -14,11 +14,31 @@ function findTarget(n: EventTarget | null): Target | null {
   return { el, component: el.dataset.mr ?? "?", source: el.dataset.mrSource ?? "", layer: el.dataset.mrLayer ?? "code", rect: el.getBoundingClientRect() };
 }
 
-export function GodMode({ on, onClose, view, onOpenSession }: { on: boolean; onClose: () => void; view: string; onOpenSession: (id: string) => void }) {
+export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: boolean; onOpen: () => void; onClose: () => void; view: string; onOpenSession: (id: string) => void }) {
   const [hover, setHover] = useState<Target | null>(null);
   const [marked, setMarked] = useState<Target | null>(null);
   const [note, setNote] = useState("");
   const [status, setStatus] = useState("");
+  // Right-click anything: a small menu to mark it wrong, inspect it, go deeper or discover.
+  const [menu, setMenu] = useState<{ x: number; y: number; t: Target; origin: HTMLElement } | null>(null);
+
+  useEffect(() => {
+    const ctx = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest?.("input, textarea, [contenteditable=true], .xterm, [data-godmode-ui]")) return;
+      const t = findTarget(el);
+      if (!t) return;
+      e.preventDefault();
+      setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 190), t, origin: el! });
+    };
+    const close = (e: Event) => { if (!(e.target as HTMLElement | null)?.closest?.("[data-mr-menu]")) setMenu(null); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
+    window.addEventListener("contextmenu", ctx, true);
+    window.addEventListener("mousedown", close, true);
+    window.addEventListener("keydown", esc, true);
+    window.addEventListener("scroll", close, true);
+    return () => { window.removeEventListener("contextmenu", ctx, true); window.removeEventListener("mousedown", close, true); window.removeEventListener("keydown", esc, true); window.removeEventListener("scroll", close, true); };
+  }, []);
 
   useEffect(() => {
     if (!on) { setHover(null); setMarked(null); return; }
@@ -37,7 +57,27 @@ export function GodMode({ on, onClose, view, onOpenSession }: { on: boolean; onC
     return () => { window.removeEventListener("mousemove", move, true); window.removeEventListener("click", click, true); window.removeEventListener("keydown", key, true); };
   }, [on, marked, onClose]);
 
-  if (!on) return null;
+  const click = (origin: HTMLElement, mods: { metaKey?: boolean; altKey?: boolean }) => origin.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...mods }));
+  const menuEl = menu && (
+    <div data-mr-menu data-godmode-ui role="menu" aria-label={`Actions for ${menu.t.component}`}
+      style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 60, width: 232, background: "var(--mr-tile)", boxShadow: "0 0 0 1px var(--mr-ink-3), 0 6px 18px rgba(21,24,27,.18)", display: "flex", flexDirection: "column", padding: 4 }}>
+      <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 11, padding: "4px 8px" }}>{menu.t.component} · layer {menu.t.layer}{menu.t.source ? ` · ${menu.t.source.slice(0, 24)}` : ""}</span>
+      {[
+        { label: "Mark as wrong & fix…", hint: "", run: () => { onOpen(); setHover(null); setMarked({ ...menu.t, rect: menu.t.el.getBoundingClientRect() }); } },
+        { label: "Go deeper", hint: "⌘-click", run: () => click(menu.origin, { metaKey: true }) },
+        { label: "Discover in a side session", hint: "⌥-click", run: () => click(menu.origin, { altKey: true }) },
+        { label: "Inspect everything", hint: "⌘⇧G", run: () => onOpen() },
+      ].map((it) => (
+        <button key={it.label} type="button" role="menuitem" className="mr-row" onClick={() => { setMenu(null); it.run(); }}
+          style={{ border: 0, background: "transparent", font: "inherit", color: "var(--mr-ink)", textAlign: "left", padding: "7px 8px", cursor: "pointer" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--mr-well)")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+          <span className="mr-grow">{it.label}</span>{it.hint && <span className="mr-mono mr-dim" style={{ fontSize: 11 }}>{it.hint}</span>}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (!on) return menuEl || null;
   const box = (marked ?? hover)?.rect;
 
   const submit = async () => {
@@ -57,9 +97,10 @@ export function GodMode({ on, onClose, view, onOpenSession }: { on: boolean; onC
   };
 
   return (
+    <>{menuEl}
     <div data-godmode-ui style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 50 }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "6px 16px", background: "var(--mr-ink)", color: "var(--mr-tile)", display: "flex", gap: 16, pointerEvents: "auto" }}>
-        <strong>God mode</strong><span style={{ opacity: 0.8 }}>Hover to inspect · click to mark it wrong · esc to leave</span>
+        <strong>God mode</strong><span style={{ opacity: 0.8 }}>Hover to inspect · click (or right-click anywhere, any time) to mark it wrong · esc to leave</span>
       </div>
       {box && <div style={{ position: "absolute", left: box.left, top: box.top, width: box.width, height: box.height, outline: `2px solid ${marked ? "var(--mr-error)" : "var(--mr-selected)"}`, background: "rgba(14,110,120,.06)" }} />}
       {hover && !marked && box && (
@@ -82,5 +123,6 @@ export function GodMode({ on, onClose, view, onOpenSession }: { on: boolean; onC
         </div>
       )}
     </div>
+    </>
   );
 }

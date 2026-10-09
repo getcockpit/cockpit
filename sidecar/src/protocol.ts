@@ -15,6 +15,7 @@ export type Inbound =
   | { type: "stop"; session: string }
   | { type: "permission_response"; session: string; request_id: string; decision: PermissionDecision }
   | { type: "tool_result"; session: string; call_id: string; text: string; is_error?: boolean }
+  | { type: "limits"; env?: Record<string, string> }
   | { type: "oneshot"; id: string; prompt: string; system: string; model?: string; env?: Record<string, string> };
 
 export type Outbound =
@@ -25,5 +26,6 @@ export type Outbound =
   | { type: "permission_request"; session: string; request_id: string; tool: string; input: Record<string, unknown>; suggestions: unknown[] | null; decision_reason: string | null; mcp_server: { name: string; source: string } | null }
   | { type: "tool_call"; session: string; call_id: string; tool: string; args: Record<string, unknown> }
   | { type: "session_ended"; session: string; ok: boolean; reason?: string }
+  | { type: "limits"; available: boolean; plan?: string | null; five_hour?: { utilization: number; resetsAt: number | null } | null; seven_day?: { utilization: number; resetsAt: number | null } | null; error?: string }
   | { type: "oneshot_result"; id: string; ok: boolean; text: string; ms: number; error?: string }
   | { type: "error"; session?: string; error: string };

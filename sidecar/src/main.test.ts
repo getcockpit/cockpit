@@ -73,3 +73,9 @@ test("a one-shot runs one tool-less turn and returns its text, without a session
   expect(out.find((m) => m.type === "oneshot_result")).toMatchObject({ id: "o1", ok: true, text: "echo: diagram this" });
   expect(out.some((m) => m.type === "permission_request" || m.type === "session_started")).toBe(false);
 });
+
+test("limits are read without running a turn", async () => {
+  const out = await run([{ type: "limits" }], ["ready", "limits"]);
+  expect(out.find((m) => m.type === "limits")).toMatchObject({ available: true, plan: "max", five_hour: { utilization: 0.42, resetsAt: 1791576000 }, seven_day: { utilization: 0.07, resetsAt: null } });
+  expect(out.some((m) => m.type === "session_started")).toBe(false);
+});
