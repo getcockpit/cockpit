@@ -2,6 +2,9 @@
 # End-to-end check through the real app binary, sidecar and claude (spends a little usage):
 # starts a session, approves its Write, waits for the result, then inspects the event log.
 set -euo pipefail
+# GUI-launched processes get a minimal PATH; find cargo/rustc and bun the way a login shell would.
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+export PATH="$HOME/.bun/bin:$HOME/.local/share/mise/shims:$HOME/.local/share/mise/installs/bun/latest/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 "$root/scripts/bootstrap.sh" >/dev/null
 (cd "$root/ui" && bun run build >/dev/null)
