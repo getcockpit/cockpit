@@ -7,6 +7,7 @@ import type { Doc } from "../state/docs";
 import { AskRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
 import { pointer } from "../components/pointer";
+import { ChangeMap } from "./ChangeMap";
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
 export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void }) {
@@ -26,8 +27,6 @@ export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: D
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack, s.id, live]);
 
-  const files = Object.values(s.files).sort((a, b) => b.added + b.removed - (a.added + a.removed));
-  const maxChange = Math.max(1, ...files.map((f) => f.added + f.removed));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
@@ -75,18 +74,7 @@ export function Focus({ s, docs, onOpenDoc, onBack }: { s: SessionState; docs: D
             ))}
             {s.todos.length > 0 && <Bar value={tile.progress} />}
           </div>
-          <div style={{ background: "var(--mr-tile)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-            <h2 className="mr-h">Changes <span className="mr-dim mr-mono">+{files.reduce((a, f) => a + f.added, 0)} −{files.reduce((a, f) => a + f.removed, 0)}</span></h2>
-            {files.length === 0 ? <span className="mr-dim">No files changed.</span> : files.map((f) => (
-              <div key={f.path} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <div className="mr-row" style={{ alignItems: "baseline" }}>
-                  <span className="mr-mono mr-grow mr-ellipsis" style={{ fontSize: 12 }} title={f.path}>{f.isNew ? "+ " : "~ "}{f.path.replace(s.cwd + "/", "")}</span>
-                  <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>+{f.added}{f.removed ? ` −${f.removed}` : ""}</span>
-                </div>
-                <div className="mr-bar" style={{ height: 3 }}><i style={{ height: 3, width: `${Math.max(4, ((f.added + f.removed) / maxChange) * 100)}%` }} /></div>
-              </div>
-            ))}
-          </div>
+          <ChangeMap s={s} />
           <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.model ?? ""}{s.costUsd ? ` · $${s.costUsd.toFixed(2)} equiv.` : ""}</span>
         </aside>
       </main>
@@ -123,7 +111,7 @@ function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" 
   const result = t.result as Record<string, unknown> | string | undefined;
   const out = typeof result === "string" ? result : result ? String(result.stdout ?? result.content ?? JSON.stringify(result)) : "";
   return (
-    <div style={{ background: "var(--mr-tile)" }}>
+    <div data-mr="ToolRow" data-mr-source={t.toolUseId} style={{ background: "var(--mr-tile)" }}>
       <button type="button" onClick={pointer({ open: () => setOpen((x) => !x), deeper: () => setOpen(true), discover: () => onDiscover(`the ${t.name} call ${JSON.stringify(t.input).slice(0, 300)}`) })} className="mr-row" style={{ width: "100%", padding: "8px 14px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" }}>
         <span className="mr-mono" style={{ fontWeight: 700, minWidth: 90 }}>{t.name.replace(/^mcp__/, "")}</span>
         <span className="mr-mono mr-ink2 mr-grow mr-ellipsis" style={{ fontSize: 12 }}>{String(detail)}</span>

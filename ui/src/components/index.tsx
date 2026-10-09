@@ -10,7 +10,7 @@ export function Lamps({ children }: { children: ReactNode }) {
 
 export function Lamp({ value, label, on }: { value: string | number; label: string; on?: "needs" | "error" | "plain" | false }) {
   return (
-    <div className="mr-lamp" data-on={on || undefined}>
+    <div className="mr-lamp" data-mr="Lamp" data-mr-source={label} data-on={on || undefined}>
       <b>{value}</b>
       <span>{label}</span>
     </div>
