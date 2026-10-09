@@ -1,0 +1,113 @@
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { Key } from "../components";
+import { api } from "../state/store";
+import type { AppState, MrEvent } from "../state/types";
+
+// Settings (decision 25): theme, and the history of your own changes to the app — collected on a
+// local branch `mine` that's never pushed — with apply / revert / build & relaunch / roll back.
+
+const THEMES = [
+  { id: "control-room", name: "Control Room", what: "Industrial grey, amber when it needs you", swatch: ["#d3d6d9", "#e4e7ea", "#ffb300", "#15181b"] },
+  { id: "instrument", name: "Instrument", what: "Braun aluminium, one signal key", swatch: ["#d8d9da", "#eeefef", "#c8d400", "#1a1a1a"] },
+  { id: "transit", name: "Transit", what: "Signage white, black bands, signal yellow", swatch: ["#ffffff", "#f0f0f0", "#fccc0a", "#111111"] },
+];
+
+type Change = { sha: string; subject: string; at: number; mine_only: boolean };
+type Pending = { branch: string; commits: number; subject: string };
+type History = { worktree: string; changes: Change[]; pending: Pending[] };
+type Build = { id: string; sha: string; branch: string; worktree: string; at: number; current: boolean };
+
+export function Settings({ state, onClose }: { state: AppState; onClose: () => void }) {
+  const [hist, setHist] = useState<History | null>(null);
+  const [builds, setBuilds] = useState<Build[]>([]);
+  const [msg, setMsg] = useState("");
+  const [building, setBuilding] = useState<string | null>(null);
+
+  const load = () => {
+    invoke<History>("personal_history").then(setHist).catch((e) => setMsg(String(e)));
+    invoke<Build[]>("selfbuild_list").then(setBuilds).catch(() => {});
+  };
+  useEffect(() => {
+    load();
+    const un = listen<MrEvent>("mr-event", ({ payload: e }) => {
+      if (!e.kind.startsWith("selfbuild.")) return;
+      const p = e.payload as Record<string, unknown>;
+      if (e.kind === "selfbuild.step") setBuilding(String(p.step));
+      if (e.kind === "selfbuild.finished") { setBuilding(null); setMsg(p.ok ? `Built in ${p.seconds}s.` : `Build failed at ${p.step}: ${String(p.log ?? "").slice(-400)}`); load(); }
+    });
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", key);
+    return () => { un.then((f) => f()); window.removeEventListener("keydown", key); };
+  }, []);
+
+  const act = async (f: () => Promise<unknown>, done: string) => { setMsg(""); try { await f(); setMsg(done); load(); } catch (e) { setMsg(String(e)); } };
+  const buildOf = (sha: string) => builds.find((b) => b.sha.replace("+dirty", "") && sha.startsWith(b.sha.replace("+dirty", "")));
+
+  return (
+    <div role="dialog" aria-label="Settings" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "56px 24px", background: "rgba(21,24,27,.35)", zIndex: 25, overflowY: "auto" }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
+        <div className="mr-row mr-band" style={{ padding: "12px 16px" }}><strong>Settings</strong><span className="mr-grow" /><Key k="esc" onClick={onClose}>Close</Key></div>
+
+        <section style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          <h2 className="mr-h">Theme</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "var(--mr-gap)" }}>
+            {THEMES.map((t) => (
+              <button key={t.id} type="button" data-mr="ThemeOption" data-mr-source={t.id} onClick={() => void api.log("ui.theme_set", { theme: t.id })}
+                style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, border: 0, outline: state.theme === t.id ? "2px solid var(--mr-selected)" : undefined, outlineOffset: -2, background: "var(--mr-well)", textAlign: "left", font: "inherit", color: "var(--mr-ink)", cursor: "pointer" }}>
+                <span style={{ display: "flex", height: 28 }}>{t.swatch.map((c, i) => <i key={i} style={{ flex: 1, background: c }} />)}</span>
+                <strong>{t.name}{state.theme === t.id ? " ✓" : ""}</strong>
+                <span className="mr-dim">{t.what}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <h2 className="mr-h">Your changes <span className="mr-dim" style={{ fontWeight: 400 }}>on the local branch “mine”, never pushed</span></h2>
+          {hist?.pending.map((p) => (
+            <div key={p.branch} className="mr-row" style={{ padding: "8px 10px", background: "var(--mr-well)" }}>
+              <span style={{ color: "var(--mr-needs-ink)" }}>◆</span>
+              <span className="mr-grow"><b>{p.subject}</b> <span className="mr-mono mr-dim">{p.branch} · {p.commits} commit{p.commits === 1 ? "" : "s"}</span></span>
+              <Key onClick={() => void act(() => invoke("personal_apply", { branch: p.branch }), `Applied ${p.branch} to your branch.`)}>Apply</Key>
+            </div>
+          ))}
+          <div className="mr-row">
+            <Key k="↵" tone="primary" disabled={!hist || !!building} onClick={() => hist && void act(() => invoke("selfbuild_start", { worktree: hist.worktree }), "Building your changes…")}>{building ? `Building · ${building}` : "Build my changes"}</Key>
+            <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>{hist?.worktree}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {(hist?.changes ?? []).filter((c) => c.mine_only).length === 0 && <span className="mr-dim">No changes of your own yet. God-mode fixes appear above as “Apply”.</span>}
+            {(hist?.changes ?? []).filter((c) => c.mine_only).map((c) => {
+              const b = buildOf(c.sha);
+              return (
+                <div key={c.sha} className="mr-row" style={{ padding: "8px 4px", borderTop: "1px solid var(--mr-well)" }}>
+                  <span className="mr-mono mr-dim" style={{ width: 70 }}>{c.sha.slice(0, 7)}</span>
+                  <span className="mr-grow mr-ellipsis">{c.subject}</span>
+                  <span className="mr-dim" style={{ fontSize: 12 }}>{new Date(c.at).toLocaleString()}</span>
+                  {b && <span className="mr-mono" style={{ fontSize: 12, color: b.current ? "var(--mr-done)" : "var(--mr-ink-3)" }}>{b.current ? "● running" : "built"}</span>}
+                  <Key onClick={() => void act(() => invoke("personal_revert", { sha: c.sha }), `Reverted ${c.sha.slice(0, 7)}. Build to use it.`)}>Revert</Key>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <h2 className="mr-h">Builds <span className="mr-dim" style={{ fontWeight: 400 }}>launch any to roll back; a failed launch falls back automatically</span></h2>
+          {builds.length === 0 && <span className="mr-dim">None yet.</span>}
+          {builds.map((b) => (
+            <div key={b.id} className="mr-row" style={{ padding: "6px 4px" }}>
+              <span className="mr-mono" style={{ width: 120 }}>{b.sha}</span>
+              <span className="mr-grow mr-ellipsis">{b.branch} · <span className="mr-dim">{new Date(b.at).toLocaleString()}</span></span>
+              {b.current ? <span style={{ color: "var(--mr-done)" }}>● running</span> : <Key onClick={() => void invoke("selfbuild_relaunch", { buildId: b.id }).catch((e) => setMsg(String(e)))}>Launch</Key>}
+            </div>
+          ))}
+        </section>
+        {msg && <div style={{ padding: "0 16px 16px", color: msg.includes("fail") || msg.includes("can't") || msg.includes("conflict") ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{msg}</div>}
+      </div>
+    </div>
+  );
+}

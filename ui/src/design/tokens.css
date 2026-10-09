@@ -43,3 +43,20 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Alternative light themes (MR-26). Each overrides only tokens; components never change.
+   Signal roles stay fixed: needs = amber/yellow, error = red, selected, done. */
+:root[data-theme="instrument"] {
+  /* Braun / Rams panel: aluminium greys, black ink, one yellow-green signal key. */
+  --mr-base: #d8d9da; --mr-band: #cbcccd; --mr-tile: #eeefef; --mr-well: #d2d3d4; --mr-lamp-off: #c2c3c4;
+  --mr-ink: #1a1a1a; --mr-ink-2: #3d3d3d; --mr-ink-3: #5e5e5e;
+  --mr-needs: #c8d400; --mr-needs-ink: #5b6100; --mr-error: #c2161b; --mr-selected: #1a1a1a; --mr-done: #2e6b3a;
+  --mr-radius: 2px;
+}
+:root[data-theme="transit"] {
+  /* Vignelli / Calvert signage: white, black bands, signal-yellow needs. */
+  --mr-base: #ffffff; --mr-band: #f0f0f0; --mr-tile: #ffffff; --mr-well: #ececec; --mr-lamp-off: #e2e2e2;
+  --mr-ink: #111111; --mr-ink-2: #333333; --mr-ink-3: #6d6e71;
+  --mr-needs: #fccc0a; --mr-needs-ink: #6b5500; --mr-error: #ee352e; --mr-selected: #0039a6; --mr-done: #00933c;
+  --mr-radius: 0px;
+}
