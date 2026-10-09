@@ -43,6 +43,7 @@ describe("replaying the real probe session", () => {
 
   test("reads usage from rate_limit_event", () => {
     expect(state.usage.fiveHour).toBeCloseTo(0.49);
+    expect(state.usage.weekly).toBeCloseTo(0.52);
   });
 });
 
@@ -99,4 +100,16 @@ test("sessions running when the sidecar restarts become interrupted, and resume 
   const resumed = replay([ev("A5", "ui.session_requested", { prompt: "Continue", cwd: "/w/repo-worktrees/x", kind: "blank", resume: "sdk-1" })], after);
   expect(resumed.sessions.s.status).toBe("starting");
   expect(resumed.order).toEqual(["s"]);
+});
+
+test("a turn that ends with a question in prose shows as needs-you", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
+  const st = replay([
+    ev("B1", "ui.session_requested", { prompt: "p", cwd: "/w" }),
+    ev("B2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "I can do A or B.\nWhich one do you prefer?" }] } } }),
+    ev("B3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "x" } }),
+  ]);
+  const tile = pickTile(st.sessions.s);
+  expect(tile.state).toBe("needs_you");
+  expect(tile.doing).toBe("Asks: Which one do you prefer?");
 });
