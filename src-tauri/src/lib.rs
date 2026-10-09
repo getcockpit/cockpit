@@ -4,6 +4,7 @@ mod docs;
 mod eventlog;
 mod flows;
 mod gh;
+mod personal;
 mod selfbuild;
 mod selftest;
 mod sidecar;
@@ -63,6 +64,9 @@ pub fn run() {
             selfbuild::selfbuild_start,
             selfbuild::selfbuild_list,
             selfbuild::selfbuild_relaunch,
+            personal::personal_history,
+            personal::personal_apply,
+            personal::personal_revert,
             terminal::term_open,
             terminal::term_write,
             terminal::term_resize,
