@@ -6,7 +6,7 @@ import { Focus } from "./screens/Focus";
 import { StartPicker } from "./screens/StartPicker";
 import { DocMap } from "./screens/DocMap";
 import { isOpenQuestion, useDocs, type Doc } from "./state/docs";
-import { useAppState } from "./state/store";
+import { api, useAppState } from "./state/store";
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
 
@@ -55,7 +55,7 @@ function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: ReturnType<t
         <Lamp value={count("error")} label="Errors" on={count("error") > 0 && "error"} />
         <Lamp value={count("almost")} label="Almost done" on={count("almost") > 0 && "plain"} />
         <Lamp value={count("working") + count("starting")} label="Running" on={count("working") > 0 && "plain"} />
-        <Lamp value={count("idle") + count("done")} label="To review" on={count("idle") + count("done") > 0 && "plain"} />
+        <Lamp value={count("idle") + count("done") + count("interrupted")} label="To review" on={count("idle") + count("done") + count("interrupted") > 0 && "plain"} />
       </Lamps>
 
       <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
@@ -116,12 +116,15 @@ function Wall({ state, docs, onOpen, onOpenDoc, onStart }: { state: ReturnType<t
                     <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{s.title || "Untitled"}</strong>
                     <StateMark s={tile.state} />
                   </div>
-                  <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.cwd}</span>
+                  <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
                   <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>
                   <div className="mr-row" style={{ alignItems: "flex-end" }}>
                     <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tile.doing}</span>
                     <Sparkline values={s.activity} />
                   </div>
+                  {s.status === "interrupted" && s.sdkSessionId && (
+                    <span className="mr-row"><span className="mr-key" role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); void api.resume(s); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); void api.resume(s); } }}>Resume ↻</span></span>
+                  )}
                 </div>
               </button>
             ))}
