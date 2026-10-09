@@ -32,9 +32,26 @@ Needs: Rust (rustup), the Tauri CLI (`cargo install tauri-cli --version '^2'`), 
 
 ## Sidecar protocol
 
-One JSON object per line.
+One JSON object per line. The types are in `sidecar/src/protocol.ts`.
 
-- **Sidecar → core:** `{"type":"ready",…}`, `{"type":"pong","id":…}`, `{"type":"error",…}`
-- **Core → sidecar:** `{"type":"ping","id":…}`
+- **Core → sidecar:**
+  - `ping`
+  - `start {session, cwd, prompt, resume?, tools?}`
+  - `send {session, text}`
+  - `interrupt {session}`
+  - `stop {session}`
+  - `permission_response {session, request_id, decision}`
+  - `tool_result {session, call_id, text, is_error?}`
+- **Sidecar → core:**
+  - `ready {claude}`
+  - `pong`
+  - `session_started {session, sdk_session_id}`
+  - `sdk {session, message}` (every Agent SDK message, as is)
+  - `permission_request {session, request_id, tool, input, suggestions}`
+  - `tool_call {session, call_id, tool, args}`
+  - `session_ended {session, ok}`
+  - `error`
 
-MR-2 extends the protocol for Agent SDK sessions.
+Tools passed in `start.tools` become the in-process `mr` MCP server; every call is relayed to the core as `tool_call`.
+
+**Live checks** (spend a little subscription usage): `bun run spike/probe.ts` and `bun run spike/live-session.ts`. Set `MR_SIDECAR_BIN=../src-tauri/binaries/mr-sidecar-<triple>` to test the compiled binary.
