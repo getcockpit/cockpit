@@ -26,8 +26,8 @@ export function Key({ k, children, tone, onClick, disabled }: { k?: string; chil
   );
 }
 
-const GLYPH: Record<TileSpec["state"], string> = { needs_you: "◆", working: "○", almost: "◔", idle: "‖", done: "✓", error: "✕", starting: "…" };
-const LABEL: Record<TileSpec["state"], string> = { needs_you: "Needs you", working: "Working", almost: "Almost done", idle: "Waiting", done: "Done", error: "Error", starting: "Starting" };
+const GLYPH: Record<TileSpec["state"], string> = { needs_you: "◆", working: "○", almost: "◔", idle: "‖", done: "✓", error: "✕", starting: "…", interrupted: "■" };
+const LABEL: Record<TileSpec["state"], string> = { needs_you: "Needs you", working: "Working", almost: "Almost done", idle: "Waiting", done: "Done", error: "Error", starting: "Starting", interrupted: "Interrupted" };
 
 export function StateMark({ s }: { s: TileSpec["state"] }) {
   return <span className="mr-mark" data-s={s}><span aria-hidden="true">{GLYPH[s]}</span>{LABEL[s]}</span>;

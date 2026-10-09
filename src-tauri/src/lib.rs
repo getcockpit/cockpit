@@ -3,6 +3,7 @@ mod eventlog;
 mod gh;
 mod selftest;
 mod sidecar;
+mod worktree;
 
 use tauri::Manager;
 
