@@ -19,11 +19,15 @@ export type Question = { question: string; header: string; options: { label: str
 
 export type TranscriptItem = (
   | { kind: "text"; id: string; text: string; at: number }
-  | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; background?: { status: string; summary?: string }; at: number }
+  | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; background?: Background; at: number }
   | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery }
   | { kind: "view"; id: string; title: string; blocks: ViewBlock[]; at: number }
   | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number }
 ) & { step?: string }; // the plan step in progress when it arrived (MR-69)
+
+// A backgrounded command or agent (run_in_background): it outlives its tool call. output: the file
+// Claude Code writes its output to; from/to: when it started and ended.
+export type Background = { status: string; summary?: string; output?: string; from?: number; to?: number };
 
 // A view Claude composed from the catalog with render_view (decision 26, MR-61). Blocks were
 // validated by the core; fields beyond the required ones may be missing.
