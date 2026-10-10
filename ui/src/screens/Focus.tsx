@@ -353,7 +353,7 @@ function groupTools(items: TranscriptItem[]): Row[] {
     run = [];
   };
   for (const t of items) {
-    if (t.kind === "tool" && !isCard(t) && !t.background) run.push(t);
+    if (t.kind === "tool" && !t.background && !isCard(t)) run.push(t);
     else { flush(); out.push(t); }
   }
   flush();
