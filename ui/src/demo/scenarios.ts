@@ -42,6 +42,11 @@ const busy: E[] = [
   { session: "B", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-B", model: "claude-opus-5-5" }, at: 51 },
   say("B", "The plan is in the working doc. One open question: should exports run synchronously for small accounts, or always go through the job queue?", 2200),
   result("B", "plan ready", 2201, 0.18),
+  // A second workspace with something waiting (J17).
+  { kind: "ui.workspace_created", payload: { id: "ws_client", name: "Client A", config_dir: "/demo/ws_client" }, at: 3 },
+  { session: "F", kind: "ui.session_requested", payload: { prompt: "Migrate the client's billing to Stripe Tax", kind: "blank", cwd: "/Users/me/code/client-a", workspace: "ws_client" }, at: 70 },
+  { session: "F", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-F", model: "claude-opus-5-5" }, at: 71 },
+  { session: "F", kind: "sidecar.permission_request", payload: { request_id: "pF", tool: "Bash", input: { command: "stripe tax settings update --live", description: "Turn on Stripe Tax in live mode" }, suggestions: null, decision_reason: null }, at: 2330 },
   // D: finished with a recap (diagram already drawn)
   ...start("D", "Refactor the settings schema", { cwd: "/Users/me/code/shop-worktrees/settings-schema", repo: "/Users/me/code/shop", branch: "mr/settings-schema" }, 60),
   todos("D", 5, [["Design schema", "Designing schema"], ["Migrate readers", "Migrating readers"], ["Write migration", "Writing migration"], ["Tests", "Running tests"]], 1500),
