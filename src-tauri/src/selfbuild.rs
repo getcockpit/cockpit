@@ -234,7 +234,11 @@ mod tests {
         }
         let st = Command::new("bash").arg(&script).args(["999999", bad.to_str().unwrap(), "B1", prev.to_str().unwrap(), dir.to_str().unwrap(), "3"]).status().unwrap();
         assert!(st.success());
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // The fallback is launched detached: wait for it (generously, so a busy machine can't flake this).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !dir.join("fallback-ran").exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
         assert!(dir.join("fallback-ran").exists(), "fallback build should have been launched");
         assert!(std::fs::read_to_string(dir.join("builds/fallbacks.log")).unwrap().contains("B1"));
     }
