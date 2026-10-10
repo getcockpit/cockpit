@@ -242,7 +242,7 @@ test("a bug report's fix waits in the queue until applied, then asks for a rebui
   const { suggest } = await import("../picker/suggest");
   const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = "g", at = 1): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: at });
   const base = [
-    ev("G1", "ui.session_requested", { prompt: "God-mode mark on Minority report.\n\nTheir note: lamps are wrong\n\nWhat it showed: x", cwd: "/r-worktrees/g", branch: "mr/g", worktree: "/r-worktrees/g" }),
+    ev("G1", "ui.session_requested", { prompt: "God-mode mark on Cockpit.\n\nTheir note: lamps are wrong\n\nWhat it showed: x", cwd: "/r-worktrees/g", branch: "mr/g", worktree: "/r-worktrees/g" }),
     ev("G2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "tool_use", id: "t", name: "Edit", input: { file_path: "a.ts", old_string: "a", new_string: "b" } }] } } }),
     ev("G3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } }),
   ];
@@ -262,7 +262,7 @@ test("look settings replay and a restyle session is an app change", async () => 
   expect(replay([e("L1", { scale: 1.12 }), e("L2", { density: "compact" })]).look).toEqual({ scale: 1.12, density: "compact" });
   expect(replay([e("L1", { density: "huge" })]).look.density).toBe("default");
   expect(isAppChange({ title: "Restyle the app: warmer\n\nThis is…" })).toBe(true);
-  expect(cleanTitle("Restyle the app: warmer greys\n\nThis is Minority report's own repo.")).toBe("Style: warmer greys");
+  expect(cleanTitle("Restyle the app: warmer greys\n\nThis is Cockpit's own repo.")).toBe("Style: warmer greys");
 });
 
 test("deleting a workspace moves its sessions to Personal's archive as read-only history", () => {

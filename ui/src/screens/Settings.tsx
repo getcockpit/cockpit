@@ -29,7 +29,7 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
     if (!styleAsk.trim()) return;
     try {
       const repo = await invoke<string>("app_repo_path");
-      const id = await api.start(repo, `Restyle the app: ${styleAsk.trim()}\n\nThis is Minority report's own repo. Change the look only through the design tokens in ui/src/design/tokens.css (colours, fonts, spacing variables; add or adjust a theme block if needed) and, only if a token can't express it, the shared styles in ui/src/design/components.css. Components must keep using var(--mr-*). Keep the signal colours' roles (amber = needs you, red = error, green = done, teal = selected) and light mode only. Run \`cd ui && bun run test && bun run build\`, then commit on this branch as one commit titled "Style: <what changed>". The user applies it to their app from the wall.`, "blank", true);
+      const id = await api.start(repo, `Restyle the app: ${styleAsk.trim()}\n\nThis is Cockpit's own repo. Change the look only through the design tokens in ui/src/design/tokens.css (colours, fonts, spacing variables; add or adjust a theme block if needed) and, only if a token can't express it, the shared styles in ui/src/design/components.css. Components must keep using var(--mr-*). Keep the signal colours' roles (amber = needs you, red = error, green = done, teal = selected) and light mode only. Run \`cd ui && bun run test && bun run build\`, then commit on this branch as one commit titled "Style: <what changed>". The user applies it to their app from the wall.`, "blank", true);
       setStyleAsk(""); onClose(); onOpenSession(id);
     } catch (e) { setMsg(shortError(e)); }
   };

@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=workspace MR_DATA_DIR="$data" perl -e 'alarm 120; exec @ARGV' "$root/src-tauri/target/debug/minority-report"
+MR_SELFTEST=workspace MR_DATA_DIR="$data" perl -e 'alarm 120; exec @ARGV' "$root/src-tauri/target/debug/Cockpit"
 ws="$(ls "$data/workspaces" | head -1)"
 cfg="$data/workspaces/$ws/claude"
 [ -L "$cfg/CLAUDE.md" ] || [ ! -e "$HOME/.claude/CLAUDE.md" ] || { echo "FAILED: CLAUDE.md not linked"; exit 1; }

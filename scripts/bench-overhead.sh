@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Overhead benchmark (spends real usage): runs the same tasks through plain `claude -p` and through
-# Minority report (MR_SELFTEST=bench), each in a fresh clone, and writes one stream per run to $out.
+# Cockpit (MR_SELFTEST=bench), each in a fresh clone, and writes one stream per run to $out.
 # Summarise with: python3 scripts/bench-overhead.py <out-dir>
 set -euo pipefail
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 reps="${REPS:-2}"
 out="${1:-$(mktemp -d /tmp/mr-bench.XXXX)}"
 mkdir -p "$out"
-app="$root/src-tauri/target/debug/minority-report"
+app="$root/src-tauri/target/debug/Cockpit"
 [ -x "$app" ] || { echo "build the app first (cargo build)"; exit 1; }
 
 tasks=(

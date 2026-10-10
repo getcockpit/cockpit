@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=plan MR_DATA_DIR="$data" "$root/src-tauri/target/debug/minority-report"
+MR_SELFTEST=plan MR_DATA_DIR="$data" "$root/src-tauri/target/debug/Cockpit"
 db="$data/events.sqlite"
 echo "--- plan updates"
 sqlite3 "$db" "SELECT id, (SELECT group_concat(json_extract(s.value,'$.status'), ' ') FROM json_each(e.payload,'$.steps') s) FROM events e WHERE kind='plan.updated' ORDER BY id;"

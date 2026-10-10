@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    minority_report_lib::run()
+    cockpit_lib::run()
 }
