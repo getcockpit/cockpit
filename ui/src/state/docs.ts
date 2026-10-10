@@ -45,6 +45,7 @@ export const docApi = {
   decide: (d: Doc, blockId: string, choice: string) => invoke("event_append", { sessionId: d.session_id, kind: "ui.doc_decision", payload: { doc_id: d.id, block_id: blockId, choice }, anchor: `doc:${d.id}:${blockId}` }),
   edit: (d: Doc, blockId: string, field: "takeaway" | "key" | "body", value: string) => invoke("event_append", { sessionId: d.session_id, kind: "ui.doc_edit", payload: { doc_id: d.id, block_id: blockId, field, value }, anchor: `doc:${d.id}:${blockId}` }),
   feedback: (d: Doc, regenerate: boolean) => invoke<string>("doc_feedback", { docId: d.id, regenerate }),
+  archive: (d: Doc) => invoke("doc_archive", { docId: d.id }),
 };
 
 /** Sends the user's notes, edits and decisions on a doc to Claude: to its plan session if it's
