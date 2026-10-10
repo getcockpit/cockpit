@@ -1,6 +1,7 @@
 import { isOpenQuestion, type Block, type Doc } from "../state/docs";
 import type { PendingAsk, SessionState } from "../state/types";
 import { flowWaiting, pickTile } from "./pick";
+import { parseReport } from "./report";
 
 // The one needs-you queue (MR-41, JTBD J3): everything waiting on the user, in one list, oldest
 // first. Every count in the app (lamp, workspace badge, section header) reads from this, so they
@@ -20,8 +21,22 @@ export const isAppChange = (s: Pick<SessionState, "title">) => /^(God-mode mark|
 export const fixReady = (s: SessionState) =>
   isAppChange(s) && !!s.branch?.startsWith("mr/") && !s.fixApplied && (s.status === "idle" || s.status === "ended") && Object.keys(s.files).length > 0;
 
+/** The turn's closing "Next: …" line, when it has one. */
+export const nextLine = (text: string): string | null => text.split("\n").reverse().find((l) => /^\s*Next:/i.test(l))?.replace(/^\s*Next:\s*/i, "").trim() ?? null;
+
+/** Does this turn end by asking the user something? A "?" at the end, or a Next line offering choices (MR-56). */
+export function asksUser(text: string): boolean {
+  if (/\?\s*$/.test(text.trim())) return true;
+  const next = nextLine(text);
+  return !!next && replyOptions(next).length >= 2;
+}
+
 /** The last question-like paragraph of a finished turn, for showing it on its own. */
 export function proseQuestion(text: string): string {
+  const decision = parseReport(text)?.decision;
+  if (decision) return decision;
+  const next = nextLine(text);
+  if (next && replyOptions(next).length >= 2) return next;
   const paras = text.trim().split(/\n\s*\n|\n(?=[A-Z])/).map((p) => p.trim()).filter(Boolean);
   const q = [...paras].reverse().find((p) => /\?\s*$/.test(p)) ?? paras.at(-1) ?? "";
   // Keep the sentence(s) that end in "?", dropping lead-in sentences.
@@ -33,8 +48,11 @@ export function proseQuestion(text: string): string {
 // "…want me to X, or Y?" / "Should I X?" — the phrase that makes what follows a set of choices.
 const LEAD = /\b(?:do you want me to|would you like me to|if you want me to|want me to|should i|shall i|should we|shall we|would you like to)\s+/i;
 
-/** Quick replies a question offers: "open a PR, or keep going?" → ["Open a PR", "Keep going"]. */
+/** Quick replies a question offers: "open a PR, or keep going?" → ["Open a PR", "Keep going"];
+ *  quoted choices anywhere ("tell me “GCP” or “Fly”") → ["GCP", "Fly"] (MR-56). */
 export function replyOptions(question: string): string[] {
+  const quoted = [...question.matchAll(/["“'‘]([^"”'’\n]{1,32})["”'’]/g)].map((m) => m[1].trim()).filter((x) => x && !/\s{2}/.test(x));
+  if (quoted.length >= 2 && quoted.length <= 4 && /\bor\b/i.test(question)) return [...new Set(quoted)];
   const q = question.trim().replace(/\?\s*$/, "");
   const m = q.match(LEAD);
   if (!m || m.index === undefined) return [];
@@ -57,7 +75,9 @@ export function needsQueue(sessions: SessionState[], docs: Doc[]): QueueItem[] {
       const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);
       if (last && last.kind === "text") {
         const question = proseQuestion(last.text);
-        out.push({ kind: "prose", key: `prose:${last.id}`, s, question, options: replyOptions(question), at: last.at });
+        const next = nextLine(last.text);
+        const options = replyOptions(question).length ? replyOptions(question) : next ? replyOptions(next) : [];
+        out.push({ kind: "prose", key: `prose:${last.id}`, s, question, options, at: last.at });
       }
     }
   }

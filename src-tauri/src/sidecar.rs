@@ -124,6 +124,13 @@ pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout
     }
 }
 
+/// Appended to every session's system prompt (MR-56). The app renders choices as decision cards
+/// and structured replies as visual blocks, so it asks Claude for those shapes instead of prose.
+pub const VISUAL_GUIDANCE: &str = "You are running inside Minority report, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
+- When the user has to choose between options (which approach, which host, whether to continue), call the AskUserQuestion tool with 2-4 concrete options, each with a short description, instead of asking in prose. One decision per question.
+- Write replies in Markdown: short `## ` section headings, numbered lists for steps or todos, `- ` bullets for facts. Start a list item with a **bold short title**, then the detail. Put rough time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
+- End a turn that needs the user with one line starting `Next:`.";
+
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
 /// Blank sessions in a git repo get their own worktree unless `worktree` is false (decision 7).
 #[tauri::command]
@@ -178,9 +185,12 @@ pub fn session_start(
     if let Some(dir) = crate::workspaces::config_dir(&app, &workspace) {
         msg["env"] = serde_json::json!({ "CLAUDE_CONFIG_DIR": dir });
     }
-    if let Some(p) = crate::flows::system_prompt(&kind) {
-        msg["append_system_prompt"] = p.into();
-    }
+    // Every session gets the visual-app guidance (MR-56); Review/Address add their flow steps.
+    let append = match crate::flows::system_prompt(&kind) {
+        Some(p) => format!("{VISUAL_GUIDANCE}\n\n{p}"),
+        None => VISUAL_GUIDANCE.to_owned(),
+    };
+    msg["append_system_prompt"] = append.into();
     state.live.lock().unwrap().insert(session.clone());
     sidecar_send(state, msg)?;
     Ok(session)
