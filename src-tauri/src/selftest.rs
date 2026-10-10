@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan")
 }
 
 fn workspace_mode() -> bool {
@@ -32,6 +32,14 @@ fn flow_mode() -> bool {
 
 fn resume_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "resume")
+}
+
+fn plan_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "plan")
+}
+
+fn view_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "view")
 }
 
 fn doc_mode() -> bool {
@@ -63,6 +71,12 @@ pub fn run(app: AppHandle) {
                 "This is a UI test of the review tools, not a real review. Pretend you are reviewing a tiny change that adds a retry loop to fetch.ts. Call review_overview (tier 2, one '+' node 'retry loop', one net-new novelty item, total_snippets 1), then call review_snippet for snippet 1 of 1 with a short 3-line diff and exactly one finding with id f1, severity Important. Then stop and wait for my reply as the tool says.".into()
             } else if resume_mode() {
                 "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
+            } else if plan_mode() {
+                // No tool named: the guidance alone should make Claude publish and update its plan (MR-62).
+                "In the current directory, do these steps one at a time: create a.txt containing 'a', then create b.txt containing 'b', then create c.txt containing 'c', then list the directory to check all three exist. Then reply with exactly: SELFTEST DONE".into()
+            } else if view_mode() {
+                // No tool named: the visual guidance alone should make Claude compose a view (MR-61).
+                "This is a UI test; nothing here is real and you don't need to look at any files. Give me a status report for a pretend settings refactor: 3 of 5 steps done, 211 tests passing, 1 test failing in the migration, and one open risk (old desktop builds can't read the new format). Then on a final line reply with exactly: SELFTEST DONE".into()
             } else if doc_mode() {
                 "Create a working document titled 'Selftest plan' with the mr doc_create tool. Add a goal block (block_id goal) whose takeaway is 'Prove the doc loop works', and an open question block (section question, block_id q1, takeaway 'Pick a colour') with data options red and blue. Don't decide it. Then reply with exactly: SELFTEST DONE".into()
             } else {

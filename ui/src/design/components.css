@@ -21,6 +21,10 @@
 .mr-key { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font-weight: 700; cursor: pointer; transition: filter var(--mr-fast); white-space: nowrap; }
 .mr-key:hover { filter: brightness(0.95); }
 .mr-key:disabled { opacity: .5; cursor: default; }
+/* Every press answers (MR-58): it visibly sinks, and keyboard focus shows a ring. */
+.mr-key:active:not(:disabled), .mr-link:active, .mr-press:active { transform: translateY(1px); filter: brightness(0.85); }
+.mr-key:focus-visible, .mr-link:focus-visible, button:focus-visible { outline: 2px solid var(--mr-selected); outline-offset: 2px; }
+@keyframes mr-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .mr-key kbd { font-family: var(--mr-mono); font-weight: 400; padding: 0 5px; background: rgba(0, 0, 0, .1); }
 .mr-key[data-tone="primary"] { background: var(--mr-ink); color: var(--mr-tile); }
 .mr-key[data-tone="primary"] kbd { background: rgba(255, 255, 255, .15); }
@@ -102,14 +106,20 @@
 .mr-link:hover { color: var(--mr-ink); text-decoration: underline; }
 .mr-link kbd { font-size: 11px; color: var(--mr-ink-3); }
 
-/* Liveness (MR-59): the now line and message delivery marks. */
-.mr-now { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--mr-ink-2); }
-.mr-now[data-stale] { color: var(--mr-needs-ink); }
-.mr-now-dot { flex: none; width: 8px; height: 8px; background: var(--mr-ink-2); animation: mr-now-pulse 1.2s ease-in-out infinite; }
-.mr-now[data-stale] .mr-now-dot { background: var(--mr-needs); animation: none; }
-@keyframes mr-now-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
-.mr-delivery { font-size: 12px; padding: 1px 6px; white-space: nowrap; color: var(--mr-ink-2); background: var(--mr-tile); }
-.mr-delivery[data-d="queued"], .mr-delivery[data-d="sending"] { color: var(--mr-ink); }
-.mr-delivery[data-d="taken"] { background: var(--mr-ink); color: var(--mr-tile); font-weight: 700; }
-.mr-delivery[data-d="answered"] { color: var(--mr-done); background: transparent; }
-.mr-delivery[data-d="lost"] { color: var(--mr-error); font-weight: 700; }
+/* Progress track (canvas: Glance) and delivery marks (MR-59, MR-60). */
+.mr-track { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mr-track-segs { display: flex; gap: 3px; }
+.mr-track-segs i { flex: 1 1 0; height: 6px; background: var(--mr-well); }
+.mr-track-segs i[data-seg="done"] { background: var(--mr-ink-3); }
+.mr-track-segs i[data-seg="current"] { background: var(--mr-ink); }
+.mr-track[data-live] .mr-track-segs i[data-seg="current"] { animation: mr-track-pulse 1.2s ease-in-out infinite; }
+.mr-track[data-stale] .mr-track-segs i[data-seg="current"] { background: var(--mr-needs); animation: none; }
+@keyframes mr-track-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.mr-track-cap { display: flex; gap: 12px; color: var(--mr-ink-2); font-variant-numeric: tabular-nums; min-width: 0; }
+.mr-track-cap > :first-child { flex: 1; }
+.mr-track-right { flex: none; font-family: var(--mr-mono); font-size: 12px; }
+.mr-track[data-stale] .mr-track-right { color: var(--mr-needs-ink); }
+.mr-mark[data-d="sending"], .mr-mark[data-d="queued"] { color: var(--mr-ink-2); font-weight: 400; }
+.mr-mark[data-d="taken"] { color: var(--mr-ink); }
+.mr-mark[data-d="answered"] { color: var(--mr-done); font-weight: 400; }
+.mr-mark[data-d="lost"] { color: var(--mr-error); }

@@ -52,6 +52,13 @@ describe("now line", () => {
     expect(nowLine(s, s.heardAt + QUIET_MS)!.stale).toBe(true);
   });
 
+  test("sending to a long-idle session is not silence", () => {
+    const s = replay([...start(), text("hi"), result(), sent("go on")]).sessions.s1;
+    const sentAt = s.transcript.at(-1)!.at;
+    expect(nowLine(s, sentAt + 5000)!.stale).toBe(false);
+    expect(nowLine(s, sentAt + QUIET_MS)!.stale).toBe(true);
+  });
+
   test("a queued message says Claude finishes its step first", () => {
     const s = replay([...start(), toolUse("t1", "x"), sent("wait")]).sessions.s1;
     expect(nowLine(s)!.label).toMatch(/then reading your message/);
@@ -59,5 +66,30 @@ describe("now line", () => {
 
   test("nothing when the turn is over", () => {
     expect(nowLine(replay([...start(), text("hi"), result()]).sessions.s1)).toBeNull();
+  });
+});
+
+describe("composed views (MR-61)", () => {
+  test("view.rendered becomes a transcript item with its catalog blocks", () => {
+    const blocks = [{ type: "tally", items: [{ n: 3, label: "fixed", tone: "done" }] }, { type: "next", text: "Ship it?", replies: ["Open a PR"] }];
+    const s = replay([...start(), ev("view.rendered", { title: "Status", blocks })]).sessions.s1;
+    const v = s.transcript.at(-1);
+    expect(v?.kind).toBe("view");
+    expect(v && v.kind === "view" ? [v.title, v.blocks.length] : null).toEqual(["Status", 2]);
+  });
+});
+
+describe("plan (MR-62)", () => {
+  const plan = (steps: [string, string][]) => ev("plan.updated", { steps: steps.map(([step, status]) => ({ step, status })) });
+  test("plan.updated becomes the session plan; a step keeps its start time while in progress", () => {
+    const first = plan([["Read", "done"], ["Fix", "doing"], ["Test", "todo"]]);
+    const s1 = replay([...start(), first]).sessions.s1;
+    expect(s1.todos.map((x) => x.status)).toEqual(["completed", "in_progress", "pending"]);
+    const since = s1.todos[1].since;
+    const s2 = replay([...start(), first, plan([["Read", "done"], ["Fix", "doing"], ["Test", "todo"], ["Ship", "todo"]])]).sessions.s1;
+    expect(s2.todos[1].since).toBe(since);
+    expect(s2.todos).toHaveLength(4);
+    const s3 = replay([...start(), first, plan([["Read", "done"], ["Fix", "done"], ["Test", "doing"]])]).sessions.s1;
+    expect(s3.todos[2].since).toBeGreaterThan(since!);
   });
 });
