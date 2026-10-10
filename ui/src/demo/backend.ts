@@ -144,7 +144,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       : [{ number: 479, title: "Billing CSV export", url: "https://github.com/acme/billing/pull/479", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, reviewDecision: "CHANGES_REQUESTED" }];
     case "daily_driver": return { streak: 2, goal: 7 };
     case "selfbuild_list": return [];
-    case "personal_history": return { worktree: "/Users/me/code/minority-report-worktrees/mine", changes: [], pending: [] };
+    case "personal_history": return { worktree: "/Users/me/code/minority-report-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
     case "app_repo_path": return "/Users/me/code/minority-report";
     case "layer2_status": return { configured: false };
     case "layer2_classify": {
@@ -158,6 +158,8 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       return null;
     case "limits_refresh": record(null, "sidecar.limits", { available: true, plan: "max", five_hour: { utilization: 0.34, resetsAt: Math.round(Date.now() / 1000) + 7200 }, seven_day: { utilization: 0.58, resetsAt: null } }); return null;
     case "godmode_save_mark": return "/Users/me/code/minority-report";
+    case "personal_sync": return "";
+    case "fix_apply": record(String(a.session), "ui.fix_applied", { branch: "mr/god-mode-mark-ab12" }); return "merged";
     case "plugin:dialog|open": return "/Users/me/code/picked-folder";
     case "term_open": case "workspace_sign_in": case "voice_start": throw new Error("Not available in the demo (needs the desktop app).");
     case "workspace_create": { const wid = `ws_${Date.now().toString(36)}`; record(null, "ui.workspace_created", { id: wid, name: a.name, config_dir: `/demo/${wid}` }); return wid; }

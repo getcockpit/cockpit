@@ -48,11 +48,14 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
     };
     const close = (e: Event) => { if (!(e.target as HTMLElement | null)?.closest?.("[data-mr-menu]")) setMenu(null); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
+    // "Report a bug" without pointing (Settings, the wall footer, an error panel): mark the screen.
+    const report = (e: Event) => { const el = (e as CustomEvent<HTMLElement | undefined>).detail ?? document.body; onOpen(); setHover(null); setMarked(anyTarget(el)); };
+    window.addEventListener("mr:report", report);
     window.addEventListener("contextmenu", ctx, true);
     window.addEventListener("mousedown", close, true);
     window.addEventListener("keydown", esc, true);
     window.addEventListener("scroll", close, true);
-    return () => { window.removeEventListener("contextmenu", ctx, true); window.removeEventListener("mousedown", close, true); window.removeEventListener("keydown", esc, true); window.removeEventListener("scroll", close, true); };
+    return () => { window.removeEventListener("mr:report", report); window.removeEventListener("contextmenu", ctx, true); window.removeEventListener("mousedown", close, true); window.removeEventListener("keydown", esc, true); window.removeEventListener("scroll", close, true); };
   }, []);
 
   useEffect(() => {
@@ -104,7 +107,7 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
     setStatus("Saving the mark…");
     try {
       const repo = await invoke<string>("godmode_save_mark", { packet });
-      const id = await api.start(repo, `God-mode mark on Minority report (this app's own repo). The user marked the "${packet.component}" component as wrong in the ${view} view.\n\nTheir note: ${packet.note}\n\nWhat it showed: ${packet.text}\nSource: ${packet.source} · picker layer: ${packet.layer}\nRendered HTML (trimmed): ${packet.html}\n\nFind why it rendered that way (component in ui/src/components or ui/src/screens, picker in ui/src/picker, or state in ui/src/state), fix it, and add a regression test (vitest, next to the code) built from this packet. The packet is also the last line of evals/marks.jsonl. Run \`cd ui && bun run test && bun run build\`. Keep the fix small.`, "blank", true);
+      const id = await api.start(repo, `God-mode mark on Minority report (this app's own repo). The user marked the "${packet.component}" component as wrong in the ${view} view.\n\nTheir note: ${packet.note}\n\nWhat it showed: ${packet.text}\nSource: ${packet.source} · picker layer: ${packet.layer}\nRendered HTML (trimmed): ${packet.html}\n\nFind why it rendered that way (component in ui/src/components or ui/src/screens, picker in ui/src/picker, or state in ui/src/state), fix it, and add a regression test (vitest, next to the code) built from this packet. The packet is also the last line of evals/marks.jsonl. Run \`cd ui && bun run test && bun run build\`. Keep the fix small. When the tests pass, commit it on this branch as one commit titled "Fix: <what you fixed>"; the user applies it to their app from here.`, "blank", true);
       setStatus("");
       setMarked(null); setNote(""); onClose();
       onOpenSession(id);
