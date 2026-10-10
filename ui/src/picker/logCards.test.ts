@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkRow, counts, editCard, isCard, isCheck } from "./logCards";
+import { checkRow, counts, editCard, isCard, isCheck, stepSummary } from "./logCards";
 import { groupSteps } from "../screens/Focus";
 import type { TranscriptItem } from "../state/types";
 
@@ -70,5 +70,31 @@ describe("transcript grouping", () => {
     const items = [tool("Read", { file_path: "/a" }, "x"), tool("Edit", { file_path: "/a", old_string: "1", new_string: "2" }, {})].map((t) => ({ ...t, step: "Build it" }));
     const [g] = groupSteps(items);
     expect(g.kind === "step" && [g.tools.length, g.signal.length]).toEqual([2, 1]);
+  });
+});
+
+describe("stepSummary", () => {
+  it("tallies a step's actions and lists the files it touched", () => {
+    const s = stepSummary([
+      tool("Read", { file_path: "/r/a.ts" }, "x"), tool("Grep", { pattern: "q" }, "x"),
+      tool("Edit", { file_path: "/r/a.ts", old_string: "1", new_string: "2\n3" }, {}),
+      tool("Edit", { file_path: "/r/a.ts", old_string: "4", new_string: "5" }, {}),
+      tool("Write", { file_path: "/r/new.ts", content: "a\nb" }, { type: "create", structuredPatch: [] }),
+      tool("Bash", { command: "bun run test" }, { stdout: "Tests  3 passed (3)" }),
+      tool("Bash", { command: "bunx tsc --noEmit" }, "x.ts(1,1): error TS1: bad", true),
+      tool("Bash", { command: "git status" }, { stdout: "" }),
+      tool("Bash", { command: "cargo test" }),
+    ]);
+    expect(s.tally).toEqual([
+      { n: 3, label: "edits", tone: "now" },
+      { n: 1, label: "check passed", tone: "done" },
+      { n: 1, label: "failed", tone: "error" },
+      { n: 1, label: "command", tone: "todo" },
+      { n: 2, label: "reads and searches", tone: "deferred" },
+    ]);
+    expect(s.files).toEqual([
+      { label: "a.ts", path: "/r/a.ts", mark: "~", added: 3, removed: 2 },
+      { label: "new.ts", path: "/r/new.ts", mark: "+", added: 2, removed: 0 },
+    ]);
   });
 });
