@@ -91,13 +91,19 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
   switch (cmd) {
     case "events_list": return events;
     case "event_append": return record((a.sessionId as string) ?? null, String(a.kind), (a.payload as Record<string, unknown>) ?? {}).id;
-    case "docs_list": return docs;
+    case "docs_list": return structuredClone(docs); // the real core serializes over IPC
     case "doc_feedback": {
       const d = docs.find((x) => x.id === a.docId);
       if (!d) throw new Error("no such doc");
       const n = d.pending_notes.length + d.pending_changes.length;
       d.pending_notes = []; d.pending_changes = []; d.version += 1; docs = [...docs];
       void emit("mr-event", { id: id(), session_id: d.session_id, kind: "doc.updated", payload: { doc_id: d.id }, anchor: null, created_at: Date.now() });
+      if (a.regenerate) later(1500, () => {
+        // The plan session rewrites a block for the new version.
+        const b = d.blocks.b2;
+        if (b) { d.blocks.b2 = { ...b, was: b.takeaway, takeaway: "Invoices, line items and credit notes; payments stay out of v1.", since: d.version }; docs = [...docs]; }
+        void emit("mr-event", { id: id(), session_id: d.session_id, kind: "doc.block_set", payload: { doc_id: d.id }, anchor: null, created_at: Date.now() });
+      });
       // Like the real core: build the message only; the UI delivers it to the session.
       return `Feedback on working doc "${d.title}": ${n} note${n === 1 ? "" : "s"}${a.regenerate ? ", regenerate it" : ""}.`;
     }

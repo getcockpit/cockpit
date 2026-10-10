@@ -56,11 +56,11 @@ const planDoc: Doc = {
   blocks: Object.fromEntries([
     { id: "b1", section: "goal", status: "proposed", takeaway: "Finance can export any date range of invoices as CSV in under a minute.", key: "Self-serve exports", body: "Today finance asks engineering for a SQL dump every month-end. The export should be self-serve from the invoices page." },
     { id: "b2", section: "scope", status: "proposed", takeaway: "Invoices and line items only; no payments or refunds in v1.", key: "Invoices + line items", body: "- Date range filter\n- Currency column\n- Excludes payments and refunds (v2)" },
-    { id: "b3", section: "design", status: "proposed", takeaway: "A job-queue worker writes the file to S3 and emails a signed link.", key: "Queue → S3 → email", body: "The request enqueues a job; the worker streams rows to S3 (gzip CSV) and emails a 24h signed URL." },
+    { id: "b3", section: "design", status: "proposed", since: 2, was: "A sync endpoint streams the CSV straight to the browser.", takeaway: "A job-queue worker writes the file to S3 and emails a signed link.", key: "Queue → S3 → email", body: "The request enqueues a job; the worker streams rows to S3 (gzip CSV) and emails a 24h signed URL." },
     { id: "b4", section: "risk", status: "proposed", takeaway: "Large accounts (2M+ rows) could take minutes and hit the 15-minute worker timeout.", key: "Worker timeout", body: "Chunk by month and stream; alert above 10 minutes." },
     { id: "b5", section: "question", status: "open", takeaway: "Sync for small accounts, or always through the queue?", key: "Sync or queue?", body: "Sync is instant for 95% of accounts but adds a second code path.", data: { options: [{ label: "Always queue", description: "One path, simpler; a short wait for small accounts" }, { label: "Sync under 10k rows", description: "Instant for most; two code paths to test" }] } },
     { id: "b6", section: "verification", status: "proposed", takeaway: "Golden-file test on a fixture account plus a 2M-row load test.", key: "Golden file + load test", body: "" },
-  ].map((b, i) => [b.id, { data: null, decision: null, updated: "", ...b, order: i }])),
+  ].map((b, i) => [b.id, { data: null, decision: null, updated: "", since: 1, was: null, ...b, order: i }])),
 } as Doc;
 
 // Review (J8): /review on a PR, as an overview then snippets with findings.
