@@ -7,6 +7,7 @@ import "@fontsource/atkinson-hyperlegible-mono/400.css";
 import "@fontsource/atkinson-hyperlegible-mono/700.css";
 import "./design/tokens.css";
 import "./design/components.css";
+import "./design/motion.css";
 import App from "./App";
 
 // Outside the desktop app (a plain browser), run against the scripted demo core: ?demo=busy etc.

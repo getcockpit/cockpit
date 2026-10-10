@@ -7,7 +7,7 @@ export const initialState: AppState = {
   sidecar: { up: false, claude: null },
   lastEventId: null,
   dismissed: [],
-  workspaces: [{ id: "personal", name: "Personal", configDir: null }],
+  workspaces: [{ id: "personal", name: "Personal", configDir: null, folder: null }],
   theme: "control-room",
   look: { scale: 1, density: "default" },
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
@@ -67,13 +67,14 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
-  if (ev.kind === "ui.workspace_created") return { ...next, workspaces: [...next.workspaces, { id: String(p.id), name: String(p.name), configDir: (p.config_dir as string) ?? null }] };
+  if (ev.kind === "ui.workspace_created") return { ...next, workspaces: [...next.workspaces, { id: String(p.id), name: String(p.name), configDir: (p.config_dir as string) ?? null, folder: null }] };
   if (ev.kind === "ui.workspace_deleted") {
     // Its sessions become read-only history in Personal's archive; their Claude history went with the workspace.
     const id = String(p.id), name = String(p.name ?? "workspace");
     const sessions = Object.fromEntries(Object.entries(next.sessions).map(([k, s]) => [k, s.workspace === id ? { ...s, workspace: "personal", archivedAt: s.archivedAt ?? ev.created_at, fromDeleted: name, pending: [], status: s.status === "ended" || s.status === "error" ? s.status : "ended" as const } : s]));
     return { ...next, sessions, workspaces: next.workspaces.filter((w) => w.id !== id) };
   }
+  if (ev.kind === "ui.workspace_folder_set") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, folder: (p.folder as string) ?? null } : w)) };
   if (ev.kind === "ui.workspace_renamed") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, name: String(p.name) } : w)) };
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
@@ -288,4 +289,13 @@ function addressStep(a: SessionState["address"], kind: string, p: Record<string,
   if (kind === "flow.address_reply") return { ...f, replies: { ...f.replies, [id]: p as never } };
   if (kind === "ui.address_chosen") return { ...f, chosen: { ...f.chosen, [id]: String(p.option) } };
   return f;
+}
+
+/** Where a new session in this workspace starts (MR-65): its pinned folder, else the folder its
+ *  latest session ran in, else null (the picker's own fallback). */
+export function workspaceFolder(state: AppState, ws: string): string | null {
+  const pinned = state.workspaces.find((w) => w.id === ws)?.folder;
+  if (pinned) return pinned;
+  const last = [...state.order].reverse().map((id) => state.sessions[id]).find((s) => s.workspace === ws && !s.fromDeleted && (s.kind === "blank" || s.kind === "plan"));
+  return last ? last.repo ?? last.cwd : null;
 }

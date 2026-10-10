@@ -1,5 +1,6 @@
 import { keyOf } from "../components/keys";
-import { FolderPicker, useWorkFolder } from "../components/FolderPicker";
+import { FolderPicker, PinFolder, useWorkFolder } from "../components/FolderPicker";
+import { workspaceFolder } from "../state/reduce";
 import { cleanTitle } from "../picker/title";
 import { prRepo, prSlug, rememberPrRepo } from "../state/prRepo";
 import { shortError } from "../components/ErrorLine";
@@ -35,12 +36,12 @@ const HOW: Record<SessionKind, string> = {
 
 type Item = { ref: string; title: string; meta: string; hot: boolean; value: string; repo?: string };
 
-export function StartPicker({ state, onClose, onStarted, initialText = "", initialMode }: { state: AppState; onClose: () => void; onStarted: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
+export function StartPicker({ state, workspace = "personal", onClose, onStarted, initialText = "", initialMode }: { state: AppState; workspace?: string; onClose: () => void; onStarted: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
   // Opens on the kind you used last (F6); dictated text always starts a blank session.
   const [mode, setModeRaw] = useState<SessionKind>(() => { if (initialMode) return initialMode; if (initialText) return "blank"; try { return (localStorage.getItem("mr.mode") as SessionKind) || "blank"; } catch { return "blank"; } });
   const setMode = (m: SessionKind) => { setModeRaw(m); try { localStorage.setItem("mr.mode", m); } catch { /* convenience only */ } };
   const [text, setText] = useState(initialText);
-  const [cwd, setCwd] = useWorkFolder();
+  const [cwd, setCwd] = useWorkFolder(workspaceFolder(state, workspace));
   const [prs, setPrs] = useState<Pr[] | null>(null);
   const [error, setError] = useState("");
   const [sel, setSel] = useState(0);
@@ -106,14 +107,15 @@ export function StartPicker({ state, onClose, onStarted, initialText = "", initi
 
   const m = MODES.find((x) => x.id === mode)!;
   return (
-    <div role="dialog" aria-label="Start something" onKeyDown={onKey}
+    <div role="dialog" className="mr-scrim" aria-label="Start something" onKeyDown={onKey}
       style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)", zIndex: 10 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
+      <div className="mr-sheet" style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)" }} onSubmit={(e) => { e.preventDefault(); void start(text); }}>
           {mode === "review" || mode === "address"
             ? <span className="mr-dim" style={{ flex: "0 1 240px", padding: "0 8px" }} title="Review and Address run in the PR's own clone">Runs in the PR's repo</span>
-            : <FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[...new Set(state.order.map((id) => state.sessions[id]).reverse().map((x) => x.repo ?? x.cwd))].slice(0, 5)} />}
+            : <><FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[...new Set(state.order.map((id) => state.sessions[id]).reverse().map((x) => x.repo ?? x.cwd))].slice(0, 5)} />
+              <PinFolder workspace={workspace} folder={cwd} pinned={state.workspaces.find((w) => w.id === workspace)?.folder ?? null} /></>}
           <input ref={input} className="mr-input" style={{ fontSize: 17, background: "var(--mr-well)" }} placeholder={m.placeholder} value={text} onChange={(e) => setText(e.target.value)} aria-label={m.placeholder} />
           <Key k="↵" tone="primary" disabled={!text.trim() && !items[sel]}>Start</Key>
         </form>
