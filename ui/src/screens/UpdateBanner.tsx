@@ -66,7 +66,8 @@ export function UpdateBanner({ all, onOpenSession }: { all: AppState; onOpenSess
     </>;
   } else if (u.phase === "building") {
     const segs = u.step === "app" ? (["done", "current"] as const) : (["current", "todo"] as const);
-    body = <div style={{ flex: 1 }}><ProgressTrack segs={[...segs]} fill live source="update"
+    // mr-grow, not flex: 1: without min-width 0 the commit subjects stretch the line past the window.
+    body = <div className="mr-grow" title={u.subjects.join("\n") || undefined}><ProgressTrack segs={[...segs]} fill live source="update"
       left={`Updating · building ${STEP[u.step ?? ""] ?? "…"}${u.subjects.length ? ` · ${list(u.subjects, 2)}` : ""} · keep working`}
       right={u.startedAt ? ago(Math.max(0, t - u.startedAt)) : undefined} /></div>;
   } else if (u.phase === "ready") {
