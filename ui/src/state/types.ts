@@ -61,7 +61,9 @@ export type SessionState = {
   id: string;
   kind: SessionKind;
   workspace: string;
-  title: string;
+  title: string; // the first prompt
+  name: string | null; // your rename: always wins (MR-63)
+  autoTitle: string | null; // what Claude says the thread is about now (title_set, MR-63)
   cwd: string;
   repo: string | null;
   branch: string | null;

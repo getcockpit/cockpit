@@ -15,7 +15,7 @@ export function Archive({ sessions, onOpen, onClose }: { sessions: SessionState[
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return [...sessions].sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
-      .filter((s) => !needle || `${s.title} ${s.repo ?? ""} ${s.branch ?? ""} ${s.cwd}`.toLowerCase().includes(needle));
+      .filter((s) => !needle || `${s.title} ${s.name ?? ""} ${s.autoTitle ?? ""} ${s.repo ?? ""} ${s.branch ?? ""} ${s.cwd}`.toLowerCase().includes(needle));
   }, [sessions, q]);
   useEffect(() => setSel(0), [q]);
   const day = (t: number | null) => (t ? new Date(t).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }) : "");

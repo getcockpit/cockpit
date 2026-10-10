@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DeliveryMark, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
-import { isAppChange, proseQuestion, replyOptions } from "../picker/queue";
+import { isAppChange, proposedReplies, proseQuestion, replyOptions } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { summarizeTool } from "../picker/toolSummary";
 import { shortError } from "../components/ErrorLine";
@@ -88,7 +88,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
         <div className="mr-row" style={{ gap: 14 }}>
           <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-            <strong className="mr-ellipsis" style={{ fontSize: 18 }} title={s.title}>{sessionTitle(s)}</strong>
+            <SessionName s={s} />
             <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }} title={s.cwd}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{where || s.cwd}</span>
           </div>
           <StateMark s={tile.state} />
@@ -217,20 +217,17 @@ function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" 
   );
 }
 
-// What to say next after a turn (F11): the choices its last question offers, or the usual next
-// steps for finished work.
+// What to say next after a turn (F11): the replies Claude proposed, or its question's choices.
 export function nextReplies(s: SessionState): string[] {
   if (s.review || s.address) return []; // flows carry their own actions (Start walkthrough, options)
   const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user" || t.kind === "view").at(-1);
   if (last?.kind === "view") return viewReplies(last.blocks);
-  if (last?.kind === "text" && /\?\s*$/.test(last.text.trim())) {
-    const opts = replyOptions(proseQuestion(last.text));
-    if (opts.length) return opts;
-  }
   if (last?.kind !== "text") return [];
-  return Object.keys(s.files).length
-    ? ["Open a PR for this", "Run the full test suite", "Explain the changes and their risks"]
-    : ["Continue", "Explain what you found"];
+  // Claude's own proposals first (MR-63), then the choices its closing question offers. No
+  // hard-coded fallback: buttons that ignore the conversation are worse than none.
+  const proposed = proposedReplies(last.text);
+  if (proposed.length) return proposed;
+  return /\?\s*$/.test(last.text.trim()) ? replyOptions(proseQuestion(last.text)) : [];
 }
 
 type Tool = Extract<TranscriptItem, { kind: "tool" }>;
@@ -274,5 +271,33 @@ function ToolGroup({ tools, onDiscover }: { tools: Tool[]; onDiscover: (what: st
       </button>
       {open && <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{tools.map((t) => <ToolRow key={t.id} t={t} onDiscover={onDiscover} />)}</div>}
     </div>
+  );
+}
+
+// The session's name (MR-63): click to rename. Yours wins over Claude's title; clearing it hands
+// the title back to Claude. Logged as ui.session_renamed, so it survives replay.
+function SessionName({ s }: { s: SessionState }) {
+  const [edit, setEdit] = useState<string | null>(null);
+  const shown = sessionTitle(s);
+  const save = () => {
+    const name = (edit ?? "").trim();
+    setEdit(null);
+    if (name !== (s.name ?? shown)) void api.log("ui.session_renamed", { name }, s.id);
+  };
+  if (edit !== null) {
+    return (
+      <input className="mr-input" data-mr="SessionName" data-mr-source={s.id} autoFocus value={edit} aria-label="Rename this session" placeholder={s.autoTitle ?? "Name this session"}
+        onChange={(e) => setEdit(e.target.value)} onBlur={save}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEdit(null); } }}
+        style={{ fontSize: 18, fontWeight: 700, padding: "2px 6px" }} />
+    );
+  }
+  const by = s.name ? "your name" : s.autoTitle ? "named by Claude" : "your first message";
+  return (
+    <button type="button" data-mr="SessionName" data-mr-source={s.id} onClick={() => setEdit(s.name ?? shown)}
+      title={`Click to rename · ${by}${s.title && s.title !== shown ? ` · started as: ${s.title.slice(0, 200)}` : ""}`}
+      className="mr-ellipsis" style={{ font: "inherit", fontSize: 18, fontWeight: 700, border: 0, padding: 0, background: "transparent", color: "inherit", textAlign: "left", cursor: "text" }}>
+      {shown}
+    </button>
   );
 }
