@@ -87,6 +87,8 @@ export function flowWaiting(s: SessionState): string | null {
     const n = sn?.findings?.length ?? 0;
     return `Snippet ${r.current} of ${sn?.total ?? r.overview?.total_snippets ?? "?"} · ${n ? `${n} finding${n === 1 ? "" : "s"} to note or skip` : "nothing flagged"}`;
   }
+  // Overview shown, walkthrough not started: the review waits on you to start it (MR-58 walk).
+  if (r?.overview && r.current === null) return `Overview ready · ${r.overview.total_snippets ? `${r.overview.total_snippets} snippet${r.overview.total_snippets === 1 ? "" : "s"} to walk` : "start the walkthrough"}`;
   const a = s.address;
   if (a?.current && !a.chosen[a.current]) return `Thread ${a.threads[a.current]?.at ?? ""} · pick how to address it`.replace("  ", " ");
   return null;
