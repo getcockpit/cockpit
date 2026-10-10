@@ -1,3 +1,4 @@
+import type { Effort } from "./protocol";
 import type { QueryFn } from "./sessions";
 
 // A scripted stand-in for the Agent SDK's query(), used by tests (MR_FAKE_QUERY=1).
@@ -23,5 +24,11 @@ export const fakeQuery: QueryFn = ({ prompt, options }) => {
   }
   const it = run();
   const usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET = async () => ({ rate_limits_available: true, subscription_type: "max", rate_limits: { five_hour: { utilization: 42, resets_at: "2026-10-09T20:00:00Z" }, seven_day: { utilization: 7, resets_at: null } } });
-  return Object.assign(it, { interrupt: async () => { interrupted = true; }, close: () => {}, usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET });
+  const supportedModels = async () => [
+    { value: "default", displayName: "Default (recommended)", description: "Opus for everything", supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"] as Effort[] },
+    { value: "haiku", displayName: "Haiku", description: "Fastest", supportedEffortLevels: undefined },
+  ];
+  const setModel = async (model?: string) => { if (model === "broken") throw new Error("unknown model"); };
+  const applyFlagSettings = async () => {};
+  return Object.assign(it, { interrupt: async () => { interrupted = true; }, close: () => {}, usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET, supportedModels, setModel, applyFlagSettings });
 };

@@ -153,6 +153,13 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       return null;
     }
     case "session_interrupt": record(String(a.session), "sidecar.sdk", { message: { type: "result", is_error: true, result: "interrupted" } }); return null;
+    case "session_set_model": {
+      const c = a.change as Record<string, unknown>;
+      record(String(a.session), "ui.model_set", c);
+      later(300, () => record(String(a.session), "sidecar.model_set", { ...c, ok: true }));
+      return null;
+    }
+    case "models_refresh": record(null, "sidecar.models", { models: DEMO_MODELS }); return null;
     case "session_stop": record(String(a.session), "sidecar.session_ended", { ok: true }); return null;
     case "session_changes": return [
       { path: "src/app/routes.ts", added: 24, removed: 9, status: "M", risky: null },
@@ -230,3 +237,10 @@ export function install(name: string) {
   // Expose for scripted walkthroughs (e.g. advancing an agent from the browser console).
   (window as unknown as { __mrDemo: unknown }).__mrDemo = { events, record, scenario: name };
 }
+
+// What Claude Code offers a Max login, for the model picker (MR-73).
+const DEMO_MODELS = [
+  { value: "default", resolved: "claude-opus-5-5", displayName: "Default (recommended)", description: "Opus 5.5 with 1M context · most capable", efforts: ["low", "medium", "high", "xhigh", "max"] },
+  { value: "sonnet", resolved: "claude-sonnet-5-5", displayName: "Sonnet", description: "Sonnet 5.5 · everyday tasks", efforts: ["low", "medium", "high"] },
+  { value: "haiku", resolved: "claude-haiku-5-5", displayName: "Haiku", description: "Haiku 5.5 · fastest for quick answers", efforts: [] },
+];

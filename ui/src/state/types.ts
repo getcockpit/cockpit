@@ -72,7 +72,10 @@ export type SessionState = {
   repo: string | null;
   branch: string | null;
   sdkSessionId: string | null;
-  model: string | null;
+  model: string | null; // what Claude Code reports it runs (init), or the alias last switched to
+  modelChoice: string | null; // your pick in the model picker (null: Claude Code's default, MR-73)
+  effort: string | null; // your effort pick (null: the model's default)
+  modelError: string | null; // the last switch Claude Code refused
   status: SessionStatus;
   startedAt: number;
   lastActivity: number;
@@ -100,6 +103,9 @@ export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "oth
 // Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
 export type ClefMeter = { day: string; calls: number; tokens: number; errors: number };
 
+// A row of the model picker: what Claude Code offers this login (MR-73).
+export type ModelRow = { value: string; resolved: string | null; displayName: string; description: string; efforts: string[] };
+
 export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null; weeklyResetsAt: number | null };
 
 // One-click Update (decision 27, MR-66): the background build of main and what the last update brought.
@@ -109,6 +115,7 @@ export type AppState = {
   sessions: Record<string, SessionState>;
   order: string[]; // sessions in start order (the wall never reorders by state)
   usage: Usage;
+  models: ModelRow[];
   sidecar: { up: boolean; claude: string | null };
   lastEventId: string | null;
   dismissed: string[];
