@@ -59,7 +59,16 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      if (keyOf(e) === "Escape" && !typing) { e.preventDefault(); onBack(); }
+      // Esc goes back even from a text field (the message box keeps focus after sending): an empty
+      // field goes straight back, one with a draft is left first so the draft isn't lost to a stray Esc.
+      // The terminal keeps Esc for itself, and an open dialog closes first.
+      if (keyOf(e) === "Escape" && !e.defaultPrevented && !document.querySelector('[role="dialog"]')) {
+        const el = e.target as HTMLElement;
+        if (el.closest?.(".xterm")) return;
+        e.preventDefault();
+        if (typing && (el as HTMLInputElement).value) { el.blur(); return; }
+        onBack();
+      }
       if (keyOf(e) === "." && e.metaKey && running) { e.preventDefault(); void api.interrupt(s.id); }
       if (keyOf(e) === "d" && e.metaKey && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
       if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
