@@ -136,7 +136,24 @@ const viewEvents: E[] = [
   result("V", "ok", 61),
 ];
 
+
+// MR-62: a long-running session that published its plan; the panel stays pinned while you scroll.
+const planStep = (at: number, doing: number): E => ({ session: "P", kind: "plan.updated", payload: { steps: ["Read the settings readers", "Design the typed schema", "Migrate the 12 readers", "Write the file migration", "Run the full suite", "Open the PR"].map((step, i) => ({ step, status: i < doing ? "done" : i === doing ? "doing" : "todo" })) }, at });
+const planEvents: E[] = [
+  ...ready, onboarded,
+  ...start("P", "Refactor settings into a typed schema", { cwd: "/Users/me/code/shop-worktrees/settings", repo: "/Users/me/code/shop", branch: "mr/settings-schema" }, 10),
+  planStep(20, 0),
+  ...Array.from({ length: 14 }, (_, i) => tool("P", "Read", { file_path: `src/settings/reader${i}.ts` }, 30 + i)),
+  planStep(60, 1),
+  say("P", "The readers all parse JSON by hand. I'll introduce one schema with defaults and route every reader through it.", 70),
+  planStep(100, 2),
+  ...Array.from({ length: 12 }, (_, i) => tool("P", "Edit", { file_path: `src/settings/reader${i}.ts`, old_string: "a", new_string: "a\nb" }, 2300 + i * 5)),
+  say("P", "9 of 12 readers migrated. The last three share a legacy parser; doing those together.", 2370),
+  tool("P", "Bash", { command: "bun test src/settings", description: "Run the settings tests" }, 2385),
+];
+
 export const SCENARIOS: Record<string, Scenario> = {
+  plan: { events: planEvents, docs: [] },
   view: { events: viewEvents, docs: [] },
   shop: { events: shopEvents, docs: [] },
   bugs: { events: bugEvents, docs: [] },
