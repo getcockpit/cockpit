@@ -19,8 +19,33 @@ fn gh(cwd: &str, args: &[&str]) -> Result<serde_json::Value, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())
 }
 
+// My open PRs with their review threads, in one call (search can't see threads).
+const MINE: &str = "query { viewer { login } search(query: \"is:pr is:open author:@me archived:false\", type: ISSUE, first: 30) { nodes { ... on PullRequest { number title url updatedAt isDraft reviewDecision repository { nameWithOwner } reviewThreads(first: 100) { nodes { isResolved comments(last: 1) { nodes { author { login } } } } } } } } }";
+
+/// What's worth addressing in my open PRs: `waiting` counts unresolved threads whose last word is
+/// someone else's (a reply of mine means the ball is with them). Changes requested first, then
+/// PRs with waiting threads, then the rest, newest first within each.
+pub fn rank_mine(data: &serde_json::Value) -> serde_json::Value {
+    let me = data["viewer"]["login"].as_str().unwrap_or_default();
+    let mut prs: Vec<serde_json::Value> = data["search"]["nodes"].as_array().cloned().unwrap_or_default().into_iter()
+        .filter(|p| p["number"].is_number())
+        .map(|mut p| {
+            let threads = p["reviewThreads"]["nodes"].as_array().cloned().unwrap_or_default();
+            let open: Vec<_> = threads.iter().filter(|t| t["isResolved"] == false).collect();
+            let waiting = open.iter().filter(|t| t["comments"]["nodes"][0]["author"]["login"].as_str() != Some(me)).count();
+            p["unresolved"] = open.len().into();
+            p["waiting"] = waiting.into();
+            p.as_object_mut().map(|o| o.remove("reviewThreads"));
+            p
+        })
+        .collect();
+    let tier = |p: &serde_json::Value| if p["reviewDecision"] == "CHANGES_REQUESTED" { 0 } else if p["waiting"].as_u64().unwrap_or(0) > 0 { 1 } else { 2 };
+    prs.sort_by(|a, b| tier(a).cmp(&tier(b)).then_with(|| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str())));
+    prs.into()
+}
+
 /// `review`: open PRs waiting for my review. `address`: my open PRs anywhere (not just this
-/// folder's repo), changes-requested first. Both work from any folder (MR-48).
+/// folder's repo), the ones with something to address first. Both work from any folder (MR-48).
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
 #[tauri::command(async)]
 pub fn gh_prs(app: AppHandle, cwd: String, mode: String) -> Result<serde_json::Value, String> {
@@ -28,20 +53,7 @@ pub fn gh_prs(app: AppHandle, cwd: String, mode: String) -> Result<serde_json::V
     let cwd = if std::path::Path::new(&cwd).is_dir() { cwd } else { std::env::var("HOME").unwrap_or_default() };
     match mode.as_str() {
         "review" => gh(&cwd, &["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"]),
-        "address" => {
-            let mut v = gh(&cwd, &["search", "prs", "--author=@me", "--state=open", "--limit", "30", "--json", "number,title,url,repository,updatedAt"])?;
-            let flagged: Vec<String> = gh(&cwd, &["search", "prs", "--author=@me", "--state=open", "--review=changes_requested", "--limit", "30", "--json", "url"])
-                .ok().and_then(|x| x.as_array().map(|a| a.iter().filter_map(|p| p["url"].as_str().map(str::to_owned)).collect())).unwrap_or_default();
-            if let Some(a) = v.as_array_mut() {
-                for p in a.iter_mut() {
-                    if flagged.iter().any(|u| Some(u.as_str()) == p["url"].as_str()) {
-                        p["reviewDecision"] = "CHANGES_REQUESTED".into();
-                    }
-                }
-                a.sort_by_key(|p| if p["reviewDecision"] == "CHANGES_REQUESTED" { 0 } else { 1 });
-            }
-            Ok(v)
-        }
+        "address" => Ok(rank_mine(&gh(&cwd, &["api", "graphql", "-f", &format!("query={MINE}")])?["data"])),
         _ => Err(format!("unknown mode {mode}")),
     }
 }
@@ -114,12 +126,31 @@ pub fn pr_repo(spec: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn reads_the_repo_from_any_pr_spec() {
         assert_eq!(repo_slug("https://github.com/acme/platform/pull/482"), Some("acme/platform".into()));
         assert_eq!(repo_slug("acme/platform#12"), Some("acme/platform".into()));
         assert_eq!(repo_slug("482"), None);
+    }
+
+    #[test]
+    fn ranks_my_prs_by_what_waits_on_me() {
+        let t = |resolved: bool, by: &str| json!({ "isResolved": resolved, "comments": { "nodes": [{ "author": { "login": by } }] } });
+        let data = json!({ "viewer": { "login": "me" }, "search": { "nodes": [
+            { "number": 1, "updatedAt": "2026-10-03", "reviewThreads": { "nodes": [] } },
+            { "number": 2, "updatedAt": "2026-10-01", "reviewThreads": { "nodes": [t(false, "dana"), t(false, "me"), t(true, "dana")] } },
+            { "number": 3, "updatedAt": "2026-10-02", "reviewThreads": { "nodes": [t(false, "me")] } },
+            { "number": 4, "updatedAt": "2026-09-01", "reviewDecision": "CHANGES_REQUESTED", "reviewThreads": { "nodes": [] } },
+            {},
+        ] } });
+        let r = rank_mine(&data);
+        let order: Vec<u64> = r.as_array().unwrap().iter().map(|p| p["number"].as_u64().unwrap()).collect();
+        assert_eq!(order, vec![4, 2, 1, 3]);
+        assert_eq!((r[1]["waiting"].as_u64(), r[1]["unresolved"].as_u64()), (Some(1), Some(2)));
+        assert_eq!(r[3]["waiting"].as_u64(), Some(0));
+        assert!(r[0].get("reviewThreads").is_none());
     }
 
     #[test]

@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { initialState, reduce, replay } from "./reduce";
 import type { AppState, MrEvent } from "./types";
 
-export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean };
+export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number };
 
 type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent };
 
