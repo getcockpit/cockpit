@@ -14,6 +14,7 @@ export const initialState: AppState = {
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
   lastBuildAt: null,
+  update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
@@ -40,6 +41,21 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
   }
   if (ev.kind === "selfbuild.finished" && p.ok) return { ...next, lastBuildAt: ev.created_at };
+  if (ev.kind.startsWith("update.") || ev.kind === "app.started" || ev.kind === "ui.update_seen" || ev.kind === "ui.update_dismissed") {
+    const u = next.update;
+    const strs = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+    switch (ev.kind) {
+      case "update.started": return { ...next, update: { ...u, phase: "building", step: null, log: null, subjects: strs(p.subjects), startedAt: ev.created_at } };
+      case "update.step": return { ...next, update: { ...u, step: String(p.step ?? "") } };
+      case "update.finished": return { ...next, update: { ...u, phase: p.ok ? "ready" : "failed", step: p.ok ? null : String(p.step ?? ""), log: p.ok ? null : String(p.log ?? "") } };
+      case "update.restarting": return { ...next, update: { ...u, restarting: strs(p.subjects) } };
+      // A fresh start: whatever was building belonged to the old app; an update we restarted for is now live.
+      case "app.started": return { ...next, lastBuildAt: ev.created_at, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
+      case "ui.update_seen": return { ...next, update: { ...u, whatsNew: null } };
+      case "ui.update_dismissed": return { ...next, update: { ...u, phase: "idle", step: null, log: null } };
+    }
+    return next;
+  }
   if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };
   if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false };
   if (ev.kind === "sidecar.limits") {

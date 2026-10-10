@@ -29,7 +29,7 @@ fn builds_dir(app: &AppHandle) -> PathBuf {
     data_dir(app).join("builds")
 }
 
-fn sh_path() -> String {
+pub(crate) fn sh_path() -> String {
     let home = std::env::var("HOME").unwrap_or_default();
     format!(
         "{home}/.cargo/bin:{home}/.bun/bin:{home}/.local/share/mise/shims:{home}/.local/share/mise/installs/bun/latest/bin:{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
