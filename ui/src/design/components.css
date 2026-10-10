@@ -18,7 +18,7 @@
 .mr-lamp[data-on="plain"] { color: var(--mr-ink-2); }
 
 /* Keycap buttons */
-.mr-key { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font-weight: 700; cursor: pointer; transition: filter var(--mr-fast); }
+.mr-key { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font-weight: 700; cursor: pointer; transition: filter var(--mr-fast); white-space: nowrap; }
 .mr-key:hover { filter: brightness(0.95); }
 .mr-key:disabled { opacity: .5; cursor: default; }
 .mr-key kbd { font-family: var(--mr-mono); font-weight: 400; padding: 0 5px; background: rgba(0, 0, 0, .1); }
