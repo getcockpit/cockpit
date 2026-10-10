@@ -31,6 +31,12 @@ const CATALOG: &[(&str, &[(&str, F)])] = &[
     ("change_graph", &[("nodes", F::List)]),
     ("snippet", &[("code", F::Str)]),
     ("next", &[("text", F::Str)]),
+    ("findings", &[("items", F::List)]),
+    ("tier", &[("tier", F::Num), ("label", F::Str)]),
+    ("novelty", &[("items", F::List)]),
+    ("tradeoff", &[("points", F::List)]),
+    ("fix_options", &[("options", F::List)]),
+    ("thread", &[("author", F::Str), ("body", F::Str)]),
     ("text", &[("markdown", F::Str)]),
 ];
 
@@ -46,8 +52,14 @@ pub fn tool_spec() -> Value {
 - change_graph {nodes: [{label, mark: '+'|'~'|'-'}]}: what a change touches, in flow order.\n\
 - snippet {file?, code, note?}: only the lines that matter; prefix diff lines with '+', '-' or ' '.\n\
 - next {text, replies?: [string]}: the suggested next move, with 1-3 one-click replies the user can send.\n\
+- findings {items: [{severity: 'critical'|'important'|'suggestion'|'nitpick', title, where?: 'file.ts:42'}]}: review findings on the severity scale, most severe first.\n\
+- tier {tier: 1|2|3, label, detail?}: what's at stake, first. 1 = blocker, customers feel it; 2 = leverage, nothing on fire; 3 = housekeeping.\n\
+- novelty {items: [{verdict: 'new'|'adjacent'|'overlapping'|'duplicate', what, where?}]}: does this already exist, per capability.\n\
+- tradeoff {points: [{x, y}], x_unit?, y_unit?, label?, pick?: x}: when the answer is a number, what each value buys; the user drags and can send 'Use <x>'.\n\
+- fix_options {finding?, options: [{label, detail?, recommended?: true}], defer?: false}: concrete fixes for one finding; clicking one sends it as a reply. A defer row is added unless defer is false.\n\
+- thread {author, body, state?: 'unresolved'|'replied'|'resolved', where?, note?}: a reviewer comment with its real state; a reply is not a resolution.\n\
 - text {markdown}: a short paragraph, only when no other block fits.\n\
-Use AskUserQuestion, not render_view, when the user must choose.",
+Every block except next and text carries Deeper / Discover actions. Use AskUserQuestion, not render_view, for any other choice the user must make.",
         "params": { "title": "string", "blocks": "array" }
     })
 }
@@ -196,6 +208,21 @@ mod tests {
         assert_eq!(events[0].1["title"], "Plan panel for live progress");
         assert!(handle_tool(TITLE, &json!({ "title": "  " })).2);
         assert!(handle_tool(TITLE, &json!({ "title": "x".repeat(61) })).2);
+    }
+
+    #[test]
+    fn designed_blocks_validate() {
+        let (events, _, err) = handle_tool(TOOL, &json!({ "title": "Review", "blocks": [
+            { "type": "tier", "tier": 2, "label": "Leverage" },
+            { "type": "findings", "items": [{ "severity": "critical", "title": "Typed nil" }] },
+            { "type": "novelty", "items": [{ "verdict": "duplicate", "what": "slug resolver" }] },
+            { "type": "tradeoff", "points": [{ "x": 1, "y": 40 }, { "x": 2, "y": 81 }] },
+            { "type": "fix_options", "options": [{ "label": "Guard the nil", "recommended": true }] },
+            { "type": "thread", "author": "marta", "body": "This can return a typed nil." },
+        ] }));
+        assert!(!err && events.len() == 1);
+        let (_, text, err) = handle_tool(TOOL, &json!({ "blocks": [{ "type": "tier", "label": "x" }, { "type": "thread", "author": "marta" }] }));
+        assert!(err && text.contains("'tier' must be a number") && text.contains("'body' must be a non-empty string"));
     }
 
     #[test]
