@@ -6,6 +6,9 @@
 use serde_json::{json, Value};
 
 pub const TOOL: &str = "render_view";
+/// Claude's plan for the current work (MR-62). Claude Code no longer offers TodoWrite to SDK
+/// sessions, so the app owns the plan: the Plan panel, the progress tracks and the tiles read it.
+pub const PLAN: &str = "plan_set";
 
 /// Field kinds a block can require.
 #[derive(Clone, Copy)]
@@ -47,8 +50,35 @@ Use AskUserQuestion, not render_view, when the user must choose.",
     })
 }
 
+pub fn plan_spec() -> Value {
+    json!({
+        "name": PLAN,
+        "description": "Publish your plan for the current work so the user can follow it (the app shows it as a plan with progress). Call it before starting any work with 3 or more steps, and again every time a step starts or finishes, always with the full list. steps: [{step: short imperative ('Migrate the readers'), status: 'done'|'doing'|'todo'}]; exactly one step is 'doing' while you work. Add or drop steps when the plan changes. Don't repeat the plan as text.",
+        "params": { "steps": "array" }
+    })
+}
+
 pub fn is_view_tool(tool: &str) -> bool {
-    tool == TOOL
+    tool == TOOL || tool == PLAN
+}
+
+/// Checks a plan. Ok: the event payload. Err: what to fix.
+pub fn validate_plan(args: &Value) -> Result<Value, String> {
+    let steps = args["steps"].as_array().filter(|s| !s.is_empty()).ok_or("steps must be a non-empty array of {step, status}")?;
+    let mut errors = vec![];
+    for (i, s) in steps.iter().enumerate() {
+        if !s["step"].as_str().is_some_and(|x| !x.trim().is_empty()) {
+            errors.push(format!("steps[{i}]: 'step' must be a non-empty string"));
+        }
+        if !matches!(s["status"].as_str(), Some("done" | "doing" | "todo")) {
+            errors.push(format!("steps[{i}]: 'status' must be 'done', 'doing' or 'todo'"));
+        }
+    }
+    if !errors.is_empty() {
+        return Err(format!("Plan not updated. Fix and call plan_set again:\n{}", errors.join("\n")));
+    }
+    let steps: Vec<Value> = steps.iter().map(|s| json!({ "step": s["step"].as_str().unwrap_or("").trim(), "status": s["status"] })).collect();
+    Ok(json!({ "steps": steps }))
 }
 
 /// Checks every block against the catalog. Ok: the event to record. Err: what to fix, per block.
@@ -81,7 +111,13 @@ pub fn validate(args: &Value) -> Result<Value, String> {
     Ok(json!({ "title": args["title"].as_str().unwrap_or(""), "blocks": blocks }))
 }
 
-pub fn handle_tool(args: &Value) -> (Vec<(String, Value)>, String, bool) {
+pub fn handle_tool(tool: &str, args: &Value) -> (Vec<(String, Value)>, String, bool) {
+    if tool == PLAN {
+        return match validate_plan(args) {
+            Ok(plan) => (vec![("plan.updated".into(), plan)], "Plan shown to the user. Update it as each step starts or finishes.".into(), false),
+            Err(e) => (vec![], e, true),
+        };
+    }
     match validate(args) {
         Ok(view) => (vec![("view.rendered".into(), view)], "Shown to the user. Don't repeat it as text.".into(), false),
         Err(e) => (vec![], e, true),
@@ -94,7 +130,7 @@ mod tests {
 
     #[test]
     fn valid_views_become_events() {
-        let (events, text, err) = handle_tool(&json!({ "title": "Status", "blocks": [
+        let (events, text, err) = handle_tool(TOOL, &json!({ "title": "Status", "blocks": [
             { "type": "tally", "items": [{ "n": 3, "label": "fixed", "tone": "done" }] },
             { "type": "progress", "n": 2, "total": 5, "label": "Migrating readers" },
         ] }));
@@ -105,14 +141,24 @@ mod tests {
 
     #[test]
     fn invalid_blocks_explain_what_to_fix_and_record_nothing() {
-        let (events, text, err) = handle_tool(&json!({ "blocks": [
+        let (events, text, err) = handle_tool(TOOL, &json!({ "blocks": [
             { "type": "chart", "data": [] },
             { "type": "progress", "n": "two", "label": "" },
         ] }));
         assert!(err && events.is_empty());
         assert!(text.contains("unknown type 'chart'"));
         assert!(text.contains("'n' must be a number") && text.contains("'total' must be a number") && text.contains("'label' must be a non-empty string"));
-        assert!(handle_tool(&json!({ "blocks": [] })).2);
+        assert!(handle_tool(TOOL, &json!({ "blocks": [] })).2);
+    }
+
+    #[test]
+    fn plans_become_events_and_bad_steps_explain_themselves() {
+        let (events, _, err) = handle_tool(PLAN, &json!({ "steps": [{ "step": " Read the code ", "status": "done" }, { "step": "Fix it", "status": "doing" }] }));
+        assert!(!err && events[0].0 == "plan.updated");
+        assert_eq!(events[0].1["steps"][0]["step"], "Read the code");
+        let (events, text, err) = handle_tool(PLAN, &json!({ "steps": [{ "step": "", "status": "started" }] }));
+        assert!(err && events.is_empty() && text.contains("'step'") && text.contains("'status'"));
+        assert!(is_view_tool(PLAN) && is_view_tool(TOOL) && !is_view_tool("doc_read"));
     }
 
     #[test]

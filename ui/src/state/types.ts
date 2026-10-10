@@ -32,7 +32,7 @@ export type ViewBlock = { type: string } & Record<string, unknown>;
 // Sent mid-turn it's queued: Claude Code hands it over at the next tool result or turn. Lost: the session ended first.
 export type Delivery = "sending" | "queued" | "taken" | "answered" | "lost";
 
-export type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string };
+export type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string; since?: number }; // since: when the step started (plan_set, MR-62)
 
 export type FileChange = { path: string; added: number; removed: number; isNew: boolean; lastAt: number };
 

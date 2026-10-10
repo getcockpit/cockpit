@@ -1,7 +1,7 @@
 import { keyOf } from "../components/keys";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bar, DeliveryMark, Key, StateMark } from "../components";
+import { DeliveryMark, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
 import { isAppChange, proseQuestion, replyOptions } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
@@ -16,6 +16,7 @@ import { pointer } from "../components/pointer";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { parseReport, TurnText } from "../components/Turn";
 import { ChangeMap } from "./ChangeMap";
+import { PlanPanel } from "../components/PlanPanel";
 import { CatalogView, viewReplies } from "../components/CatalogView";
 import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
@@ -70,10 +71,20 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   }, [onBack, s.id, running, replies]);
 
 
+  // The pinned side panel sits just under the sticky header, whatever height it has right now.
+  const head = useRef<HTMLElement>(null);
+  const [headH, setHeadH] = useState(0);
+  useEffect(() => {
+    if (!head.current) return;
+    const ro = new ResizeObserver(([e]) => setHeadH(Math.ceil(e.target.getBoundingClientRect().height)));
+    ro.observe(head.current);
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", ["--mr-focus-head" as string]: `${headH + 16}px` }}>
       {/* Sticky: the transcript scrolls under it, so state and actions are always in reach. */}
-      <header className="mr-band" style={{ padding: "12px 24px 0", display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 0, zIndex: 5 }}>
+      <header ref={head} className="mr-band" style={{ padding: "12px 24px 0", display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 0, zIndex: 5 }}>
         <div className="mr-row" style={{ gap: 14 }}>
           <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
@@ -130,18 +141,10 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           )}
         </section>
 
-        <aside style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Pinned: the plan and changes stay in view while the transcript scrolls (MR-62). */}
+        <aside style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12, position: "sticky", top: "var(--mr-focus-head, 0px)", alignSelf: "flex-start", maxHeight: "calc(100vh - var(--mr-focus-head, 0px) - 16px)", overflowY: "auto" }}>
           {/* Only what this session has: no empty plan box, no local change map for a PR review (J8). */}
-          {s.todos.length > 0 && <div style={{ background: "var(--mr-tile)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-            <h2 className="mr-h">Plan</h2>
-            {s.todos.map((t, i) => (
-              <div key={i} className="mr-row" style={{ color: t.status === "in_progress" ? "var(--mr-ink)" : t.status === "completed" ? "var(--mr-ink-3)" : "var(--mr-ink-2)", fontWeight: t.status === "in_progress" ? 700 : 400 }}>
-                <span aria-hidden="true" style={{ width: 14 }}>{t.status === "completed" ? "✓" : t.status === "in_progress" ? "▸" : "·"}</span>
-                <span>{t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}</span>
-              </div>
-            ))}
-            <Bar value={tile.progress} />
-          </div>}
+          {s.todos.length > 0 && <PlanPanel s={s} />}
           {s.kind !== "review" && <ChangeMap s={s} onReview={setReviewing} />}
           <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.model ?? ""}{s.costUsd ? ` · $${s.costUsd.toFixed(2)} equiv.` : ""}</span>
         </aside>
@@ -149,6 +152,9 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
     </div>
   );
 }
+
+// Tools whose output has its own visual: the plan panel and composed views.
+const HIDDEN_TOOLS = new Set(["TodoWrite", "mcp__mr__plan_set", "mcp__mr__render_view"]);
 
 // The structured transcript (decision 13): readable rows, not terminal text. ⌘R shows raw JSON.
 function Transcript({ items, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
@@ -160,7 +166,7 @@ function Transcript({ items, raw, diagrams, onDiagram, onDiscover, onReply, live
   if (items.length === 0) return <div className="mr-dim" style={{ padding: 12, background: "var(--mr-tile)" }}>Waiting for the first message…</div>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
-      {(raw ? items : groupTools(items.filter((t) => !(t.kind === "tool" && t.name === "TodoWrite")))).map((t) => raw ? (
+      {(raw ? items : groupTools(items.filter((t) => !(t.kind === "tool" && HIDDEN_TOOLS.has(t.name))))).map((t) => raw ? (
         <pre key={t.id} className="mr-code" style={{ fontSize: 11 }}>{JSON.stringify(t, null, 1)}</pre>
       ) : t.kind === "text" ? (
         <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
