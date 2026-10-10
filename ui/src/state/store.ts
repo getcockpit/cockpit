@@ -55,7 +55,11 @@ export const api = {
   resume: (s: { id: string; cwd: string; kind: string; sdkSessionId: string | null }) =>
     invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
   prs: (cwd: string, mode: "review" | "address") => invoke<Pr[]>("gh_prs", { cwd, mode }),
-  send: (session: string, text: string) => invoke("session_send", { session, text }),
+  // Every message you send is acknowledged on screen right away (MR-58), then the session shows it's working.
+  send: (session: string, text: string) => {
+    window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Sent: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}` }));
+    return invoke("session_send", { session, text }).catch((e) => { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Not sent: ${String(e).split("\n")[0]}` })); throw e; });
+  },
   interrupt: (session: string) => invoke("session_interrupt", { session }),
   stop: (session: string) => invoke("session_stop", { session }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
