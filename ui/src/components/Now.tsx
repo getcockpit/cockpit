@@ -25,9 +25,9 @@ export function LiveTrack({ s, compact }: { s: SessionState; compact?: boolean }
   const segs = s.todos.length ? planSegs(s.todos, true) : ["current" as Seg];
   const step = segs.indexOf("current") + 1;
   const pct = s.todos.length ? Math.round((segs.filter((x) => x === "done").length / segs.length) * 100) : null;
-  const left = [pct !== null ? `${pct}%` : "", s.todos.length > 1 && !compact ? `step ${step} of ${segs.length}` : "", n.label].filter(Boolean).join(" · ");
+  const left = [s.todos.length > 1 && !compact ? `step ${step} of ${segs.length}` : "", n.label].filter(Boolean).join(" · ");
   const right = `${ago(n.elapsedMs)}${n.stale ? ` ${quiet(n.elapsedMs, n.quietMs, compact)}` : ""}`;
-  return <ProgressTrack segs={segs} left={left} right={right} live stale={n.stale} source={s.id} fill />;
+  return <ProgressTrack segs={segs} pct={pct} left={left} right={right} live stale={n.stale} source={s.id} fill />;
 }
 
 // One segment per plan step. While working, some step is always current (the next one to do).
