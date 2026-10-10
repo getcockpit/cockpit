@@ -3,7 +3,7 @@ import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, Pros
 export const initialState: AppState = {
   sessions: {},
   order: [],
-  usage: { fiveHour: null, weekly: null, resetsAt: null },
+  usage: { fiveHour: null, weekly: null, resetsAt: null, weeklyResetsAt: null },
   sidecar: { up: false, claude: null },
   lastEventId: null,
   dismissed: [],
@@ -46,8 +46,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     // Limits double as the sign-in check: they're only available to a signed-in subscription.
     const account = { checked: true, signedIn: !!p.available, plan: (p.plan as string) ?? null };
     if (!p.available) return { ...next, account };
-    const f = p.five_hour as { utilization: number; resetsAt: number | null } | null, w = p.seven_day as { utilization: number } | null;
-    return { ...next, account, usage: { fiveHour: f?.utilization ?? next.usage.fiveHour, weekly: w?.utilization ?? next.usage.weekly, resetsAt: f?.resetsAt ?? next.usage.resetsAt } };
+    const f = p.five_hour as { utilization: number; resetsAt: number | null } | null, w = p.seven_day as { utilization: number; resetsAt: number | null } | null;
+    return { ...next, account, usage: { fiveHour: f?.utilization ?? next.usage.fiveHour, weekly: w?.utilization ?? next.usage.weekly, resetsAt: f?.resetsAt ?? next.usage.resetsAt, weeklyResetsAt: w?.resetsAt ?? next.usage.weeklyResetsAt } };
   }
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
@@ -179,7 +179,8 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
   if (type === "rate_limit_event") {
     const info = m.rate_limit_info as { unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }> } | undefined;
     const w = info?.unifiedWindows ?? {};
-    app.usage = { fiveHour: w.five_hour?.utilization ?? app.usage.fiveHour, weekly: (w.seven_day ?? w.weekly)?.utilization ?? app.usage.weekly, resetsAt: w.five_hour?.resetsAt ?? app.usage.resetsAt };
+    const wk = w.seven_day ?? w.weekly;
+    app.usage = { fiveHour: w.five_hour?.utilization ?? app.usage.fiveHour, weekly: wk?.utilization ?? app.usage.weekly, resetsAt: w.five_hour?.resetsAt ?? app.usage.resetsAt, weeklyResetsAt: wk?.resetsAt ?? app.usage.weeklyResetsAt };
     return;
   }
   if (type === "assistant") {
