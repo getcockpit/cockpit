@@ -181,7 +181,9 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       { path: "/Users/me/code/cockpit", name: "cockpit", repo: true, at: 0 },
       { path: "/Users/me/notes", name: "notes", repo: false, at: 0 },
     ];
-    case "gh_prs": return a.mode === "review"
+    case "gh_repo": return /shop|billing|cockpit/.test(String(a.cwd)) ? `acme/${String(a.cwd).split("/").pop()}` : null;
+    case "gh_prs": if (a.repo) return (handle("gh_prs", { ...a, repo: undefined }) as { repository: { nameWithOwner: string } }[]).filter((p) => p.repository.nameWithOwner === a.repo);
+      return a.mode === "review"
       ? [{ number: 482, title: "Checkout: retry failed payments", url: "https://github.com/acme/shop/pull/482", updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: "acme/shop" } }]
       : [{ number: 479, title: "Billing CSV export", url: "https://github.com/acme/billing/pull/479", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, reviewDecision: "CHANGES_REQUESTED", unresolved: 3, waiting: 2 },
         { number: 486, title: "Invoices: tax line per country", url: "https://github.com/acme/billing/pull/486", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, unresolved: 1, waiting: 1 },

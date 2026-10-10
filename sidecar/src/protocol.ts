@@ -9,7 +9,8 @@ export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 // One row of the model picker: what Claude Code offers this login (supportedModels).
 export type ModelRow = { value: string; resolved: string | null; displayName: string; description: string; efforts: Effort[] };
 
-export type ToolSpec = { name: string; description: string; params: Record<string, "string" | "number" | "boolean" | "object" | "array"> };
+// always_load: the schema sits in the cached prompt instead of behind ToolSearch (a round trip and a mid-turn cache write).
+export type ToolSpec = { name: string; description: string; params: Record<string, "string" | "number" | "boolean" | "object" | "array">; always_load?: boolean };
 
 export type Inbound =
   | { type: "ping"; id?: string }
