@@ -55,6 +55,9 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
   const session = doc.session_id ? state.sessions[doc.session_id] : null;
   const live = !!session && session.status !== "ended" && session.status !== "error";
   const open = blocks.filter(isOpenQuestion);
+  // What the latest version changed (MR-51): blocks set since the last regenerate.
+  const changed = doc.version > 1 ? blocks.filter((b) => b.since === doc.version) : [];
+  const [onlyChanged, setOnlyChanged] = useState(false);
   const pending = doc.pending_notes.length + doc.pending_changes.length;
 
   const [sent, setSent] = useState("");
@@ -104,7 +107,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
             <div style={{ position: "absolute", left: "50%", top: "50%", width: 0, height: 0 }}>
               <div style={{ position: "absolute", width: worldW, height: worldH, transformOrigin: "0 0", transform: `scale(${cam.s}) translate(${-cam.x}px, ${-cam.y}px)`, transition: "transform var(--mr-zoom) cubic-bezier(.2,.7,.2,1)" }}>
                 {blocks.map((b, i) => (
-                  <BlockCard key={b.id} doc={doc} b={b} at={pos(i)} open={focus?.id === b.id} dim={!!focus && focus.id !== b.id}
+                  <BlockCard key={b.id} doc={doc} b={b} at={pos(i)} open={focus?.id === b.id} dim={(!!focus && focus.id !== b.id) || (onlyChanged && !changed.includes(b))} changedIn={changed.includes(b) ? doc.version : null}
                     deep={!!deep[b.id]} thread={threads[b.id]} onClick={(e) => clickBlock(b, i, e)} onDecide={(label) => void decideQuestion(doc, b.id, label, session)}
                     onDeeper={() => setDeep((d) => ({ ...d, [b.id]: !d[b.id] }))} onDiscover={() => void discover(b)} onOpenThread={onOpenSession}
                     onAsk={(q) => live && session ? void api.send(session.id, `About block [${b.section}] "${b.takeaway}" of doc ${doc.id}: ${q}`) : undefined} />
@@ -114,6 +117,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
             <div className="mr-row" style={{ position: "absolute", left: 12, right: 12, bottom: 12, padding: "10px 14px", background: "var(--mr-tile)" }}>
               <span className="mr-mono mr-dim" style={{ flex: "none" }}>{focus ? `${step} / ${blocks.length}` : "Overview"}</span>
               <span className="mr-grow mr-ellipsis" style={{ fontWeight: 700, minWidth: 0 }}>{focus ? `${SECTION_LABEL[focus.section] ?? focus.section}: ${focus.takeaway}` : "At a glance. Space walks through it block by block."}</span>
+              {changed.length > 0 && !focus && <Key tone={onlyChanged ? "primary" : undefined} onClick={() => setOnlyChanged((x) => !x)}>{onlyChanged ? "Show everything" : `What changed in v${doc.version} · ${changed.length}`}</Key>}
               <Key k="←" onClick={() => setStep((s) => Math.max(0, s - 1))}>Back</Key>
               <Key k="space" tone="primary" onClick={() => setStep((s) => (s >= blocks.length ? 0 : s + 1))}>{step === 0 ? "Walk through" : step >= blocks.length ? "Zoom out" : "Next"}</Key>
             </div>
@@ -164,7 +168,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
 }
 
 function BlockCard(props: {
-  doc: Doc; b: Block; at: { x: number; y: number }; open: boolean; dim: boolean; deep: boolean; thread?: string;
+  doc: Doc; b: Block; at: { x: number; y: number }; open: boolean; dim: boolean; deep: boolean; thread?: string; changedIn: number | null;
   onClick: (e: React.MouseEvent) => void; onDecide: (label: string) => void; onDeeper: () => void; onDiscover: () => void; onOpenThread: (id: string) => void; onAsk: (q: string) => void;
 }) {
   const { doc, b, at, open, dim, deep, thread } = props;
@@ -184,6 +188,7 @@ function BlockCard(props: {
         <span style={{ fontSize: 26, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{openQ ? "◆ " : b.decision ? "✓ " : ""}{kicker}</span>
         <span style={{ fontSize: 40, lineHeight: 1.1, fontWeight: 700, letterSpacing: "-0.02em" }}>{b.takeaway || "(no takeaway)"}</span>
         <span style={{ fontSize: 28, color: "var(--mr-ink-2)" }}>{b.decision ? `→ ${b.decision}` : b.key}</span>
+        {props.changedIn && <span style={{ fontSize: 22, color: "var(--mr-selected)", fontWeight: 700 }}>● Changed in v{props.changedIn}</span>}
         {thread && <span style={{ fontSize: 22, color: "var(--mr-selected)" }}>⌕ side session running</span>}
       </button>
     );
@@ -196,6 +201,7 @@ function BlockCard(props: {
           style={{ fontSize: 22, fontWeight: 700, outline: "none", borderBottom: "1px dotted var(--mr-ink-3)", cursor: "text" }}>{b.takeaway}</span>
         <span className="mr-dim">{kicker}</span>
       </div>
+      {props.changedIn && b.was && <span style={{ color: "var(--mr-selected)" }}>Changed in v{props.changedIn}. Was: <s className="mr-dim">{b.was}</s></span>}
       <span contentEditable suppressContentEditableWarning aria-label="Edit key detail" className="mr-ink2"
         onBlur={(e) => { const v = e.currentTarget.textContent ?? ""; if (v.trim() && v !== b.key) void docApi.edit(doc, b.id, "key", v.trim()); }}
         style={{ outline: "none", cursor: "text" }}>{b.key}</span>
