@@ -54,7 +54,9 @@ export const api = {
   start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean, workspace?: string) => invoke<string>("session_start", { cwd, prompt, kind, worktree, workspace: workspace ?? currentWorkspace() }),
   resume: (s: { id: string; cwd: string; kind: string; sdkSessionId: string | null }) =>
     invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
-  prs: (cwd: string, mode: "review" | "address") => invoke<Pr[]>("gh_prs", { cwd, mode }),
+  // Every repo by default (MR-48); `repo` ("owner/name") keeps one (MR-79).
+  prs: (cwd: string, mode: "review" | "address", repo?: string) => invoke<Pr[]>("gh_prs", { cwd, mode, repo }),
+  ghRepo: (cwd: string) => invoke<string | null>("gh_repo", { cwd }),
   reviewState: (url: string) => invoke<unknown>("gh_review_state", { url }),
   // Every message you send is acknowledged on screen right away (MR-58), then the session shows it's working.
   send: (session: string, text: string) => {
