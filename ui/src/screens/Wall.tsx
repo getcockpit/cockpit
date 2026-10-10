@@ -23,7 +23,7 @@ import { plural, sessionTitle } from "../picker/title";
 
 const REVIEW = new Set<TileSpec["state"]>(["idle", "done", "interrupted", "error"]);
 
-export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild }: { state: AppState; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void }) {
+export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -135,7 +135,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
           </section>
         )}
 
-        {sessions.length === 0 && queue.length === 0 && <QuickStart onStarted={onOpen} onMore={(mode) => onStart({ mode, text: "" })} />}
+        {sessions.length === 0 && queue.length === 0 && <QuickStart state={state} workspace={workspace} onStarted={onOpen} onMore={(mode) => onStart({ mode, text: "" })} />}
 
         {sessions.length > 0 && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
