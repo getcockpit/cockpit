@@ -214,6 +214,7 @@ pub fn session_start(
     worktree: Option<bool>,
     session_id: Option<String>,
     workspace: Option<String>,
+    preset: Option<String>,
 ) -> Result<String, String> {
     let mut cwd = expand_home(&app, &cwd);
     if !std::path::Path::new(&cwd).is_dir() {
@@ -239,6 +240,10 @@ pub fn session_start(
     let mut payload = serde_json::json!({ "cwd": cwd, "prompt": prompt, "resume": resume, "kind": kind, "workspace": workspace });
     if let (Some(p), Some(e)) = (payload.as_object_mut(), extra.as_object()) {
         p.extend(e.clone());
+    }
+    // Started from one of your own kinds in the start picker (MR-80).
+    if let Some(id) = preset {
+        payload["preset"] = id.into();
     }
     crate::eventlog::record(&app, Some(&session), "ui.session_requested", &payload, None);
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
@@ -284,7 +289,7 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     // Not running any more (app restarted, or it ended): resume the same conversation with this
     // message instead of failing with "unknown session" (MR-52).
     let (cwd, kind, workspace, sdk) = resume_info(&app, &session).ok_or("this session can't be resumed; start a new one")?;
-    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace)).map(|_| ())
+    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace), None).map(|_| ())
 }
 
 /// Where and how a session ran, from the log: (cwd, kind, workspace, Claude session id).
