@@ -51,7 +51,7 @@ export const api = {
   classify: (session: string, itemId: string, text: string) => invoke("layer2_classify", { session, itemId, text }),
   layer2Status: () => invoke<{ configured: boolean }>("layer2_status"),
   layer2Save: (accountId: string, apiToken: string) => invoke("layer2_save_credentials", { accountId, apiToken }),
-  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean, workspace?: string) => invoke<string>("session_start", { cwd, prompt, kind, worktree, workspace: workspace ?? currentWorkspace() }),
+  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean, workspace?: string, preset?: string) => invoke<string>("session_start", { cwd, prompt, kind, worktree, workspace: workspace ?? currentWorkspace(), preset }),
   resume: (s: { id: string; cwd: string; kind: string; sdkSessionId: string | null }) =>
     invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
   // Every repo by default (MR-48); `repo` ("owner/name") keeps one (MR-79).

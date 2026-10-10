@@ -61,9 +61,13 @@ export type AddressFlow = {
 
 export type SessionKind = "review" | "address" | "plan" | "blank";
 
+// One of your own kinds in the start picker (MR-80): a prompt template, `{text}` is what you type.
+export type Preset = { id: string; name: string; template: string; worktree: boolean };
+
 export type SessionState = {
   id: string;
   kind: SessionKind;
+  preset: string | null; // started from one of your own kinds (MR-80)
   workspace: string;
   title: string; // the first prompt
   name: string | null; // your rename: always wins (MR-63)
@@ -122,6 +126,7 @@ export type AppState = {
   workspaces: { id: string; name: string; configDir: string | null; folder: string | null }[]; // folder: pinned start folder (MR-65)
   theme: string;
   look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
+  presets: Preset[]; // your own kinds in the start picker (MR-80)
   autoReview: boolean; // start /review by itself for PRs waiting on you (MR-72)
   clef: ClefMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
