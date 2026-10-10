@@ -53,6 +53,24 @@ pub fn workspace_rename(app: AppHandle, id: String, name: String) -> Result<(), 
     Ok(())
 }
 
+/// Pins the folder new sessions in this workspace start in (MR-65); `None` unpins, so the picker
+/// falls back to the last folder a session started in there.
+#[tauri::command(async)]
+pub fn workspace_set_folder(app: AppHandle, id: String, folder: Option<String>) -> Result<(), String> {
+    let folder = match folder.map(|f| f.trim().to_owned()).filter(|f| !f.is_empty()) {
+        Some(f) => {
+            let full = crate::sidecar::expand_home(&app, &f);
+            if !Path::new(&full).is_dir() {
+                return Err(format!("{f} isn't a folder"));
+            }
+            Some(full)
+        }
+        None => None,
+    };
+    crate::eventlog::record(&app, None, "ui.workspace_folder_set", &serde_json::json!({ "id": id, "folder": folder }), Some(&format!("workspace:{id}")));
+    Ok(())
+}
+
 /// Moves a folder to the macOS Trash (recoverable), named so it's recognisable there.
 pub fn to_trash(dir: &Path, label: &str, home: &Path) -> Result<Option<PathBuf>, String> {
     if !dir.exists() {

@@ -29,7 +29,7 @@ fn builds_dir(app: &AppHandle) -> PathBuf {
     data_dir(app).join("builds")
 }
 
-fn sh_path() -> String {
+pub(crate) fn sh_path() -> String {
     let home = std::env::var("HOME").unwrap_or_default();
     format!(
         "{home}/.cargo/bin:{home}/.bun/bin:{home}/.local/share/mise/shims:{home}/.local/share/mise/installs/bun/latest/bin:{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
@@ -169,6 +169,12 @@ pub fn selfbuild_relaunch(app: AppHandle, build_id: String) -> Result<(), String
 pub fn on_ready(app: &AppHandle) {
     if let Ok(id) = std::env::var("MR_BUILD_ID") {
         let _ = std::fs::write(data_dir(app).join(format!("healthy-{id}")), "ok");
+    }
+    // The dev loop's crash guard (MR-70): ready means this slot starts fine and is safe to fall back to.
+    if let Ok(f) = std::env::var("MR_HEALTH_FILE") {
+        if !f.is_empty() {
+            let _ = std::fs::write(f, "ok");
+        }
     }
     if std::env::var("MR_AUTO_RESUME").is_ok_and(|v| v == "1") {
         resume_interrupted(app);

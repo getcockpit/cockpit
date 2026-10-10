@@ -17,12 +17,13 @@ export type PendingAsk =
 
 export type Question = { question: string; header: string; options: { label: string; description: string; preview?: string }[]; multiSelect?: boolean };
 
-export type TranscriptItem =
+export type TranscriptItem = (
   | { kind: "text"; id: string; text: string; at: number }
   | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; at: number }
   | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery }
   | { kind: "view"; id: string; title: string; blocks: ViewBlock[]; at: number }
-  | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number };
+  | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number }
+) & { step?: string }; // the plan step in progress when it arrived (MR-69)
 
 // A view Claude composed from the catalog with render_view (decision 26, MR-61). Blocks were
 // validated by the core; fields beyond the required ones may be missing.
@@ -97,6 +98,9 @@ export type ClefMeter = { day: string; calls: number; tokens: number; errors: nu
 
 export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null; weeklyResetsAt: number | null };
 
+// One-click Update (decision 27, MR-66): the background build of main and what the last update brought.
+export type UpdateState = { phase: "idle" | "building" | "ready" | "failed"; step: string | null; log: string | null; subjects: string[]; startedAt: number | null; whatsNew: string[] | null; restarting: string[] | null };
+
 export type AppState = {
   sessions: Record<string, SessionState>;
   order: string[]; // sessions in start order (the wall never reorders by state)
@@ -104,11 +108,13 @@ export type AppState = {
   sidecar: { up: boolean; claude: string | null };
   lastEventId: string | null;
   dismissed: string[];
-  workspaces: { id: string; name: string; configDir: string | null }[];
+  workspaces: { id: string; name: string; configDir: string | null; folder: string | null }[]; // folder: pinned start folder (MR-65)
   theme: string;
   look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
   clef: ClefMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;
+  recovered: { crashedSlot: string; log: string; at: number } | null; // the dev loop rolled back after a crash at start (MR-70)
   lastBuildAt: number | null; // last successful self-build
+  update: UpdateState;
 };

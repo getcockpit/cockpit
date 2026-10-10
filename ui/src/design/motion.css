@@ -1,0 +1,78 @@
+/* Motion (MR-67): every interaction answers with movement, never a jump. Only motion lives here;
+   colours stay in tokens.css. Reduce Motion turns all of it off (tokens.css). */
+
+/* ---- Shared keyframes ---- */
+@keyframes mr-fade-in { from { opacity: 0; } }
+@keyframes mr-fade-out { to { opacity: 0; } }
+@keyframes mr-rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes mr-sheet-in { from { opacity: 0; transform: translateY(-10px) scale(.985); } }
+@keyframes mr-sheet-out { to { opacity: 0; transform: translateY(-6px) scale(.985); } }
+@keyframes mr-pop { from { opacity: 0; transform: scale(.94); } }
+@keyframes mr-reveal { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes mr-lamp-on { 0% { filter: brightness(1.25); transform: scale(1.04); } 100% { filter: none; transform: none; } }
+
+/* ---- Overlays: the scrim fades, the sheet drops in; on close (Presence) both play backwards. ---- */
+.mr-scrim { animation: mr-fade-in var(--mr-med) var(--mr-ease) backwards; }
+.mr-sheet { animation: mr-sheet-in var(--mr-med) var(--mr-ease) backwards; transform-origin: 50% 0; }
+.mr-leaving { pointer-events: none; }
+.mr-leaving .mr-scrim { animation: mr-fade-out var(--mr-exit) ease-in forwards; }
+.mr-leaving .mr-sheet { animation: mr-sheet-out var(--mr-exit) ease-in forwards; }
+.mr-pop { animation: mr-pop var(--mr-fast) var(--mr-ease) backwards; transform-origin: 0 0; }
+.mr-rise { animation: mr-rise var(--mr-med) var(--mr-ease) backwards; }
+
+/* ---- Screens: wall ↔ session ↔ doc map ride a view transition (components/motion.ts). ---- */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--mr-zoom); animation-timing-function: var(--mr-ease); }
+:root[data-nav="deeper"]::view-transition-old(root) { animation-name: mr-vt-recede; }
+:root[data-nav="deeper"]::view-transition-new(root) { animation-name: mr-vt-arrive; }
+:root[data-nav="back"]::view-transition-old(root) { animation-name: mr-vt-leave; }
+:root[data-nav="back"]::view-transition-new(root) { animation-name: mr-vt-return; }
+:root[data-nav="side"]::view-transition-old(root) { animation-name: mr-vt-side-out; }
+:root[data-nav="side"]::view-transition-new(root) { animation-name: mr-vt-side-in; }
+@keyframes mr-vt-recede { to { opacity: 0; transform: scale(1.015); } }
+@keyframes mr-vt-arrive { from { opacity: 0; transform: scale(.975); } }
+@keyframes mr-vt-leave { to { opacity: 0; transform: scale(.975); } }
+@keyframes mr-vt-return { from { opacity: 0; transform: scale(1.015); } }
+@keyframes mr-vt-side-out { to { opacity: 0; transform: translateX(-16px); } }
+@keyframes mr-vt-side-in { from { opacity: 0; transform: translateX(16px); } }
+/* The workspace tabs hold still while the view under them moves. */
+.mr-tabs-bar { view-transition-name: mr-tabs; }
+::view-transition-group(mr-tabs) { animation: none; }
+/* Where view transitions exist they replace the CSS zoom; elsewhere the zoom stays. */
+@supports (view-transition-name: none) { .mr-zoom-in { animation: none; } }
+
+/* ---- Lists: new rows, tiles and transcript turns rise in instead of popping. ---- */
+.mr-qrow, .mr-tile, .mr-stream > * { animation: mr-rise var(--mr-med) var(--mr-ease) backwards; }
+.mr-grid > :nth-child(2) { animation-delay: 30ms; }
+.mr-grid > :nth-child(3) { animation-delay: 60ms; }
+.mr-grid > :nth-child(4) { animation-delay: 90ms; }
+.mr-grid > :nth-child(n+5) { animation-delay: 120ms; }
+.mr-queue > :nth-child(2) { animation-delay: 40ms; }
+.mr-queue > :nth-child(n+3) { animation-delay: 80ms; }
+
+/* ---- Expanding things (tool rows, folds, details) reveal instead of snapping open. ---- */
+.mr-reveal, details[open] > :not(summary) { animation: mr-reveal var(--mr-med) var(--mr-ease) backwards; }
+summary { cursor: pointer; transition: color var(--mr-fast); }
+summary:hover { color: var(--mr-ink); }
+.mr-chev { display: inline-block; transition: transform var(--mr-med) var(--mr-ease); }
+.mr-chev[data-open="true"] { transform: rotate(90deg); }
+
+/* ---- Hover and press: everything clickable eases between states. ---- */
+.mr-key { transition: filter var(--mr-fast), transform var(--mr-fast) var(--mr-ease), background-color var(--mr-med), color var(--mr-med), opacity var(--mr-med); }
+.mr-key:active:not(:disabled), .mr-press:active { transform: translateY(1px) scale(.98); }
+.mr-link { transition: color var(--mr-fast); }
+.mr-tile { transition: transform var(--mr-med) var(--mr-ease), background-color var(--mr-med), outline-color var(--mr-med); }
+.mr-tile:hover { transform: translateY(-2px); }
+.mr-tile:active { transform: translateY(0) scale(.995); transition-duration: var(--mr-fast); }
+.mr-tile > .mr-flag, .mr-qrow > .mr-flag { transition: background-color var(--mr-med), width var(--mr-med) var(--mr-ease); }
+.mr-tile:hover > .mr-flag { width: 8px; }
+button.mr-qrow { transition: transform var(--mr-med) var(--mr-ease); }
+button.mr-qrow:hover { transform: translateX(2px); }
+.mr-input { transition: box-shadow var(--mr-med) var(--mr-ease), background-color var(--mr-med); }
+[role="menuitem"], [role="option"], [role="tab"] { transition: background-color var(--mr-fast), color var(--mr-fast); }
+
+/* ---- State changes fade rather than flip. ---- */
+.mr-lamp { transition: background-color var(--mr-slow), color var(--mr-slow); }
+.mr-lamp[data-on="needs"], .mr-lamp[data-on="error"] { animation: mr-lamp-on 600ms var(--mr-ease); }
+.mr-mark { transition: color var(--mr-med); }
+.mr-bar > i, .mr-track-fill i { transition: width var(--mr-slow) var(--mr-ease), background-color var(--mr-med); }
+.mr-track-segs i { transition: background-color var(--mr-med); }
