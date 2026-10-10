@@ -12,6 +12,7 @@ import { api } from "../state/store";
 import type { AppState, SessionState } from "../state/types";
 import { answerAsk, AskRow, DocQuestionRow, ProseRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
+import { QuickStart } from "../components/QuickStart";
 import { sessionTitle } from "../picker/title";
 
 // The wall (decision 17): lamps, a keyboard-driven needs-you queue, a stable running grid that
@@ -123,7 +124,9 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
           </section>
         )}
 
-        <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {sessions.length === 0 && queue.length === 0 && <QuickStart onStarted={onOpen} onMore={onStart} />}
+
+        {sessions.length > 0 && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
           <div className="mr-grid">
             {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
@@ -131,7 +134,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
               <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>⌘K</kbd>Start something</span>
             </button>
           </div>
-        </section>
+        </section>}
 
         {docs.length > 0 && (
           <section aria-label="Working docs" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
