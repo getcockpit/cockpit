@@ -17,13 +17,14 @@ import { needsQueue } from "../picker/queue";
 import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
 import { plural, sessionTitle } from "../picker/title";
+import { ViewTabs } from "../components/ViewTabs";
 
 // The wall (decision 17): lamps, a keyboard-driven needs-you queue, a stable running grid that
 // never reorders by state, and a compact ready-to-review tray.
 
 const REVIEW = new Set<TileSpec["state"]>(["idle", "done", "interrupted", "error"]);
 
-export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void }) {
+export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild, onTimeline }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -65,7 +66,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
     }
   };
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  const discover = async (s: SessionState) => onOpen(await api.start(s.cwd, `Side thread about the session "${s.title}" (working in ${s.cwd}). Without changing anything, look at what it has done so far (git diff, files) and report briefly: risks, anything it may have missed, and simpler alternatives.`, "blank", false));
+  const discover = async (s: SessionState) => onOpen(await sideThread(s));
 
   useEffect(() => { if (sel >= queue.length) setSel(Math.max(0, queue.length - 1)); }, [queue.length, sel]);
   useEffect(() => {
@@ -92,7 +93,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
       {/* One compact header (MR-53): status counts inline; zero counts fade; each jumps to its section. */}
       <header className="mr-band mr-row" style={{ padding: "10px 24px", gap: 6, flexWrap: "wrap" }}>
-        <strong style={{ fontSize: 15, marginRight: 10 }}>Wall</strong>
+        {onTimeline ? <ViewTabs on="wall" onSwitch={onTimeline} /> : <strong style={{ fontSize: 15, marginRight: 10 }}>Wall</strong>}
         {(sessions.length > 0 || queue.length > 0) && <>
           <Count n={queue.length} label="need you" tone="needs" onClick={() => jump("mr-needs")} />
           <Count n={count("error")} label={count("error") === 1 ? "error" : "errors"} tone="error" onClick={() => jump("mr-review")} />
@@ -197,6 +198,11 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
       </footer>
     </div>
   );
+}
+
+/** ⌥-click on a session (decision 21): a read-only side thread about it. Resolves to the new session's id. */
+export function sideThread(s: SessionState): Promise<string> {
+  return api.start(s.cwd, `Side thread about the session "${s.title}" (working in ${s.cwd}). Without changing anything, look at what it has done so far (git diff, files) and report briefly: risks, anything it may have missed, and simpler alternatives.`, "blank", false);
 }
 
 function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; onOpen: (id: string) => void; onDiscover: () => void }) {
