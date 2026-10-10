@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { initialState, reduce, replay } from "./reduce";
 import type { AppState, MrEvent } from "./types";
 
-export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string };
+export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean };
 
 type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent };
 
@@ -55,6 +55,7 @@ export const api = {
   resume: (s: { id: string; cwd: string; kind: string; sdkSessionId: string | null }) =>
     invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
   prs: (cwd: string, mode: "review" | "address") => invoke<Pr[]>("gh_prs", { cwd, mode }),
+  reviewState: (url: string) => invoke<unknown>("gh_review_state", { url }),
   // Every message you send is acknowledged on screen right away (MR-58), then the session shows it's working.
   send: (session: string, text: string) => {
     window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Sent: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}` }));
