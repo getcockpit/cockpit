@@ -99,7 +99,7 @@ const addressEvents: E[] = [
 const bugEvents: E[] = [
   ...ready, onboarded,
   { session: "G", kind: "ui.godmode_mark", payload: { note: "The changes box shows git's whole usage text", component: "ChangeMap" }, at: 5 },
-  { session: "G", kind: "ui.session_requested", payload: { prompt: "God-mode mark on Minority report (this app's own repo). The user marked the \"ChangeMap\" component as wrong in the focus view.\n\nTheir note: The changes box shows git's whole usage text\n\nWhat it showed: …", kind: "blank", cwd: "/Users/me/code/minority-report-worktrees/god-mode-mark-ab12", repo: "/Users/me/code/minority-report", branch: "mr/god-mode-mark-ab12", worktree: "/Users/me/code/minority-report-worktrees/god-mode-mark-ab12", workspace: "personal" }, at: 6 },
+  { session: "G", kind: "ui.session_requested", payload: { prompt: "God-mode mark on Cockpit (this app's own repo). The user marked the \"ChangeMap\" component as wrong in the focus view.\n\nTheir note: The changes box shows git's whole usage text\n\nWhat it showed: …", kind: "blank", cwd: "/Users/me/code/cockpit-worktrees/god-mode-mark-ab12", repo: "/Users/me/code/cockpit", branch: "mr/god-mode-mark-ab12", worktree: "/Users/me/code/cockpit-worktrees/god-mode-mark-ab12", workspace: "personal" }, at: 6 },
   { session: "G", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-G", model: "claude-opus-5-5" }, at: 7 },
   todos("G", 3, [["Find why", "Finding why"], ["Fix it", "Fixing it"], ["Add a regression test", "Adding a regression test"]], 60),
   tool("G", "Edit", { file_path: "ui/src/screens/ChangeMap.tsx", old_string: "a", new_string: "b\nc" }, 90),

@@ -43,10 +43,10 @@ export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone
   });
 
   return (
-    <div role="dialog" className="mr-scrim" aria-label="Welcome to Minority report" data-mr="Onboarding" data-mr-source={STEPS[step]}
+    <div role="dialog" className="mr-scrim" aria-label="Welcome to Cockpit" data-mr="Onboarding" data-mr-source={STEPS[step]}
       style={{ position: "fixed", inset: 0, zIndex: 40, background: "var(--mr-base)", display: "flex", flexDirection: "column" }}>
       <header className="mr-band mr-row" style={{ padding: "14px 28px", gap: 20 }}>
-        <strong style={{ fontSize: 15 }}>Minority report</strong>
+        <strong style={{ fontSize: 15 }}>Cockpit</strong>
         <nav aria-label="Intro steps" className="mr-row" style={{ gap: 4, flex: 1, maxWidth: 640 }}>
           {STEPS.map((s, i) => (
             <button key={s} type="button" onClick={() => go(i)} aria-current={i === step ? "step" : undefined}

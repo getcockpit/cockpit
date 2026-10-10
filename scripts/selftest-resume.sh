@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=resume MR_DATA_DIR="$data" "$root/src-tauri/target/debug/minority-report"
+MR_SELFTEST=resume MR_DATA_DIR="$data" "$root/src-tauri/target/debug/Cockpit"
 db="$data/events.sqlite"
 branch="$(sqlite3 "$db" "SELECT json_extract(payload,'$.branch') FROM events WHERE kind='ui.session_requested' ORDER BY id LIMIT 1;")"
 wt="$(sqlite3 "$db" "SELECT json_extract(payload,'$.worktree') FROM events WHERE kind='ui.session_requested' ORDER BY id LIMIT 1;")"

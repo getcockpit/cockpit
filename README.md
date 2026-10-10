@@ -1,6 +1,6 @@
-# Minority report
+# Cockpit
 
-A visual-first desktop front-end for Claude Code. The PRD and design plan live in the docs: **Minority report**.
+A visual-first desktop front-end for Claude Code. The PRD and design plan live in the docs: **Cockpit**.
 
 ## Layout
 
