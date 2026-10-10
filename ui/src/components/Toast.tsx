@@ -18,7 +18,3 @@ export function Toast() {
   );
 }
 
-/** "Working on it…" with breathing dots, for while Claude handles what you just sent. */
-export function Working({ what }: { what: string }) {
-  return <div data-mr="Working" className="mr-working mr-row" style={{ gap: 8, padding: "10px 14px", background: "var(--mr-tile)", color: "var(--mr-ink-2)" }}><span>{what}</span><span><i>●</i><i>●</i><i>●</i></span></div>;
-}

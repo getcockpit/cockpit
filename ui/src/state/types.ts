@@ -20,10 +20,19 @@ export type Question = { question: string; header: string; options: { label: str
 export type TranscriptItem =
   | { kind: "text"; id: string; text: string; at: number }
   | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; at: number }
-  | { kind: "user"; id: string; text: string; at: number }
+  | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery }
+  | { kind: "view"; id: string; title: string; blocks: ViewBlock[]; at: number }
   | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number };
 
-export type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string };
+// A view Claude composed from the catalog with render_view (decision 26, MR-61). Blocks were
+// validated by the core; fields beyond the required ones may be missing.
+export type ViewBlock = { type: string } & Record<string, unknown>;
+
+// Where a message you sent is (MR-59): sending → taken (Claude has it) → answered (its turn finished).
+// Sent mid-turn it's queued: Claude Code hands it over at the next tool result or turn. Lost: the session ended first.
+export type Delivery = "sending" | "queued" | "taken" | "answered" | "lost";
+
+export type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string; since?: number }; // since: when the step started (plan_set, MR-62)
 
 export type FileChange = { path: string; added: number; removed: number; isNew: boolean; lastAt: number };
 
@@ -61,6 +70,8 @@ export type SessionState = {
   status: SessionStatus;
   startedAt: number;
   lastActivity: number;
+  heardAt: number; // last event from Claude (sidecar), for "quiet for 1m" (MR-59)
+  turnOpen: boolean; // a turn is in flight: a message sent now waits for the next hand-over
   pending: PendingAsk[];
   transcript: TranscriptItem[];
   todos: Todo[];
