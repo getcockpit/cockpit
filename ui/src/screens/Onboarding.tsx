@@ -4,7 +4,7 @@ import { FlowDiagram } from "../components/FlowDiagram";
 import { keyOf } from "../components/keys";
 import type { TileSpec } from "../picker/pick";
 import { api } from "../state/store";
-import type { AppState, Diagram } from "../state/types";
+import type { AppState, Diagram, SessionKind } from "../state/types";
 const SignInPane = lazy(() => import("./Terminal").then((m) => ({ default: m.SignInPane })));
 
 // First run (MR-37, made full-screen and hands-on in MR-38). You learn by doing:
@@ -17,9 +17,17 @@ const SignInPane = lazy(() => import("./Terminal").then((m) => ({ default: m.Sig
 
 const STEPS = ["The wall", "Pictures", "Point", "Connect", "Go"] as const;
 
-export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone: () => void; onStart: () => void }) {
+export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone: () => void; onStart: (kind: SessionKind) => void }) {
   const [step, setStep] = useState(0);
-  const finish = (start: boolean) => { void api.log("ui.onboarded", {}); onDone(); if (start) onStart(); };
+  // The kind you pick here is the kind you start with (remembered like the picker's own choice).
+  const finish = (kind: SessionKind | null) => {
+    void api.log("ui.onboarded", {}); onDone();
+    if (kind) {
+      try { localStorage.setItem("mr.mode", kind); } catch { /* convenience only */ }
+      window.dispatchEvent(new CustomEvent("mr:start-kind", { detail: kind })); // the wall's start form is already mounted
+      onStart(kind);
+    }
+  };
   const go = (n: number) => setStep(Math.max(0, Math.min(STEPS.length - 1, n)));
 
   useEffect(() => {
@@ -28,7 +36,7 @@ export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone
       const key = keyOf(e);
       if (key === "ArrowRight") { e.preventDefault(); go(step + 1); }
       if (key === "ArrowLeft") { e.preventDefault(); go(step - 1); }
-      if (key === "Escape") { e.preventDefault(); finish(false); }
+      if (key === "Escape") { e.preventDefault(); finish(null); }
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
@@ -50,15 +58,15 @@ export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone
         </nav>
         <span className="mr-grow" />
         <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>← → to move</span>
-        <Key k="esc" onClick={() => finish(false)}>Skip intro</Key>
+        <Key k="esc" onClick={() => finish(null)}>Skip intro</Key>
       </header>
 
-      <main key={step} className="mr-zoom-in" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: "40px 56px 28px", gap: 28 }}>
+      <main key={step} className="mr-zoom-in mr-onb-main" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
         {step === 0 && <WallStep onNext={() => go(1)} />}
         {step === 1 && <PictureStep onNext={() => go(2)} />}
         {step === 2 && <PointStep onNext={() => go(3)} />}
         {step === 3 && <ConnectStep state={state} onNext={() => go(4)} />}
-        {step === 4 && <GoStep onStart={() => finish(true)} />}
+        {step === 4 && <GoStep onStart={(k) => finish(k)} />}
       </main>
     </div>
   );
@@ -68,8 +76,8 @@ function Title({ kicker, children, sub }: { kicker: string; children: React.Reac
   return (
     <div style={{ maxWidth: 860 }}>
       <div className="mr-mono" style={{ color: "var(--mr-needs-ink)", fontSize: 12, letterSpacing: ".08em", textTransform: "uppercase" }}>{kicker}</div>
-      <h1 style={{ margin: "6px 0 0", fontSize: 40, lineHeight: 1.1, letterSpacing: "-.01em" }}>{children}</h1>
-      <p className="mr-dim" style={{ margin: "12px 0 0", fontSize: 17, lineHeight: 1.45 }}>{sub}</p>
+      <h1 className="mr-onb-h1" style={{ margin: "6px 0 0", lineHeight: 1.1, letterSpacing: "-.01em" }}>{children}</h1>
+      <p className="mr-dim mr-onb-sub" style={{ margin: "10px 0 0", lineHeight: 1.45 }}>{sub}</p>
     </div>
   );
 }
@@ -135,7 +143,7 @@ function WallStep({ onNext }: { onNext: () => void }) {
       </div>
       <div style={{ minHeight: 130 }}>
         {asked === "asking" && (
-          <div className="mr-onb-rise" style={{ display: "flex", gap: 20, alignItems: "center", padding: 18, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-needs)", maxWidth: 860 }}>
+          <div ref={(el) => el?.scrollIntoView({ block: "nearest", behavior: "smooth" })} className="mr-onb-rise" style={{ display: "flex", gap: 20, alignItems: "center", padding: 18, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-needs)", maxWidth: 860 }}>
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
               <strong>“Fix the login redirect” wants to run</strong>
               <code className="mr-code mr-mono" style={{ padding: 8 }}>git push --force origin main</code>
@@ -346,15 +354,15 @@ function Check({ ok, title, detail, action, optional }: { ok: boolean | null; ti
 }
 
 // ── 5. Go. ──
-function GoStep({ onStart }: { onStart: () => void }) {
+function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
   const kinds = [
-    { t: "Blank", d: "Any task. Gets its own git worktree, so your checkout stays clean.", k: "⌘1" },
-    { t: "Plan", d: "A working doc first: a map you annotate and decide on before any code.", k: "⌘2" },
-    { t: "Review", d: "Your /review on a PR, as findings you step through.", k: "⌘3" },
-    { t: "Address", d: "Your /pr-address, one reviewer thread at a time.", k: "⌘4" },
+    { id: "blank" as const, t: "Blank", d: "Any task. Gets its own git worktree, so your checkout stays clean.", k: "⌘1" },
+    { id: "plan" as const, t: "Plan", d: "A working doc first: a map you annotate and decide on before any code.", k: "⌘2" },
+    { id: "review" as const, t: "Review", d: "Your /review on a PR, as findings you step through.", k: "⌘3" },
+    { id: "address" as const, t: "Address", d: "Your /pr-address, one reviewer thread at a time.", k: "⌘4" },
   ];
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (keyOf(e) === "Enter") { e.preventDefault(); onStart(); } };
+    const k = (e: KeyboardEvent) => { if (keyOf(e) === "Enter") { e.preventDefault(); onStart("blank"); } };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   });
@@ -365,7 +373,7 @@ function GoStep({ onStart }: { onStart: () => void }) {
       </Title>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "var(--mr-gap)", maxWidth: 1100 }}>
         {kinds.map((x, i) => (
-          <button key={x.t} type="button" onClick={onStart} className="mr-onb-rise mr-onb-lift"
+          <button key={x.t} type="button" onClick={() => onStart(x.id)} className="mr-onb-rise mr-onb-lift"
             style={{ animationDelay: `${i * 80}ms`, border: 0, padding: 18, textAlign: "left", font: "inherit", color: "var(--mr-ink)", background: "var(--mr-tile)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 8, minHeight: 150 }}>
             <span className="mr-row" style={{ justifyContent: "space-between" }}><strong style={{ fontSize: 18 }}>{x.t}</strong><kbd className="mr-mono mr-dim">{x.k}</kbd></span>
             <span className="mr-dim">{x.d}</span>
@@ -375,7 +383,7 @@ function GoStep({ onStart }: { onStart: () => void }) {
       <div className="mr-row" style={{ gap: 18, marginTop: "auto" }}>
         <span className="mr-dim">Any time: <span className="mr-mono">⌘K</span> start · <span className="mr-mono">⌘,</span> settings · <span className="mr-mono">⌘⇧G</span> god mode · right-click anything</span>
         <span className="mr-grow" />
-        <span className="mr-onb-nudge"><Key k="↵" tone="primary" onClick={onStart}>Start my first session</Key></span>
+        <span className="mr-onb-nudge"><Key k="↵" tone="primary" onClick={() => onStart("blank")}>Start my first session</Key></span>
       </div>
     </>
   );

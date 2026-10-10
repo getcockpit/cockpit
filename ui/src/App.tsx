@@ -64,7 +64,7 @@ export default function App() {
   const [archive, setArchive] = useState(false);
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
   const [introClosed, setIntroClosed] = useState(false);
-  const intro = all.lastEventId !== null && !all.onboarded && !introClosed && <Onboarding state={all} onDone={() => setIntroClosed(true)} onStart={() => setPicker(true)} />;
+  const intro = all.lastEventId !== null && !all.onboarded && !introClosed && <Onboarding state={all} onDone={() => setIntroClosed(true)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
