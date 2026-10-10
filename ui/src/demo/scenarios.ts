@@ -88,7 +88,20 @@ const addressEvents: E[] = [
   { session: "X", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "thread 1", total_cost_usd: 0.2 } }, at: 41 },
 ];
 
+// Report an internal bug (J14): a finished god-mode fix session on the app's own repo.
+const bugEvents: E[] = [
+  ...ready, onboarded,
+  { session: "G", kind: "ui.godmode_mark", payload: { note: "The changes box shows git's whole usage text", component: "ChangeMap" }, at: 5 },
+  { session: "G", kind: "ui.session_requested", payload: { prompt: "God-mode mark on Minority report (this app's own repo). The user marked the \"ChangeMap\" component as wrong in the focus view.\n\nTheir note: The changes box shows git's whole usage text\n\nWhat it showed: …", kind: "blank", cwd: "/Users/me/code/minority-report-worktrees/god-mode-mark-ab12", repo: "/Users/me/code/minority-report", branch: "mr/god-mode-mark-ab12", worktree: "/Users/me/code/minority-report-worktrees/god-mode-mark-ab12", workspace: "personal" }, at: 6 },
+  { session: "G", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-G", model: "claude-opus-5-5" }, at: 7 },
+  todos("G", 3, [["Find why", "Finding why"], ["Fix it", "Fixing it"], ["Add a regression test", "Adding a regression test"]], 60),
+  tool("G", "Edit", { file_path: "ui/src/screens/ChangeMap.tsx", old_string: "a", new_string: "b\nc" }, 90),
+  say("G", "Fixed: a folder that isn't a git repo now shows no change box instead of git's usage text. Added a regression test; ui tests pass. Committed as \"Fix: change box hides git's usage text\".", 200),
+  result("G", "done", 201, 0.6),
+];
+
 export const SCENARIOS: Record<string, Scenario> = {
+  bugs: { events: bugEvents, docs: [] },
   review: { events: reviewEvents, docs: [] },
   address: { events: addressEvents, docs: [] },
   fresh: { events: [...ready], docs: [] },

@@ -48,6 +48,8 @@ export function ChangeMap({ s }: { s: SessionState }) {
     setNotes([]);
   };
 
+  // Not a repo: there is nothing to map, so show nothing rather than an error (god-mode mark).
+  if (error && changesError(error) === "not a git repository") return null;
   if (error) return <div data-mr="ChangeMap" data-mr-source={s.id} style={{ background: "var(--mr-tile)", padding: "14px 16px" }} className="mr-dim">Changes: {changesError(error)}</div>;
   return (
     <div data-mr="ChangeMap" data-mr-source={s.id} style={{ background: "var(--mr-tile)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>

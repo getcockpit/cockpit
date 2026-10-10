@@ -10,7 +10,12 @@ export type QueueItem =
   | { kind: "ask"; key: string; s: SessionState; a: PendingAsk; at: number }
   | { kind: "prose"; key: string; s: SessionState; question: string; options: string[]; at: number }
   | { kind: "doc"; key: string; d: Doc; b: Block; at: number }
-  | { kind: "flow"; key: string; s: SessionState; what: string; at: number };
+  | { kind: "flow"; key: string; s: SessionState; what: string; at: number }
+  | { kind: "fix"; key: string; s: SessionState; at: number };
+
+/** A finished god-mode fix whose change hasn't been applied to your app yet (J14). */
+export const fixReady = (s: SessionState) =>
+  /^God-mode mark/.test(s.title) && !!s.branch?.startsWith("mr/") && !s.fixApplied && (s.status === "idle" || s.status === "ended") && Object.keys(s.files).length > 0;
 
 /** The last question-like paragraph of a finished turn, for showing it on its own. */
 export function proseQuestion(text: string): string {
@@ -43,7 +48,8 @@ export function needsQueue(sessions: SessionState[], docs: Doc[]): QueueItem[] {
     if (s.archivedAt) continue;
     for (const a of s.pending) out.push({ kind: "ask", key: `ask:${a.requestId}`, s, a, at: a.at });
     const flow = s.pending.length ? null : flowWaiting(s);
-    if (flow) out.push({ kind: "flow", key: `flow:${s.id}:${s.transcript.length}`, s, what: flow, at: s.lastActivity });
+    if (!s.pending.length && fixReady(s)) out.push({ kind: "fix", key: `fix:${s.id}`, s, at: s.lastActivity });
+    else if (flow) out.push({ kind: "flow", key: `flow:${s.id}:${s.transcript.length}`, s, what: flow, at: s.lastActivity });
     else if (!s.pending.length && pickTile(s).state === "needs_you") {
       const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);
       if (last && last.kind === "text") {

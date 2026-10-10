@@ -69,6 +69,8 @@ pub fn run() {
             selfbuild::selfbuild_list,
             selfbuild::selfbuild_relaunch,
             personal::personal_history,
+            personal::fix_apply,
+            personal::personal_sync,
             layer2::layer2_classify,
             layer3::layer3_diagram,
             sidecar::limits_refresh,

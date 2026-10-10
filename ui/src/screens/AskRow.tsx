@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { DecisionCard, Key, type Answer } from "../components";
 import { decideQuestion, type Block, type Doc } from "../state/docs";
-import { sessionTitle } from "../picker/title";
+import { plural, sessionTitle } from "../picker/title";
+import { shortError } from "../components/ErrorLine";
 import { pickDecision } from "../picker/pick";
 import { api } from "../state/store";
 import type { PendingAsk, SessionState } from "../state/types";
@@ -100,6 +101,26 @@ export function FlowRow({ s, what, selected, onOpen }: { s: SessionState; what: 
           <span className="mr-ask">{what}</span>
         </span>
         <Key k="↵" tone="primary" onClick={onOpen}>{s.kind === "review" ? "Continue review" : "Continue"}</Key>
+      </div>
+    </div>
+  );
+}
+
+// A god-mode fix that's ready (J14): apply it to your app right here, or look at it first.
+export function FixRow({ s, selected, onOpen }: { s: SessionState; selected?: boolean; onOpen: () => void }) {
+  const [state, setState] = useState<"" | "applying" | string>("");
+  const apply = async () => { setState("applying"); try { await api.fixApply(s.id); setState(""); } catch (e) { setState(shortError(e)); } };
+  return (
+    <div className="mr-qrow" data-mr="FixReady" data-mr-source={s.id} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
+      <div className="mr-flag" />
+      <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
+          <span className="mr-row" style={{ gap: 6 }}><strong className="mr-ink2">Your bug report</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{plural(Object.keys(s.files).length, "file")} changed</span></span>
+          <span className="mr-ask">{sessionTitle(s).replace(/^Fix: /, "Fixed: ")}</span>
+          {state && state !== "applying" && <span style={{ color: "var(--mr-error)" }}>{state}</span>}
+        </span>
+        <button type="button" className="mr-key" onClick={onOpen}>Look first ↵</button>
+        <Key tone="primary" onClick={() => void apply()} disabled={state === "applying"}>{state === "applying" ? "Applying…" : "Apply to my app"}</Key>
       </div>
     </div>
   );

@@ -79,10 +79,25 @@ pub fn history(repo: &Path) -> Result<History, String> {
     Ok(History { worktree: wt.display().to_string(), changes, pending })
 }
 
+/// Brings the app's main line into `mine`, so your app gets new work and your own changes stay on
+/// top. Nothing changes on a conflict.
+pub fn sync_with_main(repo: &Path) -> Result<String, String> {
+    let wt = mine_worktree(repo)?;
+    let main = git(repo, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_else(|_| "main".into());
+    if main == BRANCH {
+        return Ok(String::new());
+    }
+    git(&wt, &["merge", "--no-edit", &main]).map_err(|e| {
+        let _ = git(&wt, &["merge", "--abort"]);
+        format!("merge conflict with {main}, nothing changed: {e}")
+    })
+}
+
 pub fn apply(repo: &Path, branch: &str) -> Result<String, String> {
     if !branch.starts_with("mr/") {
         return Err("only mr/* branches can be applied".into());
     }
+    sync_with_main(repo)?;
     let wt = mine_worktree(repo)?;
     git(&wt, &["merge", "--no-ff", "--no-edit", branch]).map_err(|e| {
         let _ = git(&wt, &["merge", "--abort"]);
@@ -114,6 +129,11 @@ pub fn personal_history() -> Result<History, String> {
 }
 
 #[tauri::command]
+pub fn personal_sync() -> Result<String, String> {
+    sync_with_main(&repo()?)
+}
+
+#[tauri::command]
 pub fn personal_apply(app: tauri::AppHandle, branch: String) -> Result<String, String> {
     let r = apply(&repo()?, &branch)?;
     crate::eventlog::record(&app, None, "ui.personal_applied", &serde_json::json!({ "branch": branch }), Some("personal"));
@@ -124,6 +144,36 @@ pub fn personal_apply(app: tauri::AppHandle, branch: String) -> Result<String, S
 pub fn personal_revert(app: tauri::AppHandle, sha: String) -> Result<String, String> {
     let r = revert(&repo()?, &sha)?;
     crate::eventlog::record(&app, None, "ui.personal_reverted", &serde_json::json!({ "sha": sha }), Some("personal"));
+    Ok(r)
+}
+
+/// The note a god-mode fix session was started with ("Their note: …" in its prompt).
+pub fn report_note(prompt: &str) -> Option<String> {
+    let i = prompt.find("Their note: ")? + "Their note: ".len();
+    Some(prompt[i..].lines().next()?.trim().chars().take(72).collect())
+}
+
+/// Commits whatever a fix session left uncommitted on its branch, then applies the branch to
+/// `mine`. The end of "report an internal bug" (MR-47): one click from the fix session.
+pub fn apply_fix(repo: &Path, worktree: &Path, branch: &str, note: Option<&str>) -> Result<String, String> {
+    if !git(worktree, &["status", "--porcelain"])?.is_empty() {
+        git(worktree, &["add", "-A"])?;
+        let msg = format!("Fix: {}", note.unwrap_or("god-mode report"));
+        git(worktree, &["commit", "-q", "-m", &msg])?;
+    }
+    apply(repo, branch)
+}
+
+#[tauri::command]
+pub fn fix_apply(app: tauri::AppHandle, session: String) -> Result<String, String> {
+    use tauri::Manager;
+    let req = app.state::<crate::eventlog::EventLog>().list(Some(&session), None, 200).map_err(|e| e.to_string())?
+        .into_iter().find(|e| e.kind == "ui.session_requested" && e.payload["branch"].is_string()).ok_or("this session has no branch of its own to apply")?;
+    let branch = req.payload["branch"].as_str().unwrap_or_default().to_owned();
+    let worktree = PathBuf::from(req.payload["worktree"].as_str().or(req.payload["cwd"].as_str()).unwrap_or_default());
+    let note = report_note(req.payload["prompt"].as_str().unwrap_or_default());
+    let r = apply_fix(&repo()?, &worktree, &branch, note.as_deref())?;
+    crate::eventlog::record(&app, Some(&session), "ui.fix_applied", &serde_json::json!({ "branch": branch }), Some("personal"));
     Ok(r)
 }
 
@@ -167,5 +217,35 @@ mod tests {
         revert(&repo, &merge).unwrap();
         assert_eq!(std::fs::read_to_string(wt.join("a.txt")).unwrap(), "v1\n");
         assert!(apply(&repo, "main").is_err());
+    }
+
+    #[test]
+    fn a_fix_left_uncommitted_is_committed_then_applied() {
+        let root = std::env::temp_dir().join(format!("mr-fix-{}", ulid::Ulid::new()));
+        let repo = root.join("app");
+        std::fs::create_dir_all(&repo).unwrap();
+        run(&repo, &["init", "-q", "-b", "main"]);
+        run(&repo, &["config", "user.email", "t@t"]);
+        run(&repo, &["config", "user.name", "t"]);
+        std::fs::write(repo.join("a.txt"), "v1\n").unwrap();
+        run(&repo, &["add", "."]);
+        run(&repo, &["commit", "-q", "-m", "base"]);
+        // A fix session's worktree that stopped before committing.
+        let wt = root.join("app-worktrees").join("fix-x");
+        run(&repo, &["worktree", "add", "-q", "-b", "mr/fix-x", wt.to_str().unwrap()]);
+        std::fs::write(wt.join("a.txt"), "fixed\n").unwrap();
+        apply_fix(&repo, &wt, "mr/fix-x", Some("the lamp is wrong")).unwrap();
+        let mine = PathBuf::from(history(&repo).unwrap().worktree);
+        assert_eq!(std::fs::read_to_string(mine.join("a.txt")).unwrap(), "fixed\n");
+        assert!(history(&repo).unwrap().changes.iter().any(|c| c.subject == "Fix: the lamp is wrong"));
+        // New work on main reaches your app; your fix stays.
+        std::fs::write(repo.join("b.txt"), "new\n").unwrap();
+        run(&repo, &["add", "."]);
+        run(&repo, &["commit", "-q", "-m", "new work on main"]);
+        sync_with_main(&repo).unwrap();
+        assert_eq!(std::fs::read_to_string(mine.join("b.txt")).unwrap(), "new\n");
+        assert_eq!(std::fs::read_to_string(mine.join("a.txt")).unwrap(), "fixed\n");
+        assert_eq!(report_note("God-mode mark…\n\nTheir note: the lamp is wrong\n\nWhat it showed"), Some("the lamp is wrong".into()));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

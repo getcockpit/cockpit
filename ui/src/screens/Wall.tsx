@@ -10,17 +10,17 @@ import { pickTile, type TileSpec } from "../picker/pick";
 import { isOpenQuestion, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import type { AppState, SessionState } from "../state/types";
-import { answerAsk, AskRow, DocQuestionRow, FlowRow, ProseRow } from "./AskRow";
+import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
 import { QuickStart } from "../components/QuickStart";
-import { sessionTitle } from "../picker/title";
+import { plural, sessionTitle } from "../picker/title";
 
 // The wall (decision 17): lamps, a keyboard-driven needs-you queue, a stable running grid that
 // never reorders by state, and a compact ready-to-review tray.
 
 const REVIEW = new Set<TileSpec["state"]>(["idle", "done", "interrupted", "error"]);
 
-export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onStart }: { state: AppState; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: () => void }) {
+export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild }: { state: AppState; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: () => void; onBuild: (worktree: string) => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -49,6 +49,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
     const a = g.action;
     if (a.kind === "open_session") onOpen(a.id);
     else if (a.kind === "open_doc") onOpenDoc(a.id);
+    else if (a.kind === "build_mine") onBuild(await api.mineWorktree());
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
     else onOpen(await api.start(cwd, promptFor(a.mode, a.value), a.mode));
   };
@@ -118,6 +119,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
             <div className="mr-queue">
               {queue.map((q, i) =>
                 q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
+                : q.kind === "fix" ? <FixRow key={q.key} s={q.s} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "flow" ? <FlowRow key={q.key} s={q.s} what={q.what} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "prose" ? <ProseRow key={q.key} s={q.s} question={q.question} options={q.options} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : <DocQuestionRow key={q.key} d={q.d} b={q.b} session={q.d.session_id ? state.sessions[q.d.session_id] : null} selected={i === sel} onOpen={() => onOpenDoc(q.d.id)} />)}
@@ -167,7 +169,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
                 <button key={s.id} type="button" className="mr-row" data-mr="ReviewRow" data-mr-source={s.id} onClick={() => onOpen(s.id)} style={{ padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>
                   <StateMark s={tile.state} />
                   <span className="mr-grow mr-ellipsis">{sessionTitle(s)}</span>
-                  {Object.keys(s.files).length > 0 && <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{Object.keys(s.files).length} files</span>}
+                  {Object.keys(s.files).length > 0 && <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{plural(Object.keys(s.files).length, "file")}</span>}
                   <span className="mr-key" role="button" tabIndex={0} title="Mark done and move to the archive" style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.archive(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.archive(s); } }}>Done ✓</span>
                   {s.status === "interrupted" && s.sdkSessionId && <span className="mr-key" role="button" tabIndex={0} style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.resume(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.resume(s); } }}>Resume ↻</span>}
                 </button>
@@ -180,6 +182,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
         <span>⌘K start · click focus · ⌘-click deeper · ⌥-click discover · ⌘⇧G god mode · ⌘⇧B builds</span>
         {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-2)" }}>Daily driver {daily.streak}/{daily.goal}</span>}
         <span className="mr-grow" />
+        <Key onClick={() => api.report()}>Report a bug</Key>
         <Key k="⌘⇧A" onClick={onArchive}>Archive{archived ? ` · ${archived}` : ""}</Key>
         <Key k="⌘K" onClick={onStart}>Start</Key>
       </footer>

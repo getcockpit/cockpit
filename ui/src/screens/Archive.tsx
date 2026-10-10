@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Key, StateMark } from "../components";
 import { keyOf } from "../components/keys";
 import { pickTile } from "../picker/pick";
+import { plural, sessionTitle } from "../picker/title";
 import { api } from "../state/store";
 import type { SessionState } from "../state/types";
 
@@ -51,10 +52,10 @@ export function Archive({ sessions, onOpen, onClose }: { sessions: SessionState[
                   style={{ padding: "10px 12px", gap: 12, cursor: "pointer", background: i === sel ? "var(--mr-well)" : "transparent", boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
                   <StateMark s={pickTile(s).state === "error" ? "error" : "done"} />
                   <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-                    <strong className="mr-ellipsis">{s.title || "Untitled"}</strong>
+                    <strong className="mr-ellipsis">{sessionTitle(s)}</strong>
                     <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.repo ?? s.cwd}</span>
                   </span>
-                  <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{[Object.keys(s.files).length ? `${Object.keys(s.files).length} files` : "", s.costUsd ? `$${s.costUsd.toFixed(2)}` : ""].filter(Boolean).join(" · ")}</span>
+                  <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{[Object.keys(s.files).length ? plural(Object.keys(s.files).length, "file") : "", s.costUsd ? `$${s.costUsd.toFixed(2)}` : ""].filter(Boolean).join(" · ")}</span>
                   <span onClick={(e) => e.stopPropagation()} className="mr-row" style={{ gap: 6 }}>
                     <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Restore</Key>
                     {s.sdkSessionId && <Key onClick={() => { void api.log("ui.session_unarchived", {}, s.id); void api.resume(s); onOpen(s.id); }}>Resume ↻</Key>}
