@@ -14,6 +14,7 @@ import { Focus } from "./screens/Focus";
 import { StartPicker } from "./screens/StartPicker";
 import { DocMap } from "./screens/DocMap";
 import { Wall } from "./screens/Wall";
+import { Timeline } from "./screens/Timeline";
 import { GodMode } from "./screens/GodMode";
 import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
 import { Builds } from "./screens/Builds";
@@ -91,6 +92,9 @@ export default function App() {
   const [pickerText, setPickerText] = useState("");
   const [pickerMode, setPickerMode] = useState<"review" | "address" | undefined>(undefined);
   const [archive, setArchive] = useState(false);
+  // Wall or Timeline (decision 29, MR-32): remembered per viewer, like the open workspace.
+  const [wallView, setWallViewNow] = useState<"wall" | "timeline">(() => { try { return localStorage.getItem("mr.wallView") === "timeline" ? "timeline" : "wall"; } catch { return "wall"; } });
+  const setWallView = (v: "wall" | "timeline") => navigate("side", () => { setWallViewNow(v); try { localStorage.setItem("mr.wallView", v); } catch { /* per-viewer convenience */ } });
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
   const [introClosed, setIntroClosed] = useState(false);
   const intro = all.lastEventId !== null && !all.onboarded && !introClosed && <Onboarding state={all} onDone={() => setIntroClosed(true)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
@@ -114,12 +118,15 @@ export default function App() {
         switchTo(all.workspaces[(i + (e.shiftKey ? -1 : 1) + all.workspaces.length) % all.workspaces.length].id);
       }
       if (e.metaKey && keyOf(e) === "j") { e.preventDefault(); setSwitcher((x) => !x); }
+      // T switches Wall ↔ Timeline, only on those screens and never while typing.
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
+      if (keyOf(e) === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing && !focus && !docId && !document.querySelector('[role="dialog"]')) { e.preventDefault(); setWallView(wallView === "wall" ? "timeline" : "wall"); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const view = docId ? "doc map" : focus ? "focus" : "wall";
+  const view = docId ? "doc map" : focus ? "focus" : wallView;
   const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src, component) => { if (component === "WorkspaceTab") return src !== "personal" ? { label: "Delete workspace…", run: () => setDeleting(src) } : null; const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
   // Point + talk: which session does the thing under the pointer belong to?
   const resolve = (t: PointTarget) => {
@@ -170,5 +177,6 @@ export default function App() {
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;
   if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, overlays);
-  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
+  if (wallView === "timeline") return shell(<ErrorBoundary key="timeline" name="timeline"><Timeline state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onWall={() => setWallView("wall")} /></ErrorBoundary>, overlays);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
 }

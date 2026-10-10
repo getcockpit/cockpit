@@ -32,7 +32,10 @@ export type ViewBlock = { type: string } & Record<string, unknown>;
 // Sent mid-turn it's queued: Claude Code hands it over at the next tool result or turn. Lost: the session ended first.
 export type Delivery = "sending" | "queued" | "taken" | "answered" | "lost";
 
-export type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string; since?: number }; // since: when the step started (plan_set, MR-62)
+export type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string; since?: number; doneAt?: number }; // since: when the step started (plan_set, MR-62); doneAt: when it finished (Timeline, MR-32)
+
+// One stretch of a session in one status (Timeline, MR-32). to: null while it lasts. label: what it waits on.
+export type Span = { status: SessionStatus; from: number; to: number | null; label?: string };
 
 export type FileChange = { path: string; added: number; removed: number; isNew: boolean; lastAt: number };
 
@@ -79,6 +82,7 @@ export type SessionState = {
   todos: Todo[];
   files: Record<string, FileChange>;
   activity: number[]; // events per minute, last 30 minutes (sparkline)
+  spans: Span[]; // status history, newest last (Timeline, MR-32)
   costUsd: number;
   error: string | null;
   review: ReviewFlow | null;
