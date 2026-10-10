@@ -69,9 +69,12 @@ pub fn run() {
             selfbuild::selfbuild_list,
             selfbuild::selfbuild_relaunch,
             personal::personal_history,
+            personal::fix_apply,
+            personal::personal_sync,
             layer2::layer2_classify,
             layer3::layer3_diagram,
             sidecar::limits_refresh,
+            gh::pr_repo,
             folders::recent_folders,
             layer2::layer2_status,
             layer2::layer2_save_credentials,
@@ -84,6 +87,7 @@ pub fn run() {
             voice::voice_stop,
             workspaces::workspace_create,
             workspaces::workspace_rename,
+            workspaces::workspace_delete,
             workspaces::workspace_sign_in,
             docs::doc_feedback
         ])

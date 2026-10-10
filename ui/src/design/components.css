@@ -18,7 +18,7 @@
 .mr-lamp[data-on="plain"] { color: var(--mr-ink-2); }
 
 /* Keycap buttons */
-.mr-key { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font-weight: 700; cursor: pointer; transition: filter var(--mr-fast); }
+.mr-key { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font-weight: 700; cursor: pointer; transition: filter var(--mr-fast); white-space: nowrap; }
 .mr-key:hover { filter: brightness(0.95); }
 .mr-key:disabled { opacity: .5; cursor: default; }
 .mr-key kbd { font-family: var(--mr-mono); font-weight: 400; padding: 0 5px; background: rgba(0, 0, 0, .1); }
@@ -71,3 +71,45 @@
 /* Wall → focus zoom (200–300 ms, decision 15); Reduce Motion disables it via tokens.css. */
 @keyframes mr-zoom-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
 .mr-zoom-in { animation: mr-zoom-in var(--mr-zoom) cubic-bezier(.2, .7, .2, 1); transform-origin: 50% 30%; }
+
+/* Onboarding motion (MR-38). Reduced-motion users get none of it (tokens.css). */
+@keyframes mr-onb-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes mr-onb-pulse { 0%, 100% { box-shadow: inset 0 0 0 3px var(--mr-needs); } 50% { box-shadow: inset 0 0 0 3px var(--mr-needs), 0 0 0 6px color-mix(in srgb, var(--mr-needs) 35%, transparent); } }
+@keyframes mr-onb-nudge { 0%, 100% { transform: none; } 50% { transform: translateX(4px); } }
+@keyframes mr-onb-pop { 0% { transform: scale(.4); } 70% { transform: scale(1.15); } 100% { transform: none; } }
+@keyframes mr-onb-bit { from { transform: none; opacity: 1; } to { transform: translate(var(--dx), var(--dy)) rotate(200deg); opacity: 0; } }
+@keyframes mr-onb-grow { from { width: 0; } }
+.mr-onb-rise { animation: mr-onb-rise .35s ease-out both; }
+.mr-onb-pulse { animation: mr-onb-pulse 1.4s ease-in-out infinite; }
+.mr-onb-nudge { display: inline-block; animation: mr-onb-nudge 1.2s ease-in-out infinite; }
+.mr-onb-pop { animation: mr-onb-pop .4s ease-out both; }
+.mr-onb-bit { animation: mr-onb-bit .8s ease-out both; }
+.mr-onb-grow { animation: mr-onb-grow .9s ease-out both; }
+.mr-onb-lift { transition: transform .15s, box-shadow .15s; }
+.mr-onb-lift:hover { transform: translateY(-3px); box-shadow: inset 0 -4px 0 var(--mr-needs); }
+.mr-onb-main { padding: 40px 56px 28px; gap: 28px; }
+.mr-onb-h1 { font-size: 40px; }
+.mr-onb-sub { font-size: 17px; }
+/* Laptop-height windows: keep each step's payoff above the fold. */
+@media (max-height: 820px) {
+  .mr-onb-main { padding: 22px 40px 18px; gap: 16px; }
+  .mr-onb-h1 { font-size: 30px; }
+  .mr-onb-sub { font-size: 15px; }
+}
+
+/* A quiet text button for secondary places to go (MR-53): no fill, ink on hover. */
+.mr-link { border: 0; background: transparent; padding: 4px 6px; font: inherit; color: var(--mr-ink-2); cursor: pointer; }
+.mr-link:hover { color: var(--mr-ink); text-decoration: underline; }
+.mr-link kbd { font-size: 11px; color: var(--mr-ink-3); }
+
+/* Liveness (MR-59): the now line and message delivery marks. */
+.mr-now { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--mr-ink-2); }
+.mr-now[data-stale] { color: var(--mr-needs-ink); }
+.mr-now-dot { flex: none; width: 8px; height: 8px; background: var(--mr-ink-2); animation: mr-now-pulse 1.2s ease-in-out infinite; }
+.mr-now[data-stale] .mr-now-dot { background: var(--mr-needs); animation: none; }
+@keyframes mr-now-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.mr-delivery { font-size: 12px; padding: 1px 6px; white-space: nowrap; color: var(--mr-ink-2); background: var(--mr-tile); }
+.mr-delivery[data-d="queued"], .mr-delivery[data-d="sending"] { color: var(--mr-ink); }
+.mr-delivery[data-d="taken"] { background: var(--mr-ink); color: var(--mr-tile); font-weight: 700; }
+.mr-delivery[data-d="answered"] { color: var(--mr-done); background: transparent; }
+.mr-delivery[data-d="lost"] { color: var(--mr-error); font-weight: 700; }

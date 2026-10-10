@@ -9,6 +9,18 @@ import { keyOf } from "./keys";
 
 type Folder = { path: string; name: string; repo: boolean; at: number };
 
+/** The work folder, remembered across starts; a fresh install defaults to your most recent folder
+ *  instead of your home directory (F6). */
+export function useWorkFolder(): [string, (p: string) => void] {
+  const [cwd, setCwd] = useState(() => { try { return localStorage.getItem("mr.cwd") ?? ""; } catch { return ""; } });
+  useEffect(() => {
+    if (cwd && cwd !== "~/") return;
+    invoke<Folder[]>("recent_folders").then((f) => setCwd(f[0]?.path ?? "~/")).catch(() => setCwd("~/"));
+  }, []);
+  const set = (p: string) => { setCwd(p); try { localStorage.setItem("mr.cwd", p); } catch { /* convenience only */ } };
+  return [cwd || "~/", set];
+}
+
 const tilde = (p: string, home: string) => (home && p.startsWith(home) ? "~" + p.slice(home.length) : p);
 
 export function FolderPicker({ value, onChange, extra }: { value: string; onChange: (p: string) => void; extra: string[] }) {
@@ -46,11 +58,11 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
   }
   useEffect(() => setSel(0), [q, openList]);
 
-  const shown = tilde(value, home);
-  const name = shown.split("/").filter(Boolean).at(-1) ?? shown;
+  const shown = value ? tilde(value, home) : "";
+  const name = value ? shown.split("/").filter(Boolean).at(-1) ?? shown : "Choose a folder…";
   return (
     <div ref={box} style={{ position: "relative", flex: "0 1 240px", minWidth: 0 }} data-mr="FolderPicker" data-mr-source={value}>
-      <button type="button" className="mr-row" aria-label={`Work folder: ${shown}. Change`} onClick={() => setOpenList((x) => !x)}
+      <button type="button" className="mr-row" aria-label={value ? `Work folder: ${shown}. Change` : "Choose a folder"} onClick={() => setOpenList((x) => !x)}
         style={{ width: "100%", border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", padding: "8px 10px", cursor: "pointer", textAlign: "left", gap: 8 }}>
         <span aria-hidden>▤</span>
         <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>

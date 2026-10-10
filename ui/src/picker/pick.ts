@@ -1,3 +1,4 @@
+import { asksUser, proseQuestion } from "./queue";
 import type { PendingAsk, SessionState } from "../state/types";
 
 // Picker layer 1 (decision 5): plain code maps typed agent state to catalog components.
@@ -75,6 +76,22 @@ export function wantsDiagram(s: SessionState): { id: string; text: string } | nu
   return steps >= 3 || label === "plan" || label === "done" ? { id: last.id, text: last.text } : null;
 }
 
+/** A Review or Address flow paused on the user's turn (J8): what it's waiting for, or null. */
+export function flowWaiting(s: SessionState): string | null {
+  if (s.status !== "idle") return null;
+  const r = s.review;
+  if (r?.published) return null;
+  if (r?.publish) return `Review ready to publish · ${r.publish.comments?.length ?? 0} comments`;
+  if (r && r.current !== null) {
+    const sn = r.snippets[r.current];
+    const n = sn?.findings?.length ?? 0;
+    return `Snippet ${r.current} of ${sn?.total ?? r.overview?.total_snippets ?? "?"} · ${n ? `${n} finding${n === 1 ? "" : "s"} to note or skip` : "nothing flagged"}`;
+  }
+  const a = s.address;
+  if (a?.current && !a.chosen[a.current]) return `Thread ${a.threads[a.current]?.at ?? ""} · pick how to address it`.replace("  ", " ");
+  return null;
+}
+
 export function pickTile(s: SessionState): TileSpec {
   const total = s.todos.length;
   const done = s.todos.filter((t) => t.status === "completed").length;
@@ -87,25 +104,29 @@ export function pickTile(s: SessionState): TileSpec {
   // Layer 1 is the trailing "?"; layer 2 (Clef) catches questions, plans and blockers phrased without one.
   const kind = lastItem ? s.kinds[lastItem.id] : undefined;
   const modelSaysWaiting = !!kind && kind.layer === "model" && kind.p >= 0.6 && ["question", "plan", "blocked"].includes(kind.label);
-  const askedInProse = s.status === "idle" && lastItem?.kind === "text" && (/\?\s*$/.test(lastItem.text.trim()) || modelSaysWaiting);
+  const askedInProse = s.status === "idle" && lastItem?.kind === "text" && (asksUser(lastItem.text) || modelSaysWaiting);
+  const flowStep = flowWaiting(s);
   const state: TileSpec["state"] =
-    s.status === "needs_you" || askedInProse ? "needs_you"
+    s.status === "needs_you" || askedInProse || flowStep ? "needs_you"
     : s.status === "error" ? "error"
     : s.status === "ended" ? "done"
     : s.status === "starting" ? "starting"
     : s.status === "interrupted" ? "interrupted"
+    // A finished turn whose plan is all ticked off is done work waiting for review (F10), not "waiting".
+    : s.status === "idle" && total > 0 && done === total ? "done"
     : s.status === "idle" ? "idle"
     : total && (done >= total - 1 || done / total >= 0.8) ? "almost"
     : "working";
   const ask = s.pending[0];
   const doing = s.status === "interrupted" ? "Stopped when the app closed. Resume continues the same conversation."
-    : askedInProse && lastItem?.kind === "text" ? `Asks: ${lastItem.text.trim().split("\n").filter(Boolean).at(-1)?.slice(0, 120)}`
+    : flowStep ? flowStep
+    : askedInProse && lastItem?.kind === "text" ? `Asks: ${proseQuestion(lastItem.text).slice(0, 120)}`
     : ask
     ? ask.kind === "question" ? `Asks: ${ask.questions[0]?.question ?? "a question"}` : `Wants to use ${ask.tool}`
     : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${String(lastTool.input.file_path).split("/").pop()}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");
   return {
     state,
-    step: total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Waiting for you" : "Working",
+    step: s.status === "idle" && total > 0 && done === total ? "Ready to review" : total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Your turn" : "Working",
     progress,
     progressLabel: progress === null ? "" : `${Math.round(progress * 100)}%`,
     doing,

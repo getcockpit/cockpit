@@ -79,6 +79,17 @@ impl EventLog {
     }
 
     /// Events in order, optionally for one session and/or after a given id (for incremental replay).
+    /// Every event of one kind, oldest first (cheap lookups that shouldn't read the whole log).
+    pub fn list_kind(&self, kind: &str) -> rusqlite::Result<Vec<Event>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, session_id, kind, payload, anchor, created_at FROM events WHERE kind = ?1 ORDER BY id")?;
+        let rows = stmt.query_map(params![kind], |r| {
+            let payload: String = r.get(3)?;
+            Ok(Event { id: r.get(0)?, session_id: r.get(1)?, kind: r.get(2)?, payload: serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null), anchor: r.get(4)?, created_at: r.get(5)? })
+        })?;
+        rows.collect()
+    }
+
     pub fn list(&self, session_id: Option<&str>, after: Option<&str>, limit: i64) -> rusqlite::Result<Vec<Event>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -151,7 +162,8 @@ pub fn event_append(
     record(&app, session_id.as_deref(), &kind, &payload, anchor.as_deref()).ok_or_else(|| "event log unavailable".into())
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn events_list(
     log: tauri::State<'_, EventLog>,
     session_id: Option<String>,

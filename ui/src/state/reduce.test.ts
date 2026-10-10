@@ -186,3 +186,77 @@ test("plan limits arrive before any session runs", () => {
   expect(st.usage).toEqual({ fiveHour: 0.15, weekly: 0.56, resetsAt: 1791586200 });
   expect(replay([{ id: "L1", session_id: null, kind: "sidecar.limits", payload: { available: false, error: "x" }, anchor: null, created_at: 1 }]).usage.fiveHour).toBeNull();
 });
+
+test("onboarding shows until finished, and limits double as the sign-in check", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind, payload, anchor: null, created_at: 1 });
+  expect(replay([]).onboarded).toBe(false);
+  expect(replay([e("O1", "ui.onboarded", {})]).onboarded).toBe(true);
+  expect(replay([e("O1", "ui.onboarded", {}), e("O2", "ui.onboarding_reset", {})]).onboarded).toBe(false);
+  expect(replay([e("L1", "sidecar.limits", { available: false, error: "not logged in" })]).account).toEqual({ checked: true, signedIn: false, plan: null });
+  expect(replay([e("L1", "sidecar.limits", { available: true, plan: "max", five_hour: null, seven_day: null })]).account).toEqual({ checked: true, signedIn: true, plan: "max" });
+});
+
+test("marking a session done archives it; restore and resume bring it back", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown> = {}): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: Number(id.slice(1)) * 1000 });
+  const base = [ev("A1", "ui.session_requested", { prompt: "p", cwd: "/w" }), ev("A2", "sidecar.session_started", { sdk_session_id: "sdk-1" })];
+  const done = replay([...base, ev("A3", "ui.session_archived")]);
+  expect(done.sessions.s.archivedAt).toBe(3000);
+  expect(done.sessions.s.lastActivity).toBe(2000);
+  expect(replay([...base, ev("A3", "ui.session_archived"), ev("A4", "ui.session_unarchived")]).sessions.s.archivedAt).toBeNull();
+  expect(replay([...base, ev("A3", "ui.session_archived"), ev("A4", "ui.session_requested", { prompt: "Continue", cwd: "/w", resume: "sdk-1" })]).sessions.s.archivedAt).toBeNull();
+});
+
+test("a review is over once you publish it", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "r", kind, payload, anchor: null, created_at: 1 });
+  const base = [
+    ev("R1", "ui.session_requested", { prompt: "/review 482", kind: "review", cwd: "/w" }),
+    ev("R2", "flow.review_publish_ready", { comments: [{ severity: "blocking", text: "x" }], verdict: "Request changes" }),
+    ev("R3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "ready" } }),
+  ];
+  expect(pickTile(replay(base).sessions.r).state).toBe("needs_you");
+  const after = replay([...base, ev("R4", "ui.message_sent", { text: "publish" }), ev("R5", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } })]);
+  expect(after.sessions.r.review?.published).toBe(true);
+  expect(pickTile(after.sessions.r).state).not.toBe("needs_you");
+});
+
+test("a bug report's fix waits in the queue until applied, then asks for a rebuild until one succeeds", async () => {
+  const { needsQueue } = await import("../picker/queue");
+  const { suggest } = await import("../picker/suggest");
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = "g", at = 1): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: at });
+  const base = [
+    ev("G1", "ui.session_requested", { prompt: "God-mode mark on Minority report.\n\nTheir note: lamps are wrong\n\nWhat it showed: x", cwd: "/r-worktrees/g", branch: "mr/g", worktree: "/r-worktrees/g" }),
+    ev("G2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "tool_use", id: "t", name: "Edit", input: { file_path: "a.ts", old_string: "a", new_string: "b" } }] } } }),
+    ev("G3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } }),
+  ];
+  const s0 = replay(base);
+  expect(needsQueue(Object.values(s0.sessions), []).map((q) => q.kind)).toEqual(["fix"]);
+  const s1 = replay([...base, ev("G4", "ui.fix_applied", { branch: "mr/g" }, "g", 5)]);
+  expect(needsQueue(Object.values(s1.sessions), [])).toHaveLength(0);
+  expect(suggest(s1, [], { review: [], mine: [] }, new Set()).map((x) => x.label)).toContain("Rebuild & relaunch");
+  const s2 = replay([...base, ev("G4", "ui.fix_applied", { branch: "mr/g" }, "g", 5), ev("B1", "selfbuild.finished", { ok: true }, null, 9)]);
+  expect(suggest(s2, [], { review: [], mine: [] }, new Set()).map((x) => x.label)).not.toContain("Rebuild & relaunch");
+});
+
+test("look settings replay and a restyle session is an app change", async () => {
+  const { isAppChange } = await import("../picker/queue");
+  const { cleanTitle } = await import("../picker/title");
+  const e = (id: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind: "ui.look_set", payload, anchor: null, created_at: 1 });
+  expect(replay([e("L1", { scale: 1.12 }), e("L2", { density: "compact" })]).look).toEqual({ scale: 1.12, density: "compact" });
+  expect(replay([e("L1", { density: "huge" })]).look.density).toBe("default");
+  expect(isAppChange({ title: "Restyle the app: warmer\n\nThis is…" })).toBe(true);
+  expect(cleanTitle("Restyle the app: warmer greys\n\nThis is Minority report's own repo.")).toBe("Style: warmer greys");
+});
+
+test("deleting a workspace moves its sessions to Personal's archive as read-only history", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: Number(id.slice(1)) });
+  const st = replay([
+    e("W1", "ui.workspace_created", { id: "ws_a", name: "Client A", config_dir: "/d" }),
+    e("W2", "ui.session_requested", { prompt: "p", cwd: "/w", workspace: "ws_a" }, "s1"),
+    e("W3", "sidecar.session_started", { sdk_session_id: "x" }, "s1"),
+    e("W4", "ui.session_requested", { prompt: "q", cwd: "/w" }, "s2"),
+    e("W5", "ui.workspace_deleted", { id: "ws_a", name: "Client A" }),
+  ]);
+  expect(st.workspaces.map((w) => w.id)).toEqual(["personal"]);
+  expect(st.sessions.s1).toMatchObject({ workspace: "personal", archivedAt: 5, fromDeleted: "Client A", status: "ended" });
+  expect(st.sessions.s2).toMatchObject({ workspace: "personal", archivedAt: null, fromDeleted: null });
+});

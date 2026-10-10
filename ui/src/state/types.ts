@@ -20,8 +20,12 @@ export type Question = { question: string; header: string; options: { label: str
 export type TranscriptItem =
   | { kind: "text"; id: string; text: string; at: number }
   | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; at: number }
-  | { kind: "user"; id: string; text: string; at: number }
+  | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery }
   | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number };
+
+// Where a message you sent is (MR-59): sending → taken (Claude has it) → answered (its turn finished).
+// Sent mid-turn it's queued: Claude Code hands it over at the next tool result or turn. Lost: the session ended first.
+export type Delivery = "sending" | "queued" | "taken" | "answered" | "lost";
 
 export type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string };
 
@@ -33,6 +37,7 @@ export type ReviewFlow = {
   snippets: Record<number, { n: number; total?: number; area?: string; title?: string; file?: string; code?: string; explain?: string; good?: string; findings?: ReviewFinding[] }>;
   current: number | null;
   noted: string[];
+  published?: boolean; // you pressed Publish; the flow is over
   publish?: { comments?: { severity: string; at?: string; text: string; suggestion?: string }[]; verdict?: string; dropped?: number; note?: string };
 };
 export type AddressThread = { id: string; at?: string; reviewer?: string; short?: string; state?: string };
@@ -60,6 +65,8 @@ export type SessionState = {
   status: SessionStatus;
   startedAt: number;
   lastActivity: number;
+  heardAt: number; // last event from Claude (sidecar), for "quiet for 1m" (MR-59)
+  turnOpen: boolean; // a turn is in flight: a message sent now waits for the next hand-over
   pending: PendingAsk[];
   transcript: TranscriptItem[];
   todos: Todo[];
@@ -70,6 +77,9 @@ export type SessionState = {
   review: ReviewFlow | null;
   address: AddressFlow | null;
   diagrams: Record<string, Diagram | null>; // transcript item id → layer-3 diagram (null: nothing worth drawing)
+  archivedAt: number | null;
+  fixApplied: number | null;
+  fromDeleted: string | null; // name of the deleted workspace it came from: read-only history (MR-54) // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 
@@ -89,5 +99,9 @@ export type AppState = {
   dismissed: string[];
   workspaces: { id: string; name: string; configDir: string | null }[];
   theme: string;
+  look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
   clef: ClefMeter;
+  account: { checked: boolean; signedIn: boolean; plan: string | null };
+  onboarded: boolean;
+  lastBuildAt: number | null; // last successful self-build
 };

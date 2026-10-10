@@ -1,3 +1,4 @@
+import { shortError } from "../components/ErrorLine";
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -24,7 +25,7 @@ export function XTermView({ termKey, open, onExit, hint }: { termKey: string; op
     const unData = listen<{ session: string; data: string }>("term-data", ({ payload }) => { if (payload.session === termKey) term.write(payload.data); });
     const unExit = listen<{ session: string }>("term-exit", ({ payload }) => { if (payload.session === termKey) onExit(); });
     const sub = term.onData((data) => void invoke("term_write", { session: termKey, data }));
-    open(term.cols, term.rows).catch((e) => term.write(`\r\n${String(e)}\r\n`));
+    open(term.cols, term.rows).catch((e) => term.write(`\r\n${shortError(e)}\r\n`));
     const ro = new ResizeObserver(() => { fit.fit(); void invoke("term_resize", { session: termKey, cols: term.cols, rows: term.rows }).catch(() => {}); });
     ro.observe(host.current);
     return () => { ro.disconnect(); sub.dispose(); unData.then((f) => f()); unExit.then((f) => f()); term.dispose(); };
@@ -48,5 +49,5 @@ export function TerminalPane({ s, onExit }: { s: SessionState; onExit: () => voi
 export function SignInPane({ workspace, onExit }: { workspace: string; onExit: () => void }) {
   return <XTermView termKey={`login:${workspace}`} onExit={onExit}
     open={(cols, rows) => invoke("workspace_sign_in", { id: workspace, cols, rows })}
-    hint={<>Type <b className="mr-mono">/login</b> and follow the browser sign-in, then <b className="mr-mono">/exit</b>. This workspace keeps its own memory and history.</>} />;
+    hint={<>Type <b className="mr-mono">/login</b> and follow the browser sign-in, then <b className="mr-mono">/exit</b>.{workspace === "personal" ? " This is the official claude app; the sign-in happens in your browser." : " This workspace keeps its own memory and history."}</>} />;
 }

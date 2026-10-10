@@ -96,6 +96,16 @@ pub fn sidecar_send(state: State<'_, Sidecar>, message: serde_json::Value) -> Re
     child.write(line.as_bytes()).map_err(|e| e.to_string())
 }
 
+/// Stops every running session of a workspace (before it's deleted, MR-54). Returns how many.
+pub fn stop_sessions_in(app: &AppHandle, workspace: &str) -> usize {
+    let state = app.state::<Sidecar>();
+    let ids: Vec<String> = state.live.lock().unwrap().iter().filter(|s| crate::workspaces::workspace_of(app, s) == workspace).cloned().collect();
+    for id in &ids {
+        let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": id }));
+    }
+    ids.len()
+}
+
 /// Re-reads plan limits (the UI calls this every few minutes); the answer arrives as `sidecar.limits`.
 #[tauri::command]
 pub fn limits_refresh(state: State<'_, Sidecar>) -> Result<(), String> {
@@ -123,6 +133,13 @@ pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout
         Err(reply["error"].as_str().unwrap_or("one-shot failed").to_owned())
     }
 }
+
+/// Appended to every session's system prompt (MR-56). The app renders choices as decision cards
+/// and structured replies as visual blocks, so it asks Claude for those shapes instead of prose.
+pub const VISUAL_GUIDANCE: &str = "You are running inside Minority report, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
+- When the user has to choose between options (which approach, which host, whether to continue), call the AskUserQuestion tool with 2-4 concrete options, each with a short description, instead of asking in prose. One decision per question.
+- Write replies in Markdown: short `## ` section headings, numbered lists for steps or todos, `- ` bullets for facts. Start a list item with a **bold short title**, then the detail. Put rough time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
+- End a turn that needs the user with one line starting `Next:`.";
 
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
 /// Blank sessions in a git repo get their own worktree unless `worktree` is false (decision 7).
@@ -178,9 +195,12 @@ pub fn session_start(
     if let Some(dir) = crate::workspaces::config_dir(&app, &workspace) {
         msg["env"] = serde_json::json!({ "CLAUDE_CONFIG_DIR": dir });
     }
-    if let Some(p) = crate::flows::system_prompt(&kind) {
-        msg["append_system_prompt"] = p.into();
-    }
+    // Every session gets the visual-app guidance (MR-56); Review/Address add their flow steps.
+    let append = match crate::flows::system_prompt(&kind) {
+        Some(p) => format!("{VISUAL_GUIDANCE}\n\n{p}"),
+        None => VISUAL_GUIDANCE.to_owned(),
+    };
+    msg["append_system_prompt"] = append.into();
     state.live.lock().unwrap().insert(session.clone());
     sidecar_send(state, msg)?;
     Ok(session)
@@ -188,18 +208,40 @@ pub fn session_start(
 
 #[tauri::command]
 pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, text: String) -> Result<(), String> {
+    let live = state.live.lock().unwrap().contains(&session);
     crate::eventlog::record(&app, Some(&session), "ui.message_sent", &serde_json::json!({ "text": text }), None);
-    sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }))
+    if live {
+        return sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }));
+    }
+    // Not running any more (app restarted, or it ended): resume the same conversation with this
+    // message instead of failing with "unknown session" (MR-52).
+    let (cwd, kind, workspace, sdk) = resume_info(&app, &session).ok_or("this session can't be resumed; start a new one")?;
+    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace)).map(|_| ())
+}
+
+/// Where and how a session ran, from the log: (cwd, kind, workspace, Claude session id).
+fn resume_info(app: &AppHandle, session: &str) -> Option<(String, String, String, String)> {
+    let evs = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).ok()?;
+    let req = evs.iter().find(|e| e.kind == "ui.session_requested")?;
+    let sdk = evs.iter().rev().find(|e| e.kind == "sidecar.session_started")?.payload["sdk_session_id"].as_str()?.to_owned();
+    let p = &req.payload;
+    Some((p["worktree"].as_str().or(p["cwd"].as_str())?.to_owned(), p["kind"].as_str().unwrap_or("blank").to_owned(), p["workspace"].as_str().unwrap_or(crate::workspaces::PERSONAL).to_owned(), sdk))
 }
 
 #[tauri::command]
 pub fn session_interrupt(app: AppHandle, state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    if !state.live.lock().unwrap().contains(&session) {
+        return Ok(()); // nothing running to interrupt
+    }
     crate::eventlog::record(&app, Some(&session), "ui.interrupted", &serde_json::json!({}), None);
     sidecar_send(state, serde_json::json!({ "type": "interrupt", "session": session }))
 }
 
 #[tauri::command]
 pub fn session_stop(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    if !state.live.lock().unwrap().contains(&session) {
+        return Ok(()); // already stopped (e.g. marking an ended session done)
+    }
     sidecar_send(state, serde_json::json!({ "type": "stop", "session": session }))
 }
 

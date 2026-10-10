@@ -1,3 +1,4 @@
+import { shortError } from "../components/ErrorLine";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Key } from "../components";
@@ -14,7 +15,22 @@ function findTarget(n: EventTarget | null): Target | null {
   return { el, component: el.dataset.mr ?? "?", source: el.dataset.mrSource ?? "", layer: el.dataset.mrLayer ?? "code", rect: el.getBoundingClientRect() };
 }
 
-export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: boolean; onOpen: () => void; onClose: () => void; view: string; onOpenSession: (id: string) => void }) {
+// A human name for the marked element: its first line of text, else its component name.
+const label = (t: Target) => ((t.el.innerText ?? "").trim().split("\n")[0] || t.component).slice(0, 48);
+
+// Right-click must work everywhere: elements without a data-mr tag fall back to the nearest
+// meaningful container (button, heading, section, dialog…), and finally the whole screen.
+function anyTarget(n: EventTarget | null): Target {
+  const tagged = findTarget(n);
+  if (tagged) return tagged;
+  const start = n as HTMLElement | null;
+  const el = (start?.closest?.("button, a, h1, h2, h3, li, header, section, main, aside, [role=dialog], [role=listbox], [role=menu], figure, form") as HTMLElement | null) ?? document.body;
+  const name = el.getAttribute("aria-label") ?? el.querySelector("h1, h2, strong")?.textContent ?? (el.innerText ?? "").trim().split("\n")[0];
+  const component = el === document.body ? "Screen" : `${el.getAttribute("role") ?? el.tagName.toLowerCase()}${name ? ` “${name.slice(0, 32)}”` : ""}`;
+  return { el, component, source: "", layer: "untagged", rect: el.getBoundingClientRect() };
+}
+
+export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionAction }: { on: boolean; onOpen: () => void; onClose: () => void; view: string; onOpenSession: (id: string) => void; sessionAction?: (source: string, component: string) => { label: string; run: () => void } | null }) {
   const [hover, setHover] = useState<Target | null>(null);
   const [marked, setMarked] = useState<Target | null>(null);
   const [note, setNote] = useState("");
@@ -25,28 +41,30 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: bool
   useEffect(() => {
     const ctx = (e: MouseEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el?.closest?.("input, textarea, [contenteditable=true], .xterm, [data-godmode-ui]")) return;
-      const t = findTarget(el);
-      if (!t) return;
+      // Text fields and the terminal keep the native menu (copy, paste, spelling).
+      if (el?.closest?.("input, textarea, [contenteditable=true], .xterm, [data-mr-menu]")) return;
+      const t = anyTarget(el);
       e.preventDefault();
       setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 190), t, origin: el! });
     };
     const close = (e: Event) => { if (!(e.target as HTMLElement | null)?.closest?.("[data-mr-menu]")) setMenu(null); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
+    // "Report a bug" without pointing (Settings, the wall footer, an error panel): mark the screen.
+    const report = (e: Event) => { const el = (e as CustomEvent<HTMLElement | undefined>).detail ?? document.body; onOpen(); setHover(null); setMarked(anyTarget(el)); };
+    window.addEventListener("mr:report", report);
     window.addEventListener("contextmenu", ctx, true);
     window.addEventListener("mousedown", close, true);
     window.addEventListener("keydown", esc, true);
     window.addEventListener("scroll", close, true);
-    return () => { window.removeEventListener("contextmenu", ctx, true); window.removeEventListener("mousedown", close, true); window.removeEventListener("keydown", esc, true); window.removeEventListener("scroll", close, true); };
+    return () => { window.removeEventListener("mr:report", report); window.removeEventListener("contextmenu", ctx, true); window.removeEventListener("mousedown", close, true); window.removeEventListener("keydown", esc, true); window.removeEventListener("scroll", close, true); };
   }, []);
 
   useEffect(() => {
     if (!on) { setHover(null); setMarked(null); return; }
-    const move = (e: MouseEvent) => { if (!marked) setHover(findTarget(e.target)); };
+    const move = (e: MouseEvent) => { if (!marked) setHover(anyTarget(e.target)); };
     const click = (e: MouseEvent) => {
       if ((e.target as HTMLElement)?.closest?.("[data-godmode-ui]")) return;
-      const t = findTarget(e.target);
-      if (!t) return;
+      const t = anyTarget(e.target);
       e.preventDefault(); e.stopPropagation();
       setMarked(t); setHover(null);
     };
@@ -67,6 +85,7 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: bool
         { label: "Go deeper", hint: "⌘-click", run: () => click(menu.origin, { metaKey: true }) },
         { label: "Discover in a side session", hint: "⌥-click", run: () => click(menu.origin, { altKey: true }) },
         { label: "Inspect everything", hint: "⌘⇧G", run: () => onOpen() },
+        ...(() => { const a = menu.t.source ? sessionAction?.(menu.t.source, menu.t.component) : null; return a ? [{ label: a.label, hint: "", run: a.run }] : []; })(),
       ].map((it) => (
         <button key={it.label} type="button" role="menuitem" className="mr-row" onClick={() => { setMenu(null); it.run(); }}
           style={{ border: 0, background: "transparent", font: "inherit", color: "var(--mr-ink)", textAlign: "left", padding: "7px 8px", cursor: "pointer" }}
@@ -89,11 +108,11 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: bool
     setStatus("Saving the mark…");
     try {
       const repo = await invoke<string>("godmode_save_mark", { packet });
-      const id = await api.start(repo, `God-mode mark on Minority report (this app's own repo). The user marked the "${packet.component}" component as wrong in the ${view} view.\n\nTheir note: ${packet.note}\n\nWhat it showed: ${packet.text}\nSource: ${packet.source} · picker layer: ${packet.layer}\nRendered HTML (trimmed): ${packet.html}\n\nFind why it rendered that way (component in ui/src/components or ui/src/screens, picker in ui/src/picker, or state in ui/src/state), fix it, and add a regression test (vitest, next to the code) built from this packet. The packet is also the last line of evals/marks.jsonl. Run \`cd ui && bun run test && bun run build\`. Keep the fix small.`, "blank", true);
+      const id = await api.start(repo, `God-mode mark on Minority report (this app's own repo). The user marked the "${packet.component}" component as wrong in the ${view} view.\n\nTheir note: ${packet.note}\n\nWhat it showed: ${packet.text}\nSource: ${packet.source} · picker layer: ${packet.layer}\nRendered HTML (trimmed): ${packet.html}\n\nFind why it rendered that way (component in ui/src/components or ui/src/screens, picker in ui/src/picker, or state in ui/src/state), fix it, and add a regression test (vitest, next to the code) built from this packet. The packet is also the last line of evals/marks.jsonl. Run \`cd ui && bun run test && bun run build\`. Keep the fix small. When the tests pass, commit it on this branch as one commit titled "Fix: <what you fixed>"; the user applies it to their app from here.`, "blank", true);
       setStatus("");
       setMarked(null); setNote(""); onClose();
       onOpenSession(id);
-    } catch (e) { setStatus(String(e)); }
+    } catch (e) { setStatus(shortError(e)); }
   };
 
   return (
@@ -109,9 +128,10 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession }: { on: bool
         </div>
       )}
       {marked && (
-        <div data-godmode-ui style={{ position: "absolute", right: 16, bottom: 16, width: 420, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10, pointerEvents: "auto", boxShadow: "0 0 0 2px var(--mr-error)" }}>
-          <strong>Mark “{marked.component}” as wrong</strong>
-          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>layer {marked.layer} · {marked.source || "no source"} · {view}</span>
+        <div data-godmode-ui style={{ position: "absolute", ...(marked.rect.left + marked.rect.width / 2 > window.innerWidth / 2 ? { left: 16 } : { right: 16 }), bottom: 16, width: 420, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10, pointerEvents: "auto", boxShadow: "0 0 0 2px var(--mr-error)" }}>
+          {/* Opposite side from the marked element, so you can still see what you're describing. */}
+          <strong>What's wrong with “{label(marked)}”?</strong>
+          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{marked.component} · {view}{marked.source ? ` · ${marked.source.slice(0, 24)}` : ""}</span>
           <textarea autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's wrong, and what should it show instead?" rows={4} className="mr-input" style={{ padding: 10, minHeight: 90, resize: "vertical" }}
             onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); void submit(); } }} />
           <div className="mr-row">

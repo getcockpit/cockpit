@@ -1,3 +1,4 @@
+import { shortError } from "../components/ErrorLine";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -38,7 +39,7 @@ export function VoiceController({ resolve, send, onFallback }: { resolve: Resolv
       const r = point ? resolve(point) : null;
       setTarget(input ? "into the focused field" : r ? `to ${r.label}, about ${point!.component}` : "to a new session");
       setText(""); setError(""); setLive(true);
-      invoke("voice_start").catch((err) => { setError(String(err)); setLive(false); });
+      invoke("voice_start").catch((err) => { setError(shortError(err)); setLive(false); });
     };
     const up = (e: KeyboardEvent) => {
       if (!live || (e.code !== "Space" && e.key !== "Alt")) return;
@@ -54,7 +55,7 @@ export function VoiceController({ resolve, send, onFallback }: { resolve: Resolv
   useEffect(() => {
     const un = listen<{ type: string; text?: string; error?: string }>("voice", ({ payload: v }) => {
       if (v.type === "partial") setText(v.text ?? "");
-      if (v.type === "error") { setError(v.error ?? "voice failed"); setLive(false); }
+      if (v.type === "error") { setError(shortError(v.error ?? "voice failed")); setLive(false); }
       if (v.type === "ended") setLive(false);
       if (v.type === "final") {
         setLive(false);
