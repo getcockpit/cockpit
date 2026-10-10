@@ -1,4 +1,4 @@
-// mr-dictate: push-to-talk speech-to-text for Minority report, on device.
+// mr-dictate: push-to-talk speech-to-text for Cockpit, on device.
 // Prints one JSON object per line: {"type":"ready"|"partial"|"final"|"error"|"status", ...}.
 // Starts listening immediately; a "stop" line on stdin (or EOF) ends it and prints the final text.
 // `mr-dictate --status` only reports permissions and on-device support, without recording.

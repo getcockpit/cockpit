@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=doc MR_DATA_DIR="$data" "$root/src-tauri/target/debug/minority-report"
+MR_SELFTEST=doc MR_DATA_DIR="$data" "$root/src-tauri/target/debug/Cockpit"
 db="$data/events.sqlite"
 echo "--- doc events"
 sqlite3 "$db" "SELECT kind, COUNT(*) FROM events WHERE kind LIKE 'doc.%' OR kind LIKE 'ui.doc%' GROUP BY kind ORDER BY MIN(id);"
