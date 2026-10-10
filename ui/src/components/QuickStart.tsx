@@ -1,10 +1,11 @@
 import { shortError } from "./ErrorLine";
 import { useEffect, useRef, useState } from "react";
 import { Key } from ".";
-import { FolderPicker, useWorkFolder } from "./FolderPicker";
+import { FolderPicker, PinFolder, useWorkFolder } from "./FolderPicker";
 import { promptFor } from "../screens/StartPicker";
 import { api } from "../state/store";
-import type { SessionKind } from "../state/types";
+import { workspaceFolder } from "../state/reduce";
+import type { AppState, SessionKind } from "../state/types";
 
 // The empty wall's start (MR-42, F5): nothing is running, so the wall's whole job is to get
 // something running. Folder, words, kind, ↵ — the same as ⌘K, without having to know ⌘K.
@@ -13,8 +14,8 @@ const KINDS: { id: SessionKind; name: string; what: string }[] = [
   { id: "plan", name: "Plan it first", what: "A working doc you shape before any code" },
 ];
 
-export function QuickStart({ onStarted, onMore }: { onStarted: (id: string) => void; onMore: (mode: "review" | "address") => void }) {
-  const [cwd, setCwd] = useWorkFolder();
+export function QuickStart({ state, workspace, onStarted, onMore }: { state: AppState; workspace: string; onStarted: (id: string) => void; onMore: (mode: "review" | "address") => void }) {
+  const [cwd, setCwd] = useWorkFolder(workspaceFolder(state, workspace));
   const [text, setText] = useState("");
   const [kind, setKind] = useState<SessionKind>(() => { try { return localStorage.getItem("mr.mode") === "plan" ? "plan" : "blank"; } catch { return "blank"; } });
   const [busy, setBusy] = useState(false);
@@ -38,7 +39,8 @@ export function QuickStart({ onStarted, onMore }: { onStarted: (id: string) => v
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)", background: "var(--mr-tile)", padding: 14 }}>
         <div className="mr-row" style={{ gap: 10, alignItems: "stretch" }}>
           <FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[]} />
-          <span className="mr-dim" style={{ alignSelf: "center" }}>in this folder,</span>
+          <span style={{ alignSelf: "center" }} className="mr-dim mr-grow">in this folder,</span>
+          <PinFolder workspace={workspace} folder={cwd} pinned={state.workspaces.find((w) => w.id === workspace)?.folder ?? null} />
         </div>
         <textarea ref={input} className="mr-input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Fix the login redirect after OAuth and add a regression test"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void start(); } }}
