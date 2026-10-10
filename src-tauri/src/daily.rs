@@ -114,7 +114,8 @@ pub fn compute(files: &[(String, i64)], app_ids: &HashSet<String>, now_ms: i64, 
     DailyDriver { days: days.into_values().rev().take(14).collect(), streak, goal }
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn daily_driver(app: tauri::AppHandle, log: tauri::State<'_, crate::eventlog::EventLog>) -> Result<DailyDriver, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let mut files = scan(&Path::new(&home).join(".claude/projects"));
@@ -125,10 +126,9 @@ pub fn daily_driver(app: tauri::AppHandle, log: tauri::State<'_, crate::eventlog
         }
     }
     let app_ids: HashSet<String> = log
-        .list(None, None, i64::MAX)
+        .list_kind("sidecar.session_started")
         .map_err(|e| e.to_string())?
         .into_iter()
-        .filter(|e| e.kind == "sidecar.session_started")
         .filter_map(|e| e.payload["sdk_session_id"].as_str().map(str::to_owned))
         .collect();
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_millis() as i64;
