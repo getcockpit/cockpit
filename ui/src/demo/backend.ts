@@ -171,7 +171,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "recent_folders": return [
       { path: "/Users/me/code/shop", name: "shop", repo: true, at: 0 },
       { path: "/Users/me/code/billing", name: "billing", repo: true, at: 0 },
-      { path: "/Users/me/code/minority-report", name: "minority-report", repo: true, at: 0 },
+      { path: "/Users/me/code/cockpit", name: "cockpit", repo: true, at: 0 },
       { path: "/Users/me/notes", name: "notes", repo: false, at: 0 },
     ];
     case "gh_prs": return a.mode === "review"
@@ -181,8 +181,8 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
         { number: 490, title: "Shop: faster search index", url: "https://github.com/acme/shop/pull/490", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/shop" }, unresolved: 0, waiting: 0 }];
     case "daily_driver": return { streak: 2, goal: 7 };
     case "selfbuild_list": return [];
-    case "personal_history": return { worktree: "/Users/me/code/minority-report-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
-    case "app_repo_path": return "/Users/me/code/minority-report";
+    case "personal_history": return { worktree: "/Users/me/code/cockpit-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
+    case "app_repo_path": return "/Users/me/code/cockpit";
     // One-click Update (MR-66): ?demo=busy&update=1 offers two updates; &update=fail fails the build.
     case "update_status": {
       const u = new URLSearchParams(location.search).get("update");
@@ -209,7 +209,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       later(1200, () => record(String(a.session), "picker.layer3", { item_id: a.itemId, diagram: diagramFor(String(a.text)), ms: 1200, error: null }));
       return null;
     case "limits_refresh": record(null, "sidecar.limits", { available: true, plan: "max", five_hour: { utilization: 0.34, resetsAt: Math.round(Date.now() / 1000) + 7200 }, seven_day: { utilization: 0.58, resetsAt: null } }); return null;
-    case "godmode_save_mark": return "/Users/me/code/minority-report";
+    case "godmode_save_mark": return "/Users/me/code/cockpit";
     case "personal_sync": return "";
     case "pr_repo": return String(a.spec).includes("acme/shop") ? "/Users/me/code/shop" : null;
     case "fix_apply": record(String(a.session), "ui.fix_applied", { branch: "mr/god-mode-mark-ab12" }); return "merged";

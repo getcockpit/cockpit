@@ -19,7 +19,7 @@ while true; do
   code=0
   MR_DEV_LOOP=1 MR_DEV_SLOT="$slot" MR_APP_REPO="$root" MR_AUTO_RESUME="$resume" MR_HEALTH_FILE="$state/healthy-$slot" \
     MR_RECOVERED="$recovered" MR_CRASH_LOG="$state/crashes.log" \
-    "$dir/debug/minority-report" 2>&1 | tee "$state/slot-$slot.out" || code=$? # pipefail: the app's exit code
+    "$dir/debug/Cockpit" 2>&1 | tee "$state/slot-$slot.out" || code=$? # pipefail: the app's exit code
   if [ -f "$state/healthy-$slot" ]; then
     echo "$slot" >"$state/mr-stable" # it started fine: this slot is the one to fall back to
     recovered=""; build=1
@@ -35,8 +35,8 @@ while true; do
     echo "=== $(date '+%Y-%m-%d %H:%M:%S') crash at start · slot $slot · $(git -C "$root" rev-parse --short HEAD 2>/dev/null) · exit $code"
     tail -n 40 "$state/slot-$slot.out" 2>/dev/null || true
   } >>"$state/crashes.log"
-  echo "Minority report crashed at start (slot $slot). Logged to src-tauri/target/crashes.log." >&2
-  if [ -z "$stable" ] || [ "$stable" = "$slot" ] || [ ! -x "$state/slot-$stable/debug/minority-report" ] || [ -n "$recovered" ]; then
+  echo "Cockpit crashed at start (slot $slot). Logged to src-tauri/target/crashes.log." >&2
+  if [ -z "$stable" ] || [ "$stable" = "$slot" ] || [ ! -x "$state/slot-$stable/debug/Cockpit" ] || [ -n "$recovered" ]; then
     echo "No earlier stable build to roll back to; stopping. See src-tauri/target/crashes.log." >&2
     exit 1
   fi

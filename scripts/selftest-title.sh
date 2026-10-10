@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=title MR_DATA_DIR="$data" "$root/src-tauri/target/debug/minority-report" || true
+MR_SELFTEST=title MR_DATA_DIR="$data" "$root/src-tauri/target/debug/Cockpit" || true
 db="$data/events.sqlite"
 echo "--- title"
 sqlite3 "$db" "SELECT json_extract(payload,'$.title') FROM events WHERE kind='session.titled';"

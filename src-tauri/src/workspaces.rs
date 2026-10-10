@@ -79,7 +79,7 @@ pub fn to_trash(dir: &Path, label: &str, home: &Path) -> Result<Option<PathBuf>,
     let trash = home.join(".Trash");
     std::fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
     let safe: String = label.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' }).collect();
-    let dest = trash.join(format!("Minority report workspace {safe} {}", chrono_free_stamp()));
+    let dest = trash.join(format!("Cockpit workspace {safe} {}", chrono_free_stamp()));
     std::fs::rename(dir, &dest).map_err(|e| format!("couldn't move it to the Trash: {e}"))?;
     Ok(Some(dest))
 }
