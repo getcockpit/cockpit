@@ -34,10 +34,10 @@ export function Builds({ defaultWorktree, onClose }: { defaultWorktree?: string;
   const running = progress && progress.ok === undefined;
 
   return (
-    <div role="dialog" aria-label="Builds" onKeyDown={(e) => e.key === "Escape" && onClose()}
+    <div role="dialog" className="mr-scrim" aria-label="Builds" onKeyDown={(e) => e.key === "Escape" && onClose()}
       style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "80px 24px", background: "rgba(21,24,27,.35)", zIndex: 20 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ width: "100%", maxWidth: 760, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
+      <div className="mr-sheet" style={{ width: "100%", maxWidth: 760, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <div className="mr-row mr-band" style={{ padding: "12px 16px" }}><strong>Build the app from inside the app</strong><span className="mr-grow" /><Key k="esc" onClick={onClose}>Close</Key></div>
         <form className="mr-row" style={{ padding: "12px 16px" }} onSubmit={(e) => { e.preventDefault(); void build(); }}>
           <input className="mr-input mr-mono" style={{ fontSize: 13, background: "var(--mr-well)" }} value={worktree} onChange={(e) => setWorktree(e.target.value)} aria-label="Worktree to build" />

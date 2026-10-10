@@ -22,7 +22,11 @@
   --mr-radius: 2px;
   --mr-gap: 4px;
   --mr-fast: 100ms;
-  --mr-zoom: 260ms;
+  --mr-med: 180ms;
+  --mr-slow: 320ms;
+  --mr-exit: 140ms; /* keep in step with EXIT_MS in components/motion.ts */
+  --mr-zoom: 240ms;
+  --mr-ease: cubic-bezier(.2, .7, .2, 1);
 }
 
 * { box-sizing: border-box; }

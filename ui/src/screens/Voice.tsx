@@ -80,7 +80,7 @@ export function VoiceController({ resolve, send, onFallback }: { resolve: Resolv
 
   if (!live && !error) return null;
   return (
-    <div role="status" aria-live="polite" style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", minWidth: 420, maxWidth: 760, padding: "12px 16px", background: "var(--mr-ink)", color: "var(--mr-tile)", zIndex: 40, display: "flex", flexDirection: "column", gap: 4 }}>
+    <div role="status" aria-live="polite" style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", minWidth: 420, maxWidth: 760, padding: "12px 16px", background: "var(--mr-ink)", color: "var(--mr-tile)", zIndex: 40, display: "flex", flexDirection: "column", gap: 4, animation: "mr-toast-in .18s ease-out both" }}>
       {error ? <span style={{ color: "var(--mr-needs)" }}>Voice: {error}</span> : (
         <>
           <span style={{ opacity: 0.7, fontSize: 12 }}>● Listening {target} · release ⌥ Space to send</span>
