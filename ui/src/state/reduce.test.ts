@@ -290,3 +290,10 @@ test("a review waiting on its overview needs you until you start the walkthrough
   const started = replay([...base, ev("V4", "flow.review_snippet", { n: 1, total: 2, title: "x", findings: [] }), ev("V5", "sidecar.sdk", { message: { type: "result", is_error: false, result: "s" } })]);
   expect(pickTile(started.sessions.r).doing).toMatch(/^Snippet 1 of 2/);
 });
+
+test("a rollback after a crash at start is shown until dismissed", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind, payload, anchor: null, created_at: 7 });
+  const st = replay([e("C1", "app.recovered", { crashed_slot: "b", slot: "a", log: "=== crash at start · slot b\npanicked" })]);
+  expect(st.recovered).toEqual({ crashedSlot: "b", log: "=== crash at start · slot b\npanicked", at: 7 });
+  expect(replay([e("C1", "app.recovered", { crashed_slot: "b" }), e("C2", "ui.recovery_dismissed", {})]).recovered).toBeNull();
+});

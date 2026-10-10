@@ -1,3 +1,4 @@
+import { RecoveryBanner } from "./components/RecoveryBanner";
 import { keyOf } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2, wantsDiagram } from "./picker/pick";
@@ -150,6 +151,7 @@ export default function App() {
   const shell = (view: React.ReactNode, overlays: React.ReactNode) => (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {tabs}
+      <RecoveryBanner all={all} />
       <UpdateBanner all={all} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />
       <div id="mr-view" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{view}</div>
       {overlays}

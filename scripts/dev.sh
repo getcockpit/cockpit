@@ -23,17 +23,4 @@ fi
 
 state="$root/src-tauri/target"
 mkdir -p "$state"
-slot="$(cat "$state/mr-slot" 2>/dev/null || echo a)"
-resume=""
-while true; do
-  dir="$state/slot-$slot"
-  # Incremental, and a no-op right after an in-app Update built this slot.
-  (cd "$root/src-tauri" && CARGO_TARGET_DIR="$dir" cargo build)
-  echo "$slot" >"$state/mr-slot"
-  rm -f "$state/mr-update"
-  MR_DEV_LOOP=1 MR_DEV_SLOT="$slot" MR_APP_REPO="$root" MR_AUTO_RESUME="$resume" "$dir/debug/minority-report" || true
-  # The app writes the slot to switch to before it exits for an update; any other exit ends the run.
-  [ -f "$state/mr-update" ] || break
-  slot="$(cat "$state/mr-update")"
-  resume=1
-done
+"$root/scripts/dev-loop.sh" "$root" "$state"
