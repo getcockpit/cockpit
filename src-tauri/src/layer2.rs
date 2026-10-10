@@ -29,7 +29,8 @@ fn creds() -> Option<(String, String)> {
     Some((account, token))
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn layer2_save_credentials(account_id: String, api_token: String) -> Result<(), String> {
     for (acct, val) in [("account_id", account_id), ("api_token", api_token)] {
         let st = Command::new("security").args(["add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", acct, "-w", val.trim()]).status().map_err(|e| e.to_string())?;
@@ -40,7 +41,8 @@ pub fn layer2_save_credentials(account_id: String, api_token: String) -> Result<
     Ok(())
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn layer2_status() -> Value {
     json!({ "configured": creds().is_some() })
 }
@@ -84,7 +86,8 @@ fn clef(account: &str, token: &str, text: &str) -> Result<(String, f64, Value), 
 
 /// Classifies one transcript item and records the render decision (layer, label, confidence,
 /// latency, estimated tokens) as a `picker.layer2` event for the UI and god mode.
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn layer2_classify(app: AppHandle, session: String, item_id: String, text: String) -> Value {
     let t0 = Instant::now();
     let tokens = (text.chars().count() / 4 + 120) as u64;

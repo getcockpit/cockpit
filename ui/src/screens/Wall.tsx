@@ -9,6 +9,7 @@ import { Bar, Key, Sparkline, StateMark } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
 import { isOpenQuestion, type Doc } from "../state/docs";
 import { api } from "../state/store";
+import { cached } from "../state/cache";
 import type { AppState, SessionState } from "../state/types";
 import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
@@ -30,18 +31,21 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
   const review = tiles.filter((t) => REVIEW.has(t.tile.state));
   const count = (k: TileSpec["state"]) => tiles.filter((t) => t.tile.state === k).length;
   const [sel, setSel] = useState(0);
-  const [prs, setPrs] = useState<{ review: Pr[]; mine: Pr[] }>({ review: [], mine: [] });
-  const [daily, setDaily] = useState<{ streak: number; goal: number } | null>(null);
   const cwd = (() => { try { return localStorage.getItem("mr.cwd") ?? "~/"; } catch { return "~/"; } })();
+  // Cached across wall mounts (MR-57): a workspace switch shows the last values instantly.
+  const loadPrs = () => Promise.allSettled([api.prs(cwd, "review"), api.prs(cwd, "address")]).then(([r, m]) => ({ review: r.status === "fulfilled" ? r.value : [], mine: m.status === "fulfilled" ? m.value : [] }));
+  const loadDaily = () => invoke<{ streak: number; goal: number }>("daily_driver");
+  const [prs, setPrs] = useState<{ review: Pr[]; mine: Pr[] }>(() => cached("prs", 5 * 60_000, loadPrs, () => {}) ?? { review: [], mine: [] });
+  const [daily, setDaily] = useState<{ streak: number; goal: number } | null>(() => cached("daily", 10 * 60_000, loadDaily, () => {}) ?? null);
 
   useEffect(() => {
     let alive = true;
     const load = () => {
-      Promise.allSettled([api.prs(cwd, "review"), api.prs(cwd, "address")]).then(([r, m]) => alive && setPrs({ review: r.status === "fulfilled" ? r.value : [], mine: m.status === "fulfilled" ? m.value : [] }));
-      invoke<{ streak: number; goal: number }>("daily_driver").then((d) => alive && setDaily(d)).catch(() => {});
+      cached("prs", 5 * 60_000, loadPrs, (v) => alive && setPrs(v));
+      cached("daily", 10 * 60_000, loadDaily, (v) => alive && setDaily(v));
     };
     load();
-    const t = setInterval(load, 5 * 60_000);
+    const t = setInterval(load, 60_000);
     return () => { alive = false; clearInterval(t); };
   }, [cwd]);
 

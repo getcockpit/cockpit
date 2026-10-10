@@ -64,7 +64,8 @@ pub fn scan(projects: &Path, limit: usize) -> Vec<Folder> {
     out
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn recent_folders() -> Vec<Folder> {
     let home = std::env::var("HOME").unwrap_or_default();
     scan(&Path::new(&home).join(".claude/projects"), 15)
