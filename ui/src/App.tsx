@@ -108,9 +108,18 @@ export default function App() {
   const archived = Object.values(state.sessions).filter((x) => x.archivedAt);
   const archivePanel = archive && <Archive sessions={archived} onClose={() => setArchive(false)} onOpen={(id) => { setArchive(false); setDocId(null); setFocus(id); }} />;
   const overlay = picker && <StartPicker state={state} initialText={pickerText} onClose={() => { setPicker(false); setPickerText(""); }} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
+  // App shell: the workspace tabs stay put and only the view scrolls, so sticky headers work and
+  // nothing pushes the tabs off-screen (MR-43).
+  const shell = (view: React.ReactNode, overlays: React.ReactNode) => (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {tabs}
+      <div id="mr-view" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{view}</div>
+      {overlays}
+    </div>
+  );
   const doc = docId ? docs.find((d) => d.id === docId) : null;
-  if (doc) return <>{tabs}<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
+  if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return <>{tabs}<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
-  return <>{tabs}<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={() => setPicker(true)} /></ErrorBoundary>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={() => setPicker(true)} /></ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>);
 }
