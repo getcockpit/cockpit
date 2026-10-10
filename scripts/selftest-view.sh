@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=view MR_DATA_DIR="$data" "$root/src-tauri/target/debug/minority-report"
+MR_SELFTEST=view MR_DATA_DIR="$data" "$root/src-tauri/target/debug/Cockpit"
 db="$data/events.sqlite"
 echo "--- views"
 sqlite3 "$db" "SELECT json_extract(payload,'$.title'), json_array_length(payload,'$.blocks') FROM events WHERE kind='view.rendered';"
@@ -20,7 +20,7 @@ need "SELECT COUNT(*) FROM events WHERE kind='view.rendered' AND json_array_leng
 # MR-71: review findings, again without naming a block, should come back on the severity scale.
 data2="$(mktemp -d)"
 MR_VIEW_PROMPT="This is a UI test; nothing here is real and you don't need to look at any files. Summarise my pretend code review of a payments PR: one critical finding (a charge can run twice on retry, charge.ts:42), one important (the webhook isn't verified, webhook.ts:10) and one nitpick (a stray console.log). Then on a final line reply with exactly: SELFTEST DONE" \
-  MR_SELFTEST=view MR_DATA_DIR="$data2" "$root/src-tauri/target/debug/minority-report"
+  MR_SELFTEST=view MR_DATA_DIR="$data2" "$root/src-tauri/target/debug/Cockpit"
 db2="$data2/events.sqlite"
 echo "--- review view blocks"
 sqlite3 "$db2" "SELECT DISTINCT json_extract(b.value,'$.type') FROM events e, json_each(e.payload,'$.blocks') b WHERE e.kind='view.rendered';"
