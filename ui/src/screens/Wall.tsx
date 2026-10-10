@@ -5,7 +5,7 @@ import { pointer } from "../components/pointer";
 import { suggest, type Suggestion } from "../picker/suggest";
 import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
-import { Bar, Key, Lamp, Lamps, Sparkline, StateMark } from "../components";
+import { Bar, Key, Sparkline, StateMark } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
 import { isOpenQuestion, type Doc } from "../state/docs";
 import { api } from "../state/store";
@@ -85,24 +85,21 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
-      <header className="mr-band mr-row" style={{ padding: "14px 24px" }}>
-        <strong style={{ fontSize: 15 }}>Minority report</strong>
-        <span className="mr-dim">Wall</span>
+      {/* One compact header (MR-53): status counts inline; zero counts fade; each jumps to its section. */}
+      <header className="mr-band mr-row" style={{ padding: "10px 24px", gap: 6, flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 15, marginRight: 10 }}>Wall</strong>
+        {(sessions.length > 0 || queue.length > 0) && <>
+          <Count n={queue.length} label="need you" tone="needs" onClick={() => jump("mr-needs")} />
+          <Count n={count("error")} label={count("error") === 1 ? "error" : "errors"} tone="error" onClick={() => jump("mr-review")} />
+          <Count n={running.length} label="running" onClick={() => jump("mr-running")} />
+          <Count n={count("almost")} label="almost done" onClick={() => jump("mr-running")} />
+          <Count n={review.length} label="to review" onClick={() => jump("mr-review")} />
+        </>}
         <span className="mr-grow" />
         <Usage label="5-hour" v={state.usage.fiveHour} resets={state.usage.resetsAt} />
-        <Usage label="Weekly" v={state.usage.weekly} />
-        <span className="mr-mono mr-dim" title={state.sidecar.claude ?? ""}>{state.sidecar.up ? "● claude" : "○ claude"}</span>
+        <Usage label="Week" v={state.usage.weekly} />
+        <span className="mr-mono" title={state.sidecar.up ? `Claude Code: ${state.sidecar.claude ?? ""}` : "Claude Code isn't connected"} style={{ color: state.sidecar.up ? "var(--mr-done)" : "var(--mr-error)" }}>●</span>
       </header>
-
-      {(sessions.length > 0 || queue.length > 0) && (
-        <Lamps>
-          <Lamp value={queue.length} label="Needs you" on={queue.length > 0 && "needs"} onClick={() => jump("mr-needs")} />
-          <Lamp value={count("error")} label="Errors" on={count("error") > 0 && "error"} onClick={() => jump("mr-review")} />
-          <Lamp value={count("almost")} label="Almost done" on={count("almost") > 0 && "plain"} onClick={() => jump("mr-running")} />
-          <Lamp value={running.length} label="Running" on={running.length > 0 && "plain"} onClick={() => jump("mr-running")} />
-          <Lamp value={review.length} label="To review" on={review.length > 0 && "plain"} onClick={() => jump("mr-review")} />
-        </Lamps>
-      )}
 
       {suggestions.length > 0 && (
         <section aria-label="Suggested next" className="mr-row" style={{ flexWrap: "wrap", gap: 8, padding: "12px 24px 0" }}>
@@ -121,7 +118,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
       <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
         {queue.length > 0 && (
           <section id="mr-needs" aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 12 }}>
-            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you <span className="mr-dim">{queue.length}</span><span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · R reply · ↵ open</span></h2>
+            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you<span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · R reply · ↵ open</span></h2>
             <div className="mr-queue">
               {queue.map((q, i) =>
                 q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
@@ -185,12 +182,13 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
         )}
       </main>
       <footer className="mr-band mr-row mr-dim" style={{ padding: "8px 24px", fontSize: 12 }}>
-        <span>⌘K start · click focus · ⌘-click deeper · ⌥-click discover · ⌘⇧G god mode · ⌘⇧B builds</span>
-        {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-2)" }}>Daily driver {daily.streak}/{daily.goal}</span>}
+        {/* Calm footer (MR-53): one hint, the two places you go from here, and a quiet progress note. */}
+        <span>Right-click anything for actions · ⌘-click to go deeper</span>
         <span className="mr-grow" />
-        <Key onClick={() => api.report()}>Report a bug</Key>
-        <Key k="⌘⇧A" onClick={onArchive}>Archive{archived ? ` · ${archived}` : ""}</Key>
-        <Key k="⌘K" onClick={() => onStart()}>Start</Key>
+        {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-3)" }}>{daily.streak}/{daily.goal} days</span>}
+        <button type="button" className="mr-link" onClick={() => api.report()}>Report a bug</button>
+        <button type="button" className="mr-link" onClick={onArchive}>Archive{archived ? ` (${archived})` : ""} <kbd className="mr-mono">⌘⇧A</kbd></button>
+        <Key k="⌘K" tone="primary" onClick={() => onStart()}>Start</Key>
       </footer>
     </div>
   );
@@ -225,5 +223,18 @@ function Usage({ label, v, resets }: { label: string; v: number | null; resets?:
       <span style={{ width: 64, height: 4, background: "var(--mr-well)", display: "inline-block" }}><span style={{ display: "block", height: 4, width: `${Math.round((v ?? 0) * 100)}%`, background: high ? "var(--mr-needs)" : "var(--mr-ink-3)" }} /></span>
       <span className="mr-mono" style={{ color: high ? "var(--mr-needs-ink)" : "var(--mr-ink-2)" }}>{v === null ? "—" : `${Math.round(v * 100)}%`}</span>
     </span>
+  );
+}
+
+// A status count in the header: loud when it matters, faded at zero.
+function Count({ n, label, tone, onClick }: { n: number; label: string; tone?: "needs" | "error"; onClick: () => void }) {
+  const on = n > 0;
+  const bg = on && tone === "needs" ? "var(--mr-needs)" : on && tone === "error" ? "var(--mr-error)" : "transparent";
+  const fg = on && tone === "error" ? "var(--mr-tile)" : on ? "var(--mr-ink)" : "var(--mr-ink-3)";
+  return (
+    <button type="button" data-mr="Lamp" data-mr-source={label} onClick={onClick} disabled={!on} aria-label={`${n} ${label}`}
+      style={{ display: "inline-flex", alignItems: "baseline", gap: 6, padding: "4px 10px", border: 0, background: bg, color: fg, font: "inherit", fontWeight: on ? 700 : 400, cursor: on ? "pointer" : "default", opacity: on ? 1 : 0.6 }}>
+      <b className="mr-mono" style={{ fontSize: 16 }}>{n}</b><span>{label}</span>
+    </button>
   );
 }

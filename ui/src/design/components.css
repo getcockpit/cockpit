@@ -96,3 +96,8 @@
   .mr-onb-h1 { font-size: 30px; }
   .mr-onb-sub { font-size: 15px; }
 }
+
+/* A quiet text button for secondary places to go (MR-53): no fill, ink on hover. */
+.mr-link { border: 0; background: transparent; padding: 4px 6px; font: inherit; color: var(--mr-ink-2); cursor: pointer; }
+.mr-link:hover { color: var(--mr-ink); text-decoration: underline; }
+.mr-link kbd { font-size: 11px; color: var(--mr-ink-3); }
