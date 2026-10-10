@@ -186,6 +186,11 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.transcript = settle(s.transcript, ["sending", "queued", "taken"], "lost");
       break;
   }
+  // Whatever this event added belongs to the plan step in progress (MR-69: the transcript groups by step).
+  const doing = s.todos.find((x) => x.status === "in_progress")?.content;
+  if (doing && s.transcript.length > base.transcript.length) {
+    s.transcript = s.transcript.map((x, i) => (i >= base.transcript.length && !x.step ? { ...x, step: doing } : x));
+  }
   return { ...next, sessions: { ...next.sessions, [sid]: s }, order };
 }
 
