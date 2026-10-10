@@ -191,13 +191,13 @@ pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout
 /// Appended to every session's system prompt (MR-56). The app renders choices as decision cards
 /// and structured replies as visual blocks, so it asks Claude for those shapes instead of prose.
 pub const VISUAL_GUIDANCE: &str = "You are running inside Cockpit, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
-- Harness tools never get a turn of their own: send every mr call in the same message as real work (parallel tool calls). In your first message with tool calls, call ToolSearch \"select:mcp__mr__title_set,mcp__mr__plan_set\" alongside your first real tool call (Read, Grep, Bash…), and from then on add mr calls to the messages you are already sending.
-- Name the thread with mcp__mr__title_set (2-6 words) as soon as it is loaded, and again whenever the thread's focus clearly shifts. The user's wall shows it.
-- The user follows your work through your plan, so keep it current. Whenever a request takes 3 or more steps (even small ones), publish mcp__mr__plan_set with every step as soon as it is loaded, and update it with the full list each time a step starts or finishes, inside the message that starts the next step's work. Never skip this for short tasks.
-- When the user has to choose between options (which approach, which host, whether to continue), call the AskUserQuestion tool with 2-4 concrete options, each with a short description, instead of asking in prose. One decision per question.
-- Write replies in Markdown: short `## ` section headings, numbered lists for steps or todos, `- ` bullets for facts. Start a list item with a **bold short title**, then the detail. Put rough time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
-- For a status report, summary, comparison, verification result or progress, call the mr render_view tool with catalog blocks instead of writing it out, then add at most one line of text (decision 26). Pick the block that fits the content: review findings → `findings` (with a `tier` first for what's at stake); concrete fixes for one finding → `fix_options`; a number to choose (timeout, batch size, retention) → `tradeoff`; whether something already exists → `novelty`; a reviewer's comment and its state → `thread`.
-- End every turn with one line: `Next:` then 1-3 replies the user is likely to send, each in double quotes, best first (e.g. Next: \"Merge it\" · \"Show me the diff\"). They become one-click buttons, so phrase them as the user would. When the turn ends with render_view, put them in its next block instead.";
+- The mr tools never get a model call of their own: send each mr call in the same message as real work (parallel tool calls).
+- Name the thread with mcp__mr__title_set (2-6 words) in your first message with tool calls, and again only when its focus clearly shifts.
+- For work with 3 or more steps, publish mcp__mr__plan_set with every step, and send the full list again only when a step starts or finishes, in the message that starts the next step's work.
+- When the user must choose between options, use AskUserQuestion with 2-4 concrete options, each with a short description. One decision per question.
+- Write replies in Markdown: short `## ` headings, numbered lists for steps, `- ` bullets for facts. Start a list item with a **bold short title**. Put time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
+- For a status report, summary, comparison, verification result or progress, use mcp__mr__render_view instead of prose (decision 26) as the turn's last call, with no text after it. Review findings → `findings` (with a `tier` first); fixes for one finding → `fix_options`; a number to choose → `tradeoff`; does it already exist → `novelty`; a reviewer's comment → `thread`.
+- End every turn with one line: `Next:` then 1-3 replies the user is likely to send, each in double quotes, best first (e.g. Next: \"Merge it\" · \"Show me the diff\"). After render_view, put them in its `next` block instead.";
 
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
 /// Blank sessions in a git repo get their own worktree unless `worktree` is false (decision 7).
@@ -214,6 +214,7 @@ pub fn session_start(
     worktree: Option<bool>,
     session_id: Option<String>,
     workspace: Option<String>,
+    preset: Option<String>,
 ) -> Result<String, String> {
     let mut cwd = expand_home(&app, &cwd);
     if !std::path::Path::new(&cwd).is_dir() {
@@ -239,6 +240,10 @@ pub fn session_start(
     let mut payload = serde_json::json!({ "cwd": cwd, "prompt": prompt, "resume": resume, "kind": kind, "workspace": workspace });
     if let (Some(p), Some(e)) = (payload.as_object_mut(), extra.as_object()) {
         p.extend(e.clone());
+    }
+    // Started from one of your own kinds in the start picker (MR-80).
+    if let Some(id) = preset {
+        payload["preset"] = id.into();
     }
     crate::eventlog::record(&app, Some(&session), "ui.session_requested", &payload, None);
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
@@ -284,7 +289,7 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     // Not running any more (app restarted, or it ended): resume the same conversation with this
     // message instead of failing with "unknown session" (MR-52).
     let (cwd, kind, workspace, sdk) = resume_info(&app, &session).ok_or("this session can't be resumed; start a new one")?;
-    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace)).map(|_| ())
+    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace), None).map(|_| ())
 }
 
 /// Where and how a session ran, from the log: (cwd, kind, workspace, Claude session id).

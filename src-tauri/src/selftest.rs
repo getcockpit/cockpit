@@ -112,6 +112,7 @@ pub fn run(app: AppHandle) {
             Some(resume_mode()),
             None,
             ws,
+            None,
         );
         if let Err(e) = res {
             eprintln!("[selftest] start failed: {e}");
@@ -194,7 +195,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let res = crate::sidecar::session_start(
                 app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd,
                 "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(),
-                sdk, None, Some("blank".into()), Some(false), Some(session), None,
+                sdk, None, Some("blank".into()), Some(false), Some(session), None, None,
             );
             if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
         }

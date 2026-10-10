@@ -43,7 +43,7 @@ const CATALOG: &[(&str, &[(&str, F)])] = &[
 pub fn tool_spec() -> Value {
     json!({
         "name": TOOL,
-        "description": "Show the user a view built from the app's component catalog, instead of writing a report, summary, comparison, status or verification result as text. After calling it, write at most one short line; never repeat its content. title: short heading. blocks: array of objects, each with a `type` and its fields:\n\
+        "description": "Show the user a view built from the app's component catalog, instead of writing a report, summary, comparison, status or verification result as text. Make it the last call of the turn and add no text after it. title: short heading. blocks: array of objects, each with a `type` and its fields:\n\
 - takeaway {heading, status?: 'done'|'todo'|'you'|'info', items: [{title, detail?, state?: 'done'|'todo'|'you'|'error', time?: 'about 15 min'}]}: a section with state-marked rows. 'you' = needs the user.\n\
 - tally {items: [{n, label, tone?: 'done'|'now'|'deferred'|'todo'|'error'}]}: a batch of outcomes as one bar.\n\
 - checklist {items: [{label, ok: true|false|null, proof?}]}: verification; null = still running.\n\
@@ -60,7 +60,8 @@ pub fn tool_spec() -> Value {
 - thread {author, body, state?: 'unresolved'|'replied'|'resolved', where?, note?}: a reviewer comment with its real state; a reply is not a resolution.\n\
 - text {markdown}: a short paragraph, only when no other block fits.\n\
 Every block except next and text carries Deeper / Discover actions. Use AskUserQuestion, not render_view, for any other choice the user must make.",
-        "params": { "title": "string", "blocks": "array" }
+        "params": { "title": "string", "blocks": "array" },
+        "always_load": true
     })
 }
 
@@ -68,7 +69,8 @@ pub fn plan_spec() -> Value {
     json!({
         "name": PLAN,
         "description": "Publish your plan for the current work so the user can follow it (the app shows it as a plan with progress). Call it before starting any work with 3 or more steps, and again every time a step starts or finishes, always with the full list. steps: [{step: short imperative ('Migrate the readers'), status: 'done'|'doing'|'todo'}]; exactly one step is 'doing' while you work. Add or drop steps when the plan changes. Don't repeat the plan as text.",
-        "params": { "steps": "array" }
+        "params": { "steps": "array" },
+        "always_load": true
     })
 }
 
@@ -76,7 +78,8 @@ pub fn title_spec() -> Value {
     json!({
         "name": TITLE,
         "description": "Name this thread for the user's wall: 2-6 words saying what it is about now (e.g. 'Plan panel for live progress', 'Fix login redirect loop'). Call it when the thread starts and again whenever its focus clearly shifts. Sentence case, no quotes or trailing period. Don't mention it in text.",
-        "params": { "title": "string" }
+        "params": { "title": "string" },
+        "always_load": true
     })
 }
 
@@ -154,12 +157,12 @@ pub fn handle_tool(tool: &str, args: &Value) -> (Vec<(String, Value)>, String, b
     }
     if tool == PLAN {
         return match validate_plan(args) {
-            Ok(plan) => (vec![("plan.updated".into(), plan)], "Plan shown to the user. Update it as each step starts or finishes.".into(), false),
+            Ok(plan) => (vec![("plan.updated".into(), plan)], "Plan updated.".into(), false),
             Err(e) => (vec![], e, true),
         };
     }
     match validate(args) {
-        Ok(view) => (vec![("view.rendered".into(), view)], "Shown to the user. Don't repeat it as text.".into(), false),
+        Ok(view) => (vec![("view.rendered".into(), view)], "Shown. End the turn here.".into(), false),
         Err(e) => (vec![], e, true),
     }
 }
@@ -230,6 +233,13 @@ mod tests {
         let d = tool_spec()["description"].as_str().unwrap().to_owned();
         for (name, _) in CATALOG {
             assert!(d.contains(&format!("- {name} {{")), "{name} missing from the description");
+        }
+    }
+
+    #[test]
+    fn harness_tools_skip_tool_search() {
+        for spec in [tool_spec(), plan_spec(), title_spec()] {
+            assert_eq!(spec["always_load"], true, "{} would cost a ToolSearch round trip", spec["name"]);
         }
     }
 }
