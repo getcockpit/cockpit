@@ -1,4 +1,5 @@
 import type { Doc } from "../state/docs";
+import shop from "./shop.txt?raw";
 
 // Demo scenarios (MR-40). Each is an event log the real reducer replays, plus the docs the core
 // would have folded. `at` is seconds after a base 40 minutes ago.
@@ -105,7 +106,19 @@ const bugEvents: E[] = [
   result("G", "done", 201, 0.6),
 ];
 
+// The user's real shop session (MR-56): a report-shaped reply with a buried decision.
+const shopEvents: E[] = [
+  ...ready, onboarded,
+  ...start("P", "let’s revisit what do we have to be done in the project", { cwd: "/Users/me/go/github.com/shop/platform-worktrees/revisit", repo: "/Users/me/go/github.com/shop/platform", branch: "mr/revisit" }, 10),
+  tool("P", "Bash", { command: "git log --oneline -15 && ls docs && gh issue list --limit 30" }, 20),
+  tool("P", "Read", { file_path: "docs/GO-LIVE-CHECKLIST.md" }, 30),
+  tool("P", "Read", { file_path: "docs/onboarding-polish-2026-10-07.md" }, 40),
+  say("P", shop, 300),
+  result("P", "done", 301, 0.9),
+];
+
 export const SCENARIOS: Record<string, Scenario> = {
+  shop: { events: shopEvents, docs: [] },
   bugs: { events: bugEvents, docs: [] },
   review: { events: reviewEvents, docs: [] },
   address: { events: addressEvents, docs: [] },

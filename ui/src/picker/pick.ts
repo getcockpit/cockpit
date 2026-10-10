@@ -1,3 +1,4 @@
+import { asksUser, proseQuestion } from "./queue";
 import type { PendingAsk, SessionState } from "../state/types";
 
 // Picker layer 1 (decision 5): plain code maps typed agent state to catalog components.
@@ -103,7 +104,7 @@ export function pickTile(s: SessionState): TileSpec {
   // Layer 1 is the trailing "?"; layer 2 (Clef) catches questions, plans and blockers phrased without one.
   const kind = lastItem ? s.kinds[lastItem.id] : undefined;
   const modelSaysWaiting = !!kind && kind.layer === "model" && kind.p >= 0.6 && ["question", "plan", "blocked"].includes(kind.label);
-  const askedInProse = s.status === "idle" && lastItem?.kind === "text" && (/\?\s*$/.test(lastItem.text.trim()) || modelSaysWaiting);
+  const askedInProse = s.status === "idle" && lastItem?.kind === "text" && (asksUser(lastItem.text) || modelSaysWaiting);
   const flowStep = flowWaiting(s);
   const state: TileSpec["state"] =
     s.status === "needs_you" || askedInProse || flowStep ? "needs_you"
@@ -119,7 +120,7 @@ export function pickTile(s: SessionState): TileSpec {
   const ask = s.pending[0];
   const doing = s.status === "interrupted" ? "Stopped when the app closed. Resume continues the same conversation."
     : flowStep ? flowStep
-    : askedInProse && lastItem?.kind === "text" ? `Asks: ${lastItem.text.trim().split("\n").filter(Boolean).at(-1)?.slice(0, 120)}`
+    : askedInProse && lastItem?.kind === "text" ? `Asks: ${proseQuestion(lastItem.text).slice(0, 120)}`
     : ask
     ? ask.kind === "question" ? `Asks: ${ask.questions[0]?.question ?? "a question"}` : `Wants to use ${ask.tool}`
     : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${String(lastTool.input.file_path).split("/").pop()}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");
