@@ -171,10 +171,12 @@ function Transcript({ items, raw, diagrams, onDiagram, onDiscover, onReply, live
   const lastTextId = [...items].reverse().find((t) => t.kind === "text" || t.kind === "view")?.id;
   const end = useRef<HTMLDivElement>(null);
   const [drawing, setDrawing] = useState<Set<string>>(new Set());
-  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [items.length]);
+  // Jump to the end on open, then glide to each new turn as it arrives (MR-67).
+  const seen = useRef(false);
+  useEffect(() => { end.current?.scrollIntoView({ block: "nearest", behavior: seen.current ? "smooth" : "auto" }); seen.current = true; }, [items.length]);
   if (items.length === 0) return <div className="mr-dim" style={{ padding: 12, background: "var(--mr-tile)" }}>Waiting for the first message…</div>;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
+    <div className="mr-stream" style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
       {(raw ? items : groupTools(items.filter((t) => !(t.kind === "tool" && HIDDEN_TOOLS.has(t.name))))).map((t) => raw ? (
         <pre key={t.id} className="mr-code" style={{ fontSize: 11 }}>{JSON.stringify(t, null, 1)}</pre>
       ) : t.kind === "text" ? (
@@ -220,8 +222,8 @@ function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" 
         <span className="mr-ink2 mr-grow mr-ellipsis" title={String(detail)}>{summary}</span>
         <span className="mr-mono" style={{ fontSize: 12, color: t.isError ? "var(--mr-error)" : t.result === undefined ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.isError ? "✕" : t.result === undefined ? "…" : "✓"}</span>
       </button>
-      {open && detail && String(detail) !== summary && <pre className="mr-code" style={{ margin: "0 14px 6px", whiteSpace: "pre-wrap", fontSize: 12 }}>{String(detail)}</pre>}
-      {open && out && <pre className="mr-code" style={{ margin: "0 14px 10px", maxHeight: 260, overflow: "auto", fontSize: 12 }}>{out.slice(0, 4000)}</pre>}
+      {open && detail && String(detail) !== summary && <pre className="mr-code mr-reveal" style={{ margin: "0 14px 6px", whiteSpace: "pre-wrap", fontSize: 12 }}>{String(detail)}</pre>}
+      {open && out && <pre className="mr-code mr-reveal" style={{ margin: "0 14px 10px", maxHeight: 260, overflow: "auto", fontSize: 12 }}>{out.slice(0, 4000)}</pre>}
     </div>
   );
 }
@@ -276,9 +278,9 @@ function ToolGroup({ tools, onDiscover }: { tools: Tool[]; onDiscover: (what: st
       <button type="button" onClick={() => setOpen((x) => !x)} className="mr-row" style={{ width: "100%", padding: "8px 14px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" }}>
         <span className="mr-mono" style={{ fontWeight: 700, minWidth: 90 }}>{tools.length} steps</span>
         <span className="mr-ink2 mr-grow mr-ellipsis">{summarise(tools)}</span>
-        <span className="mr-mono" style={{ fontSize: 12, color: failed ? "var(--mr-error)" : pending ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{failed ? "✕" : pending ? "…" : "✓"} {open ? "▾" : "▸"}</span>
+        <span className="mr-mono" style={{ fontSize: 12, color: failed ? "var(--mr-error)" : pending ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{failed ? "✕" : pending ? "…" : "✓"} <span className="mr-chev" data-open={open}>▸</span></span>
       </button>
-      {open && <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{tools.map((t) => <ToolRow key={t.id} t={t} onDiscover={onDiscover} />)}</div>}
+      {open && <div className="mr-reveal mr-stream" style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{tools.map((t) => <ToolRow key={t.id} t={t} onDiscover={onDiscover} />)}</div>}
     </div>
   );
 }

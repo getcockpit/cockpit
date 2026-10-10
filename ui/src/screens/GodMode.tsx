@@ -77,7 +77,7 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
 
   const click = (origin: HTMLElement, mods: { metaKey?: boolean; altKey?: boolean }) => origin.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...mods }));
   const menuEl = menu && (
-    <div data-mr-menu data-godmode-ui role="menu" aria-label={`Actions for ${menu.t.component}`}
+    <div data-mr-menu data-godmode-ui role="menu" className="mr-pop" aria-label={`Actions for ${menu.t.component}`}
       style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 60, width: 232, background: "var(--mr-tile)", boxShadow: "0 0 0 1px var(--mr-ink-3), 0 6px 18px rgba(21,24,27,.18)", display: "flex", flexDirection: "column", padding: 4 }}>
       <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 11, padding: "4px 8px" }}>{menu.t.component} · layer {menu.t.layer}{menu.t.source ? ` · ${menu.t.source.slice(0, 24)}` : ""}</span>
       {[
