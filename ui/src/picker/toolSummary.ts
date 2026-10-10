@@ -24,7 +24,8 @@ function step(cmd: string): string | null {
     case "gh": return sub ? `gh ${sub}${rest[0] && !rest[0].startsWith("-") ? ` ${rest[0]}` : ""}` : "gh";
     case "bun": case "npm": case "pnpm": case "yarn": case "bunx": case "npx": case "cargo": {
       const what = args.find((a) => /^(test|build|install|tsc|vitest|check|clippy|dev)$/.test(a));
-      return what ? `${what === "vitest" ? "test" : what === "tsc" ? "type-check" : what}` : `${head} ${sub ?? ""}`.trim();
+      const say: Record<string, string> = { test: "run tests", vitest: "run tests", build: "build", install: "install packages", tsc: "type-check", check: "check", clippy: "lint", dev: "start dev server" };
+      return what ? say[what] : `${head} ${sub ?? ""}`.trim();
     }
     case "mkdir": return "make folder";
     case "rm": return `delete ${list(files(args)) || "files"}`;
@@ -39,7 +40,8 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
     if (typeof input.description === "string" && input.description.trim()) return input.description.trim();
     const parts = String(input.command ?? "").split(/;|&&|\|\||\|/).map(step).filter((x): x is string => !!x);
     const uniq = [...new Set(parts)];
-    return uniq.length ? uniq.join(" · ") : String(input.command ?? "");
+    const line = uniq.length ? uniq.join(" · ") : String(input.command ?? "");
+    return line.charAt(0).toUpperCase() + line.slice(1);
   }
   if (n === "Read") return `Read ${base(input.file_path)}`;
   if (n === "Edit" || n === "MultiEdit") return `Edit ${base(input.file_path)}`;

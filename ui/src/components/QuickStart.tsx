@@ -1,3 +1,4 @@
+import { shortError } from "./ErrorLine";
 import { useEffect, useRef, useState } from "react";
 import { Key } from ".";
 import { FolderPicker, useWorkFolder } from "./FolderPicker";
@@ -28,7 +29,7 @@ export function QuickStart({ onStarted, onMore }: { onStarted: (id: string) => v
   const start = async () => {
     if (!text.trim() || busy) return;
     setBusy(true); setError("");
-    try { onStarted(await api.start(cwd, promptFor(kind, text), kind)); } catch (e) { setError(String(e)); setBusy(false); }
+    try { onStarted(await api.start(cwd, promptFor(kind, text), kind)); } catch (e) { setError(shortError(e)); setBusy(false); }
   };
   return (
     <section data-mr="QuickStart" aria-label="Start something" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 880, margin: "6vh auto 0", width: "100%" }}>

@@ -51,7 +51,7 @@ export function StartPicker({ state, onClose, onStarted, initialText = "", initi
     setPrs(null); setSel(0);
     if (mode !== "review" && mode !== "address") return;
     let alive = true;
-    api.prs(cwd, mode).then((r) => alive && setPrs(r)).catch((e) => alive && (setPrs([]), setError(String(e))));
+    api.prs(cwd, mode).then((r) => alive && setPrs(r)).catch((e) => alive && (setPrs([]), setError(shortError(e))));
     return () => { alive = false; };
   }, [mode, cwd]);
 
@@ -131,7 +131,7 @@ export function StartPicker({ state, onClose, onStarted, initialText = "", initi
             {mode === "review" ? "Waiting for your review" : mode === "address" ? "Your open PRs" : "Reuse a recent prompt"}
             {(mode === "review" || mode === "address") && prs === null && " · loading…"}
           </span>
-          {items.length === 0 && prs !== null && <span className="mr-dim" style={{ padding: "4px 8px" }}>Nothing here.</span>}
+          {items.length === 0 && prs !== null && !error && <span className="mr-dim" style={{ padding: "4px 8px" }}>Nothing here.</span>}
           {items.map((it, i) => (
             <button key={i} type="button" onClick={() => pick(it)} onMouseEnter={() => setSel(i)}
               className="mr-row" style={{ padding: "8px", border: 0, borderRadius: "var(--mr-radius)", background: i === sel ? "var(--mr-well)" : "transparent", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer", font: "inherit" }}>
