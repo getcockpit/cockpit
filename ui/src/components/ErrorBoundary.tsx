@@ -11,8 +11,11 @@ export class ErrorBoundary extends Component<{ name: string; children: ReactNode
       <div role="alert" data-mr="ErrorPanel" data-mr-source={this.props.name} style={{ margin: 16, padding: 16, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-error)", display: "flex", flexDirection: "column", gap: 8 }}>
         <strong>The {this.props.name} view hit a bug</strong>
         <span className="mr-mono mr-dim" style={{ fontSize: 12, wordBreak: "break-word" }}>{String(this.state.error.message)}</span>
-        <span className="mr-dim">Your sessions keep running. Right-click here and choose “Mark as wrong & fix” to have it repaired.</span>
-        <span><button type="button" className="mr-key" onClick={() => this.setState({ error: null })}>Try again</button></span>
+        <span className="mr-dim">Your sessions keep running. Report it and a session fixes the app itself.</span>
+        <span className="mr-row" style={{ gap: 8 }}>
+          <button type="button" className="mr-key" data-tone="primary" onClick={(e) => window.dispatchEvent(new CustomEvent("mr:report", { detail: (e.currentTarget.closest("[role=alert]") as HTMLElement) ?? undefined }))}>Report this bug</button>
+          <button type="button" className="mr-key" onClick={() => this.setState({ error: null })}>Try again</button>
+        </span>
       </div>
     );
   }

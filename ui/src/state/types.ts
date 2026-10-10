@@ -71,7 +71,8 @@ export type SessionState = {
   review: ReviewFlow | null;
   address: AddressFlow | null;
   diagrams: Record<string, Diagram | null>; // transcript item id → layer-3 diagram (null: nothing worth drawing)
-  archivedAt: number | null; // marked done: off the wall, into the archive
+  archivedAt: number | null;
+  fixApplied: number | null; // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 
@@ -94,4 +95,5 @@ export type AppState = {
   clef: ClefMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;
+  lastBuildAt: number | null; // last successful self-build
 };

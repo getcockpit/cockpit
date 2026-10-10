@@ -38,6 +38,9 @@ export function useAppState(): AppState {
 }
 
 export const api = {
+  fixApply: (session: string) => invoke<string>("fix_apply", { session }),
+  mineWorktree: () => invoke<{ worktree: string }>("personal_history").then((h) => h.worktree),
+  report: (el?: HTMLElement) => window.dispatchEvent(new CustomEvent("mr:report", { detail: el })),
   /** Mark done: stop it if it's still open in the sidecar (frees a slot), then move it to the archive. */
   archive: async (s: { id: string; status: string }) => {
     if (!["ended", "error", "interrupted"].includes(s.status)) await invoke("session_stop", { session: s.id }).catch(() => {});

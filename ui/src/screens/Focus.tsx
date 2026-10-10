@@ -6,6 +6,7 @@ import { pickTile } from "../picker/pick";
 import { proseQuestion, replyOptions } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { summarizeTool } from "../picker/toolSummary";
+import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
 import type { Diagram, SessionState, TranscriptItem } from "../state/types";
 import type { Doc } from "../state/docs";
@@ -37,6 +38,10 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   const finished = tile.state === "done" || tile.state === "idle" || tile.state === "error" || s.status === "ended";
   const where = [(s.repo ?? s.cwd).split("/").filter(Boolean).pop(), s.branch].filter(Boolean).join(" · ");
   const replies = useMemo(() => nextReplies(s), [s]);
+  // A god-mode fix session (MR-47): its last step is applying the fix to your own app.
+  const isFix = isApp && !!s.branch?.startsWith("mr/") && /^God-mode mark/.test(s.title);
+  const [applyError, setApplyError] = useState("");
+  const applyFix = async () => { setApplyError(""); try { await api.fixApply(s.id); } catch (e) { setApplyError(shortError(e)); } };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -69,12 +74,15 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10 }}>
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
           {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => !x)}>{term ? "Back to visual" : "Open in terminal"}</Key>}
-          {isApp && <Key k="⌘⇧B" tone="needs" onClick={() => onBuild(s.cwd)}>Rebuild & relaunch</Key>}
+          {isApp && !isFix && <Key k="⌘⇧B" tone="needs" onClick={() => onBuild(s.cwd)}>Rebuild & relaunch</Key>}
+          {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}
+          {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
+          {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
           <span className="mr-grow" />
           {running && <Key k="⌘." onClick={() => void api.interrupt(s.id)}>Interrupt</Key>}
           {s.archivedAt
             ? <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Archived · restore</Key>
-            : <Key k="⌘⇧D" tone={finished ? "primary" : undefined} onClick={onDone}>{finished ? "Mark done" : "Stop & mark done"}</Key>}
+            : <Key k="⌘⇧D" tone={finished && !(isFix && !s.fixApplied) ? "primary" : undefined} onClick={onDone}>{finished ? "Mark done" : "Stop & mark done"}</Key>}
         </div>
       </header>
 

@@ -218,3 +218,21 @@ test("a review is over once you publish it", () => {
   expect(after.sessions.r.review?.published).toBe(true);
   expect(pickTile(after.sessions.r).state).not.toBe("needs_you");
 });
+
+test("a bug report's fix waits in the queue until applied, then asks for a rebuild until one succeeds", async () => {
+  const { needsQueue } = await import("../picker/queue");
+  const { suggest } = await import("../picker/suggest");
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = "g", at = 1): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: at });
+  const base = [
+    ev("G1", "ui.session_requested", { prompt: "God-mode mark on Minority report.\n\nTheir note: lamps are wrong\n\nWhat it showed: x", cwd: "/r-worktrees/g", branch: "mr/g", worktree: "/r-worktrees/g" }),
+    ev("G2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "tool_use", id: "t", name: "Edit", input: { file_path: "a.ts", old_string: "a", new_string: "b" } }] } } }),
+    ev("G3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } }),
+  ];
+  const s0 = replay(base);
+  expect(needsQueue(Object.values(s0.sessions), []).map((q) => q.kind)).toEqual(["fix"]);
+  const s1 = replay([...base, ev("G4", "ui.fix_applied", { branch: "mr/g" }, "g", 5)]);
+  expect(needsQueue(Object.values(s1.sessions), [])).toHaveLength(0);
+  expect(suggest(s1, [], { review: [], mine: [] }, new Set()).map((x) => x.label)).toContain("Rebuild & relaunch");
+  const s2 = replay([...base, ev("G4", "ui.fix_applied", { branch: "mr/g" }, "g", 5), ev("B1", "selfbuild.finished", { ok: true }, null, 9)]);
+  expect(suggest(s2, [], { review: [], mine: [] }, new Set()).map((x) => x.label)).not.toContain("Rebuild & relaunch");
+});

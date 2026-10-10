@@ -6,7 +6,8 @@ export function cleanTitle(raw: string, max = 72): string {
   let t = raw.trim()
     .replace(/^Plan this with me before any code:\s*/i, "")
     .replace(/\.\s*Write the plan[\s\S]*$/i, "")
-    .replace(/^Side thread about (?:the session )?"([^"]+)"[\s\S]*$/i, "About “$1”");
+    .replace(/^Side thread about (?:the session )?"([^"]+)"[\s\S]*$/i, "About “$1”")
+    .replace(/^God-mode mark[\s\S]*?Their note: ([^\n]*)[\s\S]*$/, "Fix: $1");
   t = t.split("\n")[0].trim();
   if (!t) return "Untitled";
   if (t.length <= max) return t;
@@ -24,3 +25,6 @@ export function sessionTitle(s: Pick<SessionState, "title"> & Partial<Pick<Sessi
   if (/^\/pr-address\b/.test(raw)) return cleanTitle(`Address ${s.address?.list?.pr ?? prRef(raw)} comments`.replace(/\s+/g, " "));
   return cleanTitle(raw || "Untitled");
 }
+
+/** "1 file", "3 files": counts in copy always agree in number. */
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : /(s|x|ch|sh)$/.test(word) ? "es" : "s"}`;
