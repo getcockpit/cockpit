@@ -183,7 +183,7 @@ test("the flow layout ranks by longest path and survives cycles", () => {
 
 test("plan limits arrive before any session runs", () => {
   const st = replay([{ id: "L1", session_id: null, kind: "sidecar.limits", payload: { available: true, five_hour: { utilization: 0.15, resetsAt: 1791586200 }, seven_day: { utilization: 0.56, resetsAt: 1 } }, anchor: null, created_at: 1 }]);
-  expect(st.usage).toEqual({ fiveHour: 0.15, weekly: 0.56, resetsAt: 1791586200 });
+  expect(st.usage).toEqual({ fiveHour: 0.15, weekly: 0.56, resetsAt: 1791586200, weeklyResetsAt: 1 });
   expect(replay([{ id: "L1", session_id: null, kind: "sidecar.limits", payload: { available: false, error: "x" }, anchor: null, created_at: 1 }]).usage.fiveHour).toBeNull();
 });
 
@@ -259,4 +259,16 @@ test("deleting a workspace moves its sessions to Personal's archive as read-only
   expect(st.workspaces.map((w) => w.id)).toEqual(["personal"]);
   expect(st.sessions.s1).toMatchObject({ workspace: "personal", archivedAt: 5, fromDeleted: "Client A", status: "ended" });
   expect(st.sessions.s2).toMatchObject({ workspace: "personal", archivedAt: null, fromDeleted: null });
+});
+
+test("a review waiting on its overview needs you until you start the walkthrough", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "r", kind, payload, anchor: null, created_at: 1 });
+  const base = [
+    ev("V1", "ui.session_requested", { prompt: "/review 482", kind: "review", cwd: "/w" }),
+    ev("V2", "flow.review_overview", { pr: "#482", title: "t", total_snippets: 2 }),
+    ev("V3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "overview" } }),
+  ];
+  expect(pickTile(replay(base).sessions.r)).toMatchObject({ state: "needs_you", doing: "Overview ready · 2 snippets to walk" });
+  const started = replay([...base, ev("V4", "flow.review_snippet", { n: 1, total: 2, title: "x", findings: [] }), ev("V5", "sidecar.sdk", { message: { type: "result", is_error: false, result: "s" } })]);
+  expect(pickTile(started.sessions.r).doing).toMatch(/^Snippet 1 of 2/);
 });
