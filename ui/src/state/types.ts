@@ -72,7 +72,8 @@ export type SessionState = {
   address: AddressFlow | null;
   diagrams: Record<string, Diagram | null>; // transcript item id → layer-3 diagram (null: nothing worth drawing)
   archivedAt: number | null;
-  fixApplied: number | null; // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
+  fixApplied: number | null;
+  fromDeleted: string | null; // name of the deleted workspace it came from: read-only history (MR-54) // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 
