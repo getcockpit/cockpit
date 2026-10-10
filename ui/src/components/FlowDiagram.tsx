@@ -4,8 +4,13 @@ import type { Diagram } from "../state/types";
 // a start node, stacked top→bottom within a rank. Small and boxy, in the Control Room palette.
 
 const W = 168, H = 44, GY = 14, PAD = 8;
-// Columns sit further apart when edges carry labels, so a label never runs into the next node.
-const gapX = (d: Diagram) => (d.edges.some((e) => e.label) ? 84 : 44);
+// Columns sit far enough apart for the longest edge label (10px mono ≈ 6px a character), so a
+// label never runs into the next node.
+const CH = 6;
+const gapX = (d: Diagram) => {
+  const longest = Math.max(0, ...d.edges.map((e) => e.label?.length ?? 0));
+  return longest ? Math.min(200, Math.max(84, longest * CH + 24)) : 44;
+};
 const FILL: Record<string, string> = { step: "var(--mr-well)", decision: "var(--mr-needs)", done: "var(--mr-well)", risk: "var(--mr-well)" };
 const EDGE: Record<string, string> = { step: "var(--mr-ink-3)", decision: "var(--mr-needs-ink)", done: "var(--mr-done)", risk: "var(--mr-error)" };
 
@@ -40,6 +45,24 @@ export function layout(d: Diagram): Map<string, { x: number; y: number }> {
   return pos;
 }
 
+const bez = (p: number[], t: number) => (1 - t) ** 3 * p[0] + 3 * (1 - t) ** 2 * t * p[1] + 3 * (1 - t) * t ** 2 * p[2] + t ** 3 * p[3];
+
+// Where an edge's label sits: on the curve, in the gap right after its source column — so labels on
+// edges fanning out of one node land at different heights, and a long edge's label isn't hidden
+// under the nodes it passes. Straight edges get it just above the line.
+export function edgeLabelAt(d: Diagram, a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } {
+  if (b.x <= a.x) return { x: (a.x + b.x) / 2 + W / 2, y: Math.max(a.y, b.y) + H + 22 };
+  const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, mx = (x1 + x2) / 2;
+  if (y1 === y2) return { x: x1 + gapX(d) / 2, y: y1 - 5 };
+  const lx = x1 + gapX(d) / 2;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) {
+    const t = (lo + hi) / 2;
+    if (bez([x1, mx, mx, x2], t) < lx) lo = t; else hi = t;
+  }
+  return { x: lx, y: bez([y1, y1, y2, y2], lo) + 3 };
+}
+
 export function FlowDiagram({ d }: { d: Diagram }) {
   const pos = layout(d);
   const xs = [...pos.values()];
@@ -61,7 +84,10 @@ export function FlowDiagram({ d }: { d: Diagram }) {
           return (
             <g key={i}>
               <path d={path} fill="none" stroke={EDGE[kind.get(e.to) ?? "step"]} strokeWidth="1.5" markerEnd="url(#mr-arrow)" />
-              {e.label && <text x={mx} y={Math.min(y1, y2) - 5} textAnchor="middle" fontSize="10" fill="var(--mr-ink-2)" fontFamily="var(--mr-mono)">{e.label}</text>}
+              {e.label && (() => {
+                const l = edgeLabelAt(d, a, b);
+                return <text x={l.x} y={l.y} textAnchor="middle" fontSize="10" fill="var(--mr-ink-2)" fontFamily="var(--mr-mono)" stroke="var(--mr-tile)" strokeWidth="3" paintOrder="stroke">{e.label}</text>;
+              })()}
             </g>
           );
         })}
