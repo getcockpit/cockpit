@@ -240,11 +240,21 @@ function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" 
       <button type="button" onClick={pointer({ open: () => setOpen((x) => !x), deeper: () => setOpen(true), discover: () => onDiscover(`the ${t.name} call ${JSON.stringify(t.input).slice(0, 300)}`) })} className="mr-row" style={{ width: "100%", padding: "8px 14px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" }}>
         <span className="mr-mono" style={{ fontWeight: 700, minWidth: 90 }}>{t.name.replace(/^mcp__/, "")}</span>
         <span className="mr-ink2 mr-grow mr-ellipsis" title={String(detail)}>{summary}</span>
-        <span className="mr-mono" style={{ fontSize: 12, color: t.isError ? "var(--mr-error)" : t.result === undefined ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.isError ? "✕" : t.result === undefined ? "…" : "✓"}</span>
+        {t.background ? <BackgroundMark b={t.background} /> : <span className="mr-mono" style={{ fontSize: 12, color: t.isError ? "var(--mr-error)" : t.result === undefined ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.isError ? "✕" : t.result === undefined ? "…" : "✓"}</span>}
       </button>
       {open && detail && String(detail) !== summary && <pre className="mr-code mr-reveal" style={{ margin: "0 14px 6px", whiteSpace: "pre-wrap", fontSize: 12 }}>{String(detail)}</pre>}
       {open && out && <pre className="mr-code mr-reveal" style={{ margin: "0 14px 10px", maxHeight: 260, overflow: "auto", fontSize: 12 }}>{out.slice(0, 4000)}</pre>}
     </div>
+  );
+}
+
+// A background task's state: running, or how it ended (its tool result alone says "started").
+function BackgroundMark({ b }: { b: NonNullable<Tool["background"]> }) {
+  const failed = b.status !== "running" && b.status !== "completed";
+  return (
+    <span className="mr-mono" title={b.summary} style={{ fontSize: 12, color: b.status === "running" ? "var(--mr-ink-3)" : failed ? "var(--mr-error)" : "var(--mr-done)" }}>
+      {b.status === "running" ? "running in background…" : failed ? `✕ background ${b.status}` : "✓ background done"}
+    </span>
   );
 }
 
@@ -282,8 +292,9 @@ export function groupSteps(items: TranscriptItem[]): Row[] {
       out.push(cur);
     }
     // Edits and checks count as the step's actions and still show as cards under it (MR-75).
-    if (t.kind === "tool" && !t.isError) cur.tools.push(t);
-    if (t.kind !== "tool" || t.isError || isCard(t)) cur.signal.push(t);
+    // Background tasks stay out of the step's actions: they outlive the step that started them.
+    if (t.kind === "tool" && !t.isError && !t.background) cur.tools.push(t);
+    if (t.kind !== "tool" || t.isError || t.background || isCard(t)) cur.signal.push(t);
     cur.to = t.at;
   }
   flush();
@@ -332,6 +343,7 @@ function StepGroup({ g, todo, live, onDiscover, folded, children }: { g: StepRow
 }
 
 // Three or more tool calls in a row fold into one summary line (F8): "Read 2 files · Edited 1 file · Ran 1 command".
+// Background tasks stay out of the fold: they outlive the step that started them.
 function groupTools(items: TranscriptItem[]): Row[] {
   const out: Row[] = [];
   let run: Tool[] = [];
@@ -341,7 +353,7 @@ function groupTools(items: TranscriptItem[]): Row[] {
     run = [];
   };
   for (const t of items) {
-    if (t.kind === "tool" && !isCard(t)) run.push(t);
+    if (t.kind === "tool" && !isCard(t) && !t.background) run.push(t);
     else { flush(); out.push(t); }
   }
   flush();
