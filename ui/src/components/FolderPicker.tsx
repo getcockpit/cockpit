@@ -9,6 +9,18 @@ import { keyOf } from "./keys";
 
 type Folder = { path: string; name: string; repo: boolean; at: number };
 
+/** The work folder, remembered across starts; a fresh install defaults to your most recent folder
+ *  instead of your home directory (F6). */
+export function useWorkFolder(): [string, (p: string) => void] {
+  const [cwd, setCwd] = useState(() => { try { return localStorage.getItem("mr.cwd") ?? ""; } catch { return ""; } });
+  useEffect(() => {
+    if (cwd && cwd !== "~/") return;
+    invoke<Folder[]>("recent_folders").then((f) => setCwd(f[0]?.path ?? "~/")).catch(() => setCwd("~/"));
+  }, []);
+  const set = (p: string) => { setCwd(p); try { localStorage.setItem("mr.cwd", p); } catch { /* convenience only */ } };
+  return [cwd || "~/", set];
+}
+
 const tilde = (p: string, home: string) => (home && p.startsWith(home) ? "~" + p.slice(home.length) : p);
 
 export function FolderPicker({ value, onChange, extra }: { value: string; onChange: (p: string) => void; extra: string[] }) {
