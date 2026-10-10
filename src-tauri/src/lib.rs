@@ -12,6 +12,7 @@ mod selfbuild;
 mod selftest;
 mod sidecar;
 mod terminal;
+mod update;
 mod views;
 mod voice;
 mod workspaces;
@@ -43,6 +44,7 @@ pub fn run() {
             }
             app.manage(log);
             app.manage(docs);
+            update::on_start(app.handle());
             sidecar::start(app.handle())?;
             if selftest::enabled() {
                 selftest::run(app.handle().clone());
@@ -69,6 +71,9 @@ pub fn run() {
             selfbuild::selfbuild_start,
             selfbuild::selfbuild_list,
             selfbuild::selfbuild_relaunch,
+            update::update_status,
+            update::update_start,
+            update::update_restart,
             personal::personal_history,
             personal::fix_apply,
             personal::personal_sync,

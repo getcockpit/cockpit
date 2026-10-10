@@ -97,6 +97,9 @@ export type ClefMeter = { day: string; calls: number; tokens: number; errors: nu
 
 export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null; weeklyResetsAt: number | null };
 
+// One-click Update (decision 27, MR-66): the background build of main and what the last update brought.
+export type UpdateState = { phase: "idle" | "building" | "ready" | "failed"; step: string | null; log: string | null; subjects: string[]; startedAt: number | null; whatsNew: string[] | null; restarting: string[] | null };
+
 export type AppState = {
   sessions: Record<string, SessionState>;
   order: string[]; // sessions in start order (the wall never reorders by state)
@@ -111,4 +114,5 @@ export type AppState = {
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;
   lastBuildAt: number | null; // last successful self-build
+  update: UpdateState;
 };

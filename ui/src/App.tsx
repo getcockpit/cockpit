@@ -15,6 +15,7 @@ import { StartPicker } from "./screens/StartPicker";
 import { DocMap } from "./screens/DocMap";
 import { Wall } from "./screens/Wall";
 import { GodMode } from "./screens/GodMode";
+import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
 import { Builds } from "./screens/Builds";
 import { VoiceController, type PointTarget } from "./screens/Voice";
 import { api } from "./state/store";
@@ -100,7 +101,8 @@ export default function App() {
       if (e.metaKey && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
       if (e.metaKey && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
       if (e.metaKey && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
-      if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); setBuilds((x) => (x === null ? "" : null)); }
+      // ⌘⇧B updates the app from main (decision 27); ⌘⌥⇧B still opens the build history.
+      if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); if (e.altKey) setBuilds((x) => (x === null ? "" : null)); else void startUpdate().catch(() => {}); }
       if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
         const ws = all.workspaces[Number(keyOf(e)) - 1];
         if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); switchTo(ws.id); }
@@ -148,6 +150,7 @@ export default function App() {
   const shell = (view: React.ReactNode, overlays: React.ReactNode) => (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {tabs}
+      <UpdateBanner all={all} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />
       <div id="mr-view" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{view}</div>
       {overlays}
     </div>
