@@ -15,6 +15,7 @@ import { AddressView, ReviewView } from "./Flows";
 import { pointer } from "../components/pointer";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { ChangeMap } from "./ChangeMap";
+import { ReviewChanges } from "./ReviewChanges";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
@@ -31,6 +32,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   const tile = useMemo(() => pickTile(s), [s]);
   const [showRaw, setShowRaw] = useState(false);
   const [term, setTerm] = useState(false);
+  const [reviewing, setReviewing] = useState<string | null>(null); // a file path: the review panel is open
   const [text, setText] = useState("");
   const live = s.status !== "ended" && s.status !== "error";
   // A turn is in flight: only then does interrupting mean anything (F9).
@@ -82,7 +84,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           {running && <Key k="⌘." onClick={() => void api.interrupt(s.id)}>Interrupt</Key>}
           {s.archivedAt
             ? <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Archived · restore</Key>
-            : <Key k="⌘⇧D" tone={finished && !(isFix && !s.fixApplied) ? "primary" : undefined} onClick={onDone}>{finished ? "Mark done" : "Stop & mark done"}</Key>}
+            : <Key k="⌘⇧D" tone={finished && !reviewing && !(isFix && !s.fixApplied) ? "primary" : undefined} onClick={onDone}>{finished ? "Mark done" : "Stop & mark done"}</Key>}
         </div>
       </header>
 
@@ -99,7 +101,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{s.error}</span></div></div>}
-          {term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
+          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
           {live && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {!running && replies.length > 0 && (
@@ -129,7 +131,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
             ))}
             <Bar value={tile.progress} />
           </div>}
-          {s.kind !== "review" && <ChangeMap s={s} />}
+          {s.kind !== "review" && <ChangeMap s={s} onReview={setReviewing} />}
           <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.model ?? ""}{s.costUsd ? ` · $${s.costUsd.toFixed(2)} equiv.` : ""}</span>
         </aside>
       </main>
