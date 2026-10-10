@@ -21,6 +21,13 @@
 .mr-key { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font-weight: 700; cursor: pointer; transition: filter var(--mr-fast); white-space: nowrap; }
 .mr-key:hover { filter: brightness(0.95); }
 .mr-key:disabled { opacity: .5; cursor: default; }
+/* Every press answers (MR-58): it visibly sinks, and keyboard focus shows a ring. */
+.mr-key:active:not(:disabled), .mr-link:active, .mr-press:active { transform: translateY(1px); filter: brightness(0.85); }
+.mr-key:focus-visible, .mr-link:focus-visible, button:focus-visible { outline: 2px solid var(--mr-selected); outline-offset: 2px; }
+@keyframes mr-dots { 0%, 20% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: .2; } }
+.mr-working i { animation: mr-dots 1.2s infinite; font-style: normal; }
+.mr-working i:nth-child(2) { animation-delay: .2s; } .mr-working i:nth-child(3) { animation-delay: .4s; }
+@keyframes mr-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .mr-key kbd { font-family: var(--mr-mono); font-weight: 400; padding: 0 5px; background: rgba(0, 0, 0, .1); }
 .mr-key[data-tone="primary"] { background: var(--mr-ink); color: var(--mr-tile); }
 .mr-key[data-tone="primary"] kbd { background: rgba(255, 255, 255, .15); }
