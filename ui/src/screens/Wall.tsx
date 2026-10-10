@@ -102,7 +102,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
         </>}
         <span className="mr-grow" />
         <Usage label="5-hour" v={state.usage.fiveHour} resets={state.usage.resetsAt} />
-        <Usage label="Week" v={state.usage.weekly} />
+        <Usage label="Week" v={state.usage.weekly} resets={state.usage.weeklyResetsAt} />
         <span className="mr-mono" title={state.sidecar.up ? `Claude Code: ${state.sidecar.claude ?? ""}` : "Claude Code isn't connected"} style={{ color: state.sidecar.up ? "var(--mr-done)" : "var(--mr-error)" }}>●</span>
       </header>
 
@@ -212,7 +212,7 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
         {s.status === "working" || s.status === "starting"
           ? <LiveTrack s={s} compact />
           : s.todos.length > 0
-            ? <ProgressTrack segs={planSegs(s.todos)} left={tile.step} right={tile.progressLabel} source={s.id} />
+            ? <ProgressTrack segs={planSegs(s.todos)} left={tile.step} right={tile.progressLabel} source={s.id} fill />
             : <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>}
         <div className="mr-row" style={{ alignItems: "flex-end" }}>
           <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tile.doing}</span>
@@ -223,14 +223,24 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
   );
 }
 
+// When a limit window resets: a short countdown shown inline, and the exact time for the tooltip.
+export function resetLabel(resets: number | null | undefined, now = Date.now()): { short: string; full: string } | null {
+  if (!resets) return null;
+  const at = new Date(resets * 1000), mins = Math.max(0, Math.round((at.getTime() - now) / 60000));
+  const short = mins < 60 ? `${mins}m` : mins < 24 * 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : at.toLocaleDateString([], { weekday: "short" });
+  const full = at.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  return { short, full: `Resets ${full}` };
+}
+
 function Usage({ label, v, resets }: { label: string; v: number | null; resets?: number | null }) {
   const high = v !== null && v >= 0.8;
-  const when = resets ? new Date(resets * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+  const when = resetLabel(resets);
   return (
-    <span className="mr-row" style={{ gap: 6 }} title={when ? `Resets at ${when}` : undefined}>
+    <span className="mr-row" data-mr="Usage" data-mr-source={label} style={{ gap: 6 }} title={when?.full}>
       <span className="mr-dim">{label}</span>
       <span style={{ width: 64, height: 4, background: "var(--mr-well)", display: "inline-block" }}><span style={{ display: "block", height: 4, width: `${Math.round((v ?? 0) * 100)}%`, background: high ? "var(--mr-needs)" : "var(--mr-ink-3)" }} /></span>
       <span className="mr-mono" style={{ color: high ? "var(--mr-needs-ink)" : "var(--mr-ink-2)" }}>{v === null ? "—" : `${Math.round(v * 100)}%`}</span>
+      {when && <span className="mr-dim mr-mono">↻ {when.short}</span>}
     </span>
   );
 }

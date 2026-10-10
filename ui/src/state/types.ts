@@ -61,7 +61,9 @@ export type SessionState = {
   id: string;
   kind: SessionKind;
   workspace: string;
-  title: string;
+  title: string; // the first prompt
+  name: string | null; // your rename: always wins (MR-63)
+  autoTitle: string | null; // what Claude says the thread is about now (title_set, MR-63)
   cwd: string;
   repo: string | null;
   branch: string | null;
@@ -93,7 +95,7 @@ export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "oth
 // Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
 export type ClefMeter = { day: string; calls: number; tokens: number; errors: number };
 
-export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null };
+export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null; weeklyResetsAt: number | null };
 
 export type AppState = {
   sessions: Record<string, SessionState>;
