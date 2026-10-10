@@ -16,6 +16,12 @@ export function Markdown({ text }: { text: string }) {
       for (; i < lines.length && /^\s*[-*] /.test(lines[i]); i++) items.push(lines[i].replace(/^\s*[-*] /, ""));
       i--;
       out.push(<ul key={i} style={{ margin: 0, paddingLeft: 18 }}>{items.map((t, j) => <li key={j}>{inline(t)}</li>)}</ul>);
+    } else if (/^\s*\d+[.)] /.test(l)) {
+      // Numbered lists (MR-56): Claude's steps and todos.
+      const items: string[] = [];
+      for (; i < lines.length && /^\s*\d+[.)] /.test(lines[i]); i++) items.push(lines[i].replace(/^\s*\d+[.)] /, ""));
+      i--;
+      out.push(<ol key={i} style={{ margin: 0, paddingLeft: 22 }}>{items.map((t, j) => <li key={j}>{inline(t)}</li>)}</ol>);
     } else if (/^\|.*\|\s*$/.test(l)) {
       const rows: string[][] = [];
       for (; i < lines.length && /^\|.*\|\s*$/.test(lines[i]); i++) if (!/^\|[\s:-|]+\|\s*$/.test(lines[i])) rows.push(lines[i].trim().slice(1, -1).split("|").map((c) => c.trim()));
@@ -36,9 +42,10 @@ export function Markdown({ text }: { text: string }) {
   return <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{out}</div>;
 }
 
-function inline(t: string): ReactNode[] {
-  return t.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) =>
+export function inline(t: string): ReactNode[] {
+  return t.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g).map((part, i) =>
     part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong>
+    : part.length > 2 && part.startsWith("*") && part.endsWith("*") ? <em key={i}>{part.slice(1, -1)}</em>
     : part.startsWith("`") && part.endsWith("`") ? <code key={i} className="mr-mono" style={{ background: "var(--mr-well)", padding: "0 4px" }}>{part.slice(1, -1)}</code>
     : part,
   );

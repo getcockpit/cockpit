@@ -14,6 +14,7 @@ import { AskRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
 import { pointer } from "../components/pointer";
 import { FlowDiagram } from "../components/FlowDiagram";
+import { parseReport, TurnText } from "../components/Turn";
 import { ChangeMap } from "./ChangeMap";
 import { ReviewChanges } from "./ReviewChanges";
 import { lazy, Suspense } from "react";
@@ -44,6 +45,9 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   const finished = tile.state === "done" || tile.state === "idle" || tile.state === "error" || s.status === "ended";
   const where = [(s.repo ?? s.cwd).split("/").filter(Boolean).pop(), s.branch].filter(Boolean).join(" · ");
   const replies = useMemo(() => nextReplies(s), [s]);
+  // A report reply shows its own quick replies inline; the bar below would only repeat them.
+  const lastText = [...s.transcript].reverse().find((t) => t.kind === "text");
+  const repliesInline = !!lastText && lastText.kind === "text" && !!parseReport(lastText.text);
   // A god-mode fix session (MR-47): its last step is applying the fix to your own app.
   const isFix = isApp && !!s.branch?.startsWith("mr/") && isAppChange(s);
   const [applyError, setApplyError] = useState("");
@@ -105,10 +109,10 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
-          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
+          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
           {live && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {!running && replies.length > 0 && (
+              {!running && replies.length > 0 && !repliesInline && (
                 <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }} data-mr="SuggestedReplies" data-mr-source={s.id}>
                   <span className="mr-dim">Next:</span>
                   {replies.map((r, i) => <Key key={r} k={i < 3 ? `⌥${i + 1}` : undefined} tone={i === 0 ? "primary" : undefined} onClick={() => void api.send(s.id, r)}>{r}</Key>)}
@@ -144,7 +148,9 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
 }
 
 // The structured transcript (decision 13): readable rows, not terminal text. ⌘R shows raw JSON.
-function Transcript({ items, raw, diagrams, onDiagram, onDiscover }: { items: TranscriptItem[]; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void }) {
+function Transcript({ items, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
+  // Only the latest reply offers quick replies; older ones are history.
+  const lastTextId = [...items].reverse().find((t) => t.kind === "text")?.id;
   const end = useRef<HTMLDivElement>(null);
   const [drawing, setDrawing] = useState<Set<string>>(new Set());
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [items.length]);
@@ -156,9 +162,9 @@ function Transcript({ items, raw, diagrams, onDiagram, onDiscover }: { items: Tr
       ) : t.kind === "text" ? (
         <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {diagrams[t.id] && <FlowDiagram d={diagrams[t.id]!} />}
-          <div style={{ position: "relative", padding: "12px 14px", background: "var(--mr-tile)", whiteSpace: "pre-wrap" }}>
-            {t.text}
-            {t.text.length >= 200 && !diagrams[t.id] && (
+          <div style={{ position: "relative" }}>
+            <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} />
+            {t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
               <span style={{ position: "absolute", top: 6, right: 8 }}>
                 <Key onClick={() => { setDrawing((d) => new Set(d).add(t.id)); onDiagram(t); }} disabled={drawing.has(t.id) && !(t.id in diagrams)}>
                   {drawing.has(t.id) && !(t.id in diagrams) ? "Drawing…" : t.id in diagrams ? "No flow to draw · retry" : "Diagram"}
