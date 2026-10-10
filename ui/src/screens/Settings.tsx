@@ -1,3 +1,4 @@
+import { shortError } from "../components/ErrorLine";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -30,7 +31,7 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
       const repo = await invoke<string>("app_repo_path");
       const id = await api.start(repo, `Restyle the app: ${styleAsk.trim()}\n\nThis is Minority report's own repo. Change the look only through the design tokens in ui/src/design/tokens.css (colours, fonts, spacing variables; add or adjust a theme block if needed) and, only if a token can't express it, the shared styles in ui/src/design/components.css. Components must keep using var(--mr-*). Keep the signal colours' roles (amber = needs you, red = error, green = done, teal = selected) and light mode only. Run \`cd ui && bun run test && bun run build\`, then commit on this branch as one commit titled "Style: <what changed>". The user applies it to their app from the wall.`, "blank", true);
       setStyleAsk(""); onClose(); onOpenSession(id);
-    } catch (e) { setMsg(String(e)); }
+    } catch (e) { setMsg(shortError(e)); }
   };
   const reports = state.order.map((id) => state.sessions[id]).filter((x) => isAppChange(x)).reverse()
     .map((x) => ({ s: x, state: x.fixApplied ? "Applied" : x.status === "working" || x.status === "starting" ? "Fixing…" : x.status === "error" ? "Fix failed" : "Ready to apply" }));
@@ -43,7 +44,7 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
   const [token, setToken] = useState("");
 
   const load = () => {
-    invoke<History>("personal_history").then(setHist).catch((e) => setMsg(String(e)));
+    invoke<History>("personal_history").then(setHist).catch((e) => setMsg(`Couldn't read your changes: ${shortError(e)}`));
     invoke<Build[]>("selfbuild_list").then(setBuilds).catch(() => {});
     api.layer2Status().then((r) => setClefOn(r.configured)).catch(() => setClefOn(false));
   };
@@ -53,14 +54,14 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
       if (!e.kind.startsWith("selfbuild.")) return;
       const p = e.payload as Record<string, unknown>;
       if (e.kind === "selfbuild.step") setBuilding(String(p.step));
-      if (e.kind === "selfbuild.finished") { setBuilding(null); setMsg(p.ok ? `Built in ${p.seconds}s.` : `Build failed at ${p.step}: ${String(p.log ?? "").slice(-400)}`); load(); }
+      if (e.kind === "selfbuild.finished") { setBuilding(null); setMsg(p.ok ? `Built in ${p.seconds}s.` : `Build failed at the ${p.step} step. Open Builds (⌘⇧B) for the log.`); load(); }
     });
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", key);
     return () => { un.then((f) => f()); window.removeEventListener("keydown", key); };
   }, []);
 
-  const act = async (f: () => Promise<unknown>, done: string) => { setMsg(""); try { await f(); setMsg(done); load(); } catch (e) { setMsg(String(e)); } };
+  const act = async (f: () => Promise<unknown>, done: string) => { setMsg(""); try { await f(); setMsg(done); load(); } catch (e) { setMsg(shortError(e)); } };
   const buildOf = (sha: string) => builds.find((b) => b.sha.replace("+dirty", "") && sha.startsWith(b.sha.replace("+dirty", "")));
 
   return (
@@ -163,7 +164,7 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
             <div key={b.id} className="mr-row" style={{ padding: "6px 4px" }}>
               <span className="mr-mono" style={{ width: 120 }}>{b.sha}</span>
               <span className="mr-grow mr-ellipsis">{b.branch} · <span className="mr-dim">{new Date(b.at).toLocaleString()}</span></span>
-              {b.current ? <span style={{ color: "var(--mr-done)" }}>● running</span> : <Key onClick={() => void invoke("selfbuild_relaunch", { buildId: b.id }).catch((e) => setMsg(String(e)))}>Launch</Key>}
+              {b.current ? <span style={{ color: "var(--mr-done)" }}>● running</span> : <Key onClick={() => void invoke("selfbuild_relaunch", { buildId: b.id }).catch((e) => setMsg(shortError(e)))}>Launch</Key>}
             </div>
           ))}
         </section>

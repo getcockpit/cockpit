@@ -1,3 +1,4 @@
+import { shortError } from "../components/ErrorLine";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Key } from "../components";
@@ -111,7 +112,7 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
       setStatus("");
       setMarked(null); setNote(""); onClose();
       onOpenSession(id);
-    } catch (e) { setStatus(String(e)); }
+    } catch (e) { setStatus(shortError(e)); }
   };
 
   return (

@@ -1,3 +1,4 @@
+import { shortError } from "../components/ErrorLine";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -18,7 +19,7 @@ export function Builds({ defaultWorktree, onClose }: { defaultWorktree?: string;
   const load = () => invoke<Build[]>("selfbuild_list").then(setBuilds).catch(() => {});
   useEffect(() => {
     load();
-    if (!defaultWorktree) invoke<string>("app_repo_path").then(setWorktree).catch((e) => setError(String(e)));
+    if (!defaultWorktree) invoke<string>("app_repo_path").then(setWorktree).catch((e) => setError(shortError(e)));
     const un = listen<MrEvent>("mr-event", ({ payload: e }) => {
       if (!e.kind.startsWith("selfbuild.")) return;
       const p = e.payload as Record<string, unknown>;
@@ -28,8 +29,8 @@ export function Builds({ defaultWorktree, onClose }: { defaultWorktree?: string;
     return () => { un.then((f) => f()); };
   }, [defaultWorktree]);
 
-  const build = async () => { setError(""); try { const id = await invoke<string>("selfbuild_start", { worktree }); setProgress({ id, step: "starting" }); } catch (e) { setError(String(e)); } };
-  const relaunch = (id: string) => invoke("selfbuild_relaunch", { buildId: id }).catch((e) => setError(String(e)));
+  const build = async () => { setError(""); try { const id = await invoke<string>("selfbuild_start", { worktree }); setProgress({ id, step: "starting" }); } catch (e) { setError(shortError(e)); } };
+  const relaunch = (id: string) => invoke("selfbuild_relaunch", { buildId: id }).catch((e) => setError(shortError(e)));
   const running = progress && progress.ok === undefined;
 
   return (
