@@ -13,6 +13,7 @@ export const initialState: AppState = {
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
+  recovered: null,
   lastBuildAt: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
 };
@@ -56,6 +57,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     }
     return next;
   }
+  if (ev.kind === "app.recovered") return { ...next, recovered: { crashedSlot: String(p.crashed_slot ?? ""), log: String(p.log ?? ""), at: ev.created_at } };
+  if (ev.kind === "ui.recovery_dismissed") return { ...next, recovered: null };
   if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };
   if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false };
   if (ev.kind === "sidecar.limits") {

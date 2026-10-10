@@ -57,6 +57,16 @@ pub fn on_start(app: &AppHandle) {
     let sha = repo().map(|r| git(&r, &["rev-parse", "HEAD"])).unwrap_or_default();
     let _ = RUNNING.set(sha.clone());
     crate::eventlog::record(app, None, "app.started", &json!({ "sha": sha, "slot": std::env::var("MR_DEV_SLOT").ok(), "dev_loop": dev_loop() }), None);
+    // Started by the crash guard after a newer build crashed at start (MR-70): say so, with the log.
+    if let Some(from) = std::env::var("MR_RECOVERED").ok().filter(|s| !s.is_empty()) {
+        let log = std::env::var("MR_CRASH_LOG").ok().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+        crate::eventlog::record(app, None, "app.recovered", &json!({ "crashed_slot": from, "slot": std::env::var("MR_DEV_SLOT").ok(), "sha": sha, "log": last_crash(&log) }), None);
+    }
+}
+
+/// The newest entry of the crash log (it's appended to, one "=== …" header per crash).
+pub fn last_crash(log: &str) -> String {
+    log.rfind("=== ").map(|i| log[i..].trim().to_owned()).unwrap_or_default()
 }
 
 #[tauri::command(async)]
@@ -155,5 +165,12 @@ mod tests {
         assert_eq!(subjects, vec!["Sidecar change", "Core change"]);
         assert!(pending(&dir, &head, &head).is_empty());
         assert!(pending(&dir, "", &head).is_empty());
+    }
+
+    #[test]
+    fn the_newest_crash_is_picked_from_the_log() {
+        let log = "=== 1 crash at start · slot b\nold\n=== 2 crash at start · slot a · exit 101\nthread 'main' panicked\n";
+        assert_eq!(last_crash(log), "=== 2 crash at start · slot a · exit 101\nthread 'main' panicked");
+        assert_eq!(last_crash(""), "");
     }
 }
