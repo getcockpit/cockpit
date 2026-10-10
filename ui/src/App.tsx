@@ -5,6 +5,7 @@ import { WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
 import { Archive } from "./screens/Archive";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { AppState } from "./state/types";
 const SignInPane = lazy(() => import("./screens/Terminal").then((m) => ({ default: m.SignInPane })));
 import { Focus } from "./screens/Focus";
@@ -108,8 +109,8 @@ export default function App() {
   const archivePanel = archive && <Archive sessions={archived} onClose={() => setArchive(false)} onOpen={(id) => { setArchive(false); setDocId(null); setFocus(id); }} />;
   const overlay = picker && <StartPicker state={state} initialText={pickerText} onClose={() => { setPicker(false); setPickerText(""); }} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
   const doc = docId ? docs.find((d) => d.id === docId) : null;
-  if (doc) return <>{tabs}{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
+  if (doc) return <>{tabs}<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return <>{tabs}{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
-  return <>{tabs}<Wall state={state} docs={docs} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={() => setPicker(true)} />{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
+  if (focused) return <>{tabs}<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
+  return <>{tabs}<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={() => setPicker(true)} /></ErrorBoundary>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} />}{archivePanel}{godmode}{voice}{intro}</>;
 }
