@@ -104,7 +104,7 @@ export type AppState = {
   sidecar: { up: boolean; claude: string | null };
   lastEventId: string | null;
   dismissed: string[];
-  workspaces: { id: string; name: string; configDir: string | null }[];
+  workspaces: { id: string; name: string; configDir: string | null; folder: string | null }[]; // folder: pinned start folder (MR-65)
   theme: string;
   look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
   clef: ClefMeter;
