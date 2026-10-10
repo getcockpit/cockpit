@@ -25,6 +25,37 @@ fn mine_query(scope: &str) -> String {
     format!("query {{ viewer {{ login }} search(query: \"is:pr is:open author:@me archived:false{scope}\", type: ISSUE, first: 30) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft reviewDecision repository {{ nameWithOwner }} reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ nodes {{ author {{ login }} }} }} }} }} }} }} }} }}")
 }
 
+// Open PRs in one repo that aren't mine, with when I last reviewed each and its newest commit (MR-81).
+fn unreviewed_query(repo: &str) -> String {
+    format!("query {{ search(query: \"is:pr is:open -author:@me archived:false repo:{repo}\", type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft author {{ login }} repository {{ nameWithOwner }} viewerLatestReview {{ submittedAt }} commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }} }} }} }} }}")
+}
+
+/// What's worth reviewing in one repo: PRs I've never reviewed, and PRs with commits newer than
+/// my last review (`reviewNote` says which). Drafts are skipped, as auto-review does (MR-72).
+/// Changed-since-my-review first (I'm mid-review there), then never reviewed; newest first in each.
+pub fn rank_unreviewed(data: &serde_json::Value) -> serde_json::Value {
+    let mut prs: Vec<(u8, serde_json::Value)> = data["search"]["nodes"].as_array().cloned().unwrap_or_default().into_iter()
+        .filter(|p| p["number"].is_number() && p["isDraft"] != true)
+        .filter_map(|mut p| {
+            let mine = p["viewerLatestReview"]["submittedAt"].as_str().map(str::to_owned);
+            let last = p["commits"]["nodes"][0]["commit"]["committedDate"].as_str().map(str::to_owned);
+            let (tier, note) = match (mine, last) {
+                (None, _) => (1, "not reviewed yet"),
+                // RFC 3339 UTC timestamps from GitHub compare correctly as strings.
+                (Some(r), Some(c)) if c > r => (0, "new changes since your review"),
+                _ => return None,
+            };
+            p["reviewNote"] = note.into();
+            let o = p.as_object_mut()?;
+            o.remove("viewerLatestReview");
+            o.remove("commits");
+            Some((tier, p))
+        })
+        .collect();
+    prs.sort_by(|(ta, a), (tb, b)| ta.cmp(tb).then_with(|| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str())));
+    prs.into_iter().map(|(_, p)| p).collect::<Vec<_>>().into()
+}
+
 /// `owner/name` made only of the characters GitHub allows, so it's safe inside a search query.
 fn safe_slug(slug: &str) -> Option<&str> {
     let (owner, name) = slug.split_once('/')?;
@@ -54,7 +85,8 @@ pub fn rank_mine(data: &serde_json::Value) -> serde_json::Value {
     prs.into()
 }
 
-/// `review`: open PRs waiting for my review. `address`: my open PRs, the ones with something to
+/// `review`: open PRs waiting for my review; in one repo, every PR I haven't reviewed or that
+/// changed since my review (MR-81). `address`: my open PRs, the ones with something to
 /// address first. Both work from any folder (MR-48): every repo by default, or just `repo` (MR-79).
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
 #[tauri::command(async)]
@@ -66,12 +98,10 @@ pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>) -
         None => None,
     };
     match mode.as_str() {
-        "review" => {
-            let only = repo.map(|r| format!("--repo={r}"));
-            let mut args = vec!["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"];
-            args.extend(only.as_deref());
-            gh(&cwd, &args)
-        }
+        "review" => match repo {
+            Some(r) => Ok(rank_unreviewed(&gh(&cwd, &["api", "graphql", "-f", &format!("query={}", unreviewed_query(r))])?["data"])),
+            None => gh(&cwd, &["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"]),
+        },
         "address" => {
             let q = mine_query(&repo.map(|r| format!(" repo:{r}")).unwrap_or_default());
             Ok(rank_mine(&gh(&cwd, &["api", "graphql", "-f", &format!("query={q}")])?["data"]))
@@ -188,6 +218,27 @@ mod tests {
         assert_eq!((r[1]["waiting"].as_u64(), r[1]["unresolved"].as_u64()), (Some(1), Some(2)));
         assert_eq!(r[3]["waiting"].as_u64(), Some(0));
         assert!(r[0].get("reviewThreads").is_none());
+    }
+
+    #[test]
+    fn keeps_prs_i_havent_reviewed_or_that_changed_since() {
+        let pr = |n: u64, updated: &str, draft: bool, mine: Option<&str>, last: &str| json!({ "number": n, "updatedAt": updated, "isDraft": draft,
+            "viewerLatestReview": mine.map(|m| json!({ "submittedAt": m })), "commits": { "nodes": [{ "commit": { "committedDate": last } }] } });
+        let data = json!({ "search": { "nodes": [
+            pr(1, "2026-10-05", false, None, "2026-10-04T10:00:00Z"),
+            pr(2, "2026-10-03", false, Some("2026-10-01T10:00:00Z"), "2026-10-02T10:00:00Z"),
+            pr(3, "2026-10-06", false, Some("2026-10-02T10:00:00Z"), "2026-10-01T10:00:00Z"),
+            pr(4, "2026-10-07", true, None, "2026-10-07T10:00:00Z"),
+            pr(5, "2026-10-08", false, None, "2026-10-08T10:00:00Z"),
+            {},
+        ] } });
+        let r = rank_unreviewed(&data);
+        let order: Vec<u64> = r.as_array().unwrap().iter().map(|p| p["number"].as_u64().unwrap()).collect();
+        assert_eq!(order, vec![2, 5, 1]);
+        assert_eq!(r[0]["reviewNote"], "new changes since your review");
+        assert_eq!(r[1]["reviewNote"], "not reviewed yet");
+        assert!(r[0].get("commits").is_none() && r[0].get("viewerLatestReview").is_none());
+        assert!(unreviewed_query("a/b").contains("-author:@me archived:false repo:a/b\""));
     }
 
     #[test]
