@@ -17,12 +17,13 @@ export type PendingAsk =
 
 export type Question = { question: string; header: string; options: { label: string; description: string; preview?: string }[]; multiSelect?: boolean };
 
-export type TranscriptItem =
+export type TranscriptItem = (
   | { kind: "text"; id: string; text: string; at: number }
   | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; at: number }
   | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery }
   | { kind: "view"; id: string; title: string; blocks: ViewBlock[]; at: number }
-  | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number };
+  | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number }
+) & { step?: string }; // the plan step in progress when it arrived (MR-69)
 
 // A view Claude composed from the catalog with render_view (decision 26, MR-61). Blocks were
 // validated by the core; fields beyond the required ones may be missing.

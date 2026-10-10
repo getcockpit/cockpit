@@ -129,3 +129,6 @@
 .mr-mark[data-d="taken"] { color: var(--mr-ink); }
 .mr-mark[data-d="answered"] { color: var(--mr-done); font-weight: 400; }
 .mr-mark[data-d="lost"] { color: var(--mr-error); }
+
+/* The step Claude is on in a grouped transcript (MR-69). */
+.mr-now-step { animation: mr-track-pulse 1.2s ease-in-out infinite; }
