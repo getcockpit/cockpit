@@ -46,6 +46,13 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
   const pending = doc.pending_notes.length + doc.pending_changes.length;
 
   const [sent, setSent] = useState("");
+  // Delete takes two clicks; the second says what it does.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const remove = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    await docApi.archive(doc);
+    onBack();
+  };
   const sendFeedback = async (regenerate: boolean) => {
     const id = await sendDocFeedback(doc, session, regenerate);
     setSent(regenerate ? "Sent. Claude is writing the next version; it appears here as it lands." : "Sent to the plan session.");
@@ -83,6 +90,8 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
         <span className="mr-mono mr-dim">v{doc.version} · {blocks.length} blocks</span>
         <span className="mr-grow" />
         {session && <button type="button" className="mr-key" style={{ minHeight: 30 }} onClick={() => onOpenSession(session.id)}>Open the plan session{live ? "" : " (ended)"}</button>}
+        <button type="button" className="mr-key" data-mr="DocDelete" data-mr-source={doc.id} style={{ minHeight: 30, ...(confirmDelete ? { background: "var(--mr-error)", color: "var(--mr-tile)" } : {}) }}
+          onClick={() => void remove()} onBlur={() => setConfirmDelete(false)}>{confirmDelete ? "Click again to delete this doc" : "Delete doc"}</button>
       </header>
 
       <main style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, padding: 16 }}>
