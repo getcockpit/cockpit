@@ -1,7 +1,7 @@
 import { keyOf } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2, wantsDiagram } from "./picker/pick";
-import { WorkspaceTabs } from "./screens/Workspaces";
+import { WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
 import { Archive } from "./screens/Archive";
@@ -63,6 +63,17 @@ export default function App() {
   const docs = useMemo(() => allDocs.filter((d) => (d.session_id ? all.sessions[d.session_id]?.workspace === workspace : workspace === "personal")), [allDocs, all, workspace]);
   const [focus, setFocus] = useState<string | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
+  // Each workspace remembers where you were (wall, a session or a doc), so switching back is a return, not a restart.
+  const views = useRef<Record<string, { focus: string | null; docId: string | null }>>({});
+  const [switcher, setSwitcher] = useState(false);
+  const switchTo = (id: string) => {
+    if (id === workspace) return;
+    views.current[workspace] = { focus, docId };
+    const back = views.current[id] ?? { focus: null, docId: null };
+    setFocus(back.focus && all.sessions[back.focus]?.workspace === id ? back.focus : null);
+    setDocId(back.docId);
+    setWorkspace(id);
+  };
   const [picker, setPicker] = useState(false);
   const [god, setGod] = useState(false);
   const [builds, setBuilds] = useState<string | null>(null); // worktree to build, "" = app repo
@@ -82,12 +93,19 @@ export default function App() {
       if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); setBuilds((x) => (x === null ? "" : null)); }
       if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
         const ws = all.workspaces[Number(keyOf(e)) - 1];
-        if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); setFocus(null); setDocId(null); setWorkspace(ws.id); }
+        if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); switchTo(ws.id); }
       }
+      // ⌃Tab / ⌃⇧Tab cycle workspaces like browser tabs; ⌘J opens the switcher (MR-55).
+      if (e.ctrlKey && keyOf(e) === "Tab" && all.workspaces.length > 1 && !document.querySelector('[role="dialog"]')) {
+        e.preventDefault();
+        const i = all.workspaces.findIndex((w) => w.id === workspace);
+        switchTo(all.workspaces[(i + (e.shiftKey ? -1 : 1) + all.workspaces.length) % all.workspaces.length].id);
+      }
+      if (e.metaKey && keyOf(e) === "j") { e.preventDefault(); setSwitcher((x) => !x); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [all.workspaces]);
+  });
 
   const view = docId ? "doc map" : focus ? "focus" : "wall";
   const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src) => { const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
@@ -101,7 +119,7 @@ export default function App() {
     if (focus && state.sessions[focus]) return { session: focus, label: label(focus) };
     return null;
   };
-  const tabs = <WorkspaceTabs state={all} docs={allDocs} active={workspace} onSwitch={(id) => { setFocus(null); setDocId(null); setWorkspace(id); }} onSignIn={setSignIn} onSettings={() => setSettings(true)} />;
+  const tabs = <WorkspaceTabs state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onSwitcher={() => setSwitcher(true)} onSignIn={setSignIn} onSettings={() => setSettings(true)} />;
   const signInPanel = signIn && (
     <div role="dialog" aria-label="Sign in to workspace" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "80px 24px", background: "rgba(21,24,27,.35)", zIndex: 30 }}>
       <div style={{ width: "100%", maxWidth: 900, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -125,8 +143,8 @@ export default function App() {
     </div>
   );
   const doc = docId ? docs.find((d) => d.id === docId) : null;
-  if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{godmode}{voice}{intro}</>);
+  if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{godmode}{voice}{intro}</>);
-  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{godmode}{voice}{intro}</>);
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
 }
