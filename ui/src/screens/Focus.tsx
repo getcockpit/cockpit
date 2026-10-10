@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bar, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
-import { proseQuestion, replyOptions } from "../picker/queue";
+import { isAppChange, proseQuestion, replyOptions } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { summarizeTool } from "../picker/toolSummary";
 import { shortError } from "../components/ErrorLine";
@@ -41,7 +41,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   const where = [(s.repo ?? s.cwd).split("/").filter(Boolean).pop(), s.branch].filter(Boolean).join(" · ");
   const replies = useMemo(() => nextReplies(s), [s]);
   // A god-mode fix session (MR-47): its last step is applying the fix to your own app.
-  const isFix = isApp && !!s.branch?.startsWith("mr/") && /^God-mode mark/.test(s.title);
+  const isFix = isApp && !!s.branch?.startsWith("mr/") && isAppChange(s);
   const [applyError, setApplyError] = useState("");
   const applyFix = async () => { setApplyError(""); try { await api.fixApply(s.id); } catch (e) { setApplyError(shortError(e)); } };
 

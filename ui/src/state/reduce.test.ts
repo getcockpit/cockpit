@@ -236,3 +236,13 @@ test("a bug report's fix waits in the queue until applied, then asks for a rebui
   const s2 = replay([...base, ev("G4", "ui.fix_applied", { branch: "mr/g" }, "g", 5), ev("B1", "selfbuild.finished", { ok: true }, null, 9)]);
   expect(suggest(s2, [], { review: [], mine: [] }, new Set()).map((x) => x.label)).not.toContain("Rebuild & relaunch");
 });
+
+test("look settings replay and a restyle session is an app change", async () => {
+  const { isAppChange } = await import("../picker/queue");
+  const { cleanTitle } = await import("../picker/title");
+  const e = (id: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind: "ui.look_set", payload, anchor: null, created_at: 1 });
+  expect(replay([e("L1", { scale: 1.12 }), e("L2", { density: "compact" })]).look).toEqual({ scale: 1.12, density: "compact" });
+  expect(replay([e("L1", { density: "huge" })]).look.density).toBe("default");
+  expect(isAppChange({ title: "Restyle the app: warmer\n\nThis is…" })).toBe(true);
+  expect(cleanTitle("Restyle the app: warmer greys\n\nThis is Minority report's own repo.")).toBe("Style: warmer greys");
+});

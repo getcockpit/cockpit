@@ -27,6 +27,12 @@ export default function App() {
   const [settings, setSettings] = useState(false);
   // The theme is part of the log (synced, durable); applying it is just a data attribute.
   useEffect(() => { document.documentElement.dataset.theme = all.theme === "control-room" ? "" : all.theme; }, [all.theme]);
+  // Text size scales the whole UI; density changes spacing (MR-50). Both apply instantly.
+  useEffect(() => {
+    const r = document.documentElement;
+    (r.style as CSSStyleDeclaration & { zoom: string }).zoom = String(all.look.scale);
+    r.dataset.density = all.look.density === "default" ? "" : all.look.density;
+  }, [all.look]);
   useEffect(() => { try { localStorage.setItem("mr.workspace", workspace); } catch { /* per-viewer convenience */ } }, [workspace]);
   // Plan limits: the sidecar reads them on start; refresh every 5 minutes after that.
   useEffect(() => { const t = setInterval(() => void api.refreshLimits().catch(() => {}), 5 * 60_000); return () => clearInterval(t); }, []);
