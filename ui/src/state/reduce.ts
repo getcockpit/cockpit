@@ -243,6 +243,17 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     }
     return;
   }
+  if (type === "system" && (m.subtype === "task_started" || m.subtype === "task_notification")) {
+    // A backgrounded command or agent: its tool result comes back at once ("running in background"),
+    // so the task events are what say it's still going, and how it ended.
+    const id = String(m.tool_use_id ?? "");
+    s.transcript = s.transcript.map((t) => {
+      if (t.kind !== "tool" || t.toolUseId !== id) return t;
+      if (m.subtype === "task_started") return m.is_backgrounded ? { ...t, background: { status: "running" } } : t;
+      return t.background ? { ...t, background: { status: String(m.status ?? "completed"), summary: (m.summary as string) ?? undefined } } : t;
+    });
+    return;
+  }
   if (type === "result") {
     const ok = !m.is_error;
     s.costUsd += Number(m.total_cost_usd ?? 0);
