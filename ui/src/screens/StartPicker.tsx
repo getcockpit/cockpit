@@ -7,6 +7,7 @@ import { shortError } from "../components/ErrorLine";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
+import { addressNote, toAddress } from "../picker/suggest";
 import type { AppState, SessionKind } from "../state/types";
 
 // ⌘K start picker (decision 18): Review / Address / Plan / Blank, each with its own suggestions.
@@ -60,8 +61,8 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
     if (mode === "review" || mode === "address") {
       return (prs ?? []).map((p) => ({
         ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
-        meta: mode === "address" ? `${p.repository?.nameWithOwner ?? ""}${p.reviewDecision === "CHANGES_REQUESTED" ? " · changes requested" : ""}` : (p.repository?.nameWithOwner ?? ""),
-        hot: mode === "address" ? p.reviewDecision === "CHANGES_REQUESTED" : true,
+        meta: [p.repository?.nameWithOwner, mode === "address" && addressNote(p)].filter(Boolean).join(" · "),
+        hot: mode === "address" ? toAddress(p) : true,
       }));
     }
     const recent = state.order.map((id) => state.sessions[id]).filter((s) => s.kind === mode).reverse().slice(0, 5);
@@ -130,7 +131,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
         </div>
         <div style={{ display: "flex", flexDirection: "column", padding: "0 10px 10px", minHeight: 120 }}>
           <span className="mr-dim" style={{ padding: "4px 8px 8px" }}>
-            {mode === "review" ? "Waiting for your review" : mode === "address" ? "Your open PRs" : "Reuse a recent prompt"}
+            {mode === "review" ? "Waiting for your review" : mode === "address" ? `Your open PRs${prs?.some(toAddress) ? ` · ${prs.filter(toAddress).length} to address, first` : ""}` : "Reuse a recent prompt"}
             {(mode === "review" || mode === "address") && prs === null && " · loading…"}
           </span>
           {items.length === 0 && prs !== null && !error && <span className="mr-dim" style={{ padding: "4px 8px" }}>Nothing here.</span>}
