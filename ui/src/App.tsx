@@ -1,7 +1,7 @@
 import { keyOf } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2, wantsDiagram } from "./picker/pick";
-import { WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
+import { DeleteWorkspace, WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
 import { Archive } from "./screens/Archive";
@@ -66,6 +66,9 @@ export default function App() {
   // Each workspace remembers where you were (wall, a session or a doc), so switching back is a return, not a restart.
   const views = useRef<Record<string, { focus: string | null; docId: string | null }>>({});
   const [switcher, setSwitcher] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  // If the open workspace disappears (deleted), fall back to Personal.
+  useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocus(null); setDocId(null); setWorkspace("personal"); } }, [all.workspaces, workspace]);
   const switchTo = (id: string) => {
     if (id === workspace) return;
     views.current[workspace] = { focus, docId };
@@ -108,7 +111,7 @@ export default function App() {
   });
 
   const view = docId ? "doc map" : focus ? "focus" : "wall";
-  const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src) => { const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
+  const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src, component) => { if (component === "WorkspaceTab") return src !== "personal" ? { label: "Delete workspace…", run: () => setDeleting(src) } : null; const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
   // Point + talk: which session does the thing under the pointer belong to?
   const resolve = (t: PointTarget) => {
     const label = (id: string) => `“${(state.sessions[id]?.title ?? "session").slice(0, 40)}”`;
@@ -143,8 +146,8 @@ export default function App() {
     </div>
   );
   const doc = docId ? docs.find((d) => d.id === docId) : null;
-  if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
+  if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
-  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
 }

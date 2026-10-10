@@ -246,3 +246,17 @@ test("look settings replay and a restyle session is an app change", async () => 
   expect(isAppChange({ title: "Restyle the app: warmer\n\nThis is…" })).toBe(true);
   expect(cleanTitle("Restyle the app: warmer greys\n\nThis is Minority report's own repo.")).toBe("Style: warmer greys");
 });
+
+test("deleting a workspace moves its sessions to Personal's archive as read-only history", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: Number(id.slice(1)) });
+  const st = replay([
+    e("W1", "ui.workspace_created", { id: "ws_a", name: "Client A", config_dir: "/d" }),
+    e("W2", "ui.session_requested", { prompt: "p", cwd: "/w", workspace: "ws_a" }, "s1"),
+    e("W3", "sidecar.session_started", { sdk_session_id: "x" }, "s1"),
+    e("W4", "ui.session_requested", { prompt: "q", cwd: "/w" }, "s2"),
+    e("W5", "ui.workspace_deleted", { id: "ws_a", name: "Client A" }),
+  ]);
+  expect(st.workspaces.map((w) => w.id)).toEqual(["personal"]);
+  expect(st.sessions.s1).toMatchObject({ workspace: "personal", archivedAt: 5, fromDeleted: "Client A", status: "ended" });
+  expect(st.sessions.s2).toMatchObject({ workspace: "personal", archivedAt: null, fromDeleted: null });
+});
