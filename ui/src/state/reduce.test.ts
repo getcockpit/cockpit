@@ -339,3 +339,10 @@ test("activity buckets follow clock minutes, so events 40 s apart still spread o
   expect(a.reduce((x, y) => x + y, 0)).toBe(15); // the request itself isn't activity
   expect(Math.max(...a)).toBeLessThanOrEqual(2);
 });
+
+test("a rollback after a crash at start is shown until dismissed", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind, payload, anchor: null, created_at: 7 });
+  const st = replay([e("C1", "app.recovered", { crashed_slot: "b", slot: "a", log: "=== crash at start · slot b\npanicked" })]);
+  expect(st.recovered).toEqual({ crashedSlot: "b", log: "=== crash at start · slot b\npanicked", at: 7 });
+  expect(replay([e("C1", "app.recovered", { crashed_slot: "b" }), e("C2", "ui.recovery_dismissed", {})]).recovered).toBeNull();
+});
