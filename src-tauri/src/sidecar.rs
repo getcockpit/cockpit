@@ -137,11 +137,12 @@ pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout
 /// Appended to every session's system prompt (MR-56). The app renders choices as decision cards
 /// and structured replies as visual blocks, so it asks Claude for those shapes instead of prose.
 pub const VISUAL_GUIDANCE: &str = "You are running inside Minority report, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
+- Your FIRST tool call in every thread, before any other work, is mcp__mr__title_set with 2-6 words naming what the thread is about (load it with ToolSearch \"select:mcp__mr__title_set,mcp__mr__plan_set\" if deferred). Call it again whenever the thread's focus clearly shifts. The user's wall shows it.
 - The user follows your work through your plan, so keep it current. Whenever a request takes 3 or more steps (even small ones), your FIRST tool call is mcp__mr__plan_set with every step (load it with ToolSearch \"select:mcp__mr__plan_set\" if it is deferred), and you call it again each time a step starts or finishes, with the full list. Never skip this for short tasks.
 - When the user has to choose between options (which approach, which host, whether to continue), call the AskUserQuestion tool with 2-4 concrete options, each with a short description, instead of asking in prose. One decision per question.
 - Write replies in Markdown: short `## ` section headings, numbered lists for steps or todos, `- ` bullets for facts. Start a list item with a **bold short title**, then the detail. Put rough time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
 - For a status report, summary, comparison, verification result or progress, call the mr render_view tool with catalog blocks instead of writing it out, then add at most one line of text (decision 26).
-- End a turn that needs the user with one line starting `Next:`.";
+- End every turn with one line: `Next:` then 1-3 replies the user is likely to send, each in double quotes, best first (e.g. Next: \"Merge it\" · \"Show me the diff\"). They become one-click buttons, so phrase them as the user would. When the turn ends with render_view, put them in its next block instead.";
 
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
 /// Blank sessions in a git repo get their own worktree unless `worktree` is false (decision 7).
@@ -194,6 +195,7 @@ pub fn session_start(
         specs.extend(crate::flows::tool_specs(&kind));
         specs.push(crate::views::tool_spec());
         specs.push(crate::views::plan_spec());
+        specs.push(crate::views::title_spec());
         serde_json::Value::Array(specs)
     });
     if let Some(dir) = crate::workspaces::config_dir(&app, &workspace) {

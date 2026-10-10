@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title")
 }
 
 fn workspace_mode() -> bool {
@@ -32,6 +32,10 @@ fn flow_mode() -> bool {
 
 fn resume_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "resume")
+}
+
+fn title_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "title")
 }
 
 fn plan_mode() -> bool {
@@ -71,6 +75,9 @@ pub fn run(app: AppHandle) {
                 "This is a UI test of the review tools, not a real review. Pretend you are reviewing a tiny change that adds a retry loop to fetch.ts. Call review_overview (tier 2, one '+' node 'retry loop', one net-new novelty item, total_snippets 1), then call review_snippet for snippet 1 of 1 with a short 3-line diff and exactly one finding with id f1, severity Important. Then stop and wait for my reply as the tool says.".into()
             } else if resume_mode() {
                 "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
+            } else if title_mode() {
+                // No tool or format named: the guidance alone should give a title and proposed replies (MR-63).
+                "Create a file notes.txt in the current directory containing one line about rust lifetimes, then tell me in one sentence what you did.".into()
             } else if plan_mode() {
                 // No tool named: the guidance alone should make Claude publish and update its plan (MR-62).
                 "In the current directory, do these steps one at a time: create a.txt containing 'a', then create b.txt containing 'b', then create c.txt containing 'c', then list the directory to check all three exist. Then reply with exactly: SELFTEST DONE".into()
