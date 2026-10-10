@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
 import { addressNote, toAddress } from "../picker/suggest";
-import type { AppState, SessionKind } from "../state/types";
+import type { AppState, Preset, SessionKind } from "../state/types";
 
 // ⌘K start picker (decision 18): Review / Address / Plan / Blank, each with its own suggestions.
 const MODES: { id: SessionKind; name: string; what: string; placeholder: string }[] = [
@@ -17,6 +17,25 @@ const MODES: { id: SessionKind; name: string; what: string; placeholder: string 
   { id: "review", name: "Review", what: "Your /review on a PR", placeholder: "PR number or URL, e.g. 4412" },
   { id: "address", name: "Address", what: "Your /pr-address, thread by thread", placeholder: "Your PR number" },
 ];
+
+// Your own kinds (MR-80) sit next to the built-in ones; their mode id is `p:<preset id>`.
+const presetMode = (id: string) => `p:${id}`;
+
+// A template's `{text}` is what you type; without one, your text goes after it.
+export function fill(template: string, text: string): string {
+  const t = text.trim();
+  return template.includes("{text}") ? template.split("{text}").join(t).trim() : `${template.trim()} ${t}`.trim();
+}
+
+// The text you typed, back out of a filled template, so a recent prompt can be reused.
+export function unfill(template: string, prompt: string): string {
+  const [pre, ...rest] = (template.includes("{text}") ? template : `${template.trim()} {text}`).split("{text}");
+  const post = rest.join("{text}");
+  let t = prompt;
+  if (pre && t.startsWith(pre.trim())) t = t.slice(pre.trim().length);
+  if (post.trim() && t.endsWith(post.trim())) t = t.slice(0, -post.trim().length);
+  return t.trim();
+}
 
 // What each mode actually sends to Claude Code. Review/Address use the user's own commands.
 export function promptFor(mode: SessionKind, text: string): string {
@@ -37,10 +56,18 @@ const HOW: Record<SessionKind, string> = {
 
 type Item = { ref: string; title: string; meta: string; hot: boolean; value: string; repo?: string };
 
+type Draft = { id: string | null; name: string; template: string; worktree: boolean };
+
 export function StartPicker({ state, workspace = "personal", onClose, onStarted, initialText = "", initialMode }: { state: AppState; workspace?: string; onClose: () => void; onStarted: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
   // Opens on the kind you used last (F6); dictated text always starts a blank session.
-  const [mode, setModeRaw] = useState<SessionKind>(() => { if (initialMode) return initialMode; if (initialText) return "blank"; try { return (localStorage.getItem("mr.mode") as SessionKind) || "blank"; } catch { return "blank"; } });
-  const setMode = (m: SessionKind) => { setModeRaw(m); try { localStorage.setItem("mr.mode", m); } catch { /* convenience only */ } };
+  const [modeRaw, setModeRaw] = useState<string>(() => { if (initialMode) return initialMode; if (initialText) return "blank"; try { return localStorage.getItem("mr.mode") || "blank"; } catch { return "blank"; } });
+  const setMode = (m: string) => { setModeRaw(m); setDraft(null); try { localStorage.setItem("mr.mode", m); } catch { /* convenience only */ } };
+  const preset: Preset | null = state.presets.find((x) => presetMode(x.id) === modeRaw) ?? null;
+  // A removed preset (or a stale stored mode) falls back to Blank.
+  const mode: SessionKind = preset ? "blank" : MODES.some((x) => x.id === modeRaw) ? (modeRaw as SessionKind) : "blank";
+  const modeId = preset ? modeRaw : mode;
+  const tiles = [...MODES.map((x) => ({ id: x.id as string, name: x.name, what: x.what, mono: false })), ...state.presets.map((x) => ({ id: presetMode(x.id), name: x.name, what: x.template, mono: true }))];
+  const [draft, setDraft] = useState<Draft | null>(null);
   const [text, setText] = useState(initialText);
   const [cwd, setCwd] = useWorkFolder(workspaceFolder(state, workspace));
   const [prs, setPrs] = useState<Pr[] | null>(null);
@@ -48,7 +75,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { input.current?.focus(); }, [mode]);
+  useEffect(() => { if (!draft) input.current?.focus(); }, [modeId, draft]);
   useEffect(() => {
     setPrs(null); setSel(0);
     if (mode !== "review" && mode !== "address") return;
@@ -65,9 +92,9 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
         hot: mode === "address" ? toAddress(p) : true,
       }));
     }
-    const recent = state.order.map((id) => state.sessions[id]).filter((s) => s.kind === mode).reverse().slice(0, 5);
-    return recent.map((s) => ({ ref: "", value: cleanTitle(s.title, 400), title: cleanTitle(s.title), meta: new Date(s.startedAt).toLocaleDateString(), hot: false }));
-  }, [mode, prs, state]);
+    const recent = state.order.map((id) => state.sessions[id]).filter((s) => s.kind === mode && (s.preset ?? null) === (preset?.id ?? null)).reverse().slice(0, 5);
+    return recent.map((s) => { const v = preset ? unfill(preset.template, s.title) : s.title; return { ref: "", value: cleanTitle(v, 400), title: cleanTitle(v), meta: new Date(s.startedAt).toLocaleDateString(), hot: false }; });
+  }, [mode, preset, prs, state]);
 
   // PR work runs in the PR's own clone (MR-48); if it can't be found, ask once and remember.
   const [askRepo, setAskRepo] = useState<{ slug: string; value: string } | null>(null);
@@ -82,7 +109,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
         if (!found) { setAskRepo({ slug, value }); return; }
         where = found;
       }
-      onStarted(await api.start(where, promptFor(mode, value), mode));
+      onStarted(preset ? await api.start(where, fill(preset.template, value), "blank", preset.worktree, undefined, preset.id) : await api.start(where, promptFor(mode, value), mode));
     } catch (e) { setError(shortError(e)); }
   };
   const useFolderFor = async (path: string) => {
@@ -98,15 +125,28 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
     else { setText(it.value); input.current?.focus(); }
   };
 
+  const savePreset = async (d: Draft) => {
+    if (!d.name.trim() || !d.template.trim()) return;
+    const id = d.id ?? Date.now().toString(36);
+    try {
+      await api.log("ui.preset_saved", { id, name: d.name.trim(), template: d.template.trim(), worktree: d.worktree });
+      setMode(presetMode(id));
+    } catch (e) { setError(shortError(e)); }
+  };
+  const removePreset = async (x: Preset) => {
+    try { await api.log("ui.preset_removed", { id: x.id }); setMode("blank"); } catch (e) { setError(shortError(e)); }
+  };
+
   const onKey = (e: React.KeyboardEvent) => {
-    if (keyOf(e) === "Escape") { e.preventDefault(); onClose(); }
-    else if (e.metaKey && ["1", "2", "3", "4"].includes(keyOf(e))) { e.preventDefault(); setMode(MODES[Number(keyOf(e)) - 1].id); }
+    if (keyOf(e) === "Escape") { e.preventDefault(); if (draft) setDraft(null); else onClose(); }
+    else if (draft) return;
+    else if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && tiles[Number(keyOf(e)) - 1]) { e.preventDefault(); setMode(tiles[Number(keyOf(e)) - 1].id); }
     else if (keyOf(e) === "ArrowDown") { e.preventDefault(); setSel((x) => Math.min(items.length - 1, x + 1)); }
     else if (keyOf(e) === "ArrowUp") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
     else if (keyOf(e) === "Enter" && !text.trim() && items[sel]) { e.preventDefault(); pick(items[sel]); }
   };
 
-  const m = MODES.find((x) => x.id === mode)!;
+  const m = preset ? { placeholder: preset.template.includes("{text}") ? "Fills {text} in your template" : "Goes after your template" } : MODES.find((x) => x.id === mode)!;
   return (
     <div role="dialog" className="mr-scrim" aria-label="Start something" onKeyDown={onKey}
       style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)", zIndex: 10 }}
@@ -120,19 +160,34 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           <input ref={input} className="mr-input" style={{ fontSize: 17, background: "var(--mr-well)" }} placeholder={m.placeholder} value={text} onChange={(e) => setText(e.target.value)} aria-label={m.placeholder} />
           <Key k="↵" tone="primary" disabled={!text.trim() && !items[sel]}>Start</Key>
         </form>
-        <div role="radiogroup" aria-label="Kind of session" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "var(--mr-gap)", padding: "12px 18px" }}>
-          {MODES.map((x, i) => (
-            <button key={x.id} type="button" role="radio" aria-checked={x.id === mode} onClick={() => setMode(x.id)}
-              style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, borderRadius: "var(--mr-radius)", textAlign: "left", cursor: "pointer", background: x.id === mode ? "var(--mr-ink)" : "var(--mr-well)", color: x.id === mode ? "var(--mr-tile)" : "var(--mr-ink)" }}>
-              <span className="mr-row" style={{ justifyContent: "space-between" }}><strong style={{ fontSize: 15 }}>{x.name}</strong><kbd className="mr-mono" style={{ opacity: 0.7 }}>⌘{i + 1}</kbd></span>
-              <span style={{ opacity: 0.8 }}>{x.what}</span>
-            </button>
-          ))}
+        <div role="radiogroup" aria-label="Kind of session" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "var(--mr-gap)", padding: "12px 18px" }}>
+          {tiles.map((x, i) => {
+            const on = x.id === modeId && !draft;
+            return (
+              <button key={x.id} type="button" role="radio" aria-checked={on} onClick={() => setMode(x.id)} data-mr="KindTile" data-mr-source={x.id}
+                style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, borderRadius: "var(--mr-radius)", textAlign: "left", cursor: "pointer", minWidth: 0, background: on ? "var(--mr-ink)" : "var(--mr-well)", color: on ? "var(--mr-tile)" : "var(--mr-ink)" }}>
+                <span className="mr-row" style={{ justifyContent: "space-between" }}><strong className="mr-ellipsis" style={{ fontSize: 15 }}>{x.name}</strong>{i < 9 && <kbd className="mr-mono" style={{ opacity: 0.7 }}>⌘{i + 1}</kbd>}</span>
+                <span className={x.mono ? "mr-mono mr-ellipsis" : undefined} style={{ opacity: 0.8 }}>{x.what}</span>
+              </button>
+            );
+          })}
+          <button type="button" data-mr="KindNew" data-mr-source="new" aria-pressed={draft?.id === null} onClick={() => setDraft({ id: null, name: "", template: "", worktree: true })}
+            style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, borderRadius: "var(--mr-radius)", textAlign: "left", cursor: "pointer", background: draft?.id === null ? "var(--mr-ink)" : "var(--mr-band)", color: draft?.id === null ? "var(--mr-tile)" : "var(--mr-ink-2)" }}>
+            <strong style={{ fontSize: 15 }}>+ New</strong>
+            <span style={{ opacity: 0.8 }}>Your own kind: a saved prompt</span>
+          </button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", padding: "0 10px 10px", minHeight: 120 }}>
-          <span className="mr-dim" style={{ padding: "4px 8px 8px" }}>
-            {mode === "review" ? "Waiting for your review" : mode === "address" ? `Your open PRs${prs?.some(toAddress) ? ` · ${prs.filter(toAddress).length} to address, first` : ""}` : "Reuse a recent prompt"}
-            {(mode === "review" || mode === "address") && prs === null && " · loading…"}
+          {draft ? <PresetEditor draft={draft} onChange={setDraft} onSave={() => void savePreset(draft)} onCancel={() => setDraft(null)} /> : <>
+          <span className="mr-row mr-dim" style={{ padding: "4px 8px 8px" }}>
+            <span className="mr-grow">
+              {mode === "review" ? "Waiting for your review" : mode === "address" ? `Your open PRs${prs?.some(toAddress) ? ` · ${prs.filter(toAddress).length} to address, first` : ""}` : "Reuse a recent prompt"}
+              {(mode === "review" || mode === "address") && prs === null && " · loading…"}
+            </span>
+            {preset && <>
+              <button type="button" className="mr-link" data-mr="PresetEdit" data-mr-source={preset.id} onClick={() => setDraft({ ...preset })}>Edit</button>
+              <button type="button" className="mr-link" data-mr="PresetRemove" data-mr-source={preset.id} onClick={() => void removePreset(preset)}>Remove</button>
+            </>}
           </span>
           {items.length === 0 && prs !== null && !error && <span className="mr-dim" style={{ padding: "4px 8px" }}>Nothing here.</span>}
           {items.map((it, i) => (
@@ -149,14 +204,37 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
               <FolderPicker value="" onChange={(p) => void useFolderFor(p)} extra={[]} />
             </div>
           )}
+          </>}
           {error && <span style={{ color: "var(--mr-error)", padding: "4px 8px" }}>{error}</span>}
         </div>
         <div className="mr-row mr-dim" style={{ padding: "10px 18px", background: "var(--mr-band)" }}>
-          <span>⌘1–4 switch · ↑↓ pick · ↵ start · esc close</span>
+          <span>{draft ? "↵ save · esc cancel" : `⌘1–${Math.min(9, tiles.length)} switch · ↑↓ pick · ↵ start · esc close`}</span>
           <span className="mr-grow" />
-          <span>{HOW[mode]}</span>
+          <span className="mr-ellipsis">{draft ? "Saved for every workspace" : preset ? `Sends your template${preset.worktree ? ", in its own git worktree" : ", in the folder you pick"}` : HOW[mode]}</span>
         </div>
       </div>
     </div>
+  );
+}
+
+// Adds or edits one of your own kinds (MR-80): a name and the prompt it sends.
+function PresetEditor({ draft, onChange, onSave, onCancel }: { draft: Draft; onChange: (d: Draft) => void; onSave: () => void; onCancel: () => void }) {
+  const ok = draft.name.trim() && draft.template.trim();
+  return (
+    <form data-mr="PresetEditor" data-mr-source={draft.id ?? "new"} onSubmit={(e) => { e.preventDefault(); onSave(); }}
+      style={{ display: "flex", flexDirection: "column", gap: 10, padding: "8px 8px 4px" }}>
+      <span className="mr-dim">{draft.id ? "Edit your kind" : "A new kind of session, next to Blank and Plan"}</span>
+      <input autoFocus className="mr-input" placeholder="Name, e.g. Triage" aria-label="Name" value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} style={{ background: "var(--mr-well)" }} />
+      <input className="mr-input mr-mono" placeholder="Prompt, e.g. /triage {text}  ({text} is what you type)" aria-label="Prompt template" value={draft.template} onChange={(e) => onChange({ ...draft, template: e.target.value })} style={{ background: "var(--mr-well)" }} />
+      <div className="mr-row" style={{ gap: 10 }}>
+        <label className="mr-row" style={{ gap: 6, cursor: "pointer" }}>
+          <input type="checkbox" checked={draft.worktree} onChange={(e) => onChange({ ...draft, worktree: e.target.checked })} />
+          Run in its own git worktree
+        </label>
+        <span className="mr-grow" />
+        <Key k="esc" onClick={onCancel}>Cancel</Key>
+        <button type="submit" className="mr-key" data-tone="primary" disabled={!ok}><kbd>↵</kbd>Save</button>
+      </div>
+    </form>
   );
 }

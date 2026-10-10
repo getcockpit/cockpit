@@ -371,3 +371,20 @@ describe("model and effort (MR-73)", () => {
     expect([s.modelChoice, s.effort]).toEqual([null, "high"]);
   });
 });
+
+test("your own start-picker kinds are saved, edited and removed through the log (MR-80)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: 1 });
+  const saved = [
+    ev("K1", "ui.preset_saved", { id: "a", name: "Triage", template: "/triage {text}", worktree: false }),
+    ev("K2", "ui.preset_saved", { id: "b", name: "Tests", template: "Write tests for", worktree: true }),
+    ev("K3", "ui.preset_saved", { id: "a", name: "Triage it", template: "/triage {text}", worktree: false }),
+    ev("K4", "ui.session_requested", { prompt: "/triage 12", cwd: "/w", kind: "blank", preset: "a" }, "s1"),
+  ];
+  let st = replay(saved);
+  expect(st.presets).toEqual([{ id: "a", name: "Triage it", template: "/triage {text}", worktree: false }, { id: "b", name: "Tests", template: "Write tests for", worktree: true }]);
+  expect(st.sessions.s1.preset).toBe("a");
+  expect(st.sessions.s1.kind).toBe("blank");
+  st = replay([...saved, ev("K5", "ui.preset_removed", { id: "a" })]);
+  expect(st.presets.map((x) => x.id)).toEqual(["b"]);
+  expect(replay([]).presets).toEqual([]);
+});
