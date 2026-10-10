@@ -1,6 +1,7 @@
 import { keyOf } from "../components/keys";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { NowLine } from "../components/Now";
 import { pointer } from "../components/pointer";
 import { suggest, type Suggestion } from "../picker/suggest";
 import { promptFor } from "./StartPicker";
@@ -210,7 +211,9 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
         <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
         <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>
         <div className="mr-row" style={{ alignItems: "flex-end" }}>
-          <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tile.doing}</span>
+          {s.status === "working" || s.status === "starting"
+            ? <span className="mr-grow" style={{ minWidth: 0 }}><NowLine s={s} compact /></span>
+            : <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tile.doing}</span>}
           <Sparkline values={s.activity} />
         </div>
       </div>
