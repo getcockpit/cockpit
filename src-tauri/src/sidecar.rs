@@ -96,6 +96,16 @@ pub fn sidecar_send(state: State<'_, Sidecar>, message: serde_json::Value) -> Re
     child.write(line.as_bytes()).map_err(|e| e.to_string())
 }
 
+/// Stops every running session of a workspace (before it's deleted, MR-54). Returns how many.
+pub fn stop_sessions_in(app: &AppHandle, workspace: &str) -> usize {
+    let state = app.state::<Sidecar>();
+    let ids: Vec<String> = state.live.lock().unwrap().iter().filter(|s| crate::workspaces::workspace_of(app, s) == workspace).cloned().collect();
+    for id in &ids {
+        let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": id }));
+    }
+    ids.len()
+}
+
 /// Re-reads plan limits (the UI calls this every few minutes); the answer arrives as `sidecar.limits`.
 #[tauri::command]
 pub fn limits_refresh(state: State<'_, Sidecar>) -> Result<(), String> {

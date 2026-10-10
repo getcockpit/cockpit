@@ -19,7 +19,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null,
+    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
   };
 }
 
@@ -52,6 +52,12 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
   if (ev.kind === "ui.workspace_created") return { ...next, workspaces: [...next.workspaces, { id: String(p.id), name: String(p.name), configDir: (p.config_dir as string) ?? null }] };
+  if (ev.kind === "ui.workspace_deleted") {
+    // Its sessions become read-only history in Personal's archive; their Claude history went with the workspace.
+    const id = String(p.id), name = String(p.name ?? "workspace");
+    const sessions = Object.fromEntries(Object.entries(next.sessions).map(([k, s]) => [k, s.workspace === id ? { ...s, workspace: "personal", archivedAt: s.archivedAt ?? ev.created_at, fromDeleted: name, pending: [], status: s.status === "ended" || s.status === "error" ? s.status : "ended" as const } : s]));
+    return { ...next, sessions, workspaces: next.workspaces.filter((w) => w.id !== id) };
+  }
   if (ev.kind === "ui.workspace_renamed") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, name: String(p.name) } : w)) };
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };

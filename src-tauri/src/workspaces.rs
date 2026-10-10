@@ -53,6 +53,39 @@ pub fn workspace_rename(app: AppHandle, id: String, name: String) -> Result<(), 
     Ok(())
 }
 
+/// Moves a folder to the macOS Trash (recoverable), named so it's recognisable there.
+pub fn to_trash(dir: &Path, label: &str, home: &Path) -> Result<Option<PathBuf>, String> {
+    if !dir.exists() {
+        return Ok(None);
+    }
+    let trash = home.join(".Trash");
+    std::fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
+    let safe: String = label.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' }).collect();
+    let dest = trash.join(format!("Minority report workspace {safe} {}", chrono_free_stamp()));
+    std::fs::rename(dir, &dest).map_err(|e| format!("couldn't move it to the Trash: {e}"))?;
+    Ok(Some(dest))
+}
+
+fn chrono_free_stamp() -> String {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs().to_string()).unwrap_or_default()
+}
+
+/// Deletes a workspace (MR-54): stops its running sessions, moves its folder (its own Claude
+/// sign-in, memory and transcripts) to the Trash, and logs it; its sessions become read-only
+/// history in Personal's archive. Personal can't be deleted.
+#[tauri::command(async)]
+pub fn workspace_delete(app: AppHandle, id: String, name: String) -> Result<(), String> {
+    if id == PERSONAL || id.is_empty() {
+        return Err("the Personal workspace can't be deleted".into());
+    }
+    let stopped = crate::sidecar::stop_sessions_in(&app, &id);
+    let home = PathBuf::from(std::env::var("HOME").map_err(|e| e.to_string())?);
+    let folder = crate::selfbuild::data_dir(&app).join("workspaces").join(&id);
+    let trashed = to_trash(&folder, &name, &home)?;
+    crate::eventlog::record(&app, None, "ui.workspace_deleted", &serde_json::json!({ "id": id, "name": name, "stopped": stopped, "trashed_to": trashed }), Some(&format!("workspace:{id}")));
+    Ok(())
+}
+
 /// Opens an interactive `claude` in this workspace's config folder so the user can run /login once.
 #[tauri::command]
 pub fn workspace_sign_in(app: AppHandle, id: String, cols: u16, rows: u16) -> Result<String, String> {
@@ -93,5 +126,18 @@ mod tests {
         assert!(!ws.join("history.jsonl").exists());
         // Idempotent.
         prepare_config_dir(&ws, &home).unwrap();
+    }
+
+    #[test]
+    fn deleting_moves_the_folder_to_the_trash() {
+        let home = std::env::temp_dir().join(format!("mr-trash-{}", ulid::Ulid::new()));
+        let ws = home.join("data/workspaces/ws_x");
+        std::fs::create_dir_all(ws.join("claude")).unwrap();
+        std::fs::write(ws.join("claude/.credentials.json"), "x").unwrap();
+        let dest = to_trash(&ws, "Client A", &home).unwrap().unwrap();
+        assert!(!ws.exists());
+        assert!(dest.starts_with(home.join(".Trash")) && dest.join("claude/.credentials.json").exists());
+        assert_eq!(to_trash(&ws, "Client A", &home).unwrap(), None);
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

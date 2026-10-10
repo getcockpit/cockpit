@@ -22,7 +22,7 @@ type Pending = { branch: string; commits: number; subject: string };
 type History = { worktree: string; changes: Change[]; pending: Pending[] };
 type Build = { id: string; sha: string; branch: string; worktree: string; at: number; current: boolean };
 
-export function Settings({ state, onClose, onOpenSession }: { state: AppState; onClose: () => void; onOpenSession: (id: string) => void }) {
+export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: { state: AppState; onClose: () => void; onOpenSession: (id: string) => void; onDeleteWorkspace: (id: string) => void }) {
   // Your god-mode reports, newest first, with where each one is (MR-47).
   const [styleAsk, setStyleAsk] = useState("");
   const restyle = async () => {
@@ -92,6 +92,19 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
           </form>
           <span className="mr-dim" style={{ fontSize: 12 }}>Restyle starts a session on the app's own code. When it's done, apply it from the wall like a bug fix; undo it any time under Your changes.</span>
         </section>
+
+        {state.workspaces.length > 1 && (
+          <section data-mr="WorkspacesSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+            <h2 className="mr-h">Workspaces <span className="mr-dim" style={{ fontWeight: 400 }}>double-click a tab to rename it · right-click it to delete</span></h2>
+            {state.workspaces.filter((w) => w.id !== "personal").map((w) => (
+              <div key={w.id} className="mr-row" style={{ padding: "6px 10px", background: "var(--mr-well)" }}>
+                <span className="mr-grow">{w.name}</span>
+                <span className="mr-dim">{Object.values(state.sessions).filter((s) => s.workspace === w.id).length} sessions</span>
+                <button type="button" className="mr-link" style={{ color: "var(--mr-error)" }} onClick={() => onDeleteWorkspace(w.id)}>Delete…</button>
+              </div>
+            ))}
+          </section>
+        )}
 
         {reports.length > 0 && (
           <section data-mr="Reports" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
