@@ -1,5 +1,6 @@
 import type { Doc } from "../state/docs";
 import shop from "./shop.txt?raw";
+import REVIEW482 from "./review482.json";
 
 // Demo scenarios (MR-40). Each is an event log the real reducer replays, plus the docs the core
 // would have folded. `at` is seconds after a base 40 minutes ago.
@@ -152,7 +153,18 @@ const planEvents: E[] = [
   tool("P", "Bash", { command: "bun test src/settings", description: "Run the settings tests" }, 2385),
 ];
 
+// The user's real /review of PR #482 (MR-58): the overview, waiting for "ok".
+const review482Events: E[] = [
+  ...ready, onboarded,
+  { session: "R", kind: "ui.session_requested", payload: { prompt: "/review https://github.com/acme/platform/pull/482", kind: "review", cwd: "/Users/me/go/github.com/acme/platform", workspace: "personal" }, at: 10 },
+  { session: "R", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-R", model: "claude-opus-5-5" }, at: 11 },
+  { session: "R", kind: "flow.review_overview", payload: REVIEW482, at: 200 },
+  say("R", "The overview is up: 2 new findings, everything else was raised in earlier rounds.\n\nNext: reply `ok` to start snippet 1 of 2.", 201),
+  result("R", "overview", 202, 0.4),
+];
+
 export const SCENARIOS: Record<string, Scenario> = {
+  review482: { events: review482Events, docs: [] },
   plan: { events: planEvents, docs: [] },
   view: { events: viewEvents, docs: [] },
   shop: { events: shopEvents, docs: [] },

@@ -220,6 +220,7 @@ function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" 
 // What to say next after a turn (F11): the choices its last question offers, or the usual next
 // steps for finished work.
 export function nextReplies(s: SessionState): string[] {
+  if (s.review || s.address) return []; // flows carry their own actions (Start walkthrough, options)
   const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user" || t.kind === "view").at(-1);
   if (last?.kind === "view") return viewReplies(last.blocks);
   if (last?.kind === "text" && /\?\s*$/.test(last.text.trim())) {

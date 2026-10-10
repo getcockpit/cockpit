@@ -52,6 +52,13 @@ describe("now line", () => {
     expect(nowLine(s, s.heardAt + QUIET_MS)!.stale).toBe(true);
   });
 
+  test("sending to a long-idle session is not silence", () => {
+    const s = replay([...start(), text("hi"), result(), sent("go on")]).sessions.s1;
+    const sentAt = s.transcript.at(-1)!.at;
+    expect(nowLine(s, sentAt + 5000)!.stale).toBe(false);
+    expect(nowLine(s, sentAt + QUIET_MS)!.stale).toBe(true);
+  });
+
   test("a queued message says Claude finishes its step first", () => {
     const s = replay([...start(), toolUse("t1", "x"), sent("wait")]).sessions.s1;
     expect(nowLine(s)!.label).toMatch(/then reading your message/);
