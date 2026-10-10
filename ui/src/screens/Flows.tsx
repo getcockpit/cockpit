@@ -1,6 +1,6 @@
 import { keyOf } from "../components/keys";
 import { useEffect, useState } from "react";
-import { Key } from "../components";
+import { Key, ProgressTrack } from "../components";
 import { api } from "../state/store";
 import type { SessionState } from "../state/types";
 
@@ -97,10 +97,7 @@ export function ReviewView({ s }: { s: SessionState }) {
 
       {snip && (
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="mr-row" style={{ gap: 3 }}>
-            {Array.from({ length: Math.max(total, snip.n) }, (_, i) => <span key={i} style={{ flex: 1, height: 6, background: i + 1 < snip.n ? "var(--mr-ink-3)" : i + 1 === snip.n ? "var(--mr-ink)" : "var(--mr-well)" }} />)}
-          </div>
-          <div className="mr-row mr-ink2"><span>Snippet {snip.n} of {total || "?"}{snip.area ? ` · ${snip.area}` : ""}</span><span className="mr-grow" /><span>{noted.length} noted</span></div>
+          <ProgressTrack segs={Array.from({ length: Math.max(total, snip.n) }, (_, i) => (i + 1 < snip.n ? "done" : i + 1 === snip.n ? "current" : "todo"))} left={`Snippet ${snip.n} of ${total || "?"}${snip.area ? ` · ${snip.area}` : ""}`} right={`${noted.length} noted`} source={s.id} />
           <article style={{ display: "flex", flexDirection: "column", gap: 12, padding: "16px 18px", background: "var(--mr-tile)" }}>
             <strong style={{ fontSize: 18 }}>{snip.title}</strong>
             {snip.explain && <span className="mr-ink2">{snip.explain}</span>}
