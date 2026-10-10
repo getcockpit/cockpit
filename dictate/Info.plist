@@ -4,7 +4,7 @@
 <dict>
   <key>CFBundleIdentifier</key><string>dev.minorityreport.dictate</string>
   <key>CFBundleName</key><string>mr-dictate</string>
-  <key>NSMicrophoneUsageDescription</key><string>Minority report listens while you hold ⌥ Space so you can talk to your sessions.</string>
-  <key>NSSpeechRecognitionUsageDescription</key><string>Minority report turns what you say into text on this Mac.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Cockpit listens while you hold ⌥ Space so you can talk to your sessions.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Cockpit turns what you say into text on this Mac.</string>
 </dict>
 </plist>

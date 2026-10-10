@@ -1,5 +1,5 @@
 {
-  "name": "minority-report-sidecar",
+  "name": "cockpit-sidecar",
   "private": true,
   "version": "0.1.0",
   "type": "module",

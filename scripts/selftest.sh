@@ -10,7 +10,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=1 MR_DATA_DIR="$data" "$root/src-tauri/target/debug/minority-report"
+MR_SELFTEST=1 MR_DATA_DIR="$data" "$root/src-tauri/target/debug/Cockpit"
 db="$data/events.sqlite"
 echo "--- event kinds recorded"
 sqlite3 "$db" "SELECT kind, COUNT(*) FROM events GROUP BY kind ORDER BY MIN(id);"

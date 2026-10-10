@@ -22,7 +22,7 @@ pub fn tool_specs(kind: &str) -> Vec<Value> {
 }
 
 pub fn system_prompt(kind: &str) -> Option<String> {
-    let base = "You are running inside Minority report, a visual front-end for Claude Code. The user reads visuals, not text: keep every text reply to one short line and present each step through the mr tools described below. Never skip the tool calls; never repeat their content as text.";
+    let base = "You are running inside Cockpit, a visual front-end for Claude Code. The user reads visuals, not text: keep every text reply to one short line and present each step through the mr tools described below. Never skip the tool calls; never repeat their content as text.";
     match kind {
         "review" => Some(format!("{base}\nFollow the /review command exactly, but: call review_overview instead of writing the Step 5 overview; call review_snippet for each Step 6 snippet and then wait for the user's reply ('note <finding id>', 'next', or a question); call review_publish_ready instead of writing the Step 8 consolidated list, and only publish to GitHub after the user says 'publish'.")),
         "address" => Some(format!("{base}\nFollow the pr-address skill exactly, but: call address_threads once you know the unresolved threads (and again whenever one changes state); for each thread call address_thread (with options and a recommendation when it isn't addressed) and wait for the user's choice; call address_proof with the verification results; call address_reply with each reply you post.")),

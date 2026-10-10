@@ -21,7 +21,7 @@ pub struct Build {
 pub fn data_dir(app: &AppHandle) -> PathBuf {
     match std::env::var("MR_DATA_DIR") {
         Ok(d) if !d.is_empty() => PathBuf::from(d),
-        _ => app.path().app_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("minority-report")),
+        _ => app.path().app_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("cockpit")),
     }
 }
 
@@ -60,7 +60,7 @@ fn record(app: &AppHandle, kind: &str, payload: serde_json::Value) {
 pub fn selfbuild_start(app: AppHandle, worktree: String) -> Result<String, String> {
     let dir = PathBuf::from(crate::sidecar::expand_home(&app, &worktree));
     if !dir.join("src-tauri/tauri.conf.json").exists() {
-        return Err(format!("{} is not a Minority report checkout", dir.display()));
+        return Err(format!("{} is not a Cockpit checkout", dir.display()));
     }
     let id = ulid::Ulid::new().to_string();
     let sha = git(&dir, &["rev-parse", "--short", "HEAD"]);
@@ -84,7 +84,7 @@ pub fn selfbuild_start(app: AppHandle, worktree: String) -> Result<String, Strin
         let dest = builds_dir(&app2).join(&id2);
         let copy = || -> std::io::Result<()> {
             std::fs::create_dir_all(&dest)?;
-            std::fs::copy(target.join("minority-report"), dest.join("minority-report"))?;
+            std::fs::copy(target.join("Cockpit"), dest.join("Cockpit"))?;
             std::fs::copy(target.join("mr-sidecar"), dest.join("mr-sidecar"))?;
             std::fs::copy(target.join("mr-dictate"), dest.join("mr-dictate"))?;
             let meta = serde_json::json!({ "id": id2, "sha": format!("{sha}{}", if dirty { "+dirty" } else { "" }), "branch": branch, "worktree": dir, "at": ulid::Ulid::from_string(&id2).map(|u| u.timestamp_ms() as i64).unwrap_or(0) });
@@ -149,7 +149,7 @@ pub fn selfbuild_relaunch(app: AppHandle, build_id: String) -> Result<(), String
     // Tauri refuses to start from a path that goes through a symlink (e.g. /var on macOS), so
     // hand the supervisor fully resolved paths.
     let data = data_dir(&app).canonicalize().map_err(|e| e.to_string())?;
-    let bin = builds_dir(&app).join(&build_id).join("minority-report");
+    let bin = builds_dir(&app).join(&build_id).join("Cockpit");
     let bin = bin.canonicalize().map_err(|_| format!("no build {build_id}"))?;
     let script = data.join("relaunch.sh");
     std::fs::write(&script, supervisor_script()).map_err(|e| e.to_string())?;
