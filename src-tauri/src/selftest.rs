@@ -11,7 +11,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench")
+}
+
+/// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
+fn bench_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "bench")
 }
 
 fn workspace_mode() -> bool {
@@ -63,7 +68,10 @@ pub fn run(app: AppHandle) {
     }
     tauri::async_runtime::spawn(async move {
         tokio_sleep(Duration::from_secs(2)).await;
-        let dir = std::env::temp_dir().join(format!("mr-selftest-{}", ulid::Ulid::new()));
+        let dir = match std::env::var("MR_BENCH_CWD") {
+            Ok(d) if bench_mode() => std::path::PathBuf::from(d),
+            _ => std::env::temp_dir().join(format!("mr-selftest-{}", ulid::Ulid::new())),
+        };
         let _ = std::fs::create_dir_all(&dir);
         if resume_mode() {
             for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
@@ -76,7 +84,9 @@ pub fn run(app: AppHandle) {
             app.clone(),
             state,
             dir.display().to_string(),
-            if terminal_mode() {
+            if bench_mode() {
+                std::env::var("MR_BENCH_PROMPT").unwrap_or_default()
+            } else if terminal_mode() {
                 "Remember the word MANGO. Reply with exactly: OK".into()
             } else if flow_mode() {
                 "This is a UI test of the review tools, not a real review. Pretend you are reviewing a tiny change that adds a retry loop to fetch.ts. Call review_overview (tier 2, one '+' node 'retry loop', one net-new novelty item, total_snippets 1), then call review_snippet for snippet 1 of 1 with a short 3-line diff and exactly one finding with id f1, severity Important. Then stop and wait for my reply as the tool says.".into()
@@ -107,7 +117,7 @@ pub fn run(app: AppHandle) {
             eprintln!("[selftest] start failed: {e}");
             std::process::exit(1);
         }
-        tokio_sleep(Duration::from_secs(150)).await;
+        tokio_sleep(Duration::from_secs(if bench_mode() { 900 } else { 150 })).await;
         eprintln!("[selftest] timed out");
         std::process::exit(1);
     });
