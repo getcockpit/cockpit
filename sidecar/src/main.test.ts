@@ -79,3 +79,21 @@ test("limits are read without running a turn", async () => {
   expect(out.find((m) => m.type === "limits")).toMatchObject({ available: true, plan: "max", five_hour: { utilization: 0.42, resetsAt: 1791576000 }, seven_day: { utilization: 0.07, resetsAt: null } });
   expect(out.some((m) => m.type === "session_started")).toBe(false);
 });
+
+test("the model list is read without running a turn, with each model's effort levels", async () => {
+  const out = await run([{ type: "models" }], ["ready", "models"]);
+  const m = out.find((x) => x.type === "models") as { models: { value: string; efforts: string[] }[] };
+  expect(m.models.map((r) => r.value)).toEqual(["default", "haiku"]);
+  expect(m.models[0].efforts).toContain("xhigh");
+  expect(m.models[1].efforts).toEqual([]);
+});
+
+test("model and effort switch mid-session, and a refused switch reports why", async () => {
+  const out = await run(
+    [{ type: "start", session: "m1", cwd: "/tmp", prompt: "hi", model: "opus", effort: "high" }, { type: "set_model", session: "m1", model: "haiku", effort: "low" }, { type: "set_model", session: "m1", model: "broken" }],
+    ["ready", "model_set", "model_set"],
+  );
+  const sets = out.filter((x) => x.type === "model_set");
+  expect(sets[0]).toMatchObject({ session: "m1", model: "haiku", effort: "low", ok: true });
+  expect(sets[1]).toMatchObject({ session: "m1", model: "broken", ok: false, error: "unknown model" });
+});
