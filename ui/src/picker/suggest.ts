@@ -21,12 +21,11 @@ export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine:
 
   for (const d of docs) {
     const open = Object.values(d.blocks).filter(isOpenQuestion);
-    if (open.length) out.push({ id: `doc-q:${d.id}:${open.length}`, why: `${open.length} open question${open.length === 1 ? "" : "s"} in “${d.title}”`, what: open[0].takeaway, action: { kind: "open_doc", id: d.id }, label: "Decide", rank: 1 });
-    else if (d.pending_notes.length + d.pending_changes.length) out.push({ id: `doc-regen:${d.id}:${d.version}`, why: `Your notes on “${d.title}” aren't sent yet`, what: "Regenerate the doc with them", action: { kind: "open_doc", id: d.id }, label: "Open", rank: 2 });
+    // Open questions and prose asks live in the needs-you queue, never here too (F2).
+    if (!open.length && d.pending_notes.length + d.pending_changes.length) out.push({ id: `doc-regen:${d.id}:${d.version}`, why: `Your notes on “${d.title}” aren't sent yet`, what: "Regenerate the doc with them", action: { kind: "open_doc", id: d.id }, label: "Open", rank: 2 });
   }
   for (const s of sessions) {
     const t = pickTile(s);
-    if (t.state === "needs_you" && !s.pending.length) out.push({ id: `asked:${s.id}:${s.transcript.length}`, why: `“${s.title.slice(0, 40)}” asked you something`, what: t.doing.replace(/^Asks: /, ""), action: { kind: "open_session", id: s.id }, label: "Answer", rank: 1 });
     if (t.state === "interrupted" && s.sdkSessionId) out.push({ id: `resume:${s.id}`, why: "Stopped when the app closed", what: `Resume “${s.title.slice(0, 50)}”`, action: { kind: "resume", id: s.id }, label: "Resume", rank: 3 });
     if ((t.state === "idle" || t.state === "done") && Object.keys(s.files).length) out.push({ id: `diff:${s.id}:${Object.keys(s.files).length}`, why: `${Object.keys(s.files).length} files changed in “${s.title.slice(0, 40)}”`, what: "Review its changes", action: { kind: "open_session", id: s.id }, label: "Review", rank: 4 });
   }

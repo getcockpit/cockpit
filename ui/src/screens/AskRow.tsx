@@ -1,5 +1,7 @@
-import { useMemo } from "react";
-import { DecisionCard, type Answer } from "../components";
+import { useMemo, useState } from "react";
+import { DecisionCard, Key, type Answer } from "../components";
+import { docApi, isOpenQuestion, type Block, type Doc } from "../state/docs";
+import { sessionTitle } from "../picker/title";
 import { pickDecision } from "../picker/pick";
 import { api } from "../state/store";
 import type { PendingAsk, SessionState } from "../state/types";
@@ -22,11 +24,69 @@ export function AskRow({ s, a, selected, onOpen }: { s: SessionState; a: Pending
       <div className="mr-flag" />
       <div className="mr-qbody">
         <span className="mr-row" style={{ gap: 6 }}>
-          <strong className="mr-ink2">{s.cwd.split("/").filter(Boolean).pop() ?? s.cwd}</strong>
+          <strong className="mr-ink2">{where(s)}</strong>
           <span className="mr-dim">/</span>
-          <span className="mr-ink2 mr-ellipsis">{s.title.slice(0, 80)}</span>
+          <span className="mr-ink2 mr-ellipsis">{sessionTitle(s)}</span>
         </span>
         <DecisionCard spec={spec} onAnswer={answer} />
+      </div>
+    </div>
+  );
+}
+
+const where = (s: SessionState) => (s.repo ?? s.cwd).split("/").filter(Boolean).pop() ?? s.cwd;
+
+// A session that asked in prose (MR-41): the question on its own, quick replies it offers, and a
+// reply box, so it's answered from the queue like any card.
+export function ProseRow({ s, question, options, selected, onOpen }: { s: SessionState; question: string; options: string[]; selected?: boolean; onOpen: () => void }) {
+  const [text, setText] = useState("");
+  const send = (t: string) => { if (t.trim()) void api.send(s.id, t.trim()); };
+  return (
+    <div className="mr-qrow" data-mr="ProseAsk" data-mr-source={s.id} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
+      <div className="mr-flag" />
+      <div className="mr-qbody">
+        <span className="mr-row" style={{ gap: 6 }}>
+          <strong className="mr-ink2">{where(s)}</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{sessionTitle(s)}</span>
+          <span className="mr-grow" /><button type="button" className="mr-key" onClick={onOpen}>Open ↵</button>
+        </span>
+        <span className="mr-ask">{question}</span>
+        <form className="mr-row" style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); send(text); setText(""); }}>
+          {options.map((o, i) => <Key key={o} k={String(i + 1)} tone={i === 0 ? "primary" : undefined} onClick={() => send(o)}>{o}</Key>)}
+          <input className="mr-input" data-reply={s.id} value={text} onChange={(e) => setText(e.target.value)} placeholder={options.length ? "…or reply in your own words" : "Reply…"} aria-label={`Reply to ${sessionTitle(s)}`} style={{ flex: "1 1 240px", background: "var(--mr-well)" }} />
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// An open question in a working doc, decided right here. Deciding the last one sends the doc back
+// to its plan session so it carries on.
+export function DocQuestionRow({ d, b, selected, onOpen }: { d: Doc; b: Block; selected?: boolean; onOpen: () => void }) {
+  const options = (b.data?.options ?? []) as { label: string; description: string }[];
+  const decide = async (label: string) => {
+    await docApi.decide(d, b.id, label);
+    const stillOpen = Object.values(d.blocks).filter((x) => isOpenQuestion(x) && x.id !== b.id).length;
+    if (!stillOpen && d.session_id) await docApi.feedback(d, false).catch(() => {});
+  };
+  return (
+    <div className="mr-qrow" data-mr="DocQuestion" data-mr-source={`${d.id}:${b.id}`} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
+      <div className="mr-flag" />
+      <div className="mr-qbody">
+        <span className="mr-row" style={{ gap: 6 }}>
+          <strong className="mr-ink2">Plan</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{d.title}</span>
+          <span className="mr-grow" /><button type="button" className="mr-key" onClick={onOpen}>Open map ↵</button>
+        </span>
+        <span className="mr-ask">{b.takeaway}</span>
+        {options.length > 0 ? (
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))`, gap: "var(--mr-gap)" }}>
+            {options.map((o, i) => (
+              <button key={o.label} type="button" onClick={() => void decide(o.label)} style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
+                <span className="mr-row" style={{ gap: 8 }}><kbd className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-tile)" }}>{i + 1}</kbd><strong>{o.label}</strong></span>
+                <span className="mr-dim">{o.description}</span>
+              </button>
+            ))}
+          </div>
+        ) : <span className="mr-dim">{b.body}</span>}
       </div>
     </div>
   );
