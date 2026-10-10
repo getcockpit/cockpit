@@ -101,3 +101,15 @@
 .mr-link { border: 0; background: transparent; padding: 4px 6px; font: inherit; color: var(--mr-ink-2); cursor: pointer; }
 .mr-link:hover { color: var(--mr-ink); text-decoration: underline; }
 .mr-link kbd { font-size: 11px; color: var(--mr-ink-3); }
+
+/* Liveness (MR-59): the now line and message delivery marks. */
+.mr-now { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--mr-ink-2); }
+.mr-now[data-stale] { color: var(--mr-needs-ink); }
+.mr-now-dot { flex: none; width: 8px; height: 8px; background: var(--mr-ink-2); animation: mr-now-pulse 1.2s ease-in-out infinite; }
+.mr-now[data-stale] .mr-now-dot { background: var(--mr-needs); animation: none; }
+@keyframes mr-now-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.mr-delivery { font-size: 12px; padding: 1px 6px; white-space: nowrap; color: var(--mr-ink-2); background: var(--mr-tile); }
+.mr-delivery[data-d="queued"], .mr-delivery[data-d="sending"] { color: var(--mr-ink); }
+.mr-delivery[data-d="taken"] { background: var(--mr-ink); color: var(--mr-tile); font-weight: 700; }
+.mr-delivery[data-d="answered"] { color: var(--mr-done); background: transparent; }
+.mr-delivery[data-d="lost"] { color: var(--mr-error); font-weight: 700; }
