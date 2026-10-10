@@ -19,12 +19,16 @@ import { ReviewChanges } from "./ReviewChanges";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
+// The app's own repo never changes while it runs: ask once (MR-57).
+let repoOnce: Promise<string> | null = null;
+const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
+
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
 export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
-    invoke<string>("app_repo_path").then((repo) => {
+    appRepo().then((repo) => {
       const name = repo.split("/").filter(Boolean).pop() ?? "";
       setIsApp(s.cwd.startsWith(repo) || (!!s.repo && s.repo === repo) || s.cwd.includes(`/${name}-worktrees/`));
     }).catch(() => setIsApp(false));
