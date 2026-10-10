@@ -46,7 +46,7 @@ function Takeaway({ b }: { b: ViewBlock }) {
 
 // Tally bar: a batch of outcomes as one bar, then the counts.
 const TALLY: Record<string, string> = { done: "var(--mr-done)", now: "var(--mr-ink)", deferred: "var(--mr-ink-3)", todo: "var(--mr-well)", error: "var(--mr-error)" };
-function Tally({ b }: { b: ViewBlock }) {
+export function Tally({ b }: { b: ViewBlock }) {
   const items = list(b.items).map((x) => ({ n: Math.max(0, Number(x.n) || 0), label: str(x.label), color: TALLY[str(x.tone)] ?? TALLY.now }));
   return (
     <section style={{ ...card, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -61,7 +61,7 @@ function Tally({ b }: { b: ViewBlock }) {
 }
 
 // Verification checklist: "done" only when the proof is green.
-function Checklist({ b }: { b: ViewBlock }) {
+export function Checklist({ b }: { b: ViewBlock }) {
   return (
     <section style={{ ...card, display: "flex", flexDirection: "column", gap: 6 }}>
       {list(b.items).map((c, i) => (
@@ -149,40 +149,49 @@ function Next({ b, onReply, live }: { b: ViewBlock; onReply: (t: string) => void
 }
 
 // Severity scale: review findings ranked the same way everywhere. Length = severity.
+// SevBars, TierBadge and NoveltyTag are shared with the Review and Address flows.
 const SEVERITY: Record<string, { n: number; color: string; name: string }> = {
   critical: { n: 4, color: "var(--mr-error)", name: "Critical" },
   important: { n: 3, color: "var(--mr-needs-ink)", name: "Important" },
   suggestion: { n: 2, color: "var(--mr-ink-2)", name: "Suggestion" },
   nitpick: { n: 1, color: "var(--mr-ink-3)", name: "Nitpick" },
 };
+export function SevBars({ severity }: { severity: string }) {
+  const s = SEVERITY[severity.toLowerCase()] ?? SEVERITY.suggestion;
+  return (
+    <span style={{ flex: "none", display: "inline-flex", alignItems: "baseline", gap: 10 }}>
+      <span style={{ display: "inline-flex", gap: 2, alignSelf: "center" }} aria-hidden="true">
+        {[1, 2, 3, 4].map((k) => <span key={k} style={{ width: 10, height: 6, borderRadius: 1, background: k <= s.n ? s.color : "var(--mr-lamp-off)" }} />)}
+      </span>
+      <span style={{ width: 92, fontWeight: 600, color: s.color }}>{s.name}</span>
+    </span>
+  );
+}
 function Findings({ b }: { b: ViewBlock }) {
   return (
     <section style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }}>
-      {list(b.items).map((f, i) => {
-        const s = SEVERITY[str(f.severity).toLowerCase()] ?? SEVERITY.suggestion;
-        return (
-          <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <span style={{ flex: "none", display: "inline-flex", gap: 2, alignSelf: "center" }} aria-hidden="true">
-              {[1, 2, 3, 4].map((k) => <span key={k} style={{ width: 10, height: 6, borderRadius: 1, background: k <= s.n ? s.color : "var(--mr-band)" }} />)}
-            </span>
-            <span style={{ flex: "none", width: 92, fontWeight: 600, color: s.color }}>{s.name}</span>
-            <span className="mr-grow">{inline(str(f.title))}</span>
-            {f.where ? <span className="mr-mono mr-dim" style={{ flex: "none", fontSize: 11 }}>{str(f.where)}</span> : null}
-          </div>
-        );
-      })}
+      {list(b.items).map((f, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <SevBars severity={str(f.severity)} />
+          <span className="mr-grow">{inline(str(f.title))}</span>
+          {f.where ? <span className="mr-mono mr-dim" style={{ flex: "none", fontSize: 11 }}>{str(f.where)}</span> : null}
+        </div>
+      ))}
     </section>
   );
 }
 
 // Tier badge: what's at stake, before anything else. One line, one tier.
+export function TierBadge({ tier, title }: { tier: number; title?: string }) {
+  const t = Math.max(1, Math.min(3, Math.round(tier) || 2));
+  const badge = t === 1 ? { background: "var(--mr-ink)", color: "var(--mr-base)" } : t === 2 ? { boxShadow: "inset 0 0 0 1px var(--mr-ink)" } : { outline: "1px dashed var(--mr-ink-3)", outlineOffset: -1, color: "var(--mr-ink-2)" };
+  return <span title={title} style={{ flex: "none", padding: "2px 8px", fontWeight: 600, ...badge }}>Tier {t}</span>;
+}
 function Tier({ b }: { b: ViewBlock }) {
-  const tier = Math.max(1, Math.min(3, Math.round(Number(b.tier)) || 2));
-  const badge = tier === 1 ? { background: "var(--mr-ink)", color: "var(--mr-base)" } : tier === 2 ? { boxShadow: "inset 0 0 0 1px var(--mr-ink)" } : { outline: "1px dashed var(--mr-ink-3)", outlineOffset: -1, color: "var(--mr-ink-2)" };
   return (
     <div style={{ ...card, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-      <span style={{ padding: "2px 8px", fontWeight: 600, ...badge }}>Tier {tier}</span>
-      <span style={{ color: tier === 3 ? "var(--mr-ink-2)" : undefined }}>{inline(str(b.label))}</span>
+      <TierBadge tier={Number(b.tier)} />
+      <span style={{ color: Number(b.tier) === 3 ? "var(--mr-ink-2)" : undefined }}>{inline(str(b.label))}</span>
       {b.detail ? <span className="mr-dim">{inline(str(b.detail))}</span> : null}
     </div>
   );
@@ -195,19 +204,21 @@ const NOVELTY: Record<string, { label: string; style: CSSProperties }> = {
   overlapping: { label: "Overlapping", style: { background: "var(--mr-needs)", color: "var(--mr-ink)" } },
   duplicate: { label: "Duplicate", style: { background: "color-mix(in srgb, var(--mr-error) 22%, var(--mr-tile))", color: "var(--mr-error)" } },
 };
+// An unknown verdict shows as written, in the neutral style, rather than being relabelled.
+export function NoveltyTag({ verdict }: { verdict: string }) {
+  const v = NOVELTY[verdict.trim().toLowerCase().replace(/^net-new$/, "new")] ?? { label: verdict, style: NOVELTY.new.style };
+  return <span style={{ flex: "none", minWidth: 92, padding: "1px 8px", fontSize: 11, fontWeight: 600, textAlign: "center", ...v.style }}>{v.label}</span>;
+}
 function Novelty({ b }: { b: ViewBlock }) {
   return (
     <section style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }}>
-      {list(b.items).map((n, i) => {
-        const v = NOVELTY[str(n.verdict).toLowerCase().replace("net-new", "new")] ?? NOVELTY.new;
-        return (
-          <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <span style={{ flex: "none", width: 92, padding: "1px 8px", fontSize: 11, fontWeight: 600, textAlign: "center", ...v.style }}>{v.label}</span>
-            <span className="mr-grow">{inline(str(n.what))}</span>
-            {n.where ? <span className="mr-mono mr-dim" style={{ flex: "none", fontSize: 11 }}>{str(n.where)}</span> : null}
-          </div>
-        );
-      })}
+      {list(b.items).map((n, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <NoveltyTag verdict={str(n.verdict) || "new"} />
+          <span className="mr-grow">{inline(str(n.what))}</span>
+          {n.where ? <span className="mr-mono mr-dim" style={{ flex: "none", fontSize: 11 }}>{str(n.where)}</span> : null}
+        </div>
+      ))}
     </section>
   );
 }
@@ -248,23 +259,30 @@ function Tradeoff({ b, onReply, live }: { b: ViewBlock; onReply: (t: string) => 
 }
 
 // Fix options: concrete fixes for one finding, the recommended one first, and a defer.
-function FixOptions({ b, onReply, live }: { b: ViewBlock; onReply: (t: string) => void; live: boolean }) {
-  const opts = list(b.options).map((o) => ({ label: str(o.label), detail: str(o.detail), rec: o.recommended === true }));
-  const ordered = [...opts.filter((o) => o.rec), ...opts.filter((o) => !o.rec)];
-  const rows = [...ordered.map((o, k) => ({ ...o, letter: String.fromCharCode(65 + k) })), ...(b.defer === false ? [] : [{ label: "Defer, with a reply explaining why", detail: "", rec: false, letter: "" }])];
+// Options that carry an `id` keep their order and show it as their key (the Address flow's
+// a/b/c answers); `picked` marks the one chosen and `onPick` replaces the default reply.
+export type FixOption = { id?: string; label: string; detail?: string; recommended?: boolean };
+export function FixOptions({ b, onReply, live, picked, onPick }: { b: ViewBlock; onReply: (t: string) => void; live: boolean; picked?: string; onPick?: (o: FixOption) => void }) {
+  const opts = list(b.options).map((o) => ({ id: o.id === undefined ? undefined : str(o.id), label: str(o.label), detail: str(o.detail), recommended: o.recommended === true }));
+  const keyed = opts.some((o) => o.id);
+  const ordered = keyed ? opts : [...opts.filter((o) => o.recommended), ...opts.filter((o) => !o.recommended)];
+  const rows = [...ordered.map((o, k) => ({ ...o, letter: o.id ?? String.fromCharCode(65 + k) })), ...(b.defer === false || keyed ? [] : [{ id: undefined, label: "Defer, with a reply explaining why", detail: "", recommended: false, letter: "" }])];
   return (
     <section style={{ ...card, display: "flex", flexDirection: "column", gap: 6 }}>
       {b.finding ? <strong style={{ marginBottom: 2 }}>{inline(str(b.finding))}</strong> : null}
       {rows.map((o, k) => {
-        const text = o.letter ? `${o.letter} · ${o.label}` : o.label;
+        const on = picked !== undefined && o.id === picked;
+        const text = o.letter && !keyed ? `${o.letter} · ${o.label}` : o.label;
+        const pick = () => (onPick ? onPick(o) : onReply(o.letter ? `Go with ${text}` : "Defer this finding and draft a reply explaining why"));
         return (
-          <button key={k} type="button" disabled={!live} onClick={() => onReply(o.letter ? `Go with ${text}` : "Defer this finding and draft a reply explaining why")}
+          <button key={k} type="button" disabled={!live && !on} onClick={() => live && pick()}
             style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "10px 12px", border: 0, textAlign: "left", font: "inherit", cursor: live ? "pointer" : "default",
-              background: o.rec ? "var(--mr-well)" : "transparent", boxShadow: o.rec ? "inset 0 0 0 1.5px var(--mr-ink)" : undefined, color: o.letter ? "var(--mr-ink)" : "var(--mr-ink-2)" }}>
+              background: on ? "var(--mr-ink)" : o.recommended ? "var(--mr-well)" : "transparent", boxShadow: o.recommended && !on ? "inset 0 0 0 1.5px var(--mr-ink)" : undefined, color: on ? "var(--mr-tile)" : o.letter ? "var(--mr-ink)" : "var(--mr-ink-2)" }}>
+            {keyed && <kbd className="mr-mono" style={{ flex: "none", padding: "0 6px", background: on ? "transparent" : "var(--mr-well)" }}>{o.letter}</kbd>}
             <span>
-              <span style={{ fontWeight: o.rec ? 600 : 400 }}>{inline(text)}</span>
-              {o.rec ? <span className="mr-dim"> recommended</span> : null}
-              {o.detail ? <span className="mr-ink2"> · {inline(o.detail)}</span> : null}
+              <span style={{ fontWeight: o.recommended || on ? 600 : 400 }}>{inline(text)}</span>
+              {o.recommended ? <span style={{ opacity: 0.7 }}> recommended</span> : null}
+              {o.detail ? <span style={{ opacity: 0.85 }}> · {inline(o.detail)}</span> : null}
             </span>
           </button>
         );
@@ -274,22 +292,27 @@ function FixOptions({ b, onReply, live }: { b: ViewBlock; onReply: (t: string) =
 }
 
 // Thread card: a reviewer comment with its real state. A reply is not a resolution.
+// The Address flow adds what happened to it in this session (already, fixed, deferred, open).
 const THREAD: Record<string, { label: string; color: string }> = {
   unresolved: { label: "Unresolved", color: "var(--mr-needs-ink)" },
+  open: { label: "Not addressed yet", color: "var(--mr-needs-ink)" },
   replied: { label: "Replied · still open", color: "var(--mr-needs-ink)" },
   resolved: { label: "Resolved", color: "var(--mr-done)" },
+  already: { label: "Already addressed", color: "var(--mr-done)" },
+  fixed: { label: "Fixed in this session", color: "var(--mr-done)" },
+  deferred: { label: "Pushed back", color: "var(--mr-ink-3)" },
 };
-function Thread({ b }: { b: ViewBlock }) {
+export function Thread({ b }: { b: ViewBlock }) {
   const st = THREAD[str(b.state).toLowerCase()] ?? THREAD.unresolved;
   return (
     <section style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontWeight: 600 }}>{str(b.author).replace(/^@?/, "@")}</span>
+        <span style={{ fontWeight: 600 }}>{str(b.author) ? str(b.author).replace(/^@?/, "@") : "Reviewer"}</span>
         {b.where ? <span className="mr-dim">{str(b.where)}</span> : null}
         <span className="mr-grow" />
         <span style={{ color: st.color, fontWeight: 600 }}>{st.label}</span>
       </div>
-      <span>{inline(str(b.body))}</span>
+      <span style={{ fontSize: 15 }}>{inline(str(b.body))}</span>
       {b.note ? <span className="mr-dim">{inline(str(b.note))}</span> : null}
     </section>
   );
