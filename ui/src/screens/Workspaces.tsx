@@ -1,6 +1,7 @@
+import { needsQueue } from "../picker/queue";
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { isOpenQuestion, type Doc } from "../state/docs";
+import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 
 // Workspace tabs (decision 24). A background tab shows how many things need you in it.
@@ -9,9 +10,9 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const needs = (ws: string) => {
-    const sessions = Object.values(state.sessions).filter((s) => s.workspace === ws && !s.archivedAt);
-    const ids = new Set(sessions.map((s) => s.id));
-    return sessions.reduce((a, s) => a + s.pending.length, 0) + docs.filter((d) => (d.session_id ? ids.has(d.session_id) : ws === "personal")).reduce((a, d) => a + Object.values(d.blocks).filter(isOpenQuestion).length, 0);
+    const sessions = Object.values(state.sessions).filter((x) => x.workspace === ws);
+    const ids = new Set(sessions.map((x) => x.id));
+    return needsQueue(sessions, docs.filter((d) => (d.session_id ? ids.has(d.session_id) : ws === "personal"))).length;
   };
   const loggedOut = (ws: string) => Object.values(state.sessions).some((s) => s.workspace === ws && /not logged in|\/login/i.test(s.error ?? "") );
   const create = async () => {
