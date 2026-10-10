@@ -122,7 +122,8 @@
 .mr-track[data-live] .mr-track-fill i[data-seg="current"] { animation: mr-track-pulse 1.2s ease-in-out infinite; }
 .mr-track[data-stale] .mr-track-fill i[data-seg="current"] { background: var(--mr-needs); animation: none; }
 .mr-track-cap { display: flex; gap: 12px; color: var(--mr-ink-2); font-variant-numeric: tabular-nums; min-width: 0; }
-.mr-track-cap > :first-child { flex: 1; }
+.mr-track-cap > .mr-ellipsis { flex: 1; }
+.mr-track-pct { flex: none; color: var(--mr-ink); font-size: 16px; font-weight: 700; line-height: 1; align-self: center; }
 .mr-track-right { flex: none; font-family: var(--mr-mono); font-size: 12px; }
 .mr-track[data-stale] .mr-track-right { color: var(--mr-needs-ink); }
 .mr-mark[data-d="sending"], .mr-mark[data-d="queued"] { color: var(--mr-ink-2); font-weight: 400; }
