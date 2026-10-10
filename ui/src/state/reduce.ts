@@ -108,6 +108,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       break;
     case "ui.message_sent":
       s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at }];
+      if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
       break;
     case "sidecar.sdk":

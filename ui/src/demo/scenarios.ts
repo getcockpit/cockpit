@@ -63,7 +63,34 @@ const planDoc: Doc = {
   ].map((b, i) => [b.id, { data: null, decision: null, updated: "", ...b, order: i }])),
 } as Doc;
 
+// Review (J8): /review on a PR, as an overview then snippets with findings.
+export const REVIEW_SNIPPETS = [
+  { n: 1, total: 3, area: "Payments", title: "Retry loop around the charge call", file: "src/payments/charge.ts", code: "@@ -40,6 +40,14 @@\n-  const res = await stripe.charge(req)\n+  for (let i = 0; i < 3; i++) {\n+    try { return await stripe.charge(req) }\n+    catch (e) { await sleep(2 ** i * 100) }\n+  }", explain: "Retries a failed charge up to three times with backoff.", good: "Backoff is bounded.", findings: [{ id: "f1", severity: "blocking", at: "charge.ts:42", text: "Retrying a charge without an idempotency key can double-charge the customer." }, { id: "f2", severity: "nit", at: "charge.ts:44", text: "Swallows the last error; rethrow after the final attempt." }] },
+  { n: 2, total: 3, area: "Payments", title: "Webhook marks the order paid", file: "src/payments/webhook.ts", code: "@@ -12,3 +12,6 @@\n+  if (event.type === 'charge.succeeded') {\n+    await orders.markPaid(event.data.order_id)\n+  }", explain: "Marks the order paid when Stripe confirms.", good: "Simple and idempotent.", findings: [] },
+  { n: 3, total: 3, area: "Tests", title: "Retry test", file: "src/payments/charge.test.ts", code: "@@ +1,8 @@\n+test('retries 3 times', async () => { /* … */ })", explain: "Covers the retry count.", good: "", findings: [{ id: "f3", severity: "should", at: "charge.test.ts:1", text: "Add a test that the idempotency key is reused across retries." }] },
+];
+const reviewEvents: E[] = [
+  ...ready, onboarded,
+  { session: "R", kind: "ui.session_requested", payload: { prompt: "/review https://github.com/acme/shop/pull/482", kind: "review", cwd: "/Users/me/code/shop", workspace: "personal" }, at: 10 },
+  { session: "R", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-R", model: "claude-opus-5-5" }, at: 11 },
+  { session: "R", kind: "flow.review_overview", payload: { pr: "#482", title: "Checkout: retry failed payments", tier: 2, tier_label: "Careful", summary: "Adds retries around the Stripe charge and a webhook that marks orders paid.", nodes: [{ label: "charge.ts", mark: "!", finding: "f1" }, { label: "webhook.ts" }, { label: "charge.test.ts", mark: "?" }], novelty: [{ label: "Retry with backoff", what: "First retry logic in payments", where: "charge.ts" }], questions: ["Is the charge idempotent on Stripe's side?"], prior_threads: 0, total_snippets: 3 }, at: 30 },
+  { session: "R", kind: "flow.review_snippet", payload: REVIEW_SNIPPETS[0], at: 40 },
+  { session: "R", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "snippet 1", total_cost_usd: 0.2 } }, at: 41 },
+];
+
+// Address (J8): /pr-address on your PR, thread by thread.
+const addressEvents: E[] = [
+  ...ready, onboarded,
+  { session: "X", kind: "ui.session_requested", payload: { prompt: "/pr-address 479", kind: "address", cwd: "/Users/me/code/billing", workspace: "personal" }, at: 10 },
+  { session: "X", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-X", model: "claude-opus-5-5" }, at: 11 },
+  { session: "X", kind: "flow.address_threads", payload: { pr: "#479", round: "Round 2", moved_commits: 1, threads: [{ id: "t1", at: "export.ts:30", reviewer: "dana", short: "Stream rows instead of loading all", state: "open" }, { id: "t2", at: "export.ts:58", reviewer: "dana", short: "Name the job queue constant", state: "open" }, { id: "t3", at: "README.md:4", reviewer: "lee", short: "Typo", state: "resolved" }] }, at: 30 },
+  { session: "X", kind: "flow.address_thread", payload: { id: "t1", reviewer: "dana", at: "export.ts:30", body: "This loads every invoice into memory. Big accounts will OOM the worker. Can we stream?", verdict: "Valid — 2M-row accounts exist (see load test).", evidence_file: "src/export.ts", evidence_code: "const rows = await db.invoices.findMany({ where })", options: [{ id: "a", label: "Stream with a cursor", detail: "Batches of 5k rows, constant memory", recommended: true }, { id: "b", label: "Paginate by month", detail: "Simpler; up to 31 queries" }, { id: "c", label: "Push back", detail: "Reply that v1 caps exports at 100k rows" }] }, at: 40 },
+  { session: "X", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "thread 1", total_cost_usd: 0.2 } }, at: 41 },
+];
+
 export const SCENARIOS: Record<string, Scenario> = {
+  review: { events: reviewEvents, docs: [] },
+  address: { events: addressEvents, docs: [] },
   fresh: { events: [...ready], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },

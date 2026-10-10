@@ -6,7 +6,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import type { MrEvent } from "../state/types";
 import type { Doc } from "../state/docs";
-import { SCENARIOS, type Scenario } from "./scenarios";
+import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
 let seq = 0;
 const events: MrEvent[] = [];
@@ -62,6 +62,31 @@ function diagramFor(text: string) {
   return { title: null, nodes, edges: nodes.slice(1).map((n, i) => ({ from: nodes[i].id, to: n.id })) };
 }
 
+// Scripted /review and /pr-address replies, so the J8 flows can be walked end to end.
+function scripted(sid: string, text: string): boolean {
+  const done = (r: string) => later(700, () => sdk(sid, { type: "result", is_error: false, result: r, total_cost_usd: 0.04 }));
+  if (sid === "R") {
+    const shown = events.filter((e) => e.session_id === "R" && e.kind === "flow.review_snippet").length;
+    if (text === "next" && shown < REVIEW_SNIPPETS.length) { later(500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[shown])); done("snippet"); return true; }
+    if (text === "next") {
+      const noted = events.filter((e) => e.session_id === "R" && e.kind === "ui.review_noted").map((e) => String(e.payload.finding_id));
+      const all = REVIEW_SNIPPETS.flatMap((x) => x.findings);
+      later(500, () => record("R", "flow.review_publish_ready", { comments: all.filter((f) => noted.includes(f.id)).map((f) => ({ severity: f.severity, at: f.at, text: f.text })), verdict: noted.length ? "Request changes" : "Approve", dropped: 0 }));
+      done("ready"); return true;
+    }
+    if (text === "publish") { later(500, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Published the review on PR #482." }] } })); done("published"); return true; }
+    if (text.startsWith("note ")) { done("noted"); return true; }
+  }
+  if (sid === "X" && text.startsWith("Option ")) {
+    const cur = [...events].reverse().find((e) => e.session_id === "X" && e.kind === "flow.address_thread")?.payload.id as string;
+    later(500, () => record("X", "flow.address_proof", { id: cur, checks: [{ label: "Tests pass", ok: true, proof: "211 passed" }, { label: "Memory stays flat on 2M rows", ok: true, proof: "peak 180 MB" }] }));
+    later(900, () => record("X", "flow.address_reply", { id: cur, text: "Switched to a cursor stream in batches of 5k rows; memory stays flat on the 2M-row fixture.", sha: "a1b2c3d", posted: false }));
+    if (cur === "t1") later(1300, () => record("X", "flow.address_thread", { id: "t2", reviewer: "dana", at: "export.ts:58", body: "Magic string 'exports' — make it a named constant.", verdict: "Valid, trivial.", evidence_file: "src/export.ts", evidence_code: "queue.add('exports', job)", options: [{ id: "a", label: "Add EXPORT_QUEUE constant", recommended: true }, { id: "b", label: "Push back" }] }));
+    done("addressed"); return true;
+  }
+  return false;
+}
+
 function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
   switch (cmd) {
     case "events_list": return events;
@@ -85,11 +110,14 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       runAgent(sid, String(a.prompt ?? ""));
       return sid;
     }
-    case "session_send":
-      record(String(a.session), "ui.message_sent", { text: a.text });
+    case "session_send": {
+      const sid = String(a.session), text = String(a.text);
+      record(sid, "ui.message_sent", { text });
+      if (scripted(sid, text)) return null;
       later(800, () => sdk(String(a.session), { type: "assistant", message: { content: [{ type: "text", text: `Got it: ${String(a.text).slice(0, 80)}. Working on it.` }] } }));
       later(1600, () => sdk(String(a.session), { type: "result", is_error: false, result: "ok", total_cost_usd: 0.05 }));
       return null;
+    }
     case "permission_respond": {
       const allowed = (a.decision as { behavior?: string })?.behavior === "allow";
       record(String(a.session), "ui.permission_answered", { request_id: a.requestId, decision: a.decision });

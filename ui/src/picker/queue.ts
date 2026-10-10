@@ -1,6 +1,6 @@
 import { isOpenQuestion, type Block, type Doc } from "../state/docs";
 import type { PendingAsk, SessionState } from "../state/types";
-import { pickTile } from "./pick";
+import { flowWaiting, pickTile } from "./pick";
 
 // The one needs-you queue (MR-41, JTBD J3): everything waiting on the user, in one list, oldest
 // first. Every count in the app (lamp, workspace badge, section header) reads from this, so they
@@ -9,7 +9,8 @@ import { pickTile } from "./pick";
 export type QueueItem =
   | { kind: "ask"; key: string; s: SessionState; a: PendingAsk; at: number }
   | { kind: "prose"; key: string; s: SessionState; question: string; options: string[]; at: number }
-  | { kind: "doc"; key: string; d: Doc; b: Block; at: number };
+  | { kind: "doc"; key: string; d: Doc; b: Block; at: number }
+  | { kind: "flow"; key: string; s: SessionState; what: string; at: number };
 
 /** The last question-like paragraph of a finished turn, for showing it on its own. */
 export function proseQuestion(text: string): string {
@@ -41,7 +42,9 @@ export function needsQueue(sessions: SessionState[], docs: Doc[]): QueueItem[] {
   for (const s of sessions) {
     if (s.archivedAt) continue;
     for (const a of s.pending) out.push({ kind: "ask", key: `ask:${a.requestId}`, s, a, at: a.at });
-    if (!s.pending.length && pickTile(s).state === "needs_you") {
+    const flow = s.pending.length ? null : flowWaiting(s);
+    if (flow) out.push({ kind: "flow", key: `flow:${s.id}:${s.transcript.length}`, s, what: flow, at: s.lastActivity });
+    else if (!s.pending.length && pickTile(s).state === "needs_you") {
       const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);
       if (last && last.kind === "text") {
         const question = proseQuestion(last.text);

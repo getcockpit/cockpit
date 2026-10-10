@@ -33,6 +33,7 @@ export type ReviewFlow = {
   snippets: Record<number, { n: number; total?: number; area?: string; title?: string; file?: string; code?: string; explain?: string; good?: string; findings?: ReviewFinding[] }>;
   current: number | null;
   noted: string[];
+  published?: boolean; // you pressed Publish; the flow is over
   publish?: { comments?: { severity: string; at?: string; text: string; suggestion?: string }[]; verdict?: string; dropped?: number; note?: string };
 };
 export type AddressThread = { id: string; at?: string; reviewer?: string; short?: string; state?: string };

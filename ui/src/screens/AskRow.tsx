@@ -87,3 +87,20 @@ export function DocQuestionRow({ d, b, session, selected, onOpen }: { d: Doc; b:
     </div>
   );
 }
+
+// A Review/Address flow waiting on its next step (J8). The flow view is where you act, so this row
+// says what's waiting and opens it.
+export function FlowRow({ s, what, selected, onOpen }: { s: SessionState; what: string; selected?: boolean; onOpen: () => void }) {
+  return (
+    <div className="mr-qrow" data-mr="FlowWaiting" data-mr-source={s.id} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
+      <div className="mr-flag" />
+      <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
+          <span className="mr-row" style={{ gap: 6 }}><strong className="mr-ink2">{s.kind === "review" ? "Review" : "Address"}</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{sessionTitle(s)}</span></span>
+          <span className="mr-ask">{what}</span>
+        </span>
+        <Key k="↵" tone="primary" onClick={onOpen}>{s.kind === "review" ? "Continue review" : "Continue"}</Key>
+      </div>
+    </div>
+  );
+}
