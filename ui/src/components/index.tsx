@@ -8,13 +8,11 @@ export function Lamps({ children }: { children: ReactNode }) {
   return <section aria-label="Status lamps" className="mr-lamps" style={{ ["--n" as string]: n }}>{children}</section>;
 }
 
-export function Lamp({ value, label, on }: { value: string | number; label: string; on?: "needs" | "error" | "plain" | false }) {
-  return (
-    <div className="mr-lamp" data-mr="Lamp" data-mr-source={label} data-on={on || undefined}>
-      <b>{value}</b>
-      <span>{label}</span>
-    </div>
-  );
+export function Lamp({ value, label, on, onClick }: { value: string | number; label: string; on?: "needs" | "error" | "plain" | false; onClick?: () => void }) {
+  const body = <><b>{value}</b><span>{label}</span></>;
+  return onClick
+    ? <button type="button" className="mr-lamp" data-mr="Lamp" data-mr-source={label} data-on={on || undefined} onClick={onClick} aria-label={`${value} ${label}`} style={{ border: 0, font: "inherit", cursor: "pointer" }}>{body}</button>
+    : <div className="mr-lamp" data-mr="Lamp" data-mr-source={label} data-on={on || undefined}>{body}</div>;
 }
 
 export function Key({ k, children, tone, onClick, disabled }: { k?: string; children: ReactNode; tone?: "primary" | "needs"; onClick?: () => void; disabled?: boolean }) {

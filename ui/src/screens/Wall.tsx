@@ -7,10 +7,12 @@ import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, Lamp, Lamps, Sparkline, StateMark } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
-import { isOpenQuestion, type Doc } from "../state/docs";
+import { isOpenQuestion, docApi, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import type { AppState, SessionState } from "../state/types";
-import { answerAsk, AskRow } from "./AskRow";
+import { answerAsk, AskRow, DocQuestionRow, ProseRow } from "./AskRow";
+import { needsQueue } from "../picker/queue";
+import { sessionTitle } from "../picker/title";
 
 // The wall (decision 17): lamps, a keyboard-driven needs-you queue, a stable running grid that
 // never reorders by state, and a compact ready-to-review tray.
@@ -20,8 +22,8 @@ const REVIEW = new Set<TileSpec["state"]>(["idle", "done", "interrupted", "error
 export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onStart }: { state: AppState; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
-  const asks = sessions.flatMap((s) => s.pending.map((a) => ({ s, a })));
-  const openQs = docs.flatMap((d) => Object.values(d.blocks).filter(isOpenQuestion).map((b) => ({ d, b })));
+  // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
+  const queue = useMemo(() => needsQueue(sessions, docs), [sessions, docs]);
   const running = tiles.filter((t) => !REVIEW.has(t.tile.state));
   const review = tiles.filter((t) => REVIEW.has(t.tile.state));
   const count = (k: TileSpec["state"]) => tiles.filter((t) => t.tile.state === k).length;
@@ -49,24 +51,29 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
     else onOpen(await api.start(cwd, promptFor(a.mode, a.value), a.mode));
   };
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const discover = async (s: SessionState) => onOpen(await api.start(s.cwd, `Side thread about the session "${s.title}" (working in ${s.cwd}). Without changing anything, look at what it has done so far (git diff, files) and report briefly: risks, anything it may have missed, and simpler alternatives.`, "blank", false));
 
-  useEffect(() => { if (sel >= asks.length) setSel(Math.max(0, asks.length - 1)); }, [asks.length, sel]);
+  useEffect(() => { if (sel >= queue.length) setSel(Math.max(0, queue.length - 1)); }, [queue.length, sel]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
       // An overlay (intro, picker, settings) owns the keyboard while it's open.
-      if (typing || e.metaKey || e.ctrlKey || !asks.length || document.querySelector('[role="dialog"]')) return;
-      const cur = asks[sel];
-      if (keyOf(e) === "j") { e.preventDefault(); setSel((x) => Math.min(asks.length - 1, x + 1)); }
-      else if (keyOf(e) === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
-      else if (keyOf(e) === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
-      else if (keyOf(e) === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
-      else if (keyOf(e) === "Enter") { e.preventDefault(); onOpen(cur.s.id); }
+      if (typing || e.metaKey || e.ctrlKey || !queue.length || document.querySelector('[role="dialog"]')) return;
+      const cur = queue[sel];
+      const k = keyOf(e);
+      if (k === "j") { e.preventDefault(); setSel((x) => Math.min(queue.length - 1, x + 1)); }
+      else if (k === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
+      else if (cur.kind === "ask" && k === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
+      else if (cur.kind === "ask" && k === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
+      else if (cur.kind === "prose" && /^[1-9]$/.test(k) && cur.options[Number(k) - 1]) { e.preventDefault(); void api.send(cur.s.id, cur.options[Number(k) - 1]); }
+      else if (cur.kind === "prose" && k === "r") { e.preventDefault(); (document.querySelector(`[data-reply="${cur.s.id}"]`) as HTMLInputElement | null)?.focus(); }
+      else if (cur.kind === "doc" && /^[1-9]$/.test(k)) { const o = (cur.b.data?.options ?? [])[Number(k) - 1]; if (o) { e.preventDefault(); void docApi.decide(cur.d, cur.b.id, o.label); } }
+      else if (k === "Enter") { e.preventDefault(); if (cur.kind === "doc") onOpenDoc(cur.d.id); else onOpen(cur.s.id); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [asks, sel, onOpen]);
+  }, [queue, sel, onOpen, onOpenDoc]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
@@ -79,13 +86,15 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
         <span className="mr-mono mr-dim" title={state.sidecar.claude ?? ""}>{state.sidecar.up ? "● claude" : "○ claude"}</span>
       </header>
 
-      <Lamps>
-        <Lamp value={asks.length + openQs.length} label="Needs you" on={asks.length + openQs.length > 0 && "needs"} />
-        <Lamp value={count("error")} label="Errors" on={count("error") > 0 && "error"} />
-        <Lamp value={count("almost")} label="Almost done" on={count("almost") > 0 && "plain"} />
-        <Lamp value={running.length} label="Running" on={running.length > 0 && "plain"} />
-        <Lamp value={review.length} label="To review" on={review.length > 0 && "plain"} />
-      </Lamps>
+      {(sessions.length > 0 || queue.length > 0) && (
+        <Lamps>
+          <Lamp value={queue.length} label="Needs you" on={queue.length > 0 && "needs"} onClick={() => jump("mr-needs")} />
+          <Lamp value={count("error")} label="Errors" on={count("error") > 0 && "error"} onClick={() => jump("mr-review")} />
+          <Lamp value={count("almost")} label="Almost done" on={count("almost") > 0 && "plain"} onClick={() => jump("mr-running")} />
+          <Lamp value={running.length} label="Running" on={running.length > 0 && "plain"} onClick={() => jump("mr-running")} />
+          <Lamp value={review.length} label="To review" on={review.length > 0 && "plain"} onClick={() => jump("mr-review")} />
+        </Lamps>
+      )}
 
       {suggestions.length > 0 && (
         <section aria-label="Suggested next" className="mr-row" style={{ flexWrap: "wrap", gap: 8, padding: "12px 24px 0" }}>
@@ -102,32 +111,20 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
       )}
 
       <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
-        {asks.length > 0 && (
-          <section aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you <span className="mr-dim">{asks.length}</span><span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A allow · D deny · ↵ open</span></h2>
-            <div className="mr-queue">{asks.map(({ s, a }, i) => <AskRow key={a.requestId} s={s} a={a} selected={i === sel} onOpen={() => onOpen(s.id)} />)}</div>
-          </section>
-        )}
-
-        {openQs.length > 0 && (
-          <section aria-label="Open questions" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Open questions in docs <span className="mr-dim">{openQs.length}</span></h2>
+        {queue.length > 0 && (
+          <section id="mr-needs" aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 12 }}>
+            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you <span className="mr-dim">{queue.length}</span><span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · R reply · ↵ open</span></h2>
             <div className="mr-queue">
-              {openQs.map(({ d, b }) => (
-                <button key={`${d.id}:${b.id}`} type="button" className="mr-qrow" onClick={() => onOpenDoc(d.id)} style={{ border: 0, padding: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
-                  <div className="mr-flag" />
-                  <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center" }}>
-                    <div className="mr-grow" style={{ display: "flex", flexDirection: "column" }}><span className="mr-ink2">{d.title}</span><span className="mr-ask">{b.takeaway}</span></div>
-                    <span className="mr-key">Decide ↵</span>
-                  </div>
-                </button>
-              ))}
+              {queue.map((q, i) =>
+                q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
+                : q.kind === "prose" ? <ProseRow key={q.key} s={q.s} question={q.question} options={q.options} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
+                : <DocQuestionRow key={q.key} d={q.d} b={q.b} selected={i === sel} onOpen={() => onOpenDoc(q.d.id)} />)}
             </div>
           </section>
         )}
 
         <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <h2 className="mr-h">Running <span className="mr-dim">{running.length}</span></h2>
+          <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
           <div className="mr-grid">
             {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
             <button type="button" className="mr-tile" onClick={onStart} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
@@ -159,13 +156,13 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
         )}
 
         {review.length > 0 && (
-          <section aria-label="Ready to review" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <section id="mr-review" aria-label="Ready to review" style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 12 }}>
             <h2 className="mr-h">Ready to review <span className="mr-dim">{review.length}</span></h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))", gap: "var(--mr-gap)" }}>
               {review.map(({ s, tile }) => (
                 <button key={s.id} type="button" className="mr-row" data-mr="ReviewRow" data-mr-source={s.id} onClick={() => onOpen(s.id)} style={{ padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>
                   <StateMark s={tile.state} />
-                  <span className="mr-grow mr-ellipsis">{s.title || "Untitled"}</span>
+                  <span className="mr-grow mr-ellipsis">{sessionTitle(s)}</span>
                   <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{Object.keys(s.files).length} files</span>
                   <span className="mr-key" role="button" tabIndex={0} title="Mark done and move to the archive" style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.archive(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.archive(s); } }}>Done ✓</span>
                   {s.status === "interrupted" && s.sdkSessionId && <span className="mr-key" role="button" tabIndex={0} style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.resume(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.resume(s); } }}>Resume ↻</span>}
@@ -192,7 +189,7 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
       <div className="mr-flag" />
       <div className="mr-tbody">
         <div className="mr-row" style={{ alignItems: "baseline" }}>
-          <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{s.title || "Untitled"}</strong>
+          <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{sessionTitle(s)}</strong>
           <StateMark s={tile.state} />
         </div>
         <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
