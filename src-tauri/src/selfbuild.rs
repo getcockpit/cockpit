@@ -170,6 +170,12 @@ pub fn on_ready(app: &AppHandle) {
     if let Ok(id) = std::env::var("MR_BUILD_ID") {
         let _ = std::fs::write(data_dir(app).join(format!("healthy-{id}")), "ok");
     }
+    // The dev loop's crash guard (MR-70): ready means this slot starts fine and is safe to fall back to.
+    if let Ok(f) = std::env::var("MR_HEALTH_FILE") {
+        if !f.is_empty() {
+            let _ = std::fs::write(f, "ok");
+        }
+    }
     if std::env::var("MR_AUTO_RESUME").is_ok_and(|v| v == "1") {
         resume_interrupted(app);
     }
