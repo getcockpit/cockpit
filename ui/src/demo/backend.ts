@@ -174,6 +174,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       { path: "src/app/routes.test.ts", added: 58, removed: 0, status: "A", risky: null },
       { path: "migrations/0042_sessions.sql", added: 7, removed: 0, status: "A", risky: "migration" },
     ];
+    case "task_output": return `$ bun run build:all\n[billing-core] compiled 212 modules in 4.1s\n[billing-api] compiled 88 modules in 2.3s\n[billing-web] building… ${new Date().toLocaleTimeString()}`;
     case "session_diff": return `--- a/${a.path}\n+++ b/${a.path}\n@@ -10,6 +10,9 @@\n export function guard(req) {\n-  if (!req.session) return redirect("/login");\n+  if (!req.session?.user) {\n+    return redirect(\`/login?next=\${encodeURIComponent(req.url)}\`);\n+  }\n   return next();\n }`;
     case "recent_folders": return [
       { path: "/Users/me/code/shop", name: "shop", repo: true, at: 0 },
