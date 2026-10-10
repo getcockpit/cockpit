@@ -87,3 +87,12 @@
 .mr-onb-grow { animation: mr-onb-grow .9s ease-out both; }
 .mr-onb-lift { transition: transform .15s, box-shadow .15s; }
 .mr-onb-lift:hover { transform: translateY(-3px); box-shadow: inset 0 -4px 0 var(--mr-needs); }
+.mr-onb-main { padding: 40px 56px 28px; gap: 28px; }
+.mr-onb-h1 { font-size: 40px; }
+.mr-onb-sub { font-size: 17px; }
+/* Laptop-height windows: keep each step's payoff above the fold. */
+@media (max-height: 820px) {
+  .mr-onb-main { padding: 22px 40px 18px; gap: 16px; }
+  .mr-onb-h1 { font-size: 30px; }
+  .mr-onb-sub { font-size: 15px; }
+}

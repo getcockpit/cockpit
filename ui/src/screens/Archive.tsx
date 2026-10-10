@@ -54,7 +54,7 @@ export function Archive({ sessions, onOpen, onClose }: { sessions: SessionState[
                     <strong className="mr-ellipsis">{s.title || "Untitled"}</strong>
                     <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.repo ?? s.cwd}</span>
                   </span>
-                  <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{Object.keys(s.files).length} files{s.costUsd ? ` · $${s.costUsd.toFixed(2)}` : ""}</span>
+                  <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{[Object.keys(s.files).length ? `${Object.keys(s.files).length} files` : "", s.costUsd ? `$${s.costUsd.toFixed(2)}` : ""].filter(Boolean).join(" · ")}</span>
                   <span onClick={(e) => e.stopPropagation()} className="mr-row" style={{ gap: 6 }}>
                     <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Restore</Key>
                     {s.sdkSessionId && <Key onClick={() => { void api.log("ui.session_unarchived", {}, s.id); void api.resume(s); onOpen(s.id); }}>Resume ↻</Key>}
