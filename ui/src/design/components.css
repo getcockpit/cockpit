@@ -135,3 +135,7 @@
 
 /* The step Claude is on in a grouped transcript (MR-69). */
 .mr-now-step { animation: mr-track-pulse 1.2s ease-in-out infinite; }
+
+/* Block actions on catalog view blocks (MR-71): shown on hover or keyboard focus. */
+.mr-view-actions { opacity: 0; transition: opacity var(--mr-fast) var(--mr-ease); }
+.mr-view-block:hover .mr-view-actions, .mr-view-actions:focus-within { opacity: 1; }
