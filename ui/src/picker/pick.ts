@@ -66,16 +66,6 @@ export function needsLayer2(s: SessionState): { id: string; text: string } | nul
   return { id: last.id, text: last.text };
 }
 
-/** Layer 3's trigger: a finished turn's long, structured prose (a plan, a list of steps, a recap). */
-export function wantsDiagram(s: SessionState): { id: string; text: string } | null {
-  if (s.status !== "idle") return null;
-  const last = s.transcript.filter((t) => t.kind === "text").at(-1);
-  if (!last || last.kind !== "text" || last.id in s.diagrams || last.text.length < 400) return null;
-  const steps = last.text.split("\n").filter((l) => /^\s*(\d+[.)]|[-*•])\s+\S/.test(l)).length;
-  const label = s.kinds[last.id]?.label;
-  return steps >= 3 || label === "plan" || label === "done" ? { id: last.id, text: last.text } : null;
-}
-
 /** A Review or Address flow paused on the user's turn (J8): what it's waiting for, or null. */
 export function flowWaiting(s: SessionState): string | null {
   if (s.status !== "idle") return null;
