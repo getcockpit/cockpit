@@ -24,3 +24,18 @@ export async function limits(query: QueryFn, claudePath: string | undefined, env
     q.close?.();
   }
 }
+
+// The model picker's rows, the same way: an idle query that is asked, then closed. Costs nothing.
+export async function models(query: QueryFn, claudePath: string | undefined, env: Record<string, string> | undefined, emit: (o: Outbound) => void): Promise<void> {
+  const idle: AsyncIterable<never> = { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<never>>(() => {}) }) };
+  const q = query({ prompt: idle, options: { pathToClaudeCodeExecutable: claudePath, settingSources: [], persistSession: false, tools: [], env: env ? { ...process.env, ...env } : undefined } });
+  try {
+    if (!q.supportedModels) throw new Error("this SDK has no model list");
+    const rows = await Promise.race([q.supportedModels(), new Promise<never>((_, no) => setTimeout(() => no(new Error("timed out")), 30000))]);
+    emit({ type: "models", models: rows.map((r) => ({ value: r.value, resolved: r.resolvedModel ?? null, displayName: r.displayName, description: r.description, efforts: r.supportedEffortLevels ?? [] })) });
+  } catch (e) {
+    emit({ type: "models", models: [], error: String(e) });
+  } finally {
+    q.close?.();
+  }
+}

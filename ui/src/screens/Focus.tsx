@@ -8,7 +8,7 @@ import { sessionTitle } from "../picker/title";
 import { summarizeTool } from "../picker/toolSummary";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
-import type { Diagram, SessionState, Todo, TranscriptItem } from "../state/types";
+import type { Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
 import type { Doc } from "../state/docs";
 import { AskRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
@@ -23,6 +23,7 @@ import { useTick } from "../components/Now";
 import { ago } from "../picker/now";
 import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
+import { ModelPicker } from "../components/ModelPicker";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
@@ -31,7 +32,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void }) {
+export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: { s: SessionState; models: ModelRow[]; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -76,6 +77,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
       if (keyOf(e) === "d" && e.metaKey && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
       if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
       if (keyOf(e) === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
+      if (keyOf(e) === "m" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
       if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => !x); }
     };
     window.addEventListener("keydown", onKey);
@@ -114,6 +116,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
           <span className="mr-grow" />
+          {!s.fromDeleted && <ModelPicker s={s} models={models} />}
           {running && <Key k="⌘." onClick={() => void api.interrupt(s.id)}>Interrupt</Key>}
           {s.archivedAt
             ? <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Archived · restore</Key>
@@ -157,7 +160,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           {/* Only what this session has: no empty plan box, no local change map for a PR review (J8). */}
           {s.todos.length > 0 && <PlanPanel s={s} />}
           {s.kind !== "review" && <ChangeMap s={s} onReview={setReviewing} />}
-          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.model ?? ""}{s.costUsd ? ` · $${s.costUsd.toFixed(2)} equiv.` : ""}</span>
+          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.costUsd ? `$${s.costUsd.toFixed(2)} equiv.` : ""}</span>
         </aside>
       </main>
     </div>

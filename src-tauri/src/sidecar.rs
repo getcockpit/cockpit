@@ -55,6 +55,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                             crate::selfbuild::on_ready(&handle);
                             // Show plan limits straight away, not only once a session reports them.
                             let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "limits" }));
+                            let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "models" }));
                         }
                         if payload["type"] == "session_ended" {
                             if let Some(id) = payload["session"].as_str() {
@@ -110,6 +111,59 @@ pub fn stop_sessions_in(app: &AppHandle, workspace: &str) -> usize {
 #[tauri::command]
 pub fn limits_refresh(state: State<'_, Sidecar>) -> Result<(), String> {
     sidecar_send(state, serde_json::json!({ "type": "limits" }))
+}
+
+/// Re-reads the models Claude Code offers this login; the answer arrives as `sidecar.models`.
+#[tauri::command]
+pub fn models_refresh(state: State<'_, Sidecar>) -> Result<(), String> {
+    sidecar_send(state, serde_json::json!({ "type": "models" }))
+}
+
+/// Switches a session's model and/or effort (MR-73). `change` holds `model` and/or `effort`; null
+/// means Claude Code's default, an absent key leaves it as it is. Logged first, so a session that
+/// isn't running picks it up when it resumes.
+#[tauri::command]
+pub fn session_set_model(app: AppHandle, state: State<'_, Sidecar>, session: String, change: serde_json::Value) -> Result<(), String> {
+    let mut payload = serde_json::json!({});
+    for key in ["model", "effort"] {
+        if let Some(v) = change.get(key) {
+            if !(v.is_null() || v.is_string()) {
+                return Err(format!("{key} must be a string or null"));
+            }
+            payload[key] = v.clone();
+        }
+    }
+    if payload.as_object().is_none_or(|o| o.is_empty()) {
+        return Err("nothing to change: give a model or an effort".into());
+    }
+    crate::eventlog::record(&app, Some(&session), "ui.model_set", &payload, None);
+    if !state.live.lock().unwrap().contains(&session) {
+        return Ok(());
+    }
+    let mut msg = payload;
+    msg["type"] = "set_model".into();
+    msg["session"] = session.into();
+    sidecar_send(state, msg)
+}
+
+/// The model and effort a session was last switched to, folded from its `ui.model_set` events in
+/// order (None: Claude Code's default). Resumes start with these.
+pub fn fold_model_choice<'a>(payloads: impl IntoIterator<Item = &'a serde_json::Value>) -> (Option<String>, Option<String>) {
+    let (mut model, mut effort) = (None, None);
+    for p in payloads {
+        if let Some(v) = p.get("model") {
+            model = v.as_str().map(str::to_owned);
+        }
+        if let Some(v) = p.get("effort") {
+            effort = v.as_str().map(str::to_owned);
+        }
+    }
+    (model, effort)
+}
+
+fn model_choice(app: &AppHandle, session: &str) -> (Option<String>, Option<String>) {
+    let evs = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).unwrap_or_default();
+    fold_model_choice(evs.iter().filter(|e| e.kind == "ui.model_set").map(|e| &e.payload))
 }
 
 /// Runs one tool-less, unsaved turn in the sidecar and waits for its text (blocking; call off the UI thread).
@@ -190,6 +244,13 @@ pub fn session_start(
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
     if let Some(r) = resume {
         msg["resume"] = r.into();
+    }
+    let (model, effort) = model_choice(&app, &session);
+    if let Some(m) = model {
+        msg["model"] = m.into();
+    }
+    if let Some(e) = effort {
+        msg["effort"] = e.into();
     }
     msg["tools"] = tools.unwrap_or_else(|| {
         let mut specs = crate::docs::tool_specs().as_array().cloned().unwrap_or_default();
@@ -313,4 +374,18 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
         crate::eventlog::record(app, Some(&session), &kind, &p, anchor.as_deref());
     }
     let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fold_model_choice;
+    use serde_json::json;
+
+    #[test]
+    fn model_choice_folds_in_order_and_null_means_default() {
+        let evs = [json!({ "model": "opus", "effort": "high" }), json!({ "effort": "low" }), json!({ "model": null })];
+        assert_eq!(fold_model_choice(&evs), (None, Some("low".into())));
+        assert_eq!(fold_model_choice(&evs[..2]), (Some("opus".into()), Some("low".into())));
+        assert_eq!(fold_model_choice(&[]), (None, None));
+    }
 }
