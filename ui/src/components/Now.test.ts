@@ -11,11 +11,11 @@ test("a working wall tile names the current plan step instead of the activity la
     { content: "Test", status: "pending" },
     { content: "Commit", status: "pending" },
   ];
-  expect(liveCaption(todos, "Thinking", true)).toBe("40% · Wiring the change graph");
+  expect(liveCaption(todos, "Thinking", true)).toBe("Wiring the change graph");
   // No step marked in progress while working: the next one to do is current.
-  expect(liveCaption(todos.map((t, i) => (i === 2 ? { ...t, status: "pending" } : t)), "Thinking", true)).toBe("40% · Wiring the change graph");
+  expect(liveCaption(todos.map((t, i) => (i === 2 ? { ...t, status: "pending" } : t)), "Thinking", true)).toBe("Wiring the change graph");
   // Focus (not compact) keeps the step count and the live activity.
-  expect(liveCaption(todos, "Thinking")).toBe("40% · step 3 of 5 · Thinking");
+  expect(liveCaption(todos, "Thinking")).toBe("step 3 of 5 · Thinking");
   // No plan: the activity label is all there is.
   expect(liveCaption([], "Thinking", true)).toBe("Thinking");
 });

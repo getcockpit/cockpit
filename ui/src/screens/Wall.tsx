@@ -11,6 +11,7 @@ import { pickTile, type TileSpec } from "../picker/pick";
 import { isOpenQuestion, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
+import { loadPrs as fetchPrs, PRS_TTL, startCwd } from "../state/prs";
 import type { AppState, SessionState } from "../state/types";
 import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
@@ -33,17 +34,17 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
   const review = tiles.filter((t) => REVIEW.has(t.tile.state));
   const count = (k: TileSpec["state"]) => tiles.filter((t) => t.tile.state === k).length;
   const [sel, setSel] = useState(0);
-  const cwd = (() => { try { return localStorage.getItem("mr.cwd") ?? "~/"; } catch { return "~/"; } })();
+  const cwd = startCwd();
   // Cached across wall mounts (MR-57): a workspace switch shows the last values instantly.
-  const loadPrs = () => Promise.allSettled([api.prs(cwd, "review"), api.prs(cwd, "address")]).then(([r, m]) => ({ review: r.status === "fulfilled" ? r.value : [], mine: m.status === "fulfilled" ? m.value : [] }));
+  const loadPrs = () => fetchPrs(cwd);
   const loadDaily = () => invoke<{ streak: number; goal: number }>("daily_driver");
-  const [prs, setPrs] = useState<{ review: Pr[]; mine: Pr[] }>(() => cached("prs", 5 * 60_000, loadPrs, () => {}) ?? { review: [], mine: [] });
+  const [prs, setPrs] = useState<{ review: Pr[]; mine: Pr[] }>(() => cached("prs", PRS_TTL, loadPrs, () => {}) ?? { review: [], mine: [] });
   const [daily, setDaily] = useState<{ streak: number; goal: number } | null>(() => cached("daily", 10 * 60_000, loadDaily, () => {}) ?? null);
 
   useEffect(() => {
     let alive = true;
     const load = () => {
-      cached("prs", 5 * 60_000, loadPrs, (v) => alive && setPrs(v));
+      cached("prs", PRS_TTL, loadPrs, (v) => alive && setPrs(v));
       cached("daily", 10 * 60_000, loadDaily, (v) => alive && setDaily(v));
     };
     load();
@@ -218,7 +219,7 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
         {s.status === "working" || s.status === "starting"
           ? <LiveTrack s={s} compact />
           : s.todos.length > 0
-            ? <ProgressTrack segs={planSegs(s.todos)} left={tile.step} right={tile.progressLabel} source={s.id} fill />
+            ? <ProgressTrack segs={planSegs(s.todos)} pct={tile.progress === null ? null : Math.round(tile.progress * 100)} left={tile.step} source={s.id} fill />
             : <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>}
         <div className="mr-row" style={{ alignItems: "flex-end" }}>
           <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tile.doing}</span>
