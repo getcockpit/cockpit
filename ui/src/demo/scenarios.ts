@@ -132,6 +132,12 @@ const viewEvents: E[] = [
     { type: "change_graph", nodes: [{ label: "settings.json", mark: "~" }, { label: "SettingsSchema", mark: "+" }, { label: "readers (12)", mark: "~" }, { label: "legacy parser", mark: "-" }] },
     { type: "checklist", items: [{ label: "Type-check", ok: true, proof: "tsc 0 errors" }, { label: "Unit tests", ok: true, proof: "211 passed" }, { label: "Migration on a real old file", ok: null }, { label: "Old desktop build reads it", ok: false, proof: "parse error" }] },
     { type: "snippet", file: "src/settings/read.ts · 40–44", code: " export function read(path) {\n-  return JSON.parse(fs.readFileSync(path))\n+  return SettingsSchema.parse(migrate(load(path)))\n }", note: "Every reader goes through the schema now." },
+    { type: "tier", tier: 2, label: "Leverage · nothing on fire", detail: "old builds still read v1 files" },
+    { type: "findings", items: [{ severity: "critical", title: "Old builds crash on the new format", where: "read.ts:42" }, { severity: "important", title: "Migration isn't atomic", where: "migrate.ts:18" }, { severity: "suggestion", title: "Name the schema version constant" }, { severity: "nitpick", title: "Stray console.log", where: "read.ts:9" }] },
+    { type: "novelty", items: [{ verdict: "new", what: "SettingsSchema" }, { verdict: "adjacent", what: "migrate(), mirrors the db migrator" }, { verdict: "overlapping", what: "default merging", where: "config/defaults.ts:12" }, { verdict: "duplicate", what: "path resolver already on main" }] },
+    { type: "tradeoff", label: "How long to keep the reader shim", points: [{ x: 1, y: 40 }, { x: 2, y: 81 }, { x: 3, y: 90 }, { x: 6, y: 96 }, { x: 12, y: 99 }], x_unit: "months", y_unit: "% of users covered", pick: 2 },
+    { type: "fix_options", finding: "Old builds crash on the new format", options: [{ label: "Bump the minimum version", detail: "10 min, forces 4% to update" }, { label: "Ship a reader shim", detail: "2 h, nobody notices", recommended: true }] },
+    { type: "thread", author: "marta", where: "round 2 · read.ts:42", state: "replied", body: "This throws on v1 files, so the desktop app will crash on launch.", note: "You replied \"will do\" in round 1, still open." },
     { type: "next", text: "Add the reader shim, then run the old-build check.", replies: ["Add the shim", "Bump the minimum version", "Explain the risk"] },
   ] }, at: 60 },
   result("V", "ok", 61),
@@ -165,7 +171,52 @@ const review482Events: E[] = [
   result("R", "overview", 202, 0.4),
 ];
 
+
+// Timeline (MR-32): the Timeline.dc.html lanes. Now is at ~2400 s; each lane has a plan with real
+// step timings and a rhythm of tool calls, so activity, waits and forecasts all have something to show.
+const plan = (session: string, at: number, items: string[], done: number): E => ({ session, kind: "plan.updated", payload: { steps: items.map((step, i) => ({ step, status: i < done ? "done" : i === done ? "doing" : "todo" })) }, at });
+const busyFor = (session: string, from: number, to: number, every: number): E[] => {
+  const out: E[] = [];
+  for (let t = from, i = 0; t < to; t += every + ((i * 37) % every), i++) out.push(tool(session, i % 3 ? "Edit" : "Bash", i % 3 ? { file_path: `src/${session}/f${i % 4}.ts`, old_string: "a", new_string: "a\nb" } : { command: "bun test" }, t));
+  return out;
+};
+const timelineEvents: E[] = [
+  ...ready, onboarded,
+  // Waiting on you for 3 minutes after a busy half hour.
+  ...start("TA", "Refactor auth middleware", { cwd: "/Users/me/code/shop-api-worktrees/auth", repo: "/Users/me/code/shop-api", branch: "mr/auth" }, 600),
+  ...(["Map the middleware chain", "Extract the session check", "Move token refresh", "Migrate the routes", "Run the e2e suite"].map((_, i, a) => plan("TA", 610 + i * 300, a, i)).slice(0, 4)),
+  ...busyFor("TA", 620, 2200, 40),
+  { session: "TA", kind: "sidecar.permission_request", payload: { request_id: "pTA", tool: "AskUserQuestion", input: { questions: [{ question: "Run the migration on staging now?", header: "Migration", multiSelect: false, options: [{ label: "Yes", description: "" }, { label: "Later", description: "" }] }] }, suggestions: null, decision_reason: null }, at: 2220 },
+  // A plan session close to handing you its spec.
+  { session: "TB", kind: "ui.session_requested", payload: { prompt: "Plan this with me before any code: payments webhooks", kind: "plan", cwd: "/Users/me/code/shop-api", workspace: "personal" }, at: 1300 },
+  { session: "TB", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-TB", model: "claude-opus-5-5" }, at: 1301 },
+  ...(["Read the webhook handlers", "List the event types", "Draft the retry design", "Write the spec"].map((_, i, a) => plan("TB", 1310 + i * 240, a, i))),
+  ...busyFor("TB", 1320, 2395, 50),
+  // Two blank sessions finishing on their own.
+  ...start("TC", "Add Redis to the infra", { cwd: "/Users/me/code/infra-worktrees/redis", repo: "/Users/me/code/infra", branch: "mr/redis" }, 1250),
+  ...(["Add the module", "Wire the outputs", "Plan and apply"].map((_, i, a) => plan("TC", 1260 + i * 380, a, i))),
+  ...busyFor("TC", 1270, 2398, 60),
+  ...start("TD", "Fix the flaky API tests", { cwd: "/Users/me/code/shop-api-worktrees/tests", repo: "/Users/me/code/shop-api", branch: "mr/tests" }, 0),
+  ...(["Find the flaky ones", "Seed the clock", "Isolate the DB", "Fix ordering", "Run 20 times"].map((_, i, a) => plan("TD", 10 + i * 500, a, i))),
+  ...busyFor("TD", 20, 2390, 30),
+  // Started four minutes ago: no history of its own, so it borrows the log's typical step.
+  ...start("TE", "Rewrite the onboarding copy", { cwd: "/Users/me/code/shop-web-worktrees/copy", repo: "/Users/me/code/shop-web", branch: "mr/copy" }, 2160),
+  plan("TE", 2170, ["Read the current flow", "Draft three variants", "Pick and apply", "Screenshot each step"], 0),
+  ...busyFor("TE", 2180, 2396, 45),
+  // No plan: one line at the bottom.
+  ...start("TF", "Sweep the docs for stale links", { cwd: "/Users/me/code/shop-web-worktrees/docs", repo: "/Users/me/code/shop-web", branch: "mr/docs-sweep" }, 1900),
+  ...busyFor("TF", 1910, 2390, 70),
+  // Finished: ready to review.
+  ...start("TG", "Bump dependencies", { cwd: "/Users/me/code/billing-worktrees/deps", repo: "/Users/me/code/billing", branch: "mr/deps" }, 300),
+  plan("TG", 310, ["Update lockfile", "Fix breakages"], 2),
+  tool("TG", "Edit", { file_path: "package.json", old_string: "a", new_string: "b" }, 900),
+  tool("TG", "Edit", { file_path: "bun.lock", old_string: "a", new_string: "b" }, 910),
+  result("TG", "All tests pass.", 1500),
+  { session: "TG", kind: "sidecar.session_ended", payload: { ok: true }, at: 1510 },
+].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)); // the log is in time order, and the activity buckets rely on it
+
 export const SCENARIOS: Record<string, Scenario> = {
+  timeline: { events: timelineEvents, docs: [] },
   review482: { events: review482Events, docs: [] },
   plan: { events: planEvents, docs: [] },
   view: { events: viewEvents, docs: [] },
