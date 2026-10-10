@@ -117,3 +117,21 @@ describe("titles and next steps (MR-63)", () => {
     expect(nextReplies(replay([...start(), text("Fixed it."), result()]).sessions.s1)).toEqual([]);
   });
 });
+
+describe("one-click update (MR-66)", () => {
+  const up = (kind: string, payload: Record<string, unknown> = {}) => ev(kind, payload, null);
+  test("building → ready → restart → what's new, and a failure keeps its step and log", () => {
+    const base = [...start(), up("update.started", { subjects: ["Live titles"] }), up("update.step", { step: "app" })];
+    expect(replay(base).update.phase).toBe("building");
+    expect(replay(base).update.step).toBe("app");
+    const ready = [...base, up("update.finished", { ok: true })];
+    expect(replay(ready).update.phase).toBe("ready");
+    const after = replay([...ready, up("update.restarting", { subjects: ["Live titles"] }), up("app.started", { sha: "x" })]);
+    expect(after.update.phase).toBe("idle");
+    expect(after.update.whatsNew).toEqual(["Live titles"]);
+    expect(replay([...ready, up("update.restarting", { subjects: ["Live titles"] }), up("app.started"), up("ui.update_seen")]).update.whatsNew).toBeNull();
+    const failed = replay([...base, up("update.finished", { ok: false, step: "app", log: "error[E0425]" })]).update;
+    expect([failed.phase, failed.step, failed.log]).toEqual(["failed", "app", "error[E0425]"]);
+    expect(replay([...base, up("app.started")]).update.whatsNew).toBeNull(); // a plain restart isn't an update
+  });
+});
