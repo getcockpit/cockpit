@@ -12,6 +12,7 @@ import { api } from "../state/store";
 import type { AppState, SessionState } from "../state/types";
 import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
+import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
 import { plural, sessionTitle } from "../picker/title";
 
@@ -20,7 +21,7 @@ import { plural, sessionTitle } from "../picker/title";
 
 const REVIEW = new Set<TileSpec["state"]>(["idle", "done", "interrupted", "error"]);
 
-export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild }: { state: AppState; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: () => void; onBuild: (worktree: string) => void }) {
+export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild }: { state: AppState; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -51,7 +52,12 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
     else if (a.kind === "open_doc") onOpenDoc(a.id);
     else if (a.kind === "build_mine") onBuild(await api.mineWorktree());
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
-    else onOpen(await api.start(cwd, promptFor(a.mode, a.value), a.mode));
+    else {
+      const slug = prSlug(a.value) ?? a.repo ?? null;
+      const where = slug ? await prRepo(slug) : cwd;
+      if (where) onOpen(await api.start(where, promptFor(a.mode, a.value), a.mode));
+      else onStart({ mode: a.mode, text: a.value }); // the picker asks where the clone is
+    }
   };
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const discover = async (s: SessionState) => onOpen(await api.start(s.cwd, `Side thread about the session "${s.title}" (working in ${s.cwd}). Without changing anything, look at what it has done so far (git diff, files) and report briefly: risks, anything it may have missed, and simpler alternatives.`, "blank", false));
@@ -127,13 +133,13 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
           </section>
         )}
 
-        {sessions.length === 0 && queue.length === 0 && <QuickStart onStarted={onOpen} onMore={onStart} />}
+        {sessions.length === 0 && queue.length === 0 && <QuickStart onStarted={onOpen} onMore={(mode) => onStart({ mode, text: "" })} />}
 
         {sessions.length > 0 && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
           <div className="mr-grid">
             {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
-            <button type="button" className="mr-tile" onClick={onStart} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
+            <button type="button" className="mr-tile" onClick={() => onStart()} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
               <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>⌘K</kbd>Start something</span>
             </button>
           </div>
@@ -184,7 +190,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
         <span className="mr-grow" />
         <Key onClick={() => api.report()}>Report a bug</Key>
         <Key k="⌘⇧A" onClick={onArchive}>Archive{archived ? ` · ${archived}` : ""}</Key>
-        <Key k="⌘K" onClick={onStart}>Start</Key>
+        <Key k="⌘K" onClick={() => onStart()}>Start</Key>
       </footer>
     </div>
   );

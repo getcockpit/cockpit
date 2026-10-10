@@ -1,6 +1,8 @@
 import { keyOf } from "../components/keys";
 import { FolderPicker, useWorkFolder } from "../components/FolderPicker";
 import { cleanTitle } from "../picker/title";
+import { prRepo, prSlug, rememberPrRepo } from "../state/prRepo";
+import { shortError } from "../components/ErrorLine";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
@@ -31,11 +33,11 @@ const HOW: Record<SessionKind, string> = {
   address: "Runs your /pr-address and walks each reviewer thread",
 };
 
-type Item = { ref: string; title: string; meta: string; hot: boolean; value: string };
+type Item = { ref: string; title: string; meta: string; hot: boolean; value: string; repo?: string };
 
-export function StartPicker({ state, onClose, onStarted, initialText = "" }: { state: AppState; onClose: () => void; onStarted: (id: string) => void; initialText?: string }) {
+export function StartPicker({ state, onClose, onStarted, initialText = "", initialMode }: { state: AppState; onClose: () => void; onStarted: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
   // Opens on the kind you used last (F6); dictated text always starts a blank session.
-  const [mode, setModeRaw] = useState<SessionKind>(() => { if (initialText) return "blank"; try { return (localStorage.getItem("mr.mode") as SessionKind) || "blank"; } catch { return "blank"; } });
+  const [mode, setModeRaw] = useState<SessionKind>(() => { if (initialMode) return initialMode; if (initialText) return "blank"; try { return (localStorage.getItem("mr.mode") as SessionKind) || "blank"; } catch { return "blank"; } });
   const setMode = (m: SessionKind) => { setModeRaw(m); try { localStorage.setItem("mr.mode", m); } catch { /* convenience only */ } };
   const [text, setText] = useState(initialText);
   const [cwd, setCwd] = useWorkFolder();
@@ -56,8 +58,8 @@ export function StartPicker({ state, onClose, onStarted, initialText = "" }: { s
   const items: Item[] = useMemo(() => {
     if (mode === "review" || mode === "address") {
       return (prs ?? []).map((p) => ({
-        ref: `#${p.number}`, value: p.url, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
-        meta: mode === "address" ? (p.reviewDecision === "CHANGES_REQUESTED" ? "Changes requested" : p.reviewDecision ? p.reviewDecision.toLowerCase().replace("_", " ") : "open") : (p.repository?.nameWithOwner ?? ""),
+        ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
+        meta: mode === "address" ? `${p.repository?.nameWithOwner ?? ""}${p.reviewDecision === "CHANGES_REQUESTED" ? " · changes requested" : ""}` : (p.repository?.nameWithOwner ?? ""),
         hot: mode === "address" ? p.reviewDecision === "CHANGES_REQUESTED" : true,
       }));
     }
@@ -65,19 +67,32 @@ export function StartPicker({ state, onClose, onStarted, initialText = "" }: { s
     return recent.map((s) => ({ ref: "", value: cleanTitle(s.title, 400), title: cleanTitle(s.title), meta: new Date(s.startedAt).toLocaleDateString(), hot: false }));
   }, [mode, prs, state]);
 
-  const start = async (value: string) => {
+  // PR work runs in the PR's own clone (MR-48); if it can't be found, ask once and remember.
+  const [askRepo, setAskRepo] = useState<{ slug: string; value: string } | null>(null);
+  const start = async (value: string, repo?: string) => {
     if (!value.trim()) return;
     setError("");
     try {
-      const id = await api.start(cwd, promptFor(mode, value), mode);
-      onStarted(id);
-    } catch (e) { setError(String(e)); }
+      let where = cwd;
+      const slug = mode === "review" || mode === "address" ? repo ?? prSlug(value) : null;
+      if (slug) {
+        const found = await prRepo(slug);
+        if (!found) { setAskRepo({ slug, value }); return; }
+        where = found;
+      }
+      onStarted(await api.start(where, promptFor(mode, value), mode));
+    } catch (e) { setError(shortError(e)); }
+  };
+  const useFolderFor = async (path: string) => {
+    if (!askRepo) return;
+    rememberPrRepo(askRepo.slug, path);
+    try { onStarted(await api.start(path, promptFor(mode, askRepo.value), mode)); } catch (e) { setError(shortError(e)); }
   };
 
   // A PR starts its review straight away; a past prompt only fills the box, so it can be edited
   // instead of silently starting a duplicate session.
   const pick = (it: Item) => {
-    if (mode === "review" || mode === "address") void start(it.value);
+    if (mode === "review" || mode === "address") void start(it.value, it.repo);
     else { setText(it.value); input.current?.focus(); }
   };
 
@@ -96,7 +111,9 @@ export function StartPicker({ state, onClose, onStarted, initialText = "" }: { s
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)" }} onSubmit={(e) => { e.preventDefault(); void start(text); }}>
-          <FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[...new Set(state.order.map((id) => state.sessions[id]).reverse().map((x) => x.repo ?? x.cwd))].slice(0, 5)} />
+          {mode === "review" || mode === "address"
+            ? <span className="mr-dim" style={{ flex: "0 1 240px", padding: "0 8px" }} title="Review and Address run in the PR's own clone">Runs in the PR's repo</span>
+            : <FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[...new Set(state.order.map((id) => state.sessions[id]).reverse().map((x) => x.repo ?? x.cwd))].slice(0, 5)} />}
           <input ref={input} className="mr-input" style={{ fontSize: 17, background: "var(--mr-well)" }} placeholder={m.placeholder} value={text} onChange={(e) => setText(e.target.value)} aria-label={m.placeholder} />
           <Key k="↵" tone="primary" disabled={!text.trim() && !items[sel]}>Start</Key>
         </form>
@@ -123,6 +140,12 @@ export function StartPicker({ state, onClose, onStarted, initialText = "" }: { s
               <span style={{ color: it.hot ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: it.hot ? 700 : 400 }}>{it.meta}</span>
             </button>
           ))}
+          {askRepo && (
+            <div data-mr="AskRepo" className="mr-row" style={{ gap: 10, padding: 10, background: "var(--mr-well)", boxShadow: "inset 4px 0 0 var(--mr-needs)" }}>
+              <span className="mr-grow">Where is <b className="mr-mono">{askRepo.slug}</b> cloned on this Mac? It runs there, and it's remembered.</span>
+              <FolderPicker value="" onChange={(p) => void useFolderFor(p)} extra={[]} />
+            </div>
+          )}
           {error && <span style={{ color: "var(--mr-error)", padding: "4px 8px" }}>{error}</span>}
         </div>
         <div className="mr-row mr-dim" style={{ padding: "10px 18px", background: "var(--mr-band)" }}>
