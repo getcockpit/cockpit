@@ -39,6 +39,13 @@ const busy: E[] = [
   // C: running, almost done
   ...start("C", "Bump dependencies and fix breakages", { cwd: "/Users/me/code/billing-worktrees/deps", repo: "/Users/me/code/billing", branch: "mr/deps" }, 40),
   todos("C", 4, [["Update lockfile", "Updating lockfile"], ["Fix type errors", "Fixing type errors"], ["Fix failing tests", "Fixing failing tests"], ["Update changelog", "Updating changelog"], ["Run the full suite", "Running the full suite"]], 2340),
+  // A long build left running in the background (run_in_background), and one that already finished.
+  tool("C", "Bash", { command: "bun install", description: "Install updated dependencies", run_in_background: true }, 2100, "bgC0"),
+  { session: "C", kind: "sidecar.sdk", payload: { message: { type: "system", subtype: "task_started", tool_use_id: "bgC0", task_id: "b0", is_backgrounded: true, task_type: "local_bash" } }, at: 2100 },
+  { session: "C", kind: "sidecar.sdk", payload: { message: { type: "system", subtype: "task_notification", tool_use_id: "bgC0", task_id: "b0", status: "completed", output_file: "/tmp/claude-501/deps/sdk-C/tasks/b0.output", summary: "Background command \"Install updated dependencies\" completed" } }, at: 2160 },
+  tool("C", "Bash", { command: "bun run build:all > /tmp/build.log 2>&1", description: "Build every package", run_in_background: true }, 2200, "bgC1"),
+  { session: "C", kind: "sidecar.sdk", payload: { message: { type: "system", subtype: "task_started", tool_use_id: "bgC1", task_id: "b1", is_backgrounded: true, task_type: "local_bash" } }, at: 2200 },
+  { session: "C", kind: "sidecar.sdk", payload: { message: { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bgC1", content: "Command running in background with ID: b1. Output is being written to: /tmp/claude-501/deps/sdk-C/tasks/b1.output." }] } } }, at: 2200 },
   tool("C", "Bash", { command: "bun test --coverage" }, 2380),
   // B: plan session with a working doc; asked in prose
   { session: "B", kind: "ui.session_requested", payload: { prompt: "Plan this with me before any code: CSV export for invoices", kind: "plan", cwd: "/Users/me/code/billing", workspace: "personal" }, at: 50 },

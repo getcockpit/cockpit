@@ -70,6 +70,7 @@ pub fn run() {
             daily::daily_driver,
             changes::session_changes,
             changes::session_diff,
+            changes::task_output,
             changes::app_repo_path,
             changes::godmode_save_mark,
             selfbuild::selfbuild_start,

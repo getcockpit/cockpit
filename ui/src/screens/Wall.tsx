@@ -17,6 +17,7 @@ import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./
 import { needsQueue } from "../picker/queue";
 import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
+import { backgroundTasks } from "../components/BackgroundPanel";
 import { plural, sessionTitle } from "../picker/title";
 import { ViewTabs } from "../components/ViewTabs";
 
@@ -207,6 +208,7 @@ export function sideThread(s: SessionState): Promise<string> {
 }
 
 function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; onOpen: (id: string) => void; onDiscover: () => void }) {
+  const bg = backgroundTasks(s).filter((x) => x.live);
   return (
     <button type="button" className="mr-tile" data-mr="Tile" data-mr-source={s.id} data-mr-layer="code" data-s={tile.state} onClick={pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })} aria-label={`Open ${s.title}`}>
       <div className="mr-flag" />
@@ -221,6 +223,9 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
           : s.todos.length > 0
             ? <ProgressTrack segs={planSegs(s.todos)} pct={tile.progress === null ? null : Math.round(tile.progress * 100)} left={tile.step} source={s.id} fill />
             : <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>}
+        {bg.length > 0 && <span data-mr="TileBackground" data-mr-source={s.id} className="mr-mono mr-ink2 mr-ellipsis" style={{ fontSize: 12 }} title={bg.map((x) => String(x.tool.input.description ?? x.tool.input.command ?? x.tool.name)).join("\n")}>
+          ▸ {bg.length} running in background · {String(bg[0].tool.input.description ?? bg[0].tool.input.command ?? bg[0].tool.name)}
+        </span>}
         {tileNote(tile) && <div className="mr-row" style={{ alignItems: "flex-end" }}>
           <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tileNote(tile)}</span>
           <Sparkline values={s.activity} />

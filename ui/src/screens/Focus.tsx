@@ -19,6 +19,7 @@ import { FlowDiagram } from "../components/FlowDiagram";
 import { parseReport, TurnText } from "../components/Turn";
 import { ChangeMap } from "./ChangeMap";
 import { PlanPanel } from "../components/PlanPanel";
+import { BackgroundPanel } from "../components/BackgroundPanel";
 import { CatalogView, viewReplies } from "../components/CatalogView";
 import { Mark } from "../components/Turn";
 import { useTick } from "../components/Now";
@@ -161,6 +162,7 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
         <aside style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12, position: "sticky", top: "var(--mr-focus-head, 0px)", alignSelf: "flex-start", maxHeight: "calc(100vh - var(--mr-focus-head, 0px) - 16px)", overflowY: "auto" }}>
           {/* Only what this session has: no empty plan box, no local change map for a PR review (J8). */}
           {s.todos.length > 0 && <PlanPanel s={s} />}
+          <BackgroundPanel s={s} />
           {s.kind !== "review" && <ChangeMap s={s} onReview={setReviewing} />}
           <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.costUsd ? `$${s.costUsd.toFixed(2)} equiv.` : ""}</span>
         </aside>

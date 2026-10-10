@@ -75,6 +75,31 @@ pub fn session_diff(app: tauri::AppHandle, cwd: String, path: String) -> Result<
     diff(Path::new(&crate::sidecar::expand_home(&app, &cwd)), &path)
 }
 
+/// The last bytes a background task wrote (run_in_background): Claude Code streams its output to
+/// <tmp>/claude-<uid>/<project>/<session>/tasks/<id>.output. Only such files are readable here.
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
+pub fn task_output(path: String) -> Result<String, String> {
+    tail(Path::new(&path), 16 * 1024)
+}
+
+fn tail(path: &Path, max: u64) -> Result<String, String> {
+    let task_file = path.extension().is_some_and(|e| e == "output")
+        && path.parent().and_then(Path::file_name).is_some_and(|d| d == "tasks")
+        && path.components().any(|c| c.as_os_str().to_string_lossy().starts_with("claude-"))
+        && !path.components().any(|c| matches!(c, std::path::Component::ParentDir));
+    if !task_file {
+        return Err("not a background task's output".into());
+    }
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let len = f.metadata().map_err(|e| e.to_string())?.len();
+    f.seek(SeekFrom::Start(len.saturating_sub(max))).map_err(|e| e.to_string())?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
 /// The app's own repository: MR_APP_REPO, else the repo the running binary was built from.
 pub fn app_repo() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("MR_APP_REPO") {
@@ -131,6 +156,21 @@ mod tests {
         assert_eq!((m.status.as_str(), m.risky.as_deref()), ("untracked", Some("database")));
         assert!(diff(&dir, "a.ts").unwrap().contains("+two"));
         assert!(diff(&dir, "db/migrations/0001.sql").unwrap().contains("+create table"));
+    }
+
+    #[test]
+    fn reads_the_tail_of_task_output_only() {
+        let dir = std::env::temp_dir().join(format!("claude-test-{}", ulid::Ulid::new())).join("tasks");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("b1.output");
+        std::fs::write(&out, "first\nlast line\n").unwrap();
+        assert_eq!(tail(&out, 1024).unwrap(), "first\nlast line\n");
+        assert_eq!(tail(&out, 10).unwrap(), "last line\n");
+        let other = dir.join("notes.txt");
+        std::fs::write(&other, "x").unwrap();
+        assert!(tail(&other, 1024).is_err());
+        assert!(tail(Path::new("/etc/passwd"), 1024).is_err());
+        assert!(tail(&dir.join("../tasks/b1.output"), 1024).is_err());
     }
 
     #[test]
