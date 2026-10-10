@@ -17,4 +17,12 @@ sqlite3 "$db" "SELECT DISTINCT json_extract(b.value,'$.type') FROM events e, jso
 need() { [ "$(sqlite3 "$db" "$1")" != "0" ] || { echo "FAILED: $2"; exit 1; }; }
 need "SELECT COUNT(*) FROM events WHERE kind='view.rendered'" "Claude wrote the report as text instead of calling render_view"
 need "SELECT COUNT(*) FROM events WHERE kind='view.rendered' AND json_array_length(payload,'$.blocks') >= 2" "the view has fewer than 2 blocks"
-echo "SELFTEST VIEW PASSED ($db)"
+# MR-71: review findings, again without naming a block, should come back on the severity scale.
+data2="$(mktemp -d)"
+MR_VIEW_PROMPT="This is a UI test; nothing here is real and you don't need to look at any files. Summarise my pretend code review of a payments PR: one critical finding (a charge can run twice on retry, charge.ts:42), one important (the webhook isn't verified, webhook.ts:10) and one nitpick (a stray console.log). Then on a final line reply with exactly: SELFTEST DONE" \
+  MR_SELFTEST=view MR_DATA_DIR="$data2" "$root/src-tauri/target/debug/minority-report"
+db2="$data2/events.sqlite"
+echo "--- review view blocks"
+sqlite3 "$db2" "SELECT DISTINCT json_extract(b.value,'$.type') FROM events e, json_each(e.payload,'$.blocks') b WHERE e.kind='view.rendered';"
+[ "$(sqlite3 "$db2" "SELECT COUNT(*) FROM events e, json_each(e.payload,'$.blocks') b WHERE e.kind='view.rendered' AND json_extract(b.value,'$.type')='findings'")" != "0" ] || { echo "FAILED: review findings weren't shown as a findings block"; exit 1; }
+echo "SELFTEST VIEW PASSED ($db, $db2)"
