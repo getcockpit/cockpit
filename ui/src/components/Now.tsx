@@ -23,11 +23,19 @@ export function LiveTrack({ s, compact }: { s: SessionState; compact?: boolean }
   const n = nowLine(s, t);
   if (!n) return null;
   const segs = s.todos.length ? planSegs(s.todos, true) : ["current" as Seg];
-  const step = segs.indexOf("current") + 1;
   const pct = s.todos.length ? Math.round((segs.filter((x) => x === "done").length / segs.length) * 100) : null;
-  const left = [s.todos.length > 1 && !compact ? `step ${step} of ${segs.length}` : "", n.label].filter(Boolean).join(" · ");
   const right = `${ago(n.elapsedMs)}${n.stale ? ` ${quiet(n.elapsedMs, n.quietMs, compact)}` : ""}`;
-  return <ProgressTrack segs={segs} pct={pct} left={left} right={right} live stale={n.stale} source={s.id} fill />;
+  return <ProgressTrack segs={segs} pct={pct} left={liveCaption(s.todos, n.label, compact)} right={right} live stale={n.stale} source={s.id} fill />;
+}
+
+// The track's caption. On a wall tile the line below already shows the running tool, so the
+// caption names the plan step Claude is on instead of "Thinking" (god-mode mark). The percent is
+// not in it: the track shows it as the headline figure beside the bar.
+export function liveCaption(todos: Todo[], label: string, compact?: boolean): string {
+  const segs = todos.length ? planSegs(todos, true) : ["current" as Seg];
+  const i = segs.indexOf("current");
+  const name = compact && todos[i] ? todos[i].activeForm || todos[i].content : "";
+  return [todos.length > 1 && !compact ? `step ${i + 1} of ${segs.length}` : "", name || label].filter(Boolean).join(" · ");
 }
 
 // One segment per plan step. While working, some step is always current (the next one to do).

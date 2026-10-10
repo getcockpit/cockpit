@@ -193,7 +193,7 @@ function Transcript({ items, plan, running, raw, diagrams, onDiagram, onDiscover
           </div>
         </div>
       ) : t.kind === "view" ? (
-        <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={onReply} live={live && t.id === lastTextId} />
+        <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={onReply} onDiscover={onDiscover} live={live && t.id === lastTextId} />
       ) : t.kind === "user" ? (
         <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)" }}><span className="mr-mono mr-dim">you →</span><span className="mr-grow">{t.text}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
       ) : t.kind === "result" ? (
