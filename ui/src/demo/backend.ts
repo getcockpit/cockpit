@@ -208,6 +208,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "term_open": case "workspace_sign_in": case "voice_start": throw new Error("Not available in the demo (needs the desktop app).");
     case "workspace_create": { const wid = `ws_${Date.now().toString(36)}`; record(null, "ui.workspace_created", { id: wid, name: a.name, config_dir: `/demo/${wid}` }); return wid; }
     case "workspace_delete": record(null, "ui.workspace_deleted", { id: a.id, name: a.name, stopped: 0, trashed_to: "~/.Trash/…" }); return null;
+    case "workspace_set_folder": record(null, "ui.workspace_folder_set", { id: a.id, folder: a.folder ?? null }); return null;
     case "workspace_rename": record(null, "ui.workspace_renamed", { id: a.id, name: a.name }); return null;
     default: return null;
   }
