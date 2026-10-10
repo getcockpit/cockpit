@@ -19,8 +19,18 @@ fn gh(cwd: &str, args: &[&str]) -> Result<serde_json::Value, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())
 }
 
-// My open PRs with their review threads, in one call (search can't see threads).
-const MINE: &str = "query { viewer { login } search(query: \"is:pr is:open author:@me archived:false\", type: ISSUE, first: 30) { nodes { ... on PullRequest { number title url updatedAt isDraft reviewDecision repository { nameWithOwner } reviewThreads(first: 100) { nodes { isResolved comments(last: 1) { nodes { author { login } } } } } } } } }";
+// My open PRs with their review threads, in one call (search can't see threads); `scope` is
+// empty or ` repo:owner/name` (MR-79).
+fn mine_query(scope: &str) -> String {
+    format!("query {{ viewer {{ login }} search(query: \"is:pr is:open author:@me archived:false{scope}\", type: ISSUE, first: 30) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft reviewDecision repository {{ nameWithOwner }} reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ nodes {{ author {{ login }} }} }} }} }} }} }} }} }}")
+}
+
+/// `owner/name` made only of the characters GitHub allows, so it's safe inside a search query.
+fn safe_slug(slug: &str) -> Option<&str> {
+    let (owner, name) = slug.split_once('/')?;
+    let ok = |p: &str| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
+    (ok(owner) && ok(name)).then_some(slug)
+}
 
 /// What's worth addressing in my open PRs: `waiting` counts unresolved threads whose last word is
 /// someone else's (a reply of mine means the ball is with them). Changes requested first, then
@@ -44,18 +54,45 @@ pub fn rank_mine(data: &serde_json::Value) -> serde_json::Value {
     prs.into()
 }
 
-/// `review`: open PRs waiting for my review. `address`: my open PRs anywhere (not just this
-/// folder's repo), the ones with something to address first. Both work from any folder (MR-48).
+/// `review`: open PRs waiting for my review. `address`: my open PRs, the ones with something to
+/// address first. Both work from any folder (MR-48): every repo by default, or just `repo` (MR-79).
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
 #[tauri::command(async)]
-pub fn gh_prs(app: AppHandle, cwd: String, mode: String) -> Result<serde_json::Value, String> {
+pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>) -> Result<serde_json::Value, String> {
     let cwd = crate::sidecar::expand_home(&app, &cwd);
     let cwd = if std::path::Path::new(&cwd).is_dir() { cwd } else { std::env::var("HOME").unwrap_or_default() };
+    let repo = match repo.as_deref() {
+        Some(r) => Some(safe_slug(r).ok_or_else(|| format!("not a GitHub repo: {r}"))?),
+        None => None,
+    };
     match mode.as_str() {
-        "review" => gh(&cwd, &["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"]),
-        "address" => Ok(rank_mine(&gh(&cwd, &["api", "graphql", "-f", &format!("query={MINE}")])?["data"])),
+        "review" => {
+            let only = repo.map(|r| format!("--repo={r}"));
+            let mut args = vec!["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"];
+            args.extend(only.as_deref());
+            gh(&cwd, &args)
+        }
+        "address" => {
+            let q = mine_query(&repo.map(|r| format!(" repo:{r}")).unwrap_or_default());
+            Ok(rank_mine(&gh(&cwd, &["api", "graphql", "-f", &format!("query={q}")])?["data"]))
+        }
         _ => Err(format!("unknown mode {mode}")),
     }
+}
+
+/// `owner/name` of a git remote URL on GitHub (https or ssh), or None.
+fn github_slug(url: &str) -> Option<String> {
+    let u = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    let rest = u.split_once("github.com/").or_else(|| u.split_once("github.com:"))?.1;
+    safe_slug(rest).map(str::to_owned)
+}
+
+/// The GitHub repo of a folder (its `origin`), for the start picker's "this repo only" toggle (MR-79).
+#[tauri::command(async)]
+pub fn gh_repo(app: AppHandle, cwd: String) -> Option<String> {
+    let cwd = crate::sidecar::expand_home(&app, &cwd);
+    let out = Command::new("git").args(["-C", &cwd, "remote", "get-url", "origin"]).output().ok().filter(|o| o.status.success())?;
+    github_slug(&String::from_utf8_lossy(&out.stdout))
 }
 
 /// `owner`, `name` and the number from a PR URL.
@@ -151,6 +188,17 @@ mod tests {
         assert_eq!((r[1]["waiting"].as_u64(), r[1]["unresolved"].as_u64()), (Some(1), Some(2)));
         assert_eq!(r[3]["waiting"].as_u64(), Some(0));
         assert!(r[0].get("reviewThreads").is_none());
+    }
+
+    #[test]
+    fn scopes_pr_lists_to_one_repo() {
+        assert_eq!(github_slug("git@github.com:acme/platform.git\n"), Some("acme/platform".into()));
+        assert_eq!(github_slug("https://github.com/acme/platform"), Some("acme/platform".into()));
+        assert_eq!(github_slug("https://gitlab.com/a/b.git"), None);
+        assert_eq!(safe_slug("a/b\" OR x"), None);
+        assert_eq!(safe_slug("my-org/my.repo_1"), Some("my-org/my.repo_1"));
+        assert!(mine_query(" repo:a/b").contains("archived:false repo:a/b\""));
+        assert!(mine_query("").contains("archived:false\""));
     }
 
     #[test]
