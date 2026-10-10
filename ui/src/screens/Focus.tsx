@@ -109,17 +109,18 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
         </section>
 
         <aside style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ background: "var(--mr-tile)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Only what this session has: no empty plan box, no local change map for a PR review (J8). */}
+          {s.todos.length > 0 && <div style={{ background: "var(--mr-tile)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
             <h2 className="mr-h">Plan</h2>
-            {s.todos.length === 0 ? <span className="mr-dim">No plan yet.</span> : s.todos.map((t, i) => (
+            {s.todos.map((t, i) => (
               <div key={i} className="mr-row" style={{ color: t.status === "in_progress" ? "var(--mr-ink)" : t.status === "completed" ? "var(--mr-ink-3)" : "var(--mr-ink-2)", fontWeight: t.status === "in_progress" ? 700 : 400 }}>
                 <span aria-hidden="true" style={{ width: 14 }}>{t.status === "completed" ? "✓" : t.status === "in_progress" ? "▸" : "·"}</span>
                 <span>{t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}</span>
               </div>
             ))}
-            {s.todos.length > 0 && <Bar value={tile.progress} />}
-          </div>
-          <ChangeMap s={s} />
+            <Bar value={tile.progress} />
+          </div>}
+          {s.kind !== "review" && <ChangeMap s={s} />}
           <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.model ?? ""}{s.costUsd ? ` · $${s.costUsd.toFixed(2)} equiv.` : ""}</span>
         </aside>
       </main>

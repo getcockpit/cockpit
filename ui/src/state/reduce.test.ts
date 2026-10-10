@@ -205,3 +205,16 @@ test("marking a session done archives it; restore and resume bring it back", () 
   expect(replay([...base, ev("A3", "ui.session_archived"), ev("A4", "ui.session_unarchived")]).sessions.s.archivedAt).toBeNull();
   expect(replay([...base, ev("A3", "ui.session_archived"), ev("A4", "ui.session_requested", { prompt: "Continue", cwd: "/w", resume: "sdk-1" })]).sessions.s.archivedAt).toBeNull();
 });
+
+test("a review is over once you publish it", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "r", kind, payload, anchor: null, created_at: 1 });
+  const base = [
+    ev("R1", "ui.session_requested", { prompt: "/review 482", kind: "review", cwd: "/w" }),
+    ev("R2", "flow.review_publish_ready", { comments: [{ severity: "blocking", text: "x" }], verdict: "Request changes" }),
+    ev("R3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "ready" } }),
+  ];
+  expect(pickTile(replay(base).sessions.r).state).toBe("needs_you");
+  const after = replay([...base, ev("R4", "ui.message_sent", { text: "publish" }), ev("R5", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } })]);
+  expect(after.sessions.r.review?.published).toBe(true);
+  expect(pickTile(after.sessions.r).state).not.toBe("needs_you");
+});
