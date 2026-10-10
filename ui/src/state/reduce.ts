@@ -12,12 +12,13 @@ export const initialState: AppState = {
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
+  lastBuildAt: null,
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null,
+    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null,
   };
 }
 
@@ -37,6 +38,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     }
     return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
   }
+  if (ev.kind === "selfbuild.finished" && p.ok) return { ...next, lastBuildAt: ev.created_at };
   if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };
   if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false };
   if (ev.kind === "sidecar.limits") {
@@ -105,6 +107,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     case "ui.permission_answered":
       s.pending = s.pending.filter((a) => a.requestId !== p.request_id);
       s.status = s.pending.length ? "needs_you" : "working";
+      break;
+    case "ui.fix_applied":
+      s.fixApplied = ev.created_at;
       break;
     case "ui.message_sent":
       s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at }];

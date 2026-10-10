@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Key } from "../components";
 import { api } from "../state/store";
+import { sessionTitle } from "../picker/title";
 import type { AppState, MrEvent } from "../state/types";
 
 // Settings (decision 25): theme, and the history of your own changes to the app — collected on a
@@ -19,7 +20,10 @@ type Pending = { branch: string; commits: number; subject: string };
 type History = { worktree: string; changes: Change[]; pending: Pending[] };
 type Build = { id: string; sha: string; branch: string; worktree: string; at: number; current: boolean };
 
-export function Settings({ state, onClose }: { state: AppState; onClose: () => void }) {
+export function Settings({ state, onClose, onOpenSession }: { state: AppState; onClose: () => void; onOpenSession: (id: string) => void }) {
+  // Your god-mode reports, newest first, with where each one is (MR-47).
+  const reports = state.order.map((id) => state.sessions[id]).filter((x) => /^God-mode mark/.test(x.title)).reverse()
+    .map((x) => ({ s: x, state: x.fixApplied ? "Applied" : x.status === "working" || x.status === "starting" ? "Fixing…" : x.status === "error" ? "Fix failed" : "Ready to apply" }));
   const [hist, setHist] = useState<History | null>(null);
   const [builds, setBuilds] = useState<Build[]>([]);
   const [msg, setMsg] = useState("");
@@ -53,7 +57,7 @@ export function Settings({ state, onClose }: { state: AppState; onClose: () => v
     <div role="dialog" aria-label="Settings" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "56px 24px", background: "rgba(21,24,27,.35)", zIndex: 25, overflowY: "auto" }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
-        <div className="mr-row mr-band" style={{ padding: "12px 16px" }}><strong>Settings</strong><span className="mr-grow" /><Key onClick={() => { void api.log("ui.onboarding_reset", {}); onClose(); }}>Show the intro</Key><Key k="esc" onClick={onClose}>Close</Key></div>
+        <div className="mr-row mr-band" style={{ padding: "12px 16px" }}><strong>Settings</strong><span className="mr-grow" /><Key onClick={() => { onClose(); api.report(); }}>Report a bug</Key><Key onClick={() => { void api.log("ui.onboarding_reset", {}); onClose(); }}>Show the intro</Key><Key k="esc" onClick={onClose}>Close</Key></div>
 
         <section style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           <h2 className="mr-h">Theme</h2>
@@ -69,6 +73,19 @@ export function Settings({ state, onClose }: { state: AppState; onClose: () => v
           </div>
         </section>
 
+        {reports.length > 0 && (
+          <section data-mr="Reports" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+            <h2 className="mr-h">Your bug reports <span className="mr-dim" style={{ fontWeight: 400 }}>each one runs a fix session; apply its fix from there</span></h2>
+            {reports.map(({ s, state }) => (
+              <button key={s.id} type="button" onClick={() => { onClose(); onOpenSession(s.id); }} className="mr-row" style={{ padding: "8px 10px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+                <span style={{ width: 16, color: state === "Applied" ? "var(--mr-done)" : state === "Ready to apply" ? "var(--mr-needs-ink)" : "var(--mr-ink-3)" }}>{state === "Applied" ? "✓" : state === "Ready to apply" ? "◆" : "…"}</span>
+                <span className="mr-grow mr-ellipsis">{sessionTitle(s).replace(/^Fix: /, "")}</span>
+                <span className="mr-dim">{state}</span>
+              </button>
+            ))}
+          </section>
+        )}
+
         <section style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           <h2 className="mr-h">Your changes <span className="mr-dim" style={{ fontWeight: 400 }}>on the local branch “mine”, never pushed</span></h2>
           {hist?.pending.map((p) => (
@@ -79,7 +96,7 @@ export function Settings({ state, onClose }: { state: AppState; onClose: () => v
             </div>
           ))}
           <div className="mr-row">
-            <Key k="↵" tone="primary" disabled={!hist || !!building} onClick={() => hist && void act(() => invoke("selfbuild_start", { worktree: hist.worktree }), "Building your changes…")}>{building ? `Building · ${building}` : "Build my changes"}</Key>
+            <Key k="↵" tone="primary" disabled={!hist || !!building} onClick={() => hist && void act(async () => { await invoke("personal_sync"); return invoke("selfbuild_start", { worktree: hist.worktree }); }, "Building your changes on top of the latest app…")}>{building ? `Building · ${building}` : "Build my changes"}</Key>
             <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>{hist?.worktree}</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
