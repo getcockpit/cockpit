@@ -1,3 +1,4 @@
+import { RecoveryBanner } from "./components/RecoveryBanner";
 import { keyOf } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2, wantsDiagram } from "./picker/pick";
@@ -7,6 +8,7 @@ import { Onboarding } from "./screens/Onboarding";
 import { Archive } from "./screens/Archive";
 import { Toast } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { navigate, Presence } from "./components/motion";
 import type { AppState } from "./state/types";
 const SignInPane = lazy(() => import("./screens/Terminal").then((m) => ({ default: m.SignInPane })));
 import { Focus } from "./screens/Focus";
@@ -14,6 +16,7 @@ import { StartPicker } from "./screens/StartPicker";
 import { DocMap } from "./screens/DocMap";
 import { Wall } from "./screens/Wall";
 import { GodMode } from "./screens/GodMode";
+import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
 import { Builds } from "./screens/Builds";
 import { VoiceController, type PointTarget } from "./screens/Voice";
 import { api } from "./state/store";
@@ -62,21 +65,26 @@ export default function App() {
     return { ...all, order, sessions: Object.fromEntries(mine.map((id) => [id, all.sessions[id]])) };
   }, [all, workspace]);
   const docs = useMemo(() => allDocs.filter((d) => (d.session_id ? all.sessions[d.session_id]?.workspace === workspace : workspace === "personal")), [allDocs, all, workspace]);
-  const [focus, setFocus] = useState<string | null>(null);
-  const [docId, setDocId] = useState<string | null>(null);
+  const [focus, setFocusNow] = useState<string | null>(null);
+  const [docId, setDocIdNow] = useState<string | null>(null);
+  // Screen changes morph (MR-67): opening something goes deeper, closing it comes back.
+  const setFocus = (id: string | null) => navigate(id ? "deeper" : "back", () => setFocusNow(id));
+  const setDocId = (id: string | null) => navigate(id ? "deeper" : "back", () => setDocIdNow(id));
   // Each workspace remembers where you were (wall, a session or a doc), so switching back is a return, not a restart.
   const views = useRef<Record<string, { focus: string | null; docId: string | null }>>({});
   const [switcher, setSwitcher] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   // If the open workspace disappears (deleted), fall back to Personal.
-  useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocus(null); setDocId(null); setWorkspace("personal"); } }, [all.workspaces, workspace]);
+  useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocusNow(null); setDocIdNow(null); setWorkspace("personal"); } }, [all.workspaces, workspace]);
   const switchTo = (id: string) => {
     if (id === workspace) return;
     views.current[workspace] = { focus, docId };
     const back = views.current[id] ?? { focus: null, docId: null };
-    setFocus(back.focus && all.sessions[back.focus]?.workspace === id ? back.focus : null);
-    setDocId(back.docId);
-    setWorkspace(id);
+    navigate("side", () => {
+      setFocusNow(back.focus && all.sessions[back.focus]?.workspace === id ? back.focus : null);
+      setDocIdNow(back.docId);
+      setWorkspace(id);
+    });
   };
   const [picker, setPicker] = useState(false);
   const [god, setGod] = useState(false);
@@ -94,7 +102,8 @@ export default function App() {
       if (e.metaKey && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
       if (e.metaKey && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
       if (e.metaKey && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
-      if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); setBuilds((x) => (x === null ? "" : null)); }
+      // ⌘⇧B updates the app from main (decision 27); ⌘⌥⇧B still opens the build history.
+      if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); if (e.altKey) setBuilds((x) => (x === null ? "" : null)); else void startUpdate().catch(() => {}); }
       if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
         const ws = all.workspaces[Number(keyOf(e)) - 1];
         if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); switchTo(ws.id); }
@@ -125,8 +134,8 @@ export default function App() {
   };
   const tabs = <WorkspaceTabs state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onSwitcher={() => setSwitcher(true)} onSignIn={setSignIn} onSettings={() => setSettings(true)} />;
   const signInPanel = signIn && (
-    <div role="dialog" aria-label="Sign in to workspace" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "80px 24px", background: "rgba(21,24,27,.35)", zIndex: 30 }}>
-      <div style={{ width: "100%", maxWidth: 900, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div role="dialog" aria-label="Sign in to workspace" className="mr-scrim" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "80px 24px", background: "rgba(21,24,27,.35)", zIndex: 30 }}>
+      <div className="mr-sheet" style={{ width: "100%", maxWidth: 900, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="mr-row"><strong>Sign in to “{all.workspaces.find((w) => w.id === signIn)?.name}”</strong><span className="mr-grow" /><button type="button" className="mr-key" onClick={() => setSignIn(null)}>Close</button></div>
         <Suspense fallback={<span className="mr-dim">Opening…</span>}><SignInPane workspace={signIn} onExit={() => setSignIn(null)} /></Suspense>
       </div>
@@ -136,19 +145,32 @@ export default function App() {
   const buildsPanel = builds !== null && <Builds defaultWorktree={builds || undefined} onClose={() => setBuilds(null)} />;
   const archived = Object.values(state.sessions).filter((x) => x.archivedAt);
   const archivePanel = archive && <Archive sessions={archived} onClose={() => setArchive(false)} onOpen={(id) => { setArchive(false); setDocId(null); setFocus(id); }} />;
-  const overlay = picker && <StartPicker state={state} initialText={pickerText} initialMode={pickerMode} onClose={() => { setPicker(false); setPickerText(""); setPickerMode(undefined); }} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
+  const overlay = picker && <StartPicker state={state} workspace={workspace} initialText={pickerText} initialMode={pickerMode} onClose={() => { setPicker(false); setPickerText(""); setPickerMode(undefined); }} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
   // App shell: the workspace tabs stay put and only the view scrolls, so sticky headers work and
   // nothing pushes the tabs off-screen (MR-43).
   const shell = (view: React.ReactNode, overlays: React.ReactNode) => (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {tabs}
+      <RecoveryBanner all={all} />
+      <UpdateBanner all={all} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />
       <div id="mr-view" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{view}</div>
       {overlays}
     </div>
   );
+  const overlays = <>
+      <Presence show={picker}>{overlay}</Presence>
+      <Presence show={builds !== null}>{buildsPanel}</Presence>
+      <Presence show={!!signIn}>{signInPanel}</Presence>
+      <Presence show={settings}><Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} /></Presence>
+      <Presence show={archive}>{archivePanel}</Presence>
+      <Toast />
+      <Presence show={!!deleting}>{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}</Presence>
+      <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>
+      {godmode}{voice}<Presence show={!!intro}>{intro}</Presence>
+    </>;
   const doc = docId ? docs.find((d) => d.id === docId) : null;
-  if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}<Toast />{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
+  if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}<Toast />{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
-  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}<Toast />{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}{switcher && <WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} />}{godmode}{voice}{intro}</>);
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, overlays);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
 }

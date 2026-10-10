@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "bench")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -39,6 +39,10 @@ fn resume_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "resume")
 }
 
+fn update_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "update")
+}
+
 fn title_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "title")
 }
@@ -58,6 +62,9 @@ fn doc_mode() -> bool {
 pub fn run(app: AppHandle) {
     if selfbuild_mode() {
         return run_selfbuild(app);
+    }
+    if update_mode() {
+        return run_update(app);
     }
     tauri::async_runtime::spawn(async move {
         tokio_sleep(Duration::from_secs(2)).await;
@@ -216,6 +223,36 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
         }
         _ => {}
     }
+}
+
+/// One-click Update for real (MR-66), under scripts/dev.sh: the first launch builds the other slot
+/// and restarts into it; the relaunched app (MR_AUTO_RESUME=1) notes it came back and ends the run.
+fn run_update(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio_sleep(Duration::from_secs(3)).await;
+        if std::env::var("MR_AUTO_RESUME").is_ok_and(|v| v == "1") {
+            crate::eventlog::record(&app, None, "selftest.update_back", &serde_json::json!({ "slot": std::env::var("MR_DEV_SLOT").ok() }), None);
+            tokio_sleep(Duration::from_millis(500)).await;
+            app.exit(0);
+            return;
+        }
+        if let Err(e) = crate::update::update_start(app.clone()) {
+            eprintln!("[selftest] update_start: {e}");
+            std::process::exit(1);
+        }
+        for _ in 0..1200 {
+            tokio_sleep(Duration::from_secs(1)).await;
+            match crate::update::built() {
+                Some(true) => {
+                    let _ = crate::update::update_restart(app.clone());
+                    return;
+                }
+                Some(false) => continue,
+                None => { eprintln!("[selftest] update build failed"); std::process::exit(1); }
+            }
+        }
+        std::process::exit(1);
+    });
 }
 
 async fn tokio_sleep(d: Duration) {

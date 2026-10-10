@@ -3,7 +3,7 @@ import { replay } from "./reduce";
 import { nowLine, QUIET_MS } from "../picker/now";
 import { sessionTitle } from "../picker/title";
 import { proposedReplies, withoutReplyLine } from "../picker/queue";
-import { nextReplies } from "../screens/Focus";
+import { groupSteps, nextReplies } from "../screens/Focus";
 import type { MrEvent, TranscriptItem } from "./types";
 
 // MR-59: is my message queued, being worked on, or answered — and is anything happening at all?
@@ -115,5 +115,38 @@ describe("titles and next steps (MR-63)", () => {
     const s = replay([...start(), text('Fixed it.\n\nNext: "Open a PR" · "Run the tests"'), result()]).sessions.s1;
     expect(nextReplies(s)).toEqual(["Open a PR", "Run the tests"]);
     expect(nextReplies(replay([...start(), text("Fixed it."), result()]).sessions.s1)).toEqual([]);
+  });
+});
+
+describe("one-click update (MR-66)", () => {
+  const up = (kind: string, payload: Record<string, unknown> = {}) => ev(kind, payload, null);
+  test("building → ready → restart → what's new, and a failure keeps its step and log", () => {
+    const base = [...start(), up("update.started", { subjects: ["Live titles"] }), up("update.step", { step: "app" })];
+    expect(replay(base).update.phase).toBe("building");
+    expect(replay(base).update.step).toBe("app");
+    const ready = [...base, up("update.finished", { ok: true })];
+    expect(replay(ready).update.phase).toBe("ready");
+    const after = replay([...ready, up("update.restarting", { subjects: ["Live titles"] }), up("app.started", { sha: "x" })]);
+    expect(after.update.phase).toBe("idle");
+    expect(after.update.whatsNew).toEqual(["Live titles"]);
+    expect(replay([...ready, up("update.restarting", { subjects: ["Live titles"] }), up("app.started"), up("ui.update_seen")]).update.whatsNew).toBeNull();
+    const failed = replay([...base, up("update.finished", { ok: false, step: "app", log: "error[E0425]" })]).update;
+    expect([failed.phase, failed.step, failed.log]).toEqual(["failed", "app", "error[E0425]"]);
+    expect(replay([...base, up("app.started")]).update.whatsNew).toBeNull(); // a plain restart isn't an update
+  });
+});
+
+describe("transcript grouped by plan step (MR-69)", () => {
+  const plan = (doing: number) => ev("plan.updated", { steps: ["Read", "Fix", "Test"].map((step, i) => ({ step, status: i < doing ? "done" : i === doing ? "doing" : "todo" })) });
+  test("items take the step in progress; routine tools fold, signal stays outside", () => {
+    const failing = sdk({ type: "assistant", message: { content: [{ type: "tool_use", id: "t9", name: "Bash", input: { command: "x" } }] } });
+    const failed = sdk({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t9", content: "boom", is_error: true }] } });
+    const s = replay([...start(), text("Before any plan"), plan(0), toolUse("t1", "cat a"), toolUse("t2", "cat b"), text("Found it"), plan(1), toolUse("t3", "edit"), failing, failed]).sessions.s1;
+    expect(s.transcript.find((x) => x.kind === "text" && x.text === "Before any plan")?.step).toBeUndefined();
+    expect(s.transcript.filter((x) => x.step === "Read").length).toBe(3);
+    const rows = groupSteps(s.transcript);
+    const steps = rows.filter((r) => r.kind === "step") as Extract<(typeof rows)[number], { kind: "step" }>[];
+    expect(steps.map((g) => [g.step, g.tools.length, g.signal.map((x) => x.kind)])).toEqual([["Read", 2, ["text"]], ["Fix", 1, ["tool"]]]);
+    expect(rows[0].kind).toBe("text"); // the pre-plan reply stays loose
   });
 });
