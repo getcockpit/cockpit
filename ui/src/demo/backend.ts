@@ -159,6 +159,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "limits_refresh": record(null, "sidecar.limits", { available: true, plan: "max", five_hour: { utilization: 0.34, resetsAt: Math.round(Date.now() / 1000) + 7200 }, seven_day: { utilization: 0.58, resetsAt: null } }); return null;
     case "godmode_save_mark": return "/Users/me/code/minority-report";
     case "personal_sync": return "";
+    case "pr_repo": return String(a.spec).includes("acme/shop") ? "/Users/me/code/shop" : null;
     case "fix_apply": record(String(a.session), "ui.fix_applied", { branch: "mr/god-mode-mark-ab12" }); return "merged";
     case "plugin:dialog|open": return "/Users/me/code/picked-folder";
     case "term_open": case "workspace_sign_in": case "voice_start": throw new Error("Not available in the demo (needs the desktop app).");

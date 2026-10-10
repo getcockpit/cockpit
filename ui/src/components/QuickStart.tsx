@@ -12,7 +12,7 @@ const KINDS: { id: SessionKind; name: string; what: string }[] = [
   { id: "plan", name: "Plan it first", what: "A working doc you shape before any code" },
 ];
 
-export function QuickStart({ onStarted, onMore }: { onStarted: (id: string) => void; onMore: () => void }) {
+export function QuickStart({ onStarted, onMore }: { onStarted: (id: string) => void; onMore: (mode: "review" | "address") => void }) {
   const [cwd, setCwd] = useWorkFolder();
   const [text, setText] = useState("");
   const [kind, setKind] = useState<SessionKind>(() => { try { return localStorage.getItem("mr.mode") === "plan" ? "plan" : "blank"; } catch { return "blank"; } });
@@ -57,8 +57,8 @@ export function QuickStart({ onStarted, onMore }: { onStarted: (id: string) => v
       </div>
       <div className="mr-row mr-dim" style={{ gap: 14 }}>
         <span>Or:</span>
-        <button type="button" className="mr-key" onClick={onMore}>Review a PR</button>
-        <button type="button" className="mr-key" onClick={onMore}>Address PR comments</button>
+        <button type="button" className="mr-key" onClick={() => onMore("review")}>Review a PR</button>
+        <button type="button" className="mr-key" onClick={() => onMore("address")}>Address PR comments</button>
         <span className="mr-grow" />
         <span><span className="mr-mono">⌘K</span> starts anything, from anywhere</span>
       </div>
