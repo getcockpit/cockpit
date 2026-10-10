@@ -276,7 +276,7 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
       for (const c of content as Record<string, unknown>[]) {
         if (c.type !== "tool_result") continue;
         const id = String(c.tool_use_id ?? "");
-        s.transcript = s.transcript.map((t) => (t.kind === "tool" && t.toolUseId === id ? { ...t, result: m.tool_use_result ?? c.content, isError: Boolean(c.is_error) } : t));
+        s.transcript = s.transcript.map((t) => (t.kind === "tool" && t.toolUseId === id ? { ...t, result: m.tool_use_result ?? c.content, isError: Boolean(c.is_error), ...(t.background && { background: { ...t.background, output: t.background.output ?? outputFile(c.content) } }) } : t));
       }
     }
     return;
@@ -287,8 +287,8 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     const id = String(m.tool_use_id ?? "");
     s.transcript = s.transcript.map((t) => {
       if (t.kind !== "tool" || t.toolUseId !== id) return t;
-      if (m.subtype === "task_started") return m.is_backgrounded ? { ...t, background: { status: "running" } } : t;
-      return t.background ? { ...t, background: { status: String(m.status ?? "completed"), summary: (m.summary as string) ?? undefined } } : t;
+      if (m.subtype === "task_started") return m.is_backgrounded ? { ...t, background: { status: "running", from: ev.created_at } } : t;
+      return t.background ? { ...t, background: { ...t.background, status: String(m.status ?? "completed"), summary: (m.summary as string) ?? undefined, output: (m.output_file as string) ?? t.background.output, to: ev.created_at } } : t;
     });
     return;
   }
@@ -301,6 +301,12 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     // Turn finished: waiting for the next message, unless one is already queued for the next turn.
     if (s.status !== "needs_you") s.status = s.transcript.some((t) => t.kind === "user" && t.delivery === "queued") ? "working" : "idle";
   }
+}
+
+// Where a background task writes its output: its tool result says "Output is being written to: <path>.output".
+function outputFile(content: unknown): string | undefined {
+  const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((c) => (c as { text?: string })?.text ?? "").join("\n") : "";
+  return /written to: (\S+\.output)/.exec(text)?.[1];
 }
 
 function settle(items: TranscriptItem[], from: Delivery[], to: Delivery): TranscriptItem[] {

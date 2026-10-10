@@ -45,8 +45,9 @@ export function editCard(t: Tool): EditCard | null {
 // Commands that prove something: tests, builds, type-checks, lints.
 const CHECK = /\b(vitest|jest|pytest|go test|cargo (test|build|check|clippy)|(bun|npm|pnpm|yarn)( run)? (test|build|typecheck|lint)|bun test|tsc\b|selftest[\w-]*\.sh)/;
 
+// A backgrounded build or test isn't a check card: its tool result only says it started.
 export function isCheck(t: Tool): boolean {
-  return t.name === "Bash" && CHECK.test(String(t.input.command ?? ""));
+  return t.name === "Bash" && !t.background && CHECK.test(String(t.input.command ?? ""));
 }
 
 const out = (result: unknown) => {

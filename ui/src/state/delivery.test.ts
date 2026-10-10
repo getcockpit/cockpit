@@ -1,3 +1,5 @@
+import { backgroundTasks } from "../components/BackgroundPanel";
+import { isCard } from "../picker/logCards";
 import { describe, expect, test } from "vitest";
 import { replay } from "./reduce";
 import { nowLine, QUIET_MS } from "../picker/now";
@@ -157,23 +159,41 @@ describe("background tasks (god-mode mark: started tasks weren't shown)", () => 
   const bg = (id: string, desc: string) => sdk({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Bash", input: { command: "./bench.sh", description: desc, run_in_background: true } }] } });
   const started = (id: string, is_backgrounded: boolean) => sdk({ type: "system", subtype: "task_started", task_id: `b-${id}`, tool_use_id: id, is_backgrounded, task_type: "local_bash", description: "Run overhead benchmark (12 runs)" });
   const notified = (id: string, status: string) => sdk({ type: "system", subtype: "task_notification", task_id: `b-${id}`, tool_use_id: id, status, summary: `Background command "Run overhead benchmark (12 runs)" ${status}` });
+  const bgResult = (id: string) => sdk({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: `Command running in background with ID: b-${id}. Output is being written to: /tmp/claude-501/p/s/tasks/b-${id}.output. You will be notified when it completes.` }] } });
   const base = [...start(), toolUse("t1", "cat a"), toolResult("t1"), toolUse("t2", "cat b"), started("t2", false), toolResult("t2"), toolUse("t3", "cat c"), toolResult("t3"),
-    bg("t4", "Run overhead benchmark (12 runs)"), started("t4", true), toolResult("t4"), text("Measuring the prompt and tool overhead now.")];
+    bg("t4", "Run overhead benchmark (12 runs)"), started("t4", true), bgResult("t4"), text("Measuring the prompt and tool overhead now.")];
 
   test("a backgrounded task stays visible and running, outside the fold", () => {
     const s = replay(base).sessions.s1;
     const tool = (id: string) => s.transcript.find((x) => x.kind === "tool" && x.toolUseId === id) as Extract<TranscriptItem, { kind: "tool" }>;
-    expect(tool("t4").background).toEqual({ status: "running" });
+    expect(tool("t4").background).toMatchObject({ status: "running", output: "/tmp/claude-501/p/s/tasks/b-t4.output" });
     expect(tool("t2").background).toBeUndefined(); // a foreground command isn't a background task
     const rows = groupSteps(s.transcript);
     expect(rows.map((r) => r.kind)).toEqual(["tools", "tool", "text"]);
     expect((rows[0] as { tools: unknown[] }).tools.length).toBe(3);
   });
 
+  test("the Background panel lists it while it runs, and not as running once the session ended", () => {
+    const live = backgroundTasks(replay(base).sessions.s1);
+    expect(live.map((x) => [x.tool.toolUseId, x.live])).toEqual([["t4", true]]);
+    const ended = replay([...base, ev("sidecar.session_ended", { ok: true })]).sessions.s1;
+    expect(ended.status).toBe("ended");
+    expect(backgroundTasks(ended)[0].live).toBe(false);
+    expect(backgroundTasks(replay([...base, notified("t4", "completed")]).sessions.s1)[0].live).toBe(false);
+  });
+
+  test("a backgrounded build is a running task, not a passed check card", () => {
+    const build = sdk({ type: "assistant", message: { content: [{ type: "tool_use", id: "t5", name: "Bash", input: { command: "bun run build", run_in_background: true } }] } });
+    const s = replay([...base, build, started("t5", true), bgResult("t5")]).sessions.s1;
+    const t5 = s.transcript.find((x) => x.kind === "tool" && x.toolUseId === "t5")!;
+    expect(isCard(t5)).toBe(false);
+  });
+
   test("its notification says how it ended", () => {
     const done = replay([...base, notified("t4", "completed")]).sessions.s1.transcript.find((x) => x.kind === "tool" && x.toolUseId === "t4");
     expect(done?.kind === "tool" && done.background?.status).toBe("completed");
     const failed = replay([...base, notified("t4", "failed")]).sessions.s1.transcript.find((x) => x.kind === "tool" && x.toolUseId === "t4");
-    expect(failed?.kind === "tool" && failed.background).toEqual({ status: "failed", summary: 'Background command "Run overhead benchmark (12 runs)" failed' });
+    expect(failed?.kind === "tool" && failed.background).toMatchObject({ status: "failed", summary: 'Background command "Run overhead benchmark (12 runs)" failed' });
+    expect(failed?.kind === "tool" && typeof failed.background?.to).toBe("number");
   });
 });
