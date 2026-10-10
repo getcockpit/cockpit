@@ -93,7 +93,7 @@ export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "oth
 // Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
 export type ClefMeter = { day: string; calls: number; tokens: number; errors: number };
 
-export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null };
+export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null; weeklyResetsAt: number | null };
 
 export type AppState = {
   sessions: Record<string, SessionState>;
