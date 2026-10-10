@@ -15,11 +15,16 @@ const KINDS: { id: SessionKind; name: string; what: string }[] = [
 export function QuickStart({ onStarted, onMore }: { onStarted: (id: string) => void; onMore: () => void }) {
   const [cwd, setCwd] = useWorkFolder();
   const [text, setText] = useState("");
-  const [kind, setKind] = useState<SessionKind>("blank");
+  const [kind, setKind] = useState<SessionKind>(() => { try { return localStorage.getItem("mr.mode") === "plan" ? "plan" : "blank"; } catch { return "blank"; } });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { input.current?.focus(); }, []);
+  useEffect(() => {
+    const pick = (e: Event) => { const k = (e as CustomEvent<SessionKind>).detail; if (k === "blank" || k === "plan") { setKind(k); input.current?.focus(); } };
+    window.addEventListener("mr:start-kind", pick);
+    return () => window.removeEventListener("mr:start-kind", pick);
+  }, []);
   const start = async () => {
     if (!text.trim() || busy) return;
     setBusy(true); setError("");
