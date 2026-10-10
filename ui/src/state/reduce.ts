@@ -10,6 +10,7 @@ export const initialState: AppState = {
   workspaces: [{ id: "personal", name: "Personal", configDir: null, folder: null }],
   theme: "control-room",
   look: { scale: 1, density: "default" },
+  autoReview: true,
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
@@ -80,6 +81,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "ui.workspace_folder_set") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, folder: (p.folder as string) ?? null } : w)) };
   if (ev.kind === "ui.workspace_renamed") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, name: String(p.name) } : w)) };
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
+  if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
   if (ev.kind === "ui.suggestion_dismissed") return { ...next, dismissed: [...next.dismissed, String(p.id)] };
   if (ev.kind === "ui.session_requested" && sid) {
