@@ -14,6 +14,9 @@ function findTarget(n: EventTarget | null): Target | null {
   return { el, component: el.dataset.mr ?? "?", source: el.dataset.mrSource ?? "", layer: el.dataset.mrLayer ?? "code", rect: el.getBoundingClientRect() };
 }
 
+// A human name for the marked element: its first line of text, else its component name.
+const label = (t: Target) => ((t.el.innerText ?? "").trim().split("\n")[0] || t.component).slice(0, 48);
+
 // Right-click must work everywhere: elements without a data-mr tag fall back to the nearest
 // meaningful container (button, heading, section, dialog…), and finally the whole screen.
 function anyTarget(n: EventTarget | null): Target {
@@ -121,9 +124,10 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
         </div>
       )}
       {marked && (
-        <div data-godmode-ui style={{ position: "absolute", right: 16, bottom: 16, width: 420, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10, pointerEvents: "auto", boxShadow: "0 0 0 2px var(--mr-error)" }}>
-          <strong>Mark “{marked.component}” as wrong</strong>
-          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>layer {marked.layer} · {marked.source || "no source"} · {view}</span>
+        <div data-godmode-ui style={{ position: "absolute", ...(marked.rect.left + marked.rect.width / 2 > window.innerWidth / 2 ? { left: 16 } : { right: 16 }), bottom: 16, width: 420, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10, pointerEvents: "auto", boxShadow: "0 0 0 2px var(--mr-error)" }}>
+          {/* Opposite side from the marked element, so you can still see what you're describing. */}
+          <strong>What's wrong with “{label(marked)}”?</strong>
+          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{marked.component} · {view}{marked.source ? ` · ${marked.source.slice(0, 24)}` : ""}</span>
           <textarea autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's wrong, and what should it show instead?" rows={4} className="mr-input" style={{ padding: 10, minHeight: 90, resize: "vertical" }}
             onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); void submit(); } }} />
           <div className="mr-row">

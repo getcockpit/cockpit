@@ -14,4 +14,13 @@ export function cleanTitle(raw: string, max = 72): string {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 12)).replace(/[,.;:]$/, "")}…`;
 }
 
-export const sessionTitle = (s: Pick<SessionState, "title">) => cleanTitle(s.title || "Untitled");
+const prRef = (t: string) => { const m = t.match(/(?:pull\/|#|\s)(\d{1,7})\b/); return m ? `#${m[1]}` : ""; };
+
+/** A session's display title. Review and Address sessions are named after their PR, using the
+ *  PR's own title once the flow has reported it, never the raw slash command. */
+export function sessionTitle(s: Pick<SessionState, "title"> & Partial<Pick<SessionState, "review" | "address">>): string {
+  const raw = (s.title || "").trim();
+  if (/^\/review\b/.test(raw)) { const o = s.review?.overview; return cleanTitle(`Review ${o?.pr ?? prRef(raw)}${o?.title ? `: ${o.title}` : ""}`.trim()); }
+  if (/^\/pr-address\b/.test(raw)) return cleanTitle(`Address ${s.address?.list?.pr ?? prRef(raw)} comments`.replace(/\s+/g, " "));
+  return cleanTitle(raw || "Untitled");
+}

@@ -1,5 +1,5 @@
 import { keyOf } from "../components/keys";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Key } from "../components";
 import { api } from "../state/store";
 import type { SessionState } from "../state/types";
@@ -49,6 +49,7 @@ export function ReviewView({ s }: { s: SessionState }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (keyOf(e) === "Enter" && e.metaKey && r.publish && !r.published) { e.preventDefault(); reply("publish"); return; }
       if (e.target instanceof HTMLInputElement || e.metaKey) return;
       if (keyOf(e) === " " && snip) { e.preventDefault(); reply("next"); }
       if (/^[1-9]$/.test(keyOf(e)) && snip?.findings?.[Number(keyOf(e)) - 1]) { e.preventDefault(); note(snip.findings[Number(keyOf(e)) - 1].id); }
@@ -123,12 +124,13 @@ export function ReviewView({ s }: { s: SessionState }) {
 
       {(r.publish || noted.length > 0) && (
         <section style={{ display: "flex", flexDirection: "column", gap: 8, padding: "14px 16px", background: "var(--mr-tile)" }}>
-          <strong>Your review {r.publish?.verdict ? `· ${r.publish.verdict}` : ""}</strong>
+          <strong>{r.published ? "✓ Published · " : "Your review "}{r.publish?.verdict ?? ""}</strong>
           {(r.publish?.comments ?? noted).map((c, i) => (
             <div key={i} className="mr-row" style={{ alignItems: "flex-start" }}><SevMark s={c.severity} /><span className="mr-grow">{c.text}{c.at && <span className="mr-mono mr-dim"> · {c.at}</span>}</span></div>
           ))}
           {r.publish?.dropped ? <span className="mr-dim">{r.publish.dropped} dropped as duplicates of earlier threads</span> : null}
-          {r.publish && <Key k="⌘↵" tone="primary" onClick={() => reply("publish")}>Publish as one review</Key>}
+          {r.publish && !r.published && <Key k="⌘↵" tone="primary" onClick={() => reply("publish")}>Publish as one review</Key>}
+          {r.published && <span className="mr-dim">Posted to the PR as one review. Mark this session done (⌘⇧D) to clear it from the wall.</span>}
         </section>
       )}
       {!o && !snip && <span className="mr-dim">The review is starting. The overview appears here when it's ready.</span>}
@@ -138,15 +140,36 @@ export function ReviewView({ s }: { s: SessionState }) {
 
 export function AddressView({ s }: { s: SessionState }) {
   const a = s.address!;
-  const threads = a.list?.threads ?? [];
-  const cur = a.current ? a.threads[a.current] : null;
+  // A thread's state is what happened to it in this session (J8): a reply means fixed now, a
+  // pushed-back option means deferred; otherwise whatever the PR said at the start.
+  const stateOf = (t: { id: string; state?: string }) => {
+    if (t.state === "already" || t.state === "resolved") return "already";
+    const opt = a.threads[t.id]?.options?.find((o) => o.id === a.chosen[t.id]);
+    if (opt && /push back|defer|later/i.test(opt.label)) return "deferred";
+    if (a.replies[t.id] || opt) return "fixed";
+    return t.state ?? "open";
+  };
+  const threads = (a.list?.threads ?? []).map((t) => ({ ...t, state: stateOf(t) }));
+  const [viewing, setViewing] = useState<string | null>(null);
+  const shownId = viewing ?? a.current;
+  const cur = shownId ? a.threads[shownId] : null;
   const tally = (st: string) => threads.filter((t) => t.state === st).length;
   const choose = (id: string, opt: { id: string; label: string }) => {
     void api.log("ui.address_chosen", { id, option: opt.id }, s.id, `address:${id}`);
     void api.send(s.id, `Option ${opt.id}: ${opt.label}`);
   };
-  const proof = a.current ? a.proofs[a.current] : undefined;
-  const replyMsg = a.current ? a.replies[a.current] : undefined;
+  const proof = shownId ? a.proofs[shownId] : undefined;
+  const replyMsg = shownId ? a.replies[shownId] : undefined;
+  const canChoose = !!cur && cur.id === a.current && !a.chosen[cur.id];
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.metaKey || !canChoose || !cur) return;
+      const o = (cur.options ?? []).find((x) => x.id === keyOf(e));
+      if (o) { e.preventDefault(); choose(cur.id, o); }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
   const parts: [string, string][] = [["already", "var(--mr-done)"], ["fixed", "var(--mr-ink)"], ["deferred", "var(--mr-ink-3)"], ["open", "var(--mr-well)"]];
 
   return (
@@ -163,17 +186,17 @@ export function AddressView({ s }: { s: SessionState }) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
         <nav style={{ flex: "1 1 240px", maxWidth: 320, display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
           {threads.map((t) => (
-            <div key={t.id} className="mr-row" style={{ alignItems: "flex-start", padding: "8px 10px", background: t.id === a.current ? "var(--mr-tile)" : "var(--mr-well)", outline: t.id === a.current ? "2px solid var(--mr-selected)" : undefined, outlineOffset: -2 }}>
+            <button key={t.id} type="button" onClick={() => setViewing(t.id === a.current ? null : t.id)} disabled={!a.threads[t.id]} title={a.threads[t.id] ? "Show this thread" : "Not reached yet"} className="mr-row" style={{ alignItems: "flex-start", padding: "8px 10px", border: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: a.threads[t.id] ? "pointer" : "default", background: t.id === shownId ? "var(--mr-tile)" : "var(--mr-well)", outline: t.id === shownId ? "2px solid var(--mr-selected)" : undefined, outlineOffset: -2 }}>
               <span aria-hidden="true" style={{ width: 14, color: t.state === "open" ? "var(--mr-needs-ink)" : t.state === "deferred" ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.state === "open" ? "◆" : t.state === "deferred" ? "–" : "✓"}</span>
-              <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span className="mr-mono mr-dim" style={{ fontSize: 11 }}>{t.at}</span><span className="mr-ellipsis">{t.short}</span></span>
-            </div>
+              <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span className="mr-mono mr-dim" style={{ fontSize: 11 }}>{t.at}{t.id === a.current ? " · now" : ""}</span><span className="mr-ellipsis">{t.short}</span></span>
+            </button>
           ))}
         </nav>
         <section style={{ flex: "999 1 480px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {cur ? (
             <>
               <article style={{ display: "flex", flexDirection: "column", gap: 6, padding: "14px 16px", background: "var(--mr-tile)" }}>
-                <div className="mr-row"><b>{cur.reviewer ? `@${cur.reviewer}` : "Reviewer"}</b><span className="mr-mono mr-dim">{cur.at}</span><span className="mr-grow" /><b style={{ color: cur.verdict === "addressed" ? "var(--mr-done)" : "var(--mr-needs-ink)" }}>{cur.verdict === "addressed" ? "✓ Already addressed" : "◆ Not addressed yet"}</b></div>
+                <div className="mr-row"><b>{cur.reviewer ? `@${cur.reviewer}` : "Reviewer"}</b><span className="mr-mono mr-dim">{cur.at}</span><span className="mr-grow" /><b style={{ color: stateOf(cur) === "open" ? "var(--mr-needs-ink)" : "var(--mr-done)" }}>{stateOf(cur) === "already" ? "✓ Already addressed" : stateOf(cur) === "fixed" ? "✓ Fixed in this session" : stateOf(cur) === "deferred" ? "– Pushed back" : "◆ Not addressed yet"}</b></div>
                 <span style={{ fontSize: 15 }}>{cur.body}</span>
               </article>
               {cur.evidence_code && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{cur.evidence_file}</span><Diff code={cur.evidence_code} /></div>}
@@ -182,8 +205,8 @@ export function AddressView({ s }: { s: SessionState }) {
                   {(cur.options ?? []).map((o) => {
                     const picked = a.chosen[cur.id] === o.id;
                     return (
-                      <button key={o.id} type="button" onClick={() => choose(cur.id, o)} className="mr-row" style={{ alignItems: "baseline", padding: "10px 12px", border: 0, background: picked ? "var(--mr-ink)" : "var(--mr-tile)", color: picked ? "var(--mr-tile)" : "var(--mr-ink)", font: "inherit", textAlign: "left", cursor: "pointer" }}>
-                        <b className="mr-mono">{o.id}</b>
+                      <button key={o.id} type="button" disabled={!canChoose && !picked} onClick={() => canChoose && choose(cur.id, o)} className="mr-row" style={{ alignItems: "baseline", padding: "10px 12px", border: 0, background: picked ? "var(--mr-ink)" : "var(--mr-tile)", color: picked ? "var(--mr-tile)" : "var(--mr-ink)", font: "inherit", textAlign: "left", cursor: "pointer" }}>
+                        <kbd className="mr-mono" style={{ padding: "0 6px", background: picked ? "transparent" : "var(--mr-well)" }}>{o.id}</kbd>
                         <span className="mr-grow"><b>{o.label}</b>{o.recommended && <span style={{ opacity: 0.7 }}> · recommended</span>}<br /><span style={{ opacity: 0.8 }}>{o.detail}</span></span>
                       </button>
                     );
