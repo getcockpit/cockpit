@@ -9,6 +9,13 @@ import type { SessionState } from "../state/types";
 // with risky areas flagged. Click a file for its diff; click a diff line to leave a note.
 type Changed = { path: string; added: number; removed: number; status: string; risky: string | null };
 
+// Git's stderr can be a whole usage page (e.g. `git diff` outside a repo); show one short line.
+export function changesError(error: string): string {
+  if (/not a git repository/i.test(error)) return "not a git repository";
+  const first = error.split("\n").find((l) => l.trim()) ?? error;
+  return first.length > 160 ? `${first.slice(0, 160)}…` : first;
+}
+
 export function ChangeMap({ s }: { s: SessionState }) {
   const [files, setFiles] = useState<Changed[] | null>(null);
   const [error, setError] = useState("");
@@ -40,7 +47,7 @@ export function ChangeMap({ s }: { s: SessionState }) {
     setNotes([]);
   };
 
-  if (error) return <div style={{ background: "var(--mr-tile)", padding: "14px 16px" }} className="mr-dim">Changes: {error.includes("not a git") ? "not a git repository" : error}</div>;
+  if (error) return <div data-mr="ChangeMap" data-mr-source={s.id} style={{ background: "var(--mr-tile)", padding: "14px 16px" }} className="mr-dim">Changes: {changesError(error)}</div>;
   return (
     <div data-mr="ChangeMap" data-mr-source={s.id} style={{ background: "var(--mr-tile)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
       <h2 className="mr-h">Changes <span className="mr-dim mr-mono">+{(files ?? []).reduce((a, f) => a + f.added, 0)} −{(files ?? []).reduce((a, f) => a + f.removed, 0)}</span><span className="mr-grow" />{notes.length > 0 && <Key k="⌘↵" tone="primary" onClick={sendNotes}>Send {notes.length} note{notes.length === 1 ? "" : "s"}</Key>}</h2>
