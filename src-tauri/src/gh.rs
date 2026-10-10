@@ -21,7 +21,8 @@ fn gh(cwd: &str, args: &[&str]) -> Result<serde_json::Value, String> {
 
 /// `review`: open PRs waiting for my review. `address`: my open PRs anywhere (not just this
 /// folder's repo), changes-requested first. Both work from any folder (MR-48).
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn gh_prs(app: AppHandle, cwd: String, mode: String) -> Result<serde_json::Value, String> {
     let cwd = crate::sidecar::expand_home(&app, &cwd);
     let cwd = if std::path::Path::new(&cwd).is_dir() { cwd } else { std::env::var("HOME").unwrap_or_default() };
@@ -72,7 +73,8 @@ pub fn find_clone(home: &std::path::Path, slug: &str, extra: &[String]) -> Optio
 }
 
 /// The local clone for a PR (URL or owner/name), or null when it can't be found.
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn pr_repo(spec: String) -> Option<String> {
     let slug = repo_slug(&spec)?;
     let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());

@@ -98,7 +98,8 @@ pub fn selfbuild_start(app: AppHandle, worktree: String) -> Result<String, Strin
     Ok(id)
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn selfbuild_list(app: AppHandle) -> Vec<Build> {
     let current = std::env::var("MR_BUILD_ID").unwrap_or_default();
     let mut out: Vec<Build> = std::fs::read_dir(builds_dir(&app))

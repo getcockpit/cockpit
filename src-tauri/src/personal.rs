@@ -123,24 +123,28 @@ fn repo() -> Result<PathBuf, String> {
     crate::changes::app_repo().ok_or_else(|| "can't find the app's repo; set MR_APP_REPO".into())
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn personal_history() -> Result<History, String> {
     history(&repo()?)
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn personal_sync() -> Result<String, String> {
     sync_with_main(&repo()?)
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn personal_apply(app: tauri::AppHandle, branch: String) -> Result<String, String> {
     let r = apply(&repo()?, &branch)?;
     crate::eventlog::record(&app, None, "ui.personal_applied", &serde_json::json!({ "branch": branch }), Some("personal"));
     Ok(r)
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn personal_revert(app: tauri::AppHandle, sha: String) -> Result<String, String> {
     let r = revert(&repo()?, &sha)?;
     crate::eventlog::record(&app, None, "ui.personal_reverted", &serde_json::json!({ "sha": sha }), Some("personal"));
@@ -164,7 +168,8 @@ pub fn apply_fix(repo: &Path, worktree: &Path, branch: &str, note: Option<&str>)
     apply(repo, branch)
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn fix_apply(app: tauri::AppHandle, session: String) -> Result<String, String> {
     use tauri::Manager;
     let req = app.state::<crate::eventlog::EventLog>().list(Some(&session), None, 200).map_err(|e| e.to_string())?

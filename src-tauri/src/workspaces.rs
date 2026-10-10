@@ -32,7 +32,8 @@ pub fn config_dir(app: &AppHandle, workspace: &str) -> Option<PathBuf> {
     Some(crate::selfbuild::data_dir(app).join("workspaces").join(workspace).join("claude"))
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn workspace_create(app: AppHandle, name: String) -> Result<String, String> {
     let name = name.trim();
     if name.is_empty() {

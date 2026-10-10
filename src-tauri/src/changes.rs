@@ -60,12 +60,14 @@ pub fn diff(dir: &Path, path: &str) -> Result<String, String> {
     Ok(format!("+++ {path} (new file)\n{}", body.lines().map(|l| format!("+{l}\n")).collect::<String>()))
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn session_changes(app: tauri::AppHandle, cwd: String) -> Result<Vec<Changed>, String> {
     changed_files(Path::new(&crate::sidecar::expand_home(&app, &cwd)))
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn session_diff(app: tauri::AppHandle, cwd: String, path: String) -> Result<String, String> {
     if path.contains("..") {
         return Err("bad path".into());
@@ -82,13 +84,15 @@ pub fn app_repo() -> Option<PathBuf> {
     exe.ancestors().find(|d| d.join("src-tauri").is_dir() && d.join(".git").exists()).map(Path::to_path_buf)
 }
 
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn app_repo_path() -> Result<String, String> {
     app_repo().map(|p| p.display().to_string()).ok_or_else(|| "can't find the app's repo; set MR_APP_REPO".into())
 }
 
 /// God mode: append a mark to evals/marks.jsonl in the app repo (the eval set, MR-22).
-#[tauri::command]
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
 pub fn godmode_save_mark(app: tauri::AppHandle, packet: serde_json::Value) -> Result<String, String> {
     let repo = app_repo().ok_or("can't find the app's repo; set MR_APP_REPO")?;
     let dir = repo.join("evals");
