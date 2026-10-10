@@ -87,7 +87,22 @@ function scripted(sid: string, text: string): boolean {
   return false;
 }
 
+// ?fail=1: every call that can fail does, with the raw text real tools print (MR-52 walk).
+const FAIL = new URLSearchParams(location.search).has("fail");
+const RAW: Record<string, string> = {
+  gh_prs: "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.",
+  session_changes: "warning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch",
+  session_diff: "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'",
+  recent_folders: "No such file or directory (os error 2)",
+  daily_driver: "database is locked",
+  personal_history: "fatal: invalid reference: main\nhint: ...",
+  selfbuild_start: "error[E0425]: cannot find value `x` in this scope\n --> src/lib.rs:3:5\n  |\n3 |     x\n  |     ^ not found in this scope",
+  fix_apply: "merge conflict, nothing applied: CONFLICT (content): Merge conflict in ui/src/screens/Wall.tsx\nAutomatic merge failed; fix conflicts and then commit the result.",
+  session_send: "unknown session",
+};
+
 function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
+  if (FAIL && RAW[cmd]) throw new Error(RAW[cmd]);
   switch (cmd) {
     case "events_list": return events;
     case "event_append": return record((a.sessionId as string) ?? null, String(a.kind), (a.payload as Record<string, unknown>) ?? {}).id;

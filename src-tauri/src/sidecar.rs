@@ -188,18 +188,40 @@ pub fn session_start(
 
 #[tauri::command]
 pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, text: String) -> Result<(), String> {
+    let live = state.live.lock().unwrap().contains(&session);
     crate::eventlog::record(&app, Some(&session), "ui.message_sent", &serde_json::json!({ "text": text }), None);
-    sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }))
+    if live {
+        return sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }));
+    }
+    // Not running any more (app restarted, or it ended): resume the same conversation with this
+    // message instead of failing with "unknown session" (MR-52).
+    let (cwd, kind, workspace, sdk) = resume_info(&app, &session).ok_or("this session can't be resumed; start a new one")?;
+    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace)).map(|_| ())
+}
+
+/// Where and how a session ran, from the log: (cwd, kind, workspace, Claude session id).
+fn resume_info(app: &AppHandle, session: &str) -> Option<(String, String, String, String)> {
+    let evs = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).ok()?;
+    let req = evs.iter().find(|e| e.kind == "ui.session_requested")?;
+    let sdk = evs.iter().rev().find(|e| e.kind == "sidecar.session_started")?.payload["sdk_session_id"].as_str()?.to_owned();
+    let p = &req.payload;
+    Some((p["worktree"].as_str().or(p["cwd"].as_str())?.to_owned(), p["kind"].as_str().unwrap_or("blank").to_owned(), p["workspace"].as_str().unwrap_or(crate::workspaces::PERSONAL).to_owned(), sdk))
 }
 
 #[tauri::command]
 pub fn session_interrupt(app: AppHandle, state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    if !state.live.lock().unwrap().contains(&session) {
+        return Ok(()); // nothing running to interrupt
+    }
     crate::eventlog::record(&app, Some(&session), "ui.interrupted", &serde_json::json!({}), None);
     sidecar_send(state, serde_json::json!({ "type": "interrupt", "session": session }))
 }
 
 #[tauri::command]
 pub fn session_stop(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    if !state.live.lock().unwrap().contains(&session) {
+        return Ok(()); // already stopped (e.g. marking an ended session done)
+    }
     sidecar_send(state, serde_json::json!({ "type": "stop", "session": session }))
 }
 
