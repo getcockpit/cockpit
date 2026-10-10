@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { keyOf } from "../components/keys";
 import { shortError } from "../components/ErrorLine";
 import { invoke } from "@tauri-apps/api/core";
+import { FolderPicker } from "../components/FolderPicker";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 
@@ -18,12 +19,19 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [folderFor, setFolderFor] = useState<{ id: string; name: string } | null>(null);
   const needs = (ws: string) => needsIn(state, docs, ws);
   const loggedOut = (ws: string) => Object.values(state.sessions).some((s) => s.workspace === ws && /not logged in|\/login/i.test(s.error ?? "") );
   const create = async () => {
     if (!name.trim()) return;
     const id = await invoke<string>("workspace_create", { name: name.trim() });
-    setName(""); setAdding(false); onSwitch(id); onSignIn(id);
+    setName(""); setAdding(false); onSwitch(id); setFolderFor({ id, name: name.trim() });
+  };
+  // Second step of creating one (MR-65): where its sessions start. Skippable; then sign in.
+  const finish = (folder: string | null) => {
+    if (!folderFor) return;
+    if (folder) void invoke("workspace_set_folder", { id: folderFor.id, folder });
+    onSignIn(folderFor.id); setFolderFor(null);
   };
   return (
     <nav aria-label="Workspaces" className="mr-row" style={{ gap: 2, padding: "0 12px", background: "var(--mr-ink)", minHeight: 36 }}>
@@ -37,7 +45,7 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
         ) : (
           <button key={w.id} type="button" data-mr="WorkspaceTab" data-mr-source={w.id} onClick={() => onSwitch(w.id)} onDoubleClick={() => { if (w.id !== "personal") { setRenaming(w.id); setName(w.name); } }}
             className="mr-row" style={{ gap: 8, padding: "8px 14px", border: 0, font: "inherit", cursor: "pointer", background: on ? "var(--mr-band)" : "transparent", color: on ? "var(--mr-ink)" : "var(--mr-well)", fontWeight: on ? 700 : 400 }}
-            title={w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}>
+            title={`${w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}${w.folder ? `\nStarts in ${w.folder}` : ""}`}>
             {w.name}
             {i < 9 && <kbd className="mr-mono" style={{ fontSize: 11, opacity: 0.55 }}>⌘{i + 1}</kbd>}
             {n > 0 && <span className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-needs)", color: "var(--mr-ink)", fontWeight: 700 }}>{n}</span>}
@@ -45,7 +53,13 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
           </button>
         );
       })}
-      {adding ? (
+      {folderFor ? (
+        <span className="mr-row" data-mr="WorkspaceFolderStep" data-mr-source={folderFor.id} style={{ gap: 8, color: "var(--mr-well)" }}>
+          <span>Start “{folderFor.name}” sessions in</span>
+          <FolderPicker value="" onChange={(p) => finish(p)} extra={[...new Set(Object.values(state.sessions).map((x) => x.repo ?? x.cwd))].slice(0, 5)} />
+          <button type="button" onClick={() => finish(null)} style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Skip</button>
+        </span>
+      ) : adding ? (
         <form onSubmit={(e) => { e.preventDefault(); void create(); }}>
           <input autoFocus className="mr-input" style={{ minHeight: 28, width: 180, fontSize: 13 }} placeholder="New workspace name" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => !name && setAdding(false)} aria-label="New workspace name" />
         </form>

@@ -9,16 +9,32 @@ import { keyOf } from "./keys";
 
 type Folder = { path: string; name: string; repo: boolean; at: number };
 
-/** The work folder, remembered across starts; a fresh install defaults to your most recent folder
- *  instead of your home directory (F6). */
-export function useWorkFolder(): [string, (p: string) => void] {
-  const [cwd, setCwd] = useState(() => { try { return localStorage.getItem("mr.cwd") ?? ""; } catch { return ""; } });
+/** The work folder. Opens on the workspace's own folder (`preferred`: pinned, else where its last
+ *  session ran, MR-65), else the last one picked anywhere; a fresh install defaults to your most
+ *  recent folder instead of your home directory (F6). */
+export function useWorkFolder(preferred: string | null = null): [string, (p: string) => void] {
+  const [cwd, setCwd] = useState(() => { if (preferred) return preferred; try { return localStorage.getItem("mr.cwd") ?? ""; } catch { return ""; } });
+  useEffect(() => { if (preferred) setCwd(preferred); }, [preferred]);
   useEffect(() => {
     if (cwd && cwd !== "~/") return;
     invoke<Folder[]>("recent_folders").then((f) => setCwd(f[0]?.path ?? "~/")).catch(() => setCwd("~/"));
   }, []);
   const set = (p: string) => { setCwd(p); try { localStorage.setItem("mr.cwd", p); } catch { /* convenience only */ } };
   return [cwd || "~/", set];
+}
+
+/** Pins the shown folder as this workspace's default, or unpins it (MR-65). */
+export function PinFolder({ workspace, folder, pinned }: { workspace: string; folder: string; pinned: string | null }) {
+  const [error, setError] = useState("");
+  const on = !!pinned && pinned === folder;
+  const toggle = () => { setError(""); invoke("workspace_set_folder", { id: workspace, folder: on ? null : folder }).catch((e) => setError(String(e).split("\n")[0])); };
+  return (
+    <button type="button" data-mr="PinFolder" data-mr-source={workspace} onClick={toggle} aria-pressed={on}
+      title={error || (on ? "This workspace always starts here. Click to unpin (it will follow your last folder)" : "Always start this workspace's sessions in this folder")}
+      style={{ border: 0, font: "inherit", fontSize: 12, padding: "0 10px", cursor: "pointer", whiteSpace: "nowrap", background: on ? "var(--mr-selected)" : "var(--mr-well)", color: error ? "var(--mr-error)" : on ? "var(--mr-tile)" : "var(--mr-ink)" }}>
+      {error ? "Can't pin" : on ? "Pinned" : "Pin"}
+    </button>
+  );
 }
 
 const tilde = (p: string, home: string) => (home && p.startsWith(home) ? "~" + p.slice(home.length) : p);
