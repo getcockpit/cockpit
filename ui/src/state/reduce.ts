@@ -124,6 +124,17 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
       break;
+    case "plan.updated": {
+      // Claude's plan (plan_set, MR-62). A step keeps its start time while it stays in progress.
+      const prev = new Map(s.todos.map((x) => [x.content, x]));
+      const STATUS = { done: "completed", doing: "in_progress", todo: "pending" } as const;
+      s.todos = (Array.isArray(p.steps) ? (p.steps as { step?: unknown; status?: unknown }[]) : []).map((x) => {
+        const content = String(x.step ?? ""), status = STATUS[String(x.status) as keyof typeof STATUS] ?? "pending";
+        const was = prev.get(content);
+        return { content, status, since: status === "in_progress" ? (was?.status === "in_progress" && was.since ? was.since : ev.created_at) : was?.since };
+      });
+      break;
+    }
     case "view.rendered":
       s.transcript = [...s.transcript, { kind: "view", id: ev.id, title: String(p.title ?? ""), blocks: Array.isArray(p.blocks) ? (p.blocks as ViewBlock[]) : [], at: ev.created_at }];
       break;
