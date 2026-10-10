@@ -1,4 +1,4 @@
-import type { AppState, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
+import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
@@ -18,7 +18,7 @@ export const initialState: AppState = {
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at,
+    id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
     pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
   };
 }
@@ -35,7 +35,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     // A fresh sidecar means any session still running before it died with the old one.
     const sessions = { ...next.sessions };
     for (const [id, s] of Object.entries(sessions)) {
-      if (!["ended", "error", "interrupted"].includes(s.status)) sessions[id] = { ...s, status: "interrupted", pending: [] };
+      if (!["ended", "error", "interrupted"].includes(s.status)) sessions[id] = { ...s, status: "interrupted", pending: [], turnOpen: false, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
     }
     return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
   }
@@ -120,11 +120,12 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.fixApplied = ev.created_at;
       break;
     case "ui.message_sent":
-      s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at }];
+      s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending" }];
       if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
       break;
     case "sidecar.sdk":
+      s.heardAt = ev.created_at;
       applySdk(s, p.message as Record<string, unknown>, ev, next);
       break;
     case "flow.review_overview":
@@ -144,6 +145,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.status = p.ok ? "ended" : "error";
       s.error = p.ok ? null : String(p.reason ?? "session failed");
       s.pending = [];
+      s.turnOpen = false;
+      s.transcript = settle(s.transcript, ["sending", "queued", "taken"], "lost");
       break;
   }
   return { ...next, sessions: { ...next.sessions, [sid]: s }, order };
@@ -177,11 +180,16 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
         trackFile(s, String(c.name), input, ev.created_at);
       }
     }
+    // A new turn starts with whatever was waiting for it.
+    if (!s.turnOpen) s.transcript = settle(s.transcript, ["sending", "queued"], "taken");
+    s.turnOpen = true;
     s.transcript = [...s.transcript, ...add];
     if (s.status !== "needs_you") s.status = "working";
     return;
   }
   if (type === "user") {
+    // Claude Code hands mid-turn messages over with the next tool result.
+    s.transcript = settle(s.transcript, ["sending", "queued"], "taken");
     const content = ((m.message as { content?: unknown })?.content ?? []) as unknown;
     if (Array.isArray(content)) {
       for (const c of content as Record<string, unknown>[]) {
@@ -195,9 +203,18 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
   if (type === "result") {
     const ok = !m.is_error;
     s.costUsd += Number(m.total_cost_usd ?? 0);
+    s.turnOpen = false;
+    s.transcript = settle(s.transcript, ["taken"], "answered");
     s.transcript = [...s.transcript, { kind: "result", id: ev.id, ok, text: String(m.result ?? ""), costUsd: Number(m.total_cost_usd ?? 0), at: ev.created_at }];
-    if (s.status !== "needs_you") s.status = "idle"; // turn finished; waiting for the next message
+    // Turn finished: waiting for the next message, unless one is already queued for the next turn.
+    if (s.status !== "needs_you") s.status = s.transcript.some((t) => t.kind === "user" && t.delivery === "queued") ? "working" : "idle";
   }
+}
+
+function settle(items: TranscriptItem[], from: Delivery[], to: Delivery): TranscriptItem[] {
+  return items.some((t) => t.kind === "user" && t.delivery && from.includes(t.delivery))
+    ? items.map((t) => (t.kind === "user" && t.delivery && from.includes(t.delivery) ? { ...t, delivery: to } : t))
+    : items;
 }
 
 function trackFile(s: SessionState, tool: string, input: Record<string, unknown>, at: number) {

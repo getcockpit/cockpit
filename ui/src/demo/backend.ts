@@ -135,8 +135,13 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       const sid = String(a.session), text = String(a.text);
       record(sid, "ui.message_sent", { text });
       if (scripted(sid, text)) return null;
-      later(800, () => sdk(String(a.session), { type: "assistant", message: { content: [{ type: "text", text: `Got it: ${String(a.text).slice(0, 80)}. Working on it.` }] } }));
-      later(1600, () => sdk(String(a.session), { type: "result", is_error: false, result: "ok", total_cost_usd: 0.05 }));
+      // Like Claude Code (MR-59): mid-tool, a message waits for that tool's result before Claude reads it.
+      const last = [...events].reverse().find((e) => e.session_id === sid && e.kind === "sidecar.sdk")?.payload.message as { type?: string; message?: { content?: { type: string; id?: string }[] } } | undefined;
+      const open = last?.type === "assistant" ? last.message?.content?.find((c) => c.type === "tool_use")?.id : undefined;
+      const wait = open ? 4000 : 0;
+      if (open) later(wait, () => sdk(sid, { type: "user", message: { content: [{ type: "tool_result", tool_use_id: open, content: "ok" }] } }));
+      later(wait + 1500, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: `Got it: ${text.slice(0, 80)}. Working on it.` }] } }));
+      later(wait + 4000, () => sdk(sid, { type: "result", is_error: false, result: "ok", total_cost_usd: 0.05 }));
       return null;
     }
     case "permission_respond": {
