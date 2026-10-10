@@ -8,7 +8,7 @@ import { pickTile, type TileSpec } from "../picker/pick";
 import { needsQueue } from "../picker/queue";
 import { plural, sessionTitle } from "../picker/title";
 import type { Doc } from "../state/docs";
-import type { AppState, SessionState } from "../state/types";
+import type { AppState, SessionState, Span } from "../state/types";
 import { sideThread } from "./Wall";
 import { ViewTabs } from "../components/ViewTabs";
 
@@ -54,7 +54,7 @@ export function Timeline({ state, docs, onOpen, onOpenDoc, onWall }: { state: Ap
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const ticks = [-30, -20, -10, 0, 5, 10, 15];
+  const ticks = [-30, -20, -10, 0, 10]; // sparse, so labels never touch at narrow widths
   const topLabel = top ? (top.kind === "doc" ? top.d.title : sessionTitle(top.s)) : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
@@ -137,6 +137,7 @@ function LaneRow({ l, now, order, onOpen }: { l: Lane; now: number; order?: numb
     : f.kind === "eta" && CLOCK_TIMES ? (() => { const m = Math.min(AHEAD, (f.at - now) / MIN); return `${X(0)},${yOf(lastY)} ${X(m)},${yOf(lastY)} ${X(m)},${yOf(0)}${m < AHEAD ? ` 1000,${yOf(0)}` : ""}`; })()
     : f.kind === "eta" ? `${X(0)},${yOf(lastY)} 1000,${yOf(lastY)}` : null;
   const marks = s.spans.filter((x) => (x.to ?? now) >= now - PAST * MIN && ["needs_you", "ended", "error", "interrupted"].includes(x.status));
+  const latest = marks.at(-1), earlier = marks.length - 1;
   const end = f.kind === "paused" ? { text: "Paused · needs you", color: "var(--mr-needs-ink)", weight: 700 }
     : f.kind === "eta" ? { text: CLOCK_TIMES ? `${f.label} ${clock(f.at)}` : `${ordinal(order ?? 0)} · ${f.label}`, color: f.ending === "needs" ? "var(--mr-needs-ink)" : "var(--mr-ink-2)", weight: 400 }
     : { text: f.label, color: "var(--mr-ink-3)", weight: 400 };
@@ -151,20 +152,22 @@ function LaneRow({ l, now, order, onOpen }: { l: Lane; now: number; order?: numb
       <span style={{ position: "relative", height: H + 18 }}>
         <svg viewBox={`0 0 1000 ${H}`} preserveAspectRatio="none" width="100%" height={H} style={{ position: "absolute", top: 0, left: 0, display: "block" }} aria-hidden="true">
           <rect x={X(0)} y={0} width={1000 - X(0)} height={H} fill="var(--mr-well)" />
-          {marks.filter((x) => x.status === "needs_you").map((x, i) => {
+          {/* Every event is a mark (a wait: an amber bar; done, error, interrupted: a tick), its words on hover. */}
+          {marks.map((x, i) => {
             const a = Math.max(-PAST, (x.from - now) / MIN), b = Math.min(0, ((x.to ?? now) - now) / MIN);
-            return <rect key={i} x={X(a)} y={H - 4} width={Math.max(2, X(b) - X(a))} height={4} fill="var(--mr-needs)" />;
+            return x.status === "needs_you"
+              ? <rect key={i} x={X(a)} y={H - 4} width={Math.max(2, X(b) - X(a))} height={4} fill="var(--mr-needs)"><title>{markText(x)}</title></rect>
+              : <line key={i} x1={X(a)} x2={X(a)} y1={H - 10} y2={H} stroke={markColor(x)} strokeWidth={2} vectorEffect="non-scaling-stroke"><title>{markText(x)}</title></line>;
           })}
           <polyline points={past} fill="none" stroke="var(--mr-ink-2)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
           {future && <polyline points={future} fill="none" stroke={f.kind === "paused" ? "var(--mr-needs-ink)" : "var(--mr-ink-3)"} strokeWidth={1.5} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
           <line x1={X(0)} x2={X(0)} y1={0} y2={H} stroke="var(--mr-ink)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         </svg>
-        {marks.map((x, i) => {
-          const m = Math.max(-PAST, (x.from - now) / MIN);
-          const text = x.status === "needs_you" ? `${x.to === null ? "Waiting" : "Waited"} on you${x.label ? ` · ${x.label}` : ""}` : x.status === "ended" ? "Done" : x.status === "error" ? "Error" : "Interrupted";
-          const color = x.status === "needs_you" ? "var(--mr-needs-ink)" : x.status === "ended" ? "var(--mr-done)" : x.status === "error" ? "var(--mr-error)" : "var(--mr-ink-3)";
-          return <span key={i} data-mr="TimelineMark" data-mr-source={`${s.id}:${x.status}:${x.from}`} className="mr-ellipsis" style={{ position: "absolute", left: pct(m), top: H + 2, maxWidth: 220, fontSize: 11, color, fontWeight: x.status === "needs_you" && x.to === null ? 700 : 400 }}>{text}</span>;
-        })}
+        {/* Only the latest mark gets words, so labels never pile up; near Now it reads leftwards. */}
+        {latest && (() => {
+          const m = Math.max(-PAST, (latest.from - now) / MIN), right = m > -PAST / 2;
+          return <span data-mr="TimelineMark" data-mr-source={`${s.id}:${latest.status}:${latest.from}`} className="mr-ellipsis" style={{ position: "absolute", ...(right ? { right: `${(100 - X(m) / 10).toFixed(2)}%`, textAlign: "right" } : { left: pct(m) }), top: H + 2, maxWidth: "45%", fontSize: 11, color: markColor(latest), fontWeight: latest.status === "needs_you" && latest.to === null ? 700 : 400 }}>{markText(latest)}{earlier ? ` · ${earlier} earlier` : ""}</span>;
+        })()}
         {f.kind === "eta" && CLOCK_TIMES && (f.at - now) / MIN <= AHEAD && (
           <span data-mr="TimelineMark" data-mr-source={`${s.id}:forecast`} style={{ position: "absolute", left: pct((f.at - now) / MIN), top: H + 2, fontSize: 11, color: f.ending === "needs" ? "var(--mr-needs-ink)" : "var(--mr-ink-2)" }}>{f.label}</span>
         )}
@@ -173,3 +176,6 @@ function LaneRow({ l, now, order, onOpen }: { l: Lane; now: number; order?: numb
     </button>
   );
 }
+
+const markText = (x: Span) => (x.status === "needs_you" ? `${x.to === null ? "Waiting" : "Waited"} on you${x.label ? ` · ${x.label}` : ""}` : x.status === "ended" ? "Done" : x.status === "error" ? "Error" : "Interrupted");
+const markColor = (x: Span) => (x.status === "needs_you" ? "var(--mr-needs-ink)" : x.status === "ended" ? "var(--mr-done)" : x.status === "error" ? "var(--mr-error)" : "var(--mr-ink-3)");
