@@ -1,4 +1,4 @@
-import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
+import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem, ViewBlock } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
@@ -123,6 +123,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending" }];
       if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
+      break;
+    case "view.rendered":
+      s.transcript = [...s.transcript, { kind: "view", id: ev.id, title: String(p.title ?? ""), blocks: Array.isArray(p.blocks) ? (p.blocks as ViewBlock[]) : [], at: ev.created_at }];
       break;
     case "sidecar.sdk":
       s.heardAt = ev.created_at;
