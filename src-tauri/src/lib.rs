@@ -12,6 +12,7 @@ mod selfbuild;
 mod selftest;
 mod sidecar;
 mod terminal;
+mod views;
 mod voice;
 mod workspaces;
 mod worktree;
