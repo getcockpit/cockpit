@@ -72,9 +72,9 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       if (!d) throw new Error("no such doc");
       const n = d.pending_notes.length + d.pending_changes.length;
       d.pending_notes = []; d.pending_changes = []; d.version += 1; docs = [...docs];
-      if (d.session_id) record(d.session_id, "ui.message_sent", { text: `Plan feedback: ${n} note(s)${a.regenerate ? ", regenerate" : ""}` });
       void emit("mr-event", { id: id(), session_id: d.session_id, kind: "doc.updated", payload: { doc_id: d.id }, anchor: null, created_at: Date.now() });
-      return `Sent ${n} note${n === 1 ? "" : "s"}${a.regenerate ? " and asked for a new version" : ""}.`;
+      // Like the real core: build the message only; the UI delivers it to the session.
+      return `Feedback on working doc "${d.title}": ${n} note${n === 1 ? "" : "s"}${a.regenerate ? ", regenerate it" : ""}.`;
     }
     case "session_start": {
       const sid = (a.sessionId as string) ?? `s${Date.now().toString(36)}`;

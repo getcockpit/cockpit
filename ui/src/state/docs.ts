@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { MrEvent } from "./types";
+import type { MrEvent, SessionState } from "./types";
+import { api } from "./store";
 
 export type Block = {
   id: string; section: string; status: string; takeaway: string; key: string; body: string;
@@ -44,3 +45,20 @@ export const docApi = {
   edit: (d: Doc, blockId: string, field: "takeaway" | "key" | "body", value: string) => invoke("event_append", { sessionId: d.session_id, kind: "ui.doc_edit", payload: { doc_id: d.id, block_id: blockId, field, value }, anchor: `doc:${d.id}:${blockId}` }),
   feedback: (d: Doc, regenerate: boolean) => invoke<string>("doc_feedback", { docId: d.id, regenerate }),
 };
+
+/** Sends the user's notes, edits and decisions on a doc to Claude: to its plan session if it's
+ *  still open, otherwise to a new plan session in the same folder. Returns the session id. The
+ *  core only builds the message (doc_feedback); delivering it is always the UI's job. */
+export async function sendDocFeedback(d: Doc, session: SessionState | null | undefined, regenerate: boolean): Promise<string> {
+  const msg = await docApi.feedback(d, regenerate);
+  if (session && session.status !== "ended" && session.status !== "error") { await api.send(session.id, msg); return session.id; }
+  return api.start(session?.cwd ?? "~/", msg, "plan");
+}
+
+/** Records a decision on an open question. Deciding the last open one hands the doc back to its
+ *  plan session (same behaviour from the queue and the map), so the plan carries on by itself. */
+export async function decideQuestion(d: Doc, blockId: string, label: string, session: SessionState | null | undefined): Promise<void> {
+  await docApi.decide(d, blockId, label);
+  const stillOpen = Object.values(d.blocks).some((x) => isOpenQuestion(x) && x.id !== blockId);
+  if (!stillOpen && session) await sendDocFeedback(d, session, false).catch(() => {});
+}
