@@ -48,7 +48,8 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
   if (n === "Write") return `Write ${base(input.file_path)}`;
   if (n === "Grep") return `Search for “${input.pattern}”${input.path ? ` in ${base(input.path)}` : ""}`;
   if (n === "Glob") return `Find ${input.pattern}`;
-  if (n === "TodoWrite") return "Update plan";
+  if (n === "TodoWrite" || n === "plan_set") return "Update plan";
+  if (n === "render_view") return `Show ${String(input.title ?? "a view")}`;
   if (n === "WebFetch") return `Fetch ${String(input.url ?? "").replace(/^https?:\/\//, "").split("/")[0]}`;
   if (n === "WebSearch") return `Search web: ${input.query}`;
   const d = input.description ?? input.file_path ?? input.pattern ?? input.url ?? input.query ?? "";
