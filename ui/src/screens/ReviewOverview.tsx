@@ -87,16 +87,16 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
       {pts.map((p, i) => {
         const isOpen = open === i, isRaised = raised.includes(`ov:${i}`), isSkipped = skipped.includes(i);
         return (
-          <div key={i} data-mr="ReviewPoint" data-mr-source={`${o.pr}:${i}`} style={{ background: "var(--mr-tile)", opacity: isSkipped ? 0.5 : 1, boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
+          <div key={i} data-mr="ReviewPoint" data-mr-source={`${o.pr}:${i}`} style={{ background: "var(--mr-tile)", opacity: isSkipped ? 0.5 : 1, transition: "opacity var(--mr-med), box-shadow var(--mr-med)", boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
             <button type="button" onClick={() => { setSel(i); setOpen(isOpen ? null : i); }} className="mr-row"
               style={{ width: "100%", gap: 10, padding: "10px 14px", border: 0, background: "transparent", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
               <span style={{ flex: "none", minWidth: 64, padding: "1px 6px", fontSize: 11, fontWeight: 700, textAlign: "center", background: TAG[p.tag].bg, color: TAG[p.tag].fg, boxShadow: p.tag === "Context" ? "inset 0 0 0 1px var(--mr-ink-3)" : undefined }}>{p.tag}</span>
               <span className="mr-grow" style={{ fontWeight: p.tag === "Context" ? 400 : 600 }}>{p.line}</span>
               {isRaised && <span style={{ color: "var(--mr-done)", fontSize: 12 }}>✓ in your review</span>}
-              <span className="mr-dim" aria-hidden>{isOpen ? "▾" : "▸"}</span>
+              <span className="mr-dim mr-chev" data-open={isOpen} aria-hidden>▸</span>
             </button>
             {isOpen && (
-              <div style={{ padding: "0 14px 12px 88px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="mr-reveal" style={{ padding: "0 14px 12px 88px", display: "flex", flexDirection: "column", gap: 8 }}>
                 {/* Only what the headline doesn't already say. */}
                 {p.full.slice(p.line.length).trim() && <span className="mr-ink2">{p.full.slice(p.line.length).trim()}</span>}
                 <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }}>

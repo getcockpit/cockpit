@@ -72,7 +72,7 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
         <span className="mr-dim" aria-hidden>▾</span>
       </button>
       {openList && (
-        <div role="listbox" aria-label="Work folders" style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, width: 440, zIndex: 20, background: "var(--mr-tile)", boxShadow: "0 0 0 1px var(--mr-ink-3), 0 8px 24px rgba(21,24,27,.2)", display: "flex", flexDirection: "column" }}
+        <div role="listbox" aria-label="Work folders" className="mr-pop" style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, width: 440, zIndex: 20, background: "var(--mr-tile)", boxShadow: "0 0 0 1px var(--mr-ink-3), 0 8px 24px rgba(21,24,27,.2)", display: "flex", flexDirection: "column" }}
           onKeyDown={(e) => {
             const k = keyOf(e);
             if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(k)) { e.preventDefault(); e.stopPropagation(); }
