@@ -47,15 +47,28 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   const [error, setError] = useState("");
   const [sel, setSel] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const prMode = mode === "review" || mode === "address";
+  // PR lists cover every repo (MR-48) unless "only this repo" is on (MR-79): then the folder picks
+  // the repo. `repo` is undefined while the folder's origin is being read, null when it isn't GitHub.
+  const [only, setOnlyRaw] = useState(() => { try { return localStorage.getItem("mr.prs.only") === "1"; } catch { return false; } });
+  const setOnly = (v: boolean) => { setOnlyRaw(v); try { localStorage.setItem("mr.prs.only", v ? "1" : "0"); } catch { /* convenience only */ } };
+  const [repo, setRepo] = useState<string | null | undefined>(undefined);
+  const scope = only && repo ? repo : undefined;
 
   useEffect(() => { input.current?.focus(); }, [mode]);
   useEffect(() => {
-    setPrs(null); setSel(0);
-    if (mode !== "review" && mode !== "address") return;
     let alive = true;
-    api.prs(cwd, mode).then((r) => alive && setPrs(r)).catch((e) => alive && (setPrs([]), setError(shortError(e))));
+    setRepo(undefined);
+    api.ghRepo(cwd).then((r) => alive && setRepo(r)).catch(() => alive && setRepo(null));
     return () => { alive = false; };
-  }, [mode, cwd]);
+  }, [cwd]);
+  useEffect(() => {
+    setPrs(null); setSel(0); setError("");
+    if (!prMode || (only && repo === undefined)) return;
+    let alive = true;
+    api.prs(cwd, mode, scope).then((r) => alive && setPrs(r)).catch((e) => alive && (setPrs([]), setError(shortError(e))));
+    return () => { alive = false; };
+  }, [mode, cwd, scope, only && repo === undefined]);
 
   const items: Item[] = useMemo(() => {
     if (mode === "review" || mode === "address") {
@@ -113,7 +126,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)" }} onSubmit={(e) => { e.preventDefault(); void start(text); }}>
-          {mode === "review" || mode === "address"
+          {prMode && !only
             ? <span className="mr-dim" style={{ flex: "0 1 240px", padding: "0 8px" }} title="Review and Address run in the PR's own clone">Runs in the PR's repo</span>
             : <><FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[...new Set(state.order.map((id) => state.sessions[id]).reverse().map((x) => x.repo ?? x.cwd))].slice(0, 5)} />
               <PinFolder workspace={workspace} folder={cwd} pinned={state.workspaces.find((w) => w.id === workspace)?.folder ?? null} /></>}
@@ -130,10 +143,20 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           ))}
         </div>
         <div style={{ display: "flex", flexDirection: "column", padding: "0 10px 10px", minHeight: 120 }}>
-          <span className="mr-dim" style={{ padding: "4px 8px 8px" }}>
+          <div className="mr-row" style={{ padding: "4px 8px 8px" }}>
+          <span className="mr-dim mr-grow">
             {mode === "review" ? "Waiting for your review" : mode === "address" ? `Your open PRs${prs?.some(toAddress) ? ` · ${prs.filter(toAddress).length} to address, first` : ""}` : "Reuse a recent prompt"}
-            {(mode === "review" || mode === "address") && prs === null && " · loading…"}
+            {prMode && (scope ? ` · in ${scope}` : only && repo === null ? " · this folder isn't a GitHub repo, so every repo" : "")}
+            {prMode && prs === null && " · loading…"}
           </span>
+          {prMode && (
+            <button type="button" data-mr="RepoOnly" data-mr-source={repo ?? cwd} onClick={() => setOnly(!only)} aria-pressed={only}
+              title={only ? "Showing PRs from the folder's repo only. Click to show every repo" : "Show only PRs from one repo; pick it with the folder"}
+              style={{ border: 0, font: "inherit", fontSize: 12, padding: "2px 10px", cursor: "pointer", whiteSpace: "nowrap", borderRadius: "var(--mr-radius)", background: only ? "var(--mr-selected)" : "var(--mr-well)", color: only ? "var(--mr-tile)" : "var(--mr-ink)" }}>
+              {only ? "This repo only" : "All repos"}
+            </button>
+          )}
+          </div>
           {items.length === 0 && prs !== null && !error && <span className="mr-dim" style={{ padding: "4px 8px" }}>Nothing here.</span>}
           {items.map((it, i) => (
             <button key={i} type="button" onClick={() => pick(it)} onMouseEnter={() => setSel(i)}
