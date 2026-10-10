@@ -13,9 +13,12 @@ export type QueueItem =
   | { kind: "flow"; key: string; s: SessionState; what: string; at: number }
   | { kind: "fix"; key: string; s: SessionState; at: number };
 
+/** A session that changes the app itself: a god-mode fix or a restyle (MR-47, MR-50). */
+export const isAppChange = (s: Pick<SessionState, "title">) => /^(God-mode mark|Restyle the app)/.test(s.title);
+
 /** A finished god-mode fix whose change hasn't been applied to your app yet (J14). */
 export const fixReady = (s: SessionState) =>
-  /^God-mode mark/.test(s.title) && !!s.branch?.startsWith("mr/") && !s.fixApplied && (s.status === "idle" || s.status === "ended") && Object.keys(s.files).length > 0;
+  isAppChange(s) && !!s.branch?.startsWith("mr/") && !s.fixApplied && (s.status === "idle" || s.status === "ended") && Object.keys(s.files).length > 0;
 
 /** The last question-like paragraph of a finished turn, for showing it on its own. */
 export function proseQuestion(text: string): string {

@@ -40,6 +40,12 @@ body {
 
 button { font: inherit; }
 
+/* Density (MR-50): spacing only, colours untouched. */
+:root[data-density="compact"] { --mr-gap: 2px; }
+:root[data-density="compact"] body { line-height: 1.35; }
+:root[data-density="roomy"] { --mr-gap: 8px; }
+:root[data-density="roomy"] body { line-height: 1.65; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

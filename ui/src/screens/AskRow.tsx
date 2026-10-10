@@ -115,8 +115,8 @@ export function FixRow({ s, selected, onOpen }: { s: SessionState; selected?: bo
       <div className="mr-flag" />
       <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
         <span style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
-          <span className="mr-row" style={{ gap: 6 }}><strong className="mr-ink2">Your bug report</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{plural(Object.keys(s.files).length, "file")} changed</span></span>
-          <span className="mr-ask">{sessionTitle(s).replace(/^Fix: /, "Fixed: ")}</span>
+          <span className="mr-row" style={{ gap: 6 }}><strong className="mr-ink2">{/^Style:/.test(sessionTitle(s)) ? "Your restyle" : "Your bug report"}</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{plural(Object.keys(s.files).length, "file")} changed</span></span>
+          <span className="mr-ask">{sessionTitle(s).replace(/^Fix: /, "Fixed: ").replace(/^Style: /, "Restyled: ")}</span>
           {state && state !== "applying" && <span style={{ color: "var(--mr-error)" }}>{state}</span>}
         </span>
         <button type="button" className="mr-key" onClick={onOpen}>Look first ↵</button>
