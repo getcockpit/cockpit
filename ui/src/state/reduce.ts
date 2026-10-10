@@ -18,7 +18,7 @@ export const initialState: AppState = {
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
+    id, kind, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
     pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
   };
 }
@@ -123,6 +123,12 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending" }];
       if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
+      break;
+    case "session.titled":
+      s.autoTitle = String(p.title ?? "").trim() || s.autoTitle;
+      break;
+    case "ui.session_renamed":
+      s.name = String(p.name ?? "").trim() || null; // an empty name hands the title back to Claude
       break;
     case "plan.updated": {
       // Claude's plan (plan_set, MR-62). A step keeps its start time while it stays in progress.
