@@ -116,8 +116,8 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
             </div>
           ))}
           <div className="mr-row">
-            <Key k="↵" tone="primary" disabled={!hist || !!building} onClick={() => hist && void act(async () => { await invoke("personal_sync"); return invoke("selfbuild_start", { worktree: hist.worktree }); }, "Building your changes on top of the latest app…")}>{building ? `Building · ${building}` : "Build my changes"}</Key>
-            <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>{hist?.worktree}</span>
+            <Key k="↵" tone={(hist?.changes ?? []).some((c) => c.mine_only) ? "primary" : undefined} disabled={!hist || !!building} onClick={() => hist && void act(async () => { await invoke("personal_sync"); return invoke("selfbuild_start", { worktree: hist.worktree }); }, "Building your changes on top of the latest app…")}>{building ? `Building · ${building}` : "Build my changes"}</Key>
+            <span className="mr-dim" title={hist?.worktree}>Builds the app with your changes on top of the latest version</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
             {(hist?.changes ?? []).filter((c) => c.mine_only).length === 0 && <span className="mr-dim">Nothing yet. Fixes and restyles you apply land here, each with Revert.</span>}
@@ -142,11 +142,10 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
             const m = state.clef.day === new Date().toISOString().slice(0, 10) ? state.clef : { calls: 0, tokens: 0, errors: 0 };
             return (
               <div className="mr-row" style={{ gap: 16 }}>
-                <span style={{ color: clefOn ? "var(--mr-done)" : "var(--mr-ink-2)" }}>{clefOn === null ? "…" : clefOn ? "● Connected" : "○ Not connected"}</span>
-                <span className="mr-mono">{m.calls} calls today</span>
-                <span className="mr-mono">~{m.tokens.toLocaleString()} tokens · ${(m.tokens * 0.09 / 1e6).toFixed(4)}</span>
-                {m.errors > 0 && <span style={{ color: "var(--mr-error)" }}>{m.errors} failed, fell back to rules</span>}
-                <span className="mr-dim">Free tier: 10,000 neurons a day, resets 00:00 UTC</span>
+                <span style={{ color: clefOn ? "var(--mr-done)" : "var(--mr-ink-2)" }}>{clefOn === null ? "…" : clefOn ? "● Connected" : "○ Optional, not connected"}</span>
+                {clefOn && <span className="mr-mono">{m.calls} calls today · ~{m.tokens.toLocaleString()} tokens</span>}
+                {clefOn && m.errors > 0 && <span style={{ color: "var(--mr-error)" }}>{m.errors} failed, fell back to rules</span>}
+                {clefOn && <span className="mr-dim">Free tier: 10,000 neurons a day</span>}
               </div>
             );
           })()}
