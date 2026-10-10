@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update")
 }
 
 fn workspace_mode() -> bool {
@@ -34,6 +34,22 @@ fn resume_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "resume")
 }
 
+fn update_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "update")
+}
+
+fn title_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "title")
+}
+
+fn plan_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "plan")
+}
+
+fn view_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "view")
+}
+
 fn doc_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "doc")
 }
@@ -41,6 +57,9 @@ fn doc_mode() -> bool {
 pub fn run(app: AppHandle) {
     if selfbuild_mode() {
         return run_selfbuild(app);
+    }
+    if update_mode() {
+        return run_update(app);
     }
     tauri::async_runtime::spawn(async move {
         tokio_sleep(Duration::from_secs(2)).await;
@@ -63,6 +82,15 @@ pub fn run(app: AppHandle) {
                 "This is a UI test of the review tools, not a real review. Pretend you are reviewing a tiny change that adds a retry loop to fetch.ts. Call review_overview (tier 2, one '+' node 'retry loop', one net-new novelty item, total_snippets 1), then call review_snippet for snippet 1 of 1 with a short 3-line diff and exactly one finding with id f1, severity Important. Then stop and wait for my reply as the tool says.".into()
             } else if resume_mode() {
                 "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
+            } else if title_mode() {
+                // No tool or format named: the guidance alone should give a title and proposed replies (MR-63).
+                "Create a file notes.txt in the current directory containing one line about rust lifetimes, then tell me in one sentence what you did.".into()
+            } else if plan_mode() {
+                // No tool named: the guidance alone should make Claude publish and update its plan (MR-62).
+                "In the current directory, do these steps one at a time: create a.txt containing 'a', then create b.txt containing 'b', then create c.txt containing 'c', then list the directory to check all three exist. Then reply with exactly: SELFTEST DONE".into()
+            } else if view_mode() {
+                // No tool named: the visual guidance alone should make Claude compose a view (MR-61).
+                "This is a UI test; nothing here is real and you don't need to look at any files. Give me a status report for a pretend settings refactor: 3 of 5 steps done, 211 tests passing, 1 test failing in the migration, and one open risk (old desktop builds can't read the new format). Then on a final line reply with exactly: SELFTEST DONE".into()
             } else if doc_mode() {
                 "Create a working document titled 'Selftest plan' with the mr doc_create tool. Add a goal block (block_id goal) whose takeaway is 'Prove the doc loop works', and an open question block (section question, block_id q1, takeaway 'Pick a colour') with data options red and blue. Don't decide it. Then reply with exactly: SELFTEST DONE".into()
             } else {
@@ -185,6 +213,36 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
         }
         _ => {}
     }
+}
+
+/// One-click Update for real (MR-66), under scripts/dev.sh: the first launch builds the other slot
+/// and restarts into it; the relaunched app (MR_AUTO_RESUME=1) notes it came back and ends the run.
+fn run_update(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio_sleep(Duration::from_secs(3)).await;
+        if std::env::var("MR_AUTO_RESUME").is_ok_and(|v| v == "1") {
+            crate::eventlog::record(&app, None, "selftest.update_back", &serde_json::json!({ "slot": std::env::var("MR_DEV_SLOT").ok() }), None);
+            tokio_sleep(Duration::from_millis(500)).await;
+            app.exit(0);
+            return;
+        }
+        if let Err(e) = crate::update::update_start(app.clone()) {
+            eprintln!("[selftest] update_start: {e}");
+            std::process::exit(1);
+        }
+        for _ in 0..1200 {
+            tokio_sleep(Duration::from_secs(1)).await;
+            match crate::update::built() {
+                Some(true) => {
+                    let _ = crate::update::update_restart(app.clone());
+                    return;
+                }
+                Some(false) => continue,
+                None => { eprintln!("[selftest] update build failed"); std::process::exit(1); }
+            }
+        }
+        std::process::exit(1);
+    });
 }
 
 async fn tokio_sleep(d: Duration) {

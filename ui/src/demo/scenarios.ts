@@ -1,5 +1,6 @@
 import type { Doc } from "../state/docs";
 import shop from "./shop.txt?raw";
+import REVIEW482 from "./review482.json";
 
 // Demo scenarios (MR-40). Each is an event log the real reducer replays, plus the docs the core
 // would have folded. `at` is seconds after a base 40 minutes ago.
@@ -117,7 +118,57 @@ const shopEvents: E[] = [
   result("P", "done", 301, 0.9),
 ];
 
+
+// MR-61: a session that answered with a view composed from the catalog (render_view).
+const viewEvents: E[] = [
+  ...ready, onboarded,
+  ...start("V", "Where are we on the settings refactor?", { cwd: "/Users/me/code/shop-worktrees/settings", repo: "/Users/me/code/shop", branch: "mr/settings-schema" }, 10),
+  { session: "V", kind: "view.rendered", payload: { title: "Settings refactor: where it stands", blocks: [
+    { type: "progress", n: 4, total: 6, label: "Migrating readers", right: "about 30 min left" },
+    { type: "tally", items: [{ n: 9, label: "readers migrated", tone: "done" }, { n: 2, label: "in progress", tone: "now" }, { n: 1, label: "deferred", tone: "deferred" }, { n: 3, label: "to go", tone: "todo" }] },
+    { type: "takeaway", heading: "Done", status: "done", items: [{ title: "Typed schema", detail: "with defaults for every key" }, { title: "Migration", detail: "old files upgrade on first read" }] },
+    { type: "takeaway", heading: "Needs you", status: "you", items: [{ title: "Old desktop builds", detail: "can't read the new format: ship a reader shim or bump the minimum version?", time: "about 15 min" }] },
+    { type: "compare", criteria: ["Effort", "Risk", "Fit"], rows: [{ option: "Reader shim", values: ["2 h", "Low", "Keeps old builds working"], recommended: true }, { option: "Bump minimum version", values: ["10 min", "Medium", "Forces 4% of users to update"] }] },
+    { type: "change_graph", nodes: [{ label: "settings.json", mark: "~" }, { label: "SettingsSchema", mark: "+" }, { label: "readers (12)", mark: "~" }, { label: "legacy parser", mark: "-" }] },
+    { type: "checklist", items: [{ label: "Type-check", ok: true, proof: "tsc 0 errors" }, { label: "Unit tests", ok: true, proof: "211 passed" }, { label: "Migration on a real old file", ok: null }, { label: "Old desktop build reads it", ok: false, proof: "parse error" }] },
+    { type: "snippet", file: "src/settings/read.ts · 40–44", code: " export function read(path) {\n-  return JSON.parse(fs.readFileSync(path))\n+  return SettingsSchema.parse(migrate(load(path)))\n }", note: "Every reader goes through the schema now." },
+    { type: "next", text: "Add the reader shim, then run the old-build check.", replies: ["Add the shim", "Bump the minimum version", "Explain the risk"] },
+  ] }, at: 60 },
+  result("V", "ok", 61),
+];
+
+
+// MR-62: a long-running session that published its plan; the panel stays pinned while you scroll.
+const planStep = (at: number, doing: number): E => ({ session: "P", kind: "plan.updated", payload: { steps: ["Read the settings readers", "Design the typed schema", "Migrate the 12 readers", "Write the file migration", "Run the full suite", "Open the PR"].map((step, i) => ({ step, status: i < doing ? "done" : i === doing ? "doing" : "todo" })) }, at });
+const planEvents: E[] = [
+  ...ready, onboarded,
+  ...start("P", "Refactor settings into a typed schema", { cwd: "/Users/me/code/shop-worktrees/settings", repo: "/Users/me/code/shop", branch: "mr/settings-schema" }, 10),
+  planStep(20, 0),
+  { session: "P", kind: "session.titled", payload: { title: "Typed settings schema migration" }, at: 21 },
+  ...Array.from({ length: 14 }, (_, i) => tool("P", "Read", { file_path: `src/settings/reader${i}.ts` }, 30 + i)),
+  planStep(60, 1),
+  say("P", "The readers all parse JSON by hand. I'll introduce one schema with defaults and route every reader through it.", 70),
+  planStep(100, 2),
+  ...Array.from({ length: 12 }, (_, i) => tool("P", "Edit", { file_path: `src/settings/reader${i}.ts`, old_string: "a", new_string: "a\nb" }, 2300 + i * 5)),
+  say("P", "9 of 12 readers migrated. The last three share a legacy parser; doing those together.", 2370),
+  tool("P", "Bash", { command: "bun test src/settings", description: "Run the settings tests" }, 2385),
+  
+];
+
+// The user's real /review of PR #482 (MR-58): the overview, waiting for "ok".
+const review482Events: E[] = [
+  ...ready, onboarded,
+  { session: "R", kind: "ui.session_requested", payload: { prompt: "/review https://github.com/acme/platform/pull/482", kind: "review", cwd: "/Users/me/go/github.com/acme/platform", workspace: "personal" }, at: 10 },
+  { session: "R", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-R", model: "claude-opus-5-5" }, at: 11 },
+  { session: "R", kind: "flow.review_overview", payload: REVIEW482, at: 200 },
+  say("R", "The overview is up: 2 new findings, everything else was raised in earlier rounds.\n\nNext: reply `ok` to start snippet 1 of 2.", 201),
+  result("R", "overview", 202, 0.4),
+];
+
 export const SCENARIOS: Record<string, Scenario> = {
+  review482: { events: review482Events, docs: [] },
+  plan: { events: planEvents, docs: [] },
+  view: { events: viewEvents, docs: [] },
   shop: { events: shopEvents, docs: [] },
   bugs: { events: bugEvents, docs: [] },
   review: { events: reviewEvents, docs: [] },

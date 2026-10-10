@@ -11,7 +11,10 @@ export type Now = { label: string; since: number; elapsedMs: number; quietMs: nu
 export function nowLine(s: SessionState, clock = Date.now()): Now | null {
   if (s.status !== "working" && s.status !== "starting") return null;
   const t = Math.max(clock, s.heardAt, s.lastActivity); // an event can land between clock ticks
-  const quietMs = Math.max(0, t - s.heardAt);
+  // Quiet since Claude last spoke, or since you last wrote to it, whichever is later: a message
+  // to a session that sat idle for an hour is not an hour of silence.
+  const lastSent = s.transcript.reduce((m, x) => (x.kind === "user" ? Math.max(m, x.at) : m), 0);
+  const quietMs = Math.max(0, t - Math.max(s.heardAt, lastSent));
   const at = (label: string, since: number): Now => ({ label, since, elapsedMs: Math.max(0, t - since), quietMs, stale: quietMs >= QUIET_MS });
   if (s.status === "starting") return at("Starting Claude", s.heardAt);
   const last = s.transcript.at(-1);

@@ -15,7 +15,7 @@ export function Archive({ sessions, onOpen, onClose }: { sessions: SessionState[
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return [...sessions].sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0))
-      .filter((s) => !needle || `${s.title} ${s.repo ?? ""} ${s.branch ?? ""} ${s.cwd}`.toLowerCase().includes(needle));
+      .filter((s) => !needle || `${s.title} ${s.name ?? ""} ${s.autoTitle ?? ""} ${s.repo ?? ""} ${s.branch ?? ""} ${s.cwd}`.toLowerCase().includes(needle));
   }, [sessions, q]);
   useEffect(() => setSel(0), [q]);
   const day = (t: number | null) => (t ? new Date(t).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }) : "");
@@ -30,10 +30,10 @@ export function Archive({ sessions, onOpen, onClose }: { sessions: SessionState[
 
   let lastDay = "";
   return (
-    <div role="dialog" aria-label="Archive" data-mr="Archive" onKeyDown={onKey}
+    <div role="dialog" className="mr-scrim" aria-label="Archive" data-mr="Archive" onKeyDown={onKey}
       style={{ position: "fixed", inset: 0, zIndex: 20, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "56px 24px", background: "rgba(21,24,27,.35)", overflowY: "auto" }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ width: "100%", maxWidth: 920, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
+      <div className="mr-sheet" style={{ width: "100%", maxWidth: 920, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <div className="mr-band mr-row" style={{ padding: "12px 16px" }}>
           <strong>Archive</strong><span className="mr-dim">{sessions.length} done</span>
           <span className="mr-grow" />

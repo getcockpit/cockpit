@@ -1,14 +1,14 @@
 import { keyOf } from "../components/keys";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bar, Key, StateMark } from "../components";
+import { DeliveryMark, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
-import { isAppChange, proseQuestion, replyOptions } from "../picker/queue";
+import { isAppChange, proposedReplies, proseQuestion, replyOptions } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { summarizeTool } from "../picker/toolSummary";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
-import type { Diagram, SessionState, TranscriptItem } from "../state/types";
+import type { Diagram, SessionState, Todo, TranscriptItem } from "../state/types";
 import type { Doc } from "../state/docs";
 import { AskRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
@@ -16,7 +16,12 @@ import { pointer } from "../components/pointer";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { parseReport, TurnText } from "../components/Turn";
 import { ChangeMap } from "./ChangeMap";
-import { DeliveryMark, NowLine } from "../components/Now";
+import { PlanPanel } from "../components/PlanPanel";
+import { CatalogView, viewReplies } from "../components/CatalogView";
+import { Mark } from "../components/Turn";
+import { useTick } from "../components/Now";
+import { ago } from "../picker/now";
+import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
@@ -47,8 +52,8 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   const where = [(s.repo ?? s.cwd).split("/").filter(Boolean).pop(), s.branch].filter(Boolean).join(" · ");
   const replies = useMemo(() => nextReplies(s), [s]);
   // A report reply shows its own quick replies inline; the bar below would only repeat them.
-  const lastText = [...s.transcript].reverse().find((t) => t.kind === "text");
-  const repliesInline = !!lastText && lastText.kind === "text" && !!parseReport(lastText.text);
+  const lastText = [...s.transcript].reverse().find((t) => t.kind === "text" || t.kind === "view");
+  const repliesInline = !!lastText && (lastText.kind === "view" || (lastText.kind === "text" && !!parseReport(lastText.text)));
   // A god-mode fix session (MR-47): its last step is applying the fix to your own app.
   const isFix = isApp && !!s.branch?.startsWith("mr/") && isAppChange(s);
   const [applyError, setApplyError] = useState("");
@@ -57,7 +62,16 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      if (keyOf(e) === "Escape" && !typing) { e.preventDefault(); onBack(); }
+      // Esc goes back even from a text field (the message box keeps focus after sending): an empty
+      // field goes straight back, one with a draft is left first so the draft isn't lost to a stray Esc.
+      // The terminal keeps Esc for itself, and an open dialog closes first.
+      if (keyOf(e) === "Escape" && !e.defaultPrevented && !document.querySelector('[role="dialog"]')) {
+        const el = e.target as HTMLElement;
+        if (el.closest?.(".xterm")) return;
+        e.preventDefault();
+        if (typing && (el as HTMLInputElement).value) { el.blur(); return; }
+        onBack();
+      }
       if (keyOf(e) === "." && e.metaKey && running) { e.preventDefault(); void api.interrupt(s.id); }
       if (keyOf(e) === "d" && e.metaKey && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
       if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
@@ -69,24 +83,33 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   }, [onBack, s.id, running, replies]);
 
 
+  // The pinned side panel sits just under the sticky header, whatever height it has right now.
+  const head = useRef<HTMLElement>(null);
+  const [headH, setHeadH] = useState(0);
+  useEffect(() => {
+    if (!head.current) return;
+    const ro = new ResizeObserver(([e]) => setHeadH(Math.ceil(e.target.getBoundingClientRect().height)));
+    ro.observe(head.current);
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", ["--mr-focus-head" as string]: `${headH + 16}px` }}>
       {/* Sticky: the transcript scrolls under it, so state and actions are always in reach. */}
-      <header className="mr-band" style={{ padding: "12px 24px 0", display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 0, zIndex: 5 }}>
+      <header ref={head} className="mr-band" style={{ padding: "12px 24px 0", display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 0, zIndex: 5 }}>
         <div className="mr-row" style={{ gap: 14 }}>
           <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-            <strong className="mr-ellipsis" style={{ fontSize: 18 }} title={s.title}>{sessionTitle(s)}</strong>
+            <SessionName s={s} />
             <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }} title={s.cwd}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{where || s.cwd}</span>
           </div>
           <StateMark s={tile.state} />
           <span className="mr-mono mr-ink2">{tile.state === "done" ? tile.step : tile.progressLabel || tile.step}</span>
         </div>
-        {running && <NowLine s={s} />}
+        {running && <LiveTrack s={s} />}
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10 }}>
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
           {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => !x)}>{term ? "Back to visual" : "Open in terminal"}</Key>}
-          {isApp && !isFix && <Key k="⌘⇧B" tone="needs" onClick={() => onBuild(s.cwd)}>Rebuild & relaunch</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
@@ -111,7 +134,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
-          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
+          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
           {live && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {!running && replies.length > 0 && !repliesInline && (
@@ -129,18 +152,10 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           )}
         </section>
 
-        <aside style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Pinned: the plan and changes stay in view while the transcript scrolls (MR-62). */}
+        <aside style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12, position: "sticky", top: "var(--mr-focus-head, 0px)", alignSelf: "flex-start", maxHeight: "calc(100vh - var(--mr-focus-head, 0px) - 16px)", overflowY: "auto" }}>
           {/* Only what this session has: no empty plan box, no local change map for a PR review (J8). */}
-          {s.todos.length > 0 && <div style={{ background: "var(--mr-tile)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-            <h2 className="mr-h">Plan</h2>
-            {s.todos.map((t, i) => (
-              <div key={i} className="mr-row" style={{ color: t.status === "in_progress" ? "var(--mr-ink)" : t.status === "completed" ? "var(--mr-ink-3)" : "var(--mr-ink-2)", fontWeight: t.status === "in_progress" ? 700 : 400 }}>
-                <span aria-hidden="true" style={{ width: 14 }}>{t.status === "completed" ? "✓" : t.status === "in_progress" ? "▸" : "·"}</span>
-                <span>{t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}</span>
-              </div>
-            ))}
-            <Bar value={tile.progress} />
-          </div>}
+          {s.todos.length > 0 && <PlanPanel s={s} />}
           {s.kind !== "review" && <ChangeMap s={s} onReview={setReviewing} />}
           <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.model ?? ""}{s.costUsd ? ` · $${s.costUsd.toFixed(2)} equiv.` : ""}</span>
         </aside>
@@ -149,19 +164,21 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   );
 }
 
+// Tools whose output has its own visual: the plan panel and composed views.
+const HIDDEN_TOOLS = new Set(["TodoWrite", "mcp__mr__plan_set", "mcp__mr__render_view"]);
+
 // The structured transcript (decision 13): readable rows, not terminal text. ⌘R shows raw JSON.
-function Transcript({ items, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
+function Transcript({ items, plan, running, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; plan: SessionState["todos"]; running: boolean; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
   // Only the latest reply offers quick replies; older ones are history.
-  const lastTextId = [...items].reverse().find((t) => t.kind === "text")?.id;
+  const lastTextId = [...items].reverse().find((t) => t.kind === "text" || t.kind === "view")?.id;
   const end = useRef<HTMLDivElement>(null);
   const [drawing, setDrawing] = useState<Set<string>>(new Set());
-  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [items.length]);
+  // Jump to the end on open, then glide to each new turn as it arrives (MR-67).
+  const seen = useRef(false);
+  useEffect(() => { end.current?.scrollIntoView({ block: "nearest", behavior: seen.current ? "smooth" : "auto" }); seen.current = true; }, [items.length]);
   if (items.length === 0) return <div className="mr-dim" style={{ padding: 12, background: "var(--mr-tile)" }}>Waiting for the first message…</div>;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
-      {(raw ? items : groupTools(items.filter((t) => !(t.kind === "tool" && t.name === "TodoWrite")))).map((t) => raw ? (
-        <pre key={t.id} className="mr-code" style={{ fontSize: 11 }}>{JSON.stringify(t, null, 1)}</pre>
-      ) : t.kind === "text" ? (
+  // One transcript row: Claude's prose, a composed view, your message, a turn marker or tool steps.
+  const one = (t: Row): React.ReactNode => t.kind === "step" ? null : t.kind === "text" ? (
         <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {diagrams[t.id] && <FlowDiagram d={diagrams[t.id]!} />}
           <div style={{ position: "relative" }}>
@@ -175,15 +192,25 @@ function Transcript({ items, raw, diagrams, onDiagram, onDiscover, onReply, live
             )}
           </div>
         </div>
+      ) : t.kind === "view" ? (
+        <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={onReply} live={live && t.id === lastTextId} />
       ) : t.kind === "user" ? (
-        <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)" }}><span className="mr-mono mr-dim">you →</span><span className="mr-grow">{t.text}</span>{t.delivery && <DeliveryMark d={t.delivery} id={t.id} />}</div>
+        <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)" }}><span className="mr-mono mr-dim">you →</span><span className="mr-grow">{t.text}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
       ) : t.kind === "result" ? (
         <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}</div>
       ) : t.kind === "tools" ? (
         <ToolGroup key={t.id} tools={t.tools} onDiscover={onDiscover} />
       ) : (
         <ToolRow key={t.id} t={t} onDiscover={onDiscover} />
-      ))}
+      );
+
+  return (
+    <div className="mr-stream" style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
+      {raw
+        ? items.map((t) => <pre key={t.id} className="mr-code" style={{ fontSize: 11 }}>{JSON.stringify(t, null, 1)}</pre>)
+        : groupSteps(items.filter((t) => !(t.kind === "tool" && HIDDEN_TOOLS.has(t.name)))).map((t) => t.kind === "step"
+          ? <StepGroup key={t.id} g={t} todo={plan.find((x) => x.content === t.step) ?? null} live={running} onDiscover={onDiscover}>{t.signal.map(one)}</StepGroup>
+          : one(t))}
       <div ref={end} />
     </div>
   );
@@ -202,28 +229,85 @@ function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" 
         <span className="mr-ink2 mr-grow mr-ellipsis" title={String(detail)}>{summary}</span>
         <span className="mr-mono" style={{ fontSize: 12, color: t.isError ? "var(--mr-error)" : t.result === undefined ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.isError ? "✕" : t.result === undefined ? "…" : "✓"}</span>
       </button>
-      {open && detail && String(detail) !== summary && <pre className="mr-code" style={{ margin: "0 14px 6px", whiteSpace: "pre-wrap", fontSize: 12 }}>{String(detail)}</pre>}
-      {open && out && <pre className="mr-code" style={{ margin: "0 14px 10px", maxHeight: 260, overflow: "auto", fontSize: 12 }}>{out.slice(0, 4000)}</pre>}
+      {open && detail && String(detail) !== summary && <pre className="mr-code mr-reveal" style={{ margin: "0 14px 6px", whiteSpace: "pre-wrap", fontSize: 12 }}>{String(detail)}</pre>}
+      {open && out && <pre className="mr-code mr-reveal" style={{ margin: "0 14px 10px", maxHeight: 260, overflow: "auto", fontSize: 12 }}>{out.slice(0, 4000)}</pre>}
     </div>
   );
 }
 
-// What to say next after a turn (F11): the choices its last question offers, or the usual next
-// steps for finished work.
+// What to say next after a turn (F11): the replies Claude proposed, or its question's choices.
 export function nextReplies(s: SessionState): string[] {
-  const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);
-  if (last?.kind === "text" && /\?\s*$/.test(last.text.trim())) {
-    const opts = replyOptions(proseQuestion(last.text));
-    if (opts.length) return opts;
-  }
+  if (s.review || s.address) return []; // flows carry their own actions (Start walkthrough, options)
+  const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user" || t.kind === "view").at(-1);
+  if (last?.kind === "view") return viewReplies(last.blocks);
   if (last?.kind !== "text") return [];
-  return Object.keys(s.files).length
-    ? ["Open a PR for this", "Run the full test suite", "Explain the changes and their risks"]
-    : ["Continue", "Explain what you found"];
+  // Claude's own proposals first (MR-63), then the choices its closing question offers. No
+  // hard-coded fallback: buttons that ignore the conversation are worse than none.
+  const proposed = proposedReplies(last.text);
+  if (proposed.length) return proposed;
+  return /\?\s*$/.test(last.text.trim()) ? replyOptions(proseQuestion(last.text)) : [];
 }
 
 type Tool = Extract<TranscriptItem, { kind: "tool" }>;
-type Row = TranscriptItem | { kind: "tools"; id: string; tools: Tool[] };
+type StepRow = { kind: "step"; id: string; step: string; tools: Tool[]; signal: Row[]; from: number; to: number };
+type Row = TranscriptItem | { kind: "tools"; id: string; tools: Tool[] } | StepRow;
+
+// Group by plan step (MR-69): everything that happened while a step was in progress sits under that
+// step. Its routine tool calls fold into one line; what you'd want to read (Claude's prose, composed
+// views, your messages, failed tools) stays visible under the step. Items before any plan, or
+// between steps, keep the plain grouping.
+export function groupSteps(items: TranscriptItem[]): Row[] {
+  const out: Row[] = [];
+  let loose: TranscriptItem[] = [];
+  let cur: StepRow | null = null;
+  const flush = () => { out.push(...groupTools(loose)); loose = []; };
+  for (const t of items) {
+    if (!t.step) { cur = null; loose.push(t); continue; }
+    if (!cur || cur.step !== t.step) {
+      flush();
+      cur = { kind: "step", id: `step:${t.id}`, step: t.step, tools: [], signal: [], from: t.at, to: t.at };
+      out.push(cur);
+    }
+    if (t.kind === "tool" && !t.isError) cur.tools.push(t);
+    else cur.signal.push(t);
+    cur.to = t.at;
+  }
+  flush();
+  return out;
+}
+
+// One plan step: its state, name, what it did and for how long. The routine actions open on click;
+// the rows that matter (children) are always shown under it.
+function StepGroup({ g, todo, live, onDiscover, children }: { g: StepRow; todo: Todo | null; live: boolean; onDiscover: (what: string) => void; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const state = todo?.status ?? null;
+  const doing = state === "in_progress" && live;
+  const t = useTick(doing);
+  const pending = g.tools.filter((x) => x.result === undefined);
+  const now = doing ? pending.at(-1) ?? g.tools.at(-1) : undefined;
+  // The same clock as the Plan panel: from when the step started, live while it runs.
+  const took = (doing ? Math.max(t, g.to) : g.to) - Math.min(g.from, todo?.since ?? g.from);
+  return (
+    <section data-mr="StepGroup" data-mr-source={g.id} data-state={state ?? "gone"} style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
+      <div style={{ background: "var(--mr-tile)", boxShadow: doing ? "inset 3px 0 0 var(--mr-ink)" : undefined }}>
+        <button type="button" onClick={() => setOpen((x) => !x)} disabled={!g.tools.length} className="mr-row" style={{ width: "100%", padding: "8px 14px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: g.tools.length ? "pointer" : "default", gap: 10 }}>
+          <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center" }}>
+            {state === "completed" ? <Mark tone="done" /> : doing ? <span className="mr-now-step" aria-label="In progress">▸</span> : state === "pending" ? <Mark tone="todo" /> : <span className="mr-dim">·</span>}
+          </span>
+          <strong style={{ flex: "none", maxWidth: "45%" }} className="mr-ellipsis">{g.step}</strong>
+          <span className="mr-ink2 mr-grow mr-ellipsis">
+            {now ? `now: ${summarizeTool(now.name, now.input)}` : g.tools.length ? summarise(g.tools) : ""}
+          </span>
+          {g.tools.length > 0 && <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{g.tools.length} {g.tools.length === 1 ? "action" : "actions"}</span>}
+          {took >= 1000 && <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{ago(took)}</span>}
+          {g.tools.length > 0 && <span className="mr-mono" style={{ fontSize: 12 }}>{open ? "▾" : "▸"}</span>}
+        </button>
+        {open && <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{g.tools.map((x) => <ToolRow key={x.id} t={x} onDiscover={onDiscover} />)}</div>}
+      </div>
+      {children && <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)", paddingLeft: 24 }}>{children}</div>}
+    </section>
+  );
+}
 
 // Three or more tool calls in a row fold into one summary line (F8): "Read 2 files · Edited 1 file · Ran 1 command".
 function groupTools(items: TranscriptItem[]): Row[] {
@@ -259,9 +343,37 @@ function ToolGroup({ tools, onDiscover }: { tools: Tool[]; onDiscover: (what: st
       <button type="button" onClick={() => setOpen((x) => !x)} className="mr-row" style={{ width: "100%", padding: "8px 14px", border: 0, background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer" }}>
         <span className="mr-mono" style={{ fontWeight: 700, minWidth: 90 }}>{tools.length} steps</span>
         <span className="mr-ink2 mr-grow mr-ellipsis">{summarise(tools)}</span>
-        <span className="mr-mono" style={{ fontSize: 12, color: failed ? "var(--mr-error)" : pending ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{failed ? "✕" : pending ? "…" : "✓"} {open ? "▾" : "▸"}</span>
+        <span className="mr-mono" style={{ fontSize: 12, color: failed ? "var(--mr-error)" : pending ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{failed ? "✕" : pending ? "…" : "✓"} <span className="mr-chev" data-open={open}>▸</span></span>
       </button>
-      {open && <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{tools.map((t) => <ToolRow key={t.id} t={t} onDiscover={onDiscover} />)}</div>}
+      {open && <div className="mr-reveal mr-stream" style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{tools.map((t) => <ToolRow key={t.id} t={t} onDiscover={onDiscover} />)}</div>}
     </div>
+  );
+}
+
+// The session's name (MR-63): click to rename. Yours wins over Claude's title; clearing it hands
+// the title back to Claude. Logged as ui.session_renamed, so it survives replay.
+function SessionName({ s }: { s: SessionState }) {
+  const [edit, setEdit] = useState<string | null>(null);
+  const shown = sessionTitle(s);
+  const save = () => {
+    const name = (edit ?? "").trim();
+    setEdit(null);
+    if (name !== (s.name ?? shown)) void api.log("ui.session_renamed", { name }, s.id);
+  };
+  if (edit !== null) {
+    return (
+      <input className="mr-input" data-mr="SessionName" data-mr-source={s.id} autoFocus value={edit} aria-label="Rename this session" placeholder={s.autoTitle ?? "Name this session"}
+        onChange={(e) => setEdit(e.target.value)} onBlur={save}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEdit(null); } }}
+        style={{ fontSize: 18, fontWeight: 700, padding: "2px 6px" }} />
+    );
+  }
+  const by = s.name ? "your name" : s.autoTitle ? "named by Claude" : "your first message";
+  return (
+    <button type="button" data-mr="SessionName" data-mr-source={s.id} onClick={() => setEdit(s.name ?? shown)}
+      title={`Click to rename · ${by}${s.title && s.title !== shown ? ` · started as: ${s.title.slice(0, 200)}` : ""}`}
+      className="mr-ellipsis" style={{ font: "inherit", fontSize: 18, fontWeight: 700, border: 0, padding: 0, background: "transparent", color: "inherit", textAlign: "left", cursor: "text" }}>
+      {shown}
+    </button>
   );
 }

@@ -76,6 +76,8 @@ function scripted(sid: string, text: string): boolean {
     }
     if (text === "publish") { later(500, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Published the review on PR #482." }] } })); done("published"); return true; }
     if (text.startsWith("note ")) { done("noted"); return true; }
+    if (text === "ok") { later(1500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[0])); later(1700, () => sdk(sid, { type: "result", is_error: false, result: "snippet", total_cost_usd: 0.04 })); return true; }
+    if (text.startsWith("Add this to the review") || text.startsWith("About ")) { later(900, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Added to your review." }] } })); done("ok"); return true; }
   }
   if (sid === "X" && text.startsWith("Option ")) {
     const cur = [...events].reverse().find((e) => e.session_id === "X" && e.kind === "flow.address_thread")?.payload.id as string;
@@ -172,6 +174,21 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "selfbuild_list": return [];
     case "personal_history": return { worktree: "/Users/me/code/minority-report-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
     case "app_repo_path": return "/Users/me/code/minority-report";
+    // One-click Update (MR-66): ?demo=busy&update=1 offers two updates; &update=fail fails the build.
+    case "update_status": {
+      const u = new URLSearchParams(location.search).get("update");
+      const applied = events.some((e) => e.kind === "app.started" && events.some((r) => r.kind === "update.restarting"));
+      return { mode: "ready", pending: u && !applied ? [{ sha: "a1b2c3d", subject: "Live titles, rename, dynamic next steps" }, { sha: "d4e5f6a", subject: "Plan panel with progress" }] : [] };
+    }
+    case "update_start": {
+      const fail = new URLSearchParams(location.search).get("update") === "fail";
+      record(null, "update.started", { to: "d4e5f6a", subjects: ["Live titles, rename, dynamic next steps", "Plan panel with progress"] });
+      record(null, "update.step", { step: "sidecar" });
+      later(2500, () => record(null, "update.step", { step: "app" }));
+      later(6000, () => record(null, "update.finished", fail ? { ok: false, step: "app", log: "error[E0425]: cannot find value `slot` in this scope\n  --> src/update.rs:88:41" } : { ok: true, seconds: 6 }));
+      return null;
+    }
+    case "update_restart": record(null, "update.restarting", { subjects: ["Live titles, rename, dynamic next steps", "Plan panel with progress"] }); later(1200, () => record(null, "app.started", { sha: "d4e5f6a" })); return null;
     case "layer2_status": return { configured: false };
     case "layer2_classify": {
       const label = /\?\s*$/.test(String(a.text).trim()) ? "question" : "other";
@@ -191,6 +208,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "term_open": case "workspace_sign_in": case "voice_start": throw new Error("Not available in the demo (needs the desktop app).");
     case "workspace_create": { const wid = `ws_${Date.now().toString(36)}`; record(null, "ui.workspace_created", { id: wid, name: a.name, config_dir: `/demo/${wid}` }); return wid; }
     case "workspace_delete": record(null, "ui.workspace_deleted", { id: a.id, name: a.name, stopped: 0, trashed_to: "~/.Trash/…" }); return null;
+    case "workspace_set_folder": record(null, "ui.workspace_folder_set", { id: a.id, folder: a.folder ?? null }); return null;
     case "workspace_rename": record(null, "ui.workspace_renamed", { id: a.id, name: a.name }); return null;
     default: return null;
   }

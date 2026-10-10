@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Markdown, inline } from "./Markdown";
-import { replyOptions } from "../picker/queue";
+import { proposedReplies, replyOptions, withoutReplyLine } from "../picker/queue";
 import { parseReport, type Item, type Report, type Section } from "../picker/report";
 export { parseReport };
 
@@ -11,7 +11,7 @@ export { parseReport };
 // No model involved: this is plain parsing of the Markdown Claude is asked to write.
 
 // State marks from the canvas: shape and colour together.
-function Mark({ tone, done }: { tone: Section["tone"]; done?: boolean }) {
+export function Mark({ tone, done }: { tone: Section["tone"]; done?: boolean }) {
   if (done || tone === "done") return <svg width="12" height="12" viewBox="0 0 12 12" aria-label="Done" role="img"><path d="M2 6.3 4.8 9 10 3" fill="none" stroke="var(--mr-done)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
   if (tone === "you") return <svg width="12" height="12" viewBox="0 0 14 14" aria-label="Needs you" role="img"><path d="M7 1.5 13 12.5H1Z" fill="var(--mr-needs)" /></svg>;
   if (tone === "todo") return <svg width="12" height="12" viewBox="0 0 12 12" aria-label="To do" role="img"><circle cx="6" cy="6" r="4.5" fill="none" stroke="var(--mr-ink-3)" strokeWidth="1.5" /></svg>;
@@ -40,7 +40,10 @@ function ItemRow({ it, tone, n }: { it: Item; tone: Section["tone"]; n: number |
 const KICKER: Record<Section["tone"], string> = { done: "Status", todo: "To do", you: "Needs you", info: "" };
 
 export function ReportView({ r, onReply, live }: { r: Report; onReply: (text: string) => void; live: boolean }) {
-  const nextOptions = r.next ? replyOptions(r.next) : [];
+  const proposed = r.next ? proposedReplies(`Next: ${r.next}`) : [];
+  const nextOptions = proposed.length ? proposed : r.next ? replyOptions(r.next) : [];
+  // A Next line that only lists replies shows as its buttons, not as text too.
+  const nextText = r.next && withoutReplyLine(`Next: ${r.next}`) === "" ? null : r.next;
   const decisionOptions = r.decision ? replyOptions(`${r.decision} ${r.next ?? ""}`) : [];
   const chips = nextOptions.length ? nextOptions : decisionOptions;
   return (
@@ -67,12 +70,12 @@ export function ReportView({ r, onReply, live }: { r: Report; onReply: (text: st
           {s.items.map((it, j) => <ItemRow key={j} it={it} tone={s.tone} n={s.ordered ? j + 1 : null} />)}
         </section>
       ))}
-      {r.next && (
+      {r.next && (nextText || (live && chips.length > 0)) && (
         // Suggested next: the move this turn proposes, as one-click replies.
         <div data-mr="ReportNext" className="mr-row" style={{ gap: 12, padding: "10px 14px", background: "var(--mr-tile)", flexWrap: "wrap" }}>
           <span style={{ flex: 1, minWidth: 240, display: "flex", flexDirection: "column" }}>
             <span className="mr-dim" style={{ fontSize: 12 }}>Next</span>
-            <span>{inline(r.next)}</span>
+            {nextText && <span>{inline(nextText)}</span>}
           </span>
           {live && chips.length > 0 && <Chips options={chips} onReply={onReply} />}
         </div>
@@ -82,7 +85,7 @@ export function ReportView({ r, onReply, live }: { r: Report; onReply: (text: st
 }
 
 // Quick-reply chips from the canvas: 2–4 answers, one key each.
-function Chips({ options, onReply }: { options: string[]; onReply: (t: string) => void }) {
+export function Chips({ options, onReply }: { options: string[]; onReply: (t: string) => void }) {
   return (
     <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }} data-mr="QuickReplies">
       {options.map((o, i) => (
@@ -98,5 +101,6 @@ function Chips({ options, onReply }: { options: string[]; onReply: (t: string) =
 export function TurnText({ text, onReply, live }: { text: string; onReply: (t: string) => void; live: boolean }): ReactNode {
   const r = parseReport(text);
   if (r) return <ReportView r={r} onReply={onReply} live={live} />;
-  return <div style={{ padding: "12px 14px", background: "var(--mr-tile)" }}><Markdown text={text} /></div>;
+  // Proposed replies show as buttons under the turn, so their bare Next line isn't repeated here.
+  return <div style={{ padding: "12px 14px", background: "var(--mr-tile)" }}><Markdown text={withoutReplyLine(text)} /></div>;
 }

@@ -1,24 +1,26 @@
-import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem } from "./types";
+import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem, ViewBlock } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
   order: [],
-  usage: { fiveHour: null, weekly: null, resetsAt: null },
+  usage: { fiveHour: null, weekly: null, resetsAt: null, weeklyResetsAt: null },
   sidecar: { up: false, claude: null },
   lastEventId: null,
   dismissed: [],
-  workspaces: [{ id: "personal", name: "Personal", configDir: null }],
+  workspaces: [{ id: "personal", name: "Personal", configDir: null, folder: null }],
   theme: "control-room",
   look: { scale: 1, density: "default" },
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
+  recovered: null,
   lastBuildAt: null,
+  update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, kind, workspace: "personal", title, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
+    id, kind, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
     pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
   };
 }
@@ -40,24 +42,42 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
   }
   if (ev.kind === "selfbuild.finished" && p.ok) return { ...next, lastBuildAt: ev.created_at };
+  if (ev.kind.startsWith("update.") || ev.kind === "app.started" || ev.kind === "ui.update_seen" || ev.kind === "ui.update_dismissed") {
+    const u = next.update;
+    const strs = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+    switch (ev.kind) {
+      case "update.started": return { ...next, update: { ...u, phase: "building", step: null, log: null, subjects: strs(p.subjects), startedAt: ev.created_at } };
+      case "update.step": return { ...next, update: { ...u, step: String(p.step ?? "") } };
+      case "update.finished": return { ...next, update: { ...u, phase: p.ok ? "ready" : "failed", step: p.ok ? null : String(p.step ?? ""), log: p.ok ? null : String(p.log ?? "") } };
+      case "update.restarting": return { ...next, update: { ...u, restarting: strs(p.subjects) } };
+      // A fresh start: whatever was building belonged to the old app; an update we restarted for is now live.
+      case "app.started": return { ...next, lastBuildAt: ev.created_at, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
+      case "ui.update_seen": return { ...next, update: { ...u, whatsNew: null } };
+      case "ui.update_dismissed": return { ...next, update: { ...u, phase: "idle", step: null, log: null } };
+    }
+    return next;
+  }
+  if (ev.kind === "app.recovered") return { ...next, recovered: { crashedSlot: String(p.crashed_slot ?? ""), log: String(p.log ?? ""), at: ev.created_at } };
+  if (ev.kind === "ui.recovery_dismissed") return { ...next, recovered: null };
   if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };
   if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false };
   if (ev.kind === "sidecar.limits") {
     // Limits double as the sign-in check: they're only available to a signed-in subscription.
     const account = { checked: true, signedIn: !!p.available, plan: (p.plan as string) ?? null };
     if (!p.available) return { ...next, account };
-    const f = p.five_hour as { utilization: number; resetsAt: number | null } | null, w = p.seven_day as { utilization: number } | null;
-    return { ...next, account, usage: { fiveHour: f?.utilization ?? next.usage.fiveHour, weekly: w?.utilization ?? next.usage.weekly, resetsAt: f?.resetsAt ?? next.usage.resetsAt } };
+    const f = p.five_hour as { utilization: number; resetsAt: number | null } | null, w = p.seven_day as { utilization: number; resetsAt: number | null } | null;
+    return { ...next, account, usage: { fiveHour: f?.utilization ?? next.usage.fiveHour, weekly: w?.utilization ?? next.usage.weekly, resetsAt: f?.resetsAt ?? next.usage.resetsAt, weeklyResetsAt: w?.resetsAt ?? next.usage.weeklyResetsAt } };
   }
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
-  if (ev.kind === "ui.workspace_created") return { ...next, workspaces: [...next.workspaces, { id: String(p.id), name: String(p.name), configDir: (p.config_dir as string) ?? null }] };
+  if (ev.kind === "ui.workspace_created") return { ...next, workspaces: [...next.workspaces, { id: String(p.id), name: String(p.name), configDir: (p.config_dir as string) ?? null, folder: null }] };
   if (ev.kind === "ui.workspace_deleted") {
     // Its sessions become read-only history in Personal's archive; their Claude history went with the workspace.
     const id = String(p.id), name = String(p.name ?? "workspace");
     const sessions = Object.fromEntries(Object.entries(next.sessions).map(([k, s]) => [k, s.workspace === id ? { ...s, workspace: "personal", archivedAt: s.archivedAt ?? ev.created_at, fromDeleted: name, pending: [], status: s.status === "ended" || s.status === "error" ? s.status : "ended" as const } : s]));
     return { ...next, sessions, workspaces: next.workspaces.filter((w) => w.id !== id) };
   }
+  if (ev.kind === "ui.workspace_folder_set") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, folder: (p.folder as string) ?? null } : w)) };
   if (ev.kind === "ui.workspace_renamed") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, name: String(p.name) } : w)) };
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
@@ -124,6 +144,26 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
       break;
+    case "session.titled":
+      s.autoTitle = String(p.title ?? "").trim() || s.autoTitle;
+      break;
+    case "ui.session_renamed":
+      s.name = String(p.name ?? "").trim() || null; // an empty name hands the title back to Claude
+      break;
+    case "plan.updated": {
+      // Claude's plan (plan_set, MR-62). A step keeps its start time while it stays in progress.
+      const prev = new Map(s.todos.map((x) => [x.content, x]));
+      const STATUS = { done: "completed", doing: "in_progress", todo: "pending" } as const;
+      s.todos = (Array.isArray(p.steps) ? (p.steps as { step?: unknown; status?: unknown }[]) : []).map((x) => {
+        const content = String(x.step ?? ""), status = STATUS[String(x.status) as keyof typeof STATUS] ?? "pending";
+        const was = prev.get(content);
+        return { content, status, since: status === "in_progress" ? (was?.status === "in_progress" && was.since ? was.since : ev.created_at) : was?.since };
+      });
+      break;
+    }
+    case "view.rendered":
+      s.transcript = [...s.transcript, { kind: "view", id: ev.id, title: String(p.title ?? ""), blocks: Array.isArray(p.blocks) ? (p.blocks as ViewBlock[]) : [], at: ev.created_at }];
+      break;
     case "sidecar.sdk":
       s.heardAt = ev.created_at;
       applySdk(s, p.message as Record<string, unknown>, ev, next);
@@ -149,6 +189,11 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.transcript = settle(s.transcript, ["sending", "queued", "taken"], "lost");
       break;
   }
+  // Whatever this event added belongs to the plan step in progress (MR-69: the transcript groups by step).
+  const doing = s.todos.find((x) => x.status === "in_progress")?.content;
+  if (doing && s.transcript.length > base.transcript.length) {
+    s.transcript = s.transcript.map((x, i) => (i >= base.transcript.length && !x.step ? { ...x, step: doing } : x));
+  }
   return { ...next, sessions: { ...next.sessions, [sid]: s }, order };
 }
 
@@ -165,7 +210,8 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
   if (type === "rate_limit_event") {
     const info = m.rate_limit_info as { unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }> } | undefined;
     const w = info?.unifiedWindows ?? {};
-    app.usage = { fiveHour: w.five_hour?.utilization ?? app.usage.fiveHour, weekly: (w.seven_day ?? w.weekly)?.utilization ?? app.usage.weekly, resetsAt: w.five_hour?.resetsAt ?? app.usage.resetsAt };
+    const wk = w.seven_day ?? w.weekly;
+    app.usage = { fiveHour: w.five_hour?.utilization ?? app.usage.fiveHour, weekly: wk?.utilization ?? app.usage.weekly, resetsAt: w.five_hour?.resetsAt ?? app.usage.resetsAt, weeklyResetsAt: wk?.resetsAt ?? app.usage.weeklyResetsAt };
     return;
   }
   if (type === "assistant") {
@@ -251,4 +297,13 @@ function addressStep(a: SessionState["address"], kind: string, p: Record<string,
   if (kind === "flow.address_reply") return { ...f, replies: { ...f.replies, [id]: p as never } };
   if (kind === "ui.address_chosen") return { ...f, chosen: { ...f.chosen, [id]: String(p.option) } };
   return f;
+}
+
+/** Where a new session in this workspace starts (MR-65): its pinned folder, else the folder its
+ *  latest session ran in, else null (the picker's own fallback). */
+export function workspaceFolder(state: AppState, ws: string): string | null {
+  const pinned = state.workspaces.find((w) => w.id === ws)?.folder;
+  if (pinned) return pinned;
+  const last = [...state.order].reverse().map((id) => state.sessions[id]).find((s) => s.workspace === ws && !s.fromDeleted && (s.kind === "blank" || s.kind === "plan"));
+  return last ? last.repo ?? last.cwd : null;
 }

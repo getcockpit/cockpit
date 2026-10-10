@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { replay } from "./reduce";
+import { replay, workspaceFolder } from "./reduce";
 import { pickDecision, pickTile, bashRisk, needsLayer2, wantsDiagram } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
 import type { MrEvent } from "./types";
@@ -136,6 +136,24 @@ test("layer 2 catches a question asked without a question mark, and meters the c
   expect(fallback.clef.calls).toBe(0);
 });
 
+test("a workspace starts in its pinned folder, else where its last session ran (MR-65)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: 1 });
+  const base = [
+    ev("F1", "ui.workspace_created", { id: "ws_a", name: "Client A", config_dir: "/d/ws_a/claude" }),
+    ev("F2", "ui.session_requested", { prompt: "p1", cwd: "/code/one", workspace: "ws_a", kind: "blank" }, "s1"),
+    ev("F3", "ui.session_requested", { prompt: "p2", cwd: "/code/two", workspace: "ws_a", kind: "blank" }, "s2"),
+    ev("F4", "ui.session_requested", { prompt: "p3", cwd: "/code/mine" }, "s3"),
+  ];
+  let st = replay(base);
+  expect(workspaceFolder(st, "ws_a")).toBe("/code/two");
+  expect(workspaceFolder(st, "personal")).toBe("/code/mine");
+  st = replay([...base, ev("F5", "ui.workspace_folder_set", { id: "ws_a", folder: "/code/client" })]);
+  expect(workspaceFolder(st, "ws_a")).toBe("/code/client");
+  st = replay([...base, ev("F5", "ui.workspace_folder_set", { id: "ws_a", folder: "/code/client" }), ev("F6", "ui.workspace_folder_set", { id: "ws_a", folder: null })]);
+  expect(workspaceFolder(st, "ws_a")).toBe("/code/two");
+  expect(workspaceFolder(replay([base[0]]), "ws_a")).toBeNull();
+});
+
 test("workspaces are created from the log and sessions stay in theirs", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: 1 });
   const st = replay([
@@ -183,7 +201,7 @@ test("the flow layout ranks by longest path and survives cycles", () => {
 
 test("plan limits arrive before any session runs", () => {
   const st = replay([{ id: "L1", session_id: null, kind: "sidecar.limits", payload: { available: true, five_hour: { utilization: 0.15, resetsAt: 1791586200 }, seven_day: { utilization: 0.56, resetsAt: 1 } }, anchor: null, created_at: 1 }]);
-  expect(st.usage).toEqual({ fiveHour: 0.15, weekly: 0.56, resetsAt: 1791586200 });
+  expect(st.usage).toEqual({ fiveHour: 0.15, weekly: 0.56, resetsAt: 1791586200, weeklyResetsAt: 1 });
   expect(replay([{ id: "L1", session_id: null, kind: "sidecar.limits", payload: { available: false, error: "x" }, anchor: null, created_at: 1 }]).usage.fiveHour).toBeNull();
 });
 
@@ -259,4 +277,23 @@ test("deleting a workspace moves its sessions to Personal's archive as read-only
   expect(st.workspaces.map((w) => w.id)).toEqual(["personal"]);
   expect(st.sessions.s1).toMatchObject({ workspace: "personal", archivedAt: 5, fromDeleted: "Client A", status: "ended" });
   expect(st.sessions.s2).toMatchObject({ workspace: "personal", archivedAt: null, fromDeleted: null });
+});
+
+test("a review waiting on its overview needs you until you start the walkthrough", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "r", kind, payload, anchor: null, created_at: 1 });
+  const base = [
+    ev("V1", "ui.session_requested", { prompt: "/review 482", kind: "review", cwd: "/w" }),
+    ev("V2", "flow.review_overview", { pr: "#482", title: "t", total_snippets: 2 }),
+    ev("V3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "overview" } }),
+  ];
+  expect(pickTile(replay(base).sessions.r)).toMatchObject({ state: "needs_you", doing: "Overview ready · 2 snippets to walk" });
+  const started = replay([...base, ev("V4", "flow.review_snippet", { n: 1, total: 2, title: "x", findings: [] }), ev("V5", "sidecar.sdk", { message: { type: "result", is_error: false, result: "s" } })]);
+  expect(pickTile(started.sessions.r).doing).toMatch(/^Snippet 1 of 2/);
+});
+
+test("a rollback after a crash at start is shown until dismissed", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind, payload, anchor: null, created_at: 7 });
+  const st = replay([e("C1", "app.recovered", { crashed_slot: "b", slot: "a", log: "=== crash at start · slot b\npanicked" })]);
+  expect(st.recovered).toEqual({ crashedSlot: "b", log: "=== crash at start · slot b\npanicked", at: 7 });
+  expect(replay([e("C1", "app.recovered", { crashed_slot: "b" }), e("C2", "ui.recovery_dismissed", {})]).recovered).toBeNull();
 });

@@ -65,9 +65,9 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
   const buildOf = (sha: string) => builds.find((b) => b.sha.replace("+dirty", "") && sha.startsWith(b.sha.replace("+dirty", "")));
 
   return (
-    <div role="dialog" aria-label="Settings" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "56px 24px", background: "rgba(21,24,27,.35)", zIndex: 25, overflowY: "auto" }}
+    <div role="dialog" className="mr-scrim" aria-label="Settings" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "56px 24px", background: "rgba(21,24,27,.35)", zIndex: 25, overflowY: "auto" }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
+      <div className="mr-sheet" style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <div className="mr-row mr-band" style={{ padding: "12px 16px" }}><strong>Settings</strong><span className="mr-grow" /><Key onClick={() => { onClose(); api.report(); }}>Report a bug</Key><Key onClick={() => { void api.log("ui.onboarding_reset", {}); onClose(); }}>Show the intro</Key><Key k="esc" onClick={onClose}>Close</Key></div>
 
         <section data-mr="Look" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
