@@ -7,7 +7,7 @@ import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, Lamp, Lamps, Sparkline, StateMark } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
-import { isOpenQuestion, docApi, type Doc } from "../state/docs";
+import { isOpenQuestion, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import type { AppState, SessionState } from "../state/types";
 import { answerAsk, AskRow, DocQuestionRow, ProseRow } from "./AskRow";
@@ -69,7 +69,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
       else if (cur.kind === "ask" && k === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
       else if (cur.kind === "prose" && /^[1-9]$/.test(k) && cur.options[Number(k) - 1]) { e.preventDefault(); void api.send(cur.s.id, cur.options[Number(k) - 1]); }
       else if (cur.kind === "prose" && k === "r") { e.preventDefault(); (document.querySelector(`[data-reply="${cur.s.id}"]`) as HTMLInputElement | null)?.focus(); }
-      else if (cur.kind === "doc" && /^[1-9]$/.test(k)) { const o = (cur.b.data?.options ?? [])[Number(k) - 1]; if (o) { e.preventDefault(); void docApi.decide(cur.d, cur.b.id, o.label); } }
+      else if (cur.kind === "doc" && /^[1-9]$/.test(k)) { const o = (cur.b.data?.options ?? [])[Number(k) - 1]; if (o) { e.preventDefault(); (document.querySelector(`[data-mr-source="${cur.d.id}:${cur.b.id}"] [data-option="${Number(k) - 1}"]`) as HTMLButtonElement | null)?.click(); } }
       else if (k === "Enter") { e.preventDefault(); if (cur.kind === "doc") onOpenDoc(cur.d.id); else onOpen(cur.s.id); }
     };
     window.addEventListener("keydown", onKey);
@@ -119,7 +119,7 @@ export function Wall({ state, docs, archived, onArchive, onOpen, onOpenDoc, onSt
               {queue.map((q, i) =>
                 q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "prose" ? <ProseRow key={q.key} s={q.s} question={q.question} options={q.options} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
-                : <DocQuestionRow key={q.key} d={q.d} b={q.b} selected={i === sel} onOpen={() => onOpenDoc(q.d.id)} />)}
+                : <DocQuestionRow key={q.key} d={q.d} b={q.b} session={q.d.session_id ? state.sessions[q.d.session_id] : null} selected={i === sel} onOpen={() => onOpenDoc(q.d.id)} />)}
             </div>
           </section>
         )}

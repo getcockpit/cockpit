@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { DecisionCard, Key, type Answer } from "../components";
-import { docApi, isOpenQuestion, type Block, type Doc } from "../state/docs";
+import { decideQuestion, type Block, type Doc } from "../state/docs";
 import { sessionTitle } from "../picker/title";
 import { pickDecision } from "../picker/pick";
 import { api } from "../state/store";
@@ -61,13 +61,9 @@ export function ProseRow({ s, question, options, selected, onOpen }: { s: Sessio
 
 // An open question in a working doc, decided right here. Deciding the last one sends the doc back
 // to its plan session so it carries on.
-export function DocQuestionRow({ d, b, selected, onOpen }: { d: Doc; b: Block; selected?: boolean; onOpen: () => void }) {
+export function DocQuestionRow({ d, b, session, selected, onOpen }: { d: Doc; b: Block; session?: SessionState | null; selected?: boolean; onOpen: () => void }) {
   const options = (b.data?.options ?? []) as { label: string; description: string }[];
-  const decide = async (label: string) => {
-    await docApi.decide(d, b.id, label);
-    const stillOpen = Object.values(d.blocks).filter((x) => isOpenQuestion(x) && x.id !== b.id).length;
-    if (!stillOpen && d.session_id) await docApi.feedback(d, false).catch(() => {});
-  };
+  const decide = (label: string) => decideQuestion(d, b.id, label, session);
   return (
     <div className="mr-qrow" data-mr="DocQuestion" data-mr-source={`${d.id}:${b.id}`} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
       <div className="mr-flag" />
@@ -80,7 +76,7 @@ export function DocQuestionRow({ d, b, selected, onOpen }: { d: Doc; b: Block; s
         {options.length > 0 ? (
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))`, gap: "var(--mr-gap)" }}>
             {options.map((o, i) => (
-              <button key={o.label} type="button" onClick={() => void decide(o.label)} style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
+              <button key={o.label} type="button" data-option={i} onClick={() => void decide(o.label)} style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
                 <span className="mr-row" style={{ gap: 8 }}><kbd className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-tile)" }}>{i + 1}</kbd><strong>{o.label}</strong></span>
                 <span className="mr-dim">{o.description}</span>
               </button>
