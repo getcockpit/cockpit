@@ -290,3 +290,52 @@ test("a review waiting on its overview needs you until you start the walkthrough
   const started = replay([...base, ev("V4", "flow.review_snippet", { n: 1, total: 2, title: "x", findings: [] }), ev("V5", "sidecar.sdk", { message: { type: "result", is_error: false, result: "s" } })]);
   expect(pickTile(started.sessions.r).doing).toMatch(/^Snippet 1 of 2/);
 });
+
+describe("timeline data (MR-32)", () => {
+  const at = (id: string, kind: string, payload: Record<string, unknown>, t: number): MrEvent => ({ id, session_id: "t1", kind, payload, anchor: null, created_at: t });
+  const steps = (...xs: [string, string][]) => ({ steps: xs.map(([step, status]) => ({ step, status })) });
+
+  test("a step keeps its start, and its end time sticks once it's done", () => {
+    const s = replay([
+      at("A1", "ui.session_requested", { prompt: "x", cwd: "/r" }, 0),
+      at("A2", "plan.updated", steps(["Read", "doing"], ["Write", "todo"]), 1000),
+      at("A3", "plan.updated", steps(["Read", "done"], ["Write", "doing"]), 61_000),
+      at("A4", "plan.updated", steps(["Read", "done"], ["Write", "doing"]), 90_000),
+      at("A5", "plan.updated", steps(["Read", "done"], ["Write", "done"]), 120_000),
+    ]).sessions.t1;
+    expect(s.todos[0]).toMatchObject({ since: 1000, doneAt: 61_000 });
+    expect(s.todos[1]).toMatchObject({ since: 61_000, doneAt: 120_000 });
+  });
+
+  test("a step that arrives already done is a zero-length step", () => {
+    const s = replay([at("A1", "ui.session_requested", { prompt: "x", cwd: "/r" }, 0), at("A2", "plan.updated", steps(["Read", "done"]), 5000)]).sessions.t1;
+    expect(s.todos[0]).toMatchObject({ since: 5000, doneAt: 5000 });
+  });
+
+  test("status changes become spans, and a wait names what it waits on", () => {
+    const s = replay([
+      at("B1", "ui.session_requested", { prompt: "x", cwd: "/r" }, 0),
+      at("B2", "sidecar.session_started", { sdk_session_id: "k" }, 1000),
+      at("B3", "sidecar.permission_request", { request_id: "r1", tool: "AskUserQuestion", input: { questions: [{ question: "Which DB?", header: "Migration", options: [] }] } }, 5000),
+      at("B4", "sidecar.sdk", { message: { type: "assistant", message: { content: [] } } }, 6000),
+      at("B5", "ui.permission_answered", { request_id: "r1" }, 9000),
+      at("B6", "sidecar.session_ended", { ok: true }, 20_000),
+    ]).sessions.t1;
+    expect(s.spans.map((x) => [x.status, x.from, x.to])).toEqual([["starting", 0, 1000], ["working", 1000, 5000], ["needs_you", 5000, 9000], ["working", 9000, 20_000], ["ended", 20_000, null]]);
+    expect(s.spans[2].label).toBe("Migration");
+  });
+
+  test("a sidecar restart closes the open span as interrupted", () => {
+    const s = replay([at("C1", "ui.session_requested", { prompt: "x", cwd: "/r" }, 0), at("C2", "sidecar.session_started", {}, 1000), { id: "C3", session_id: null, kind: "sidecar.ready", payload: {}, anchor: null, created_at: 4000 }]).sessions.t1;
+    expect(s.spans.at(-1)).toMatchObject({ status: "interrupted", from: 4000, to: null });
+    expect(s.spans.at(-2)).toMatchObject({ status: "working", to: 4000 });
+  });
+});
+
+test("activity buckets follow clock minutes, so events 40 s apart still spread out (MR-32)", () => {
+  const evs: MrEvent[] = [{ id: "G0", session_id: "g", kind: "ui.session_requested", payload: { prompt: "x", cwd: "/r" }, anchor: null, created_at: 0 }];
+  for (let i = 1; i <= 15; i++) evs.push({ id: `G${String(i).padStart(2, "0")}`, session_id: "g", kind: "sidecar.sdk", payload: { message: { type: "system" } }, anchor: null, created_at: i * 40_000 });
+  const a = replay(evs).sessions.g.activity;
+  expect(a.reduce((x, y) => x + y, 0)).toBe(15); // the request itself isn't activity
+  expect(Math.max(...a)).toBeLessThanOrEqual(2);
+});

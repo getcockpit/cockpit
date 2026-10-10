@@ -1,4 +1,4 @@
-import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Todo, TranscriptItem, ViewBlock } from "./types";
+import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
@@ -20,7 +20,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
+    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
   };
 }
 
@@ -36,7 +36,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     // A fresh sidecar means any session still running before it died with the old one.
     const sessions = { ...next.sessions };
     for (const [id, s] of Object.entries(sessions)) {
-      if (!["ended", "error", "interrupted"].includes(s.status)) sessions[id] = { ...s, status: "interrupted", pending: [], turnOpen: false, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
+      if (!["ended", "error", "interrupted"].includes(s.status)) sessions[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", ev.created_at), pending: [], turnOpen: false, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
     }
     return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
   }
@@ -86,7 +86,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     if (existing) {
       // A resume (or a request logged after early sidecar events): keep history, restart the status.
       const resumed = p.resume ? { status: "starting" as const, error: null, archivedAt: null } : {};
-      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch } } };
+      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, spans: p.resume ? track(existing, "starting", ev.created_at) : existing.spans, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch } } };
     }
     return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where } }, order: [...next.order, sid] };
   }
@@ -154,7 +154,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.todos = (Array.isArray(p.steps) ? (p.steps as { step?: unknown; status?: unknown }[]) : []).map((x) => {
         const content = String(x.step ?? ""), status = STATUS[String(x.status) as keyof typeof STATUS] ?? "pending";
         const was = prev.get(content);
-        return { content, status, since: status === "in_progress" ? (was?.status === "in_progress" && was.since ? was.since : ev.created_at) : was?.since };
+        const since = status === "in_progress" ? (was?.status === "in_progress" && was.since ? was.since : ev.created_at) : was?.since;
+        // A step's end time sticks; one that arrives already done starts and ends here (Timeline, MR-32).
+        return status === "completed" ? { content, status, since: since ?? ev.created_at, doneAt: was?.doneAt ?? ev.created_at } : { content, status, since };
       });
       break;
     }
@@ -186,12 +188,28 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.transcript = settle(s.transcript, ["sending", "queued", "taken"], "lost");
       break;
   }
+  if (s.status !== base.status) s.spans = track(base, s.status, ev.created_at, s.status === "needs_you" ? askLabel(s.pending[0]) : undefined);
   return { ...next, sessions: { ...next.sessions, [sid]: s }, order };
 }
 
+// Closes the open span and opens one for the new status. Keeps the last 60: the Timeline shows 30 minutes.
+function track(s: SessionState, status: SessionState["status"], at: number, label?: string): Span[] {
+  const last = s.spans[s.spans.length - 1];
+  if (last && last.status === status && last.to === null) return s.spans;
+  const closed = last && last.to === null ? [...s.spans.slice(0, -1), { ...last, to: at }] : s.spans;
+  return [...closed, { status, from: at, to: null, ...(label ? { label } : {}) }].slice(-60);
+}
+
+// What a session waits on, in a few words: the question's header or the tool asking permission.
+function askLabel(a: PendingAsk | undefined): string | undefined {
+  if (!a) return undefined;
+  return a.kind === "question" ? a.questions[0]?.header || a.questions[0]?.question : a.tool;
+}
+
 function bump(s: SessionState, at: number): number[] {
-  // 30 one-minute buckets ending at the session's latest activity.
-  const shift = Math.max(0, Math.floor((at - s.lastActivity) / 60000));
+  // 30 one-minute buckets ending at the minute of the session's latest activity. Buckets follow the
+  // clock's minutes, so a steady stream of events 40 s apart still moves along (MR-32).
+  const shift = Math.max(0, Math.floor(at / 60000) - Math.floor(s.lastActivity / 60000));
   const a = shift >= 30 ? new Array(30).fill(0) : [...s.activity.slice(shift), ...new Array(shift).fill(0)];
   a[29] += 1;
   return a;
