@@ -16,6 +16,7 @@ import { pointer } from "../components/pointer";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { parseReport, TurnText } from "../components/Turn";
 import { ChangeMap } from "./ChangeMap";
+import { CatalogView, viewReplies } from "../components/CatalogView";
 import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
 import { lazy, Suspense } from "react";
@@ -47,8 +48,8 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   const where = [(s.repo ?? s.cwd).split("/").filter(Boolean).pop(), s.branch].filter(Boolean).join(" · ");
   const replies = useMemo(() => nextReplies(s), [s]);
   // A report reply shows its own quick replies inline; the bar below would only repeat them.
-  const lastText = [...s.transcript].reverse().find((t) => t.kind === "text");
-  const repliesInline = !!lastText && lastText.kind === "text" && !!parseReport(lastText.text);
+  const lastText = [...s.transcript].reverse().find((t) => t.kind === "text" || t.kind === "view");
+  const repliesInline = !!lastText && (lastText.kind === "view" || (lastText.kind === "text" && !!parseReport(lastText.text)));
   // A god-mode fix session (MR-47): its last step is applying the fix to your own app.
   const isFix = isApp && !!s.branch?.startsWith("mr/") && isAppChange(s);
   const [applyError, setApplyError] = useState("");
@@ -152,7 +153,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
 // The structured transcript (decision 13): readable rows, not terminal text. ⌘R shows raw JSON.
 function Transcript({ items, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
   // Only the latest reply offers quick replies; older ones are history.
-  const lastTextId = [...items].reverse().find((t) => t.kind === "text")?.id;
+  const lastTextId = [...items].reverse().find((t) => t.kind === "text" || t.kind === "view")?.id;
   const end = useRef<HTMLDivElement>(null);
   const [drawing, setDrawing] = useState<Set<string>>(new Set());
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [items.length]);
@@ -175,6 +176,8 @@ function Transcript({ items, raw, diagrams, onDiagram, onDiscover, onReply, live
             )}
           </div>
         </div>
+      ) : t.kind === "view" ? (
+        <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={onReply} live={live && t.id === lastTextId} />
       ) : t.kind === "user" ? (
         <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)" }}><span className="mr-mono mr-dim">you →</span><span className="mr-grow">{t.text}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
       ) : t.kind === "result" ? (
@@ -211,7 +214,8 @@ function ToolRow({ t, onDiscover }: { t: Extract<TranscriptItem, { kind: "tool" 
 // What to say next after a turn (F11): the choices its last question offers, or the usual next
 // steps for finished work.
 export function nextReplies(s: SessionState): string[] {
-  const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);
+  const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user" || t.kind === "view").at(-1);
+  if (last?.kind === "view") return viewReplies(last.blocks);
   if (last?.kind === "text" && /\?\s*$/.test(last.text.trim())) {
     const opts = replyOptions(proseQuestion(last.text));
     if (opts.length) return opts;
