@@ -1,6 +1,7 @@
 import { needsQueue } from "../picker/queue";
 import { useEffect, useMemo, useState } from "react";
 import { keyOf } from "../components/keys";
+import { shortError } from "../components/ErrorLine";
 import { invoke } from "@tauri-apps/api/core";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
@@ -34,7 +35,7 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
             <input autoFocus className="mr-input" style={{ minHeight: 28, width: 160, fontSize: 13 }} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setRenaming(null)} aria-label="Workspace name" />
           </form>
         ) : (
-          <button key={w.id} type="button" onClick={() => onSwitch(w.id)} onDoubleClick={() => { if (w.id !== "personal") { setRenaming(w.id); setName(w.name); } }}
+          <button key={w.id} type="button" data-mr="WorkspaceTab" data-mr-source={w.id} onClick={() => onSwitch(w.id)} onDoubleClick={() => { if (w.id !== "personal") { setRenaming(w.id); setName(w.name); } }}
             className="mr-row" style={{ gap: 8, padding: "8px 14px", border: 0, font: "inherit", cursor: "pointer", background: on ? "var(--mr-band)" : "transparent", color: on ? "var(--mr-ink)" : "var(--mr-well)", fontWeight: on ? 700 : 400 }}
             title={w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}>
             {w.name}
@@ -89,6 +90,47 @@ export function WorkspaceSwitcher({ state, docs, active, onSwitch, onClose }: { 
         ))}
         <div className="mr-row mr-dim" style={{ padding: "8px 14px", background: "var(--mr-band)", fontSize: 12 }}>↑↓ pick · ↵ switch · ⌃Tab next workspace · ⌘1–9 direct</div>
       </div>
+    </div>
+  );
+}
+
+// Deleting a workspace (MR-54): say exactly what goes, stop what's running, confirm by name.
+export function DeleteWorkspace({ state, docs, id, onClose, onDeleted }: { state: AppState; docs: Doc[]; id: string; onClose: () => void; onDeleted: () => void }) {
+  const ws = state.workspaces.find((w) => w.id === id);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!ws || id === "personal") return null;
+  const sessions = Object.values(state.sessions).filter((s) => s.workspace === id);
+  const running = sessions.filter((s) => s.status === "working" || s.status === "starting" || s.status === "needs_you" || s.status === "idle").length;
+  const docCount = docs.filter((d) => d.session_id && sessions.some((s) => s.id === d.session_id)).length;
+  const ok = typed.trim() === ws.name;
+  const del = async () => {
+    if (!ok || busy) return;
+    setBusy(true); setError("");
+    try { await invoke("workspace_delete", { id, name: ws.name }); onDeleted(); onClose(); } catch (e) { setError(shortError(e)); setBusy(false); }
+  };
+  return (
+    <div role="dialog" aria-label={`Delete ${ws.name}`} data-mr="DeleteWorkspace" data-mr-source={id} style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)" }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} onKeyDown={(e) => { if (keyOf(e) === "Escape") { e.preventDefault(); onClose(); } }}>
+      <form onSubmit={(e) => { e.preventDefault(); void del(); }} style={{ width: "100%", maxWidth: 520, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 12, padding: 18, boxShadow: "inset 4px 0 0 var(--mr-error)" }}>
+        <strong style={{ fontSize: 18 }}>Delete “{ws.name}”?</strong>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span>{sessions.length ? `${sessions.length} session${sessions.length === 1 ? "" : "s"}` : "No sessions"}{docCount ? ` and ${docCount} working doc${docCount === 1 ? "" : "s"}` : ""} {sessions.length + docCount === 1 ? "moves" : "move"} to Personal's archive as read-only history. They can't be resumed.</span>
+          {running > 0 && <span style={{ color: "var(--mr-needs-ink)", fontWeight: 600 }}>{running} still open will be stopped.</span>}
+          <span className="mr-dim">Its own Claude sign-in and memory go to the macOS Trash, so you can still get them back from there.</span>
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span className="mr-dim">Type <b className="mr-mono" style={{ color: "var(--mr-ink)" }}>{ws.name}</b> to confirm</span>
+          <input autoFocus className="mr-input" value={typed} onChange={(e) => setTyped(e.target.value)} aria-label="Workspace name to confirm" style={{ background: "var(--mr-well)" }} />
+        </label>
+        {error && <span style={{ color: "var(--mr-error)" }}>{error}</span>}
+        <div className="mr-row" style={{ gap: 8 }}>
+          <span className="mr-grow" />
+          <button type="button" className="mr-key" onClick={onClose}><kbd>esc</kbd>Keep it</button>
+          <button type="submit" className="mr-key" disabled={!ok || busy} style={ok ? { background: "var(--mr-error)", color: "var(--mr-tile)" } : undefined}>{busy ? "Deleting…" : "Delete workspace"}</button>
+        </div>
+      </form>
     </div>
   );
 }

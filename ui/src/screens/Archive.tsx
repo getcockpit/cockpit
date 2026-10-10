@@ -58,7 +58,8 @@ export function Archive({ sessions, onOpen, onClose }: { sessions: SessionState[
                   <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{[Object.keys(s.files).length ? plural(Object.keys(s.files).length, "file") : "", s.costUsd ? `$${s.costUsd.toFixed(2)}` : ""].filter(Boolean).join(" · ")}</span>
                   <span onClick={(e) => e.stopPropagation()} className="mr-row" style={{ gap: 6 }}>
                     <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Restore</Key>
-                    {s.sdkSessionId && <Key onClick={() => { void api.log("ui.session_unarchived", {}, s.id); void api.resume(s); onOpen(s.id); }}>Resume ↻</Key>}
+                    {s.sdkSessionId && !s.fromDeleted && <Key onClick={() => { void api.log("ui.session_unarchived", {}, s.id); void api.resume(s); onOpen(s.id); }}>Resume ↻</Key>}
+                    {s.fromDeleted && <span className="mr-dim" title="Its workspace was deleted, so it can't be resumed">from {s.fromDeleted}</span>}
                   </span>
                 </div>
               </div>
