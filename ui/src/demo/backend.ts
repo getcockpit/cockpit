@@ -109,6 +109,13 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "events_list": return events;
     case "event_append": return record((a.sessionId as string) ?? null, String(a.kind), (a.payload as Record<string, unknown>) ?? {}).id;
     case "docs_list": return structuredClone(docs); // the real core serializes over IPC
+    case "doc_archive": {
+      const d = docs.find((x) => x.id === a.docId);
+      if (!d) throw new Error("no such doc");
+      docs = docs.filter((x) => x !== d);
+      record(d.session_id, "ui.doc_archived", { doc_id: d.id, title: d.title });
+      return null;
+    }
     case "doc_feedback": {
       const d = docs.find((x) => x.id === a.docId);
       if (!d) throw new Error("no such doc");
