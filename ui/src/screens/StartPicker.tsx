@@ -101,7 +101,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
     if (mode === "review" || mode === "address") {
       return (prs ?? []).map((p) => ({
         ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
-        meta: [p.repository?.nameWithOwner, mode === "address" && addressNote(p)].filter(Boolean).join(" · "),
+        meta: [p.repository?.nameWithOwner, mode === "address" ? addressNote(p) : p.reviewNote].filter(Boolean).join(" · "),
         hot: mode === "address" ? toAddress(p) : true,
       }));
     }
@@ -194,7 +194,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           {draft ? <PresetEditor draft={draft} onChange={setDraft} onSave={() => void savePreset(draft)} onCancel={() => setDraft(null)} /> : <>
           <div className="mr-row" style={{ padding: "4px 8px 8px" }}>
           <span className="mr-dim mr-grow">
-            {mode === "review" ? "Waiting for your review" : mode === "address" ? `Your open PRs${prs?.some(toAddress) ? ` · ${prs.filter(toAddress).length} to address, first` : ""}` : "Reuse a recent prompt"}
+            {mode === "review" ? (scope ? "Not reviewed by you, or changed since your review" : "Waiting for your review") : mode === "address" ? `Your open PRs${prs?.some(toAddress) ? ` · ${prs.filter(toAddress).length} to address, first` : ""}` : "Reuse a recent prompt"}
             {prMode && (scope ? ` · in ${scope}` : only && repo === null ? " · this folder isn't a GitHub repo, so every repo" : "")}
             {prMode && prs === null && " · loading…"}
           </span>
