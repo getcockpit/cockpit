@@ -2,6 +2,7 @@ import { keyOf } from "../components/keys";
 import { useEffect, useState } from "react";
 import { Key, ProgressTrack } from "../components";
 import { Diff } from "../components/Diff";
+import { Checklist, FixOptions, SevBars, Tally, Thread } from "../components/CatalogView";
 import { api } from "../state/store";
 import { ReviewOverview } from "./ReviewOverview";
 import { plural } from "../picker/title";
@@ -9,22 +10,6 @@ import type { SessionState } from "../state/types";
 
 // Review (mirrors /review) and Address (mirrors pr-address), drawn from the flow.* steps Claude
 // reports. User actions go back as the replies those commands already expect.
-
-const SEV: Record<string, { color: string; bars: number }> = {
-  critical: { color: "var(--mr-error)", bars: 4 }, important: { color: "var(--mr-needs-ink)", bars: 3 },
-  suggestion: { color: "var(--mr-ink-2)", bars: 2 }, nitpick: { color: "var(--mr-ink-3)", bars: 1 },
-};
-const sev = (s: string) => SEV[s.toLowerCase()] ?? SEV.suggestion;
-
-function SevMark({ s }: { s: string }) {
-  const v = sev(s);
-  return (
-    <span className="mr-row" style={{ gap: 6, minWidth: 110 }}>
-      <span style={{ display: "inline-flex", gap: 2 }} aria-hidden="true">{[1, 2, 3, 4].map((i) => <i key={i} style={{ width: 9, height: 6, background: i <= v.bars ? v.color : "var(--mr-well)" }} />)}</span>
-      <strong style={{ color: v.color }}>{s}</strong>
-    </span>
-  );
-}
 
 export function ReviewView({ s }: { s: SessionState }) {
   const r = s.review!;
@@ -63,8 +48,8 @@ export function ReviewView({ s }: { s: SessionState }) {
             {(snip.findings ?? []).map((f, i) => {
               const on = r.noted.includes(f.id);
               return (
-                <div key={f.id} className="mr-row" style={{ alignItems: "flex-start", padding: "10px 12px", background: "var(--mr-well)" }}>
-                  <SevMark s={f.severity} />
+                <div key={f.id} className="mr-row" style={{ alignItems: "baseline", gap: 10, padding: "10px 12px", background: "var(--mr-well)" }}>
+                  <SevBars severity={f.severity} />
                   <span className="mr-grow">{f.text}{f.at && <span className="mr-mono mr-dim"> · {f.at}</span>}</span>
                   <Key k={String(i + 1)} tone={on ? "primary" : undefined} onClick={() => !on && note(f.id)}>{on ? "Noted ✓" : "Note it"}</Key>
                 </div>
@@ -82,7 +67,7 @@ export function ReviewView({ s }: { s: SessionState }) {
         <section style={{ display: "flex", flexDirection: "column", gap: 8, padding: "14px 16px", background: "var(--mr-tile)" }}>
           <strong>{r.published ? "✓ Published" : "Your review"}{r.publish?.verdict ? ` · ${r.publish.verdict}` : ""}</strong>
           {(r.publish?.comments ?? noted).map((c, i) => (
-            <div key={i} className="mr-row" style={{ alignItems: "flex-start" }}><SevMark s={c.severity} /><span className="mr-grow">{c.text}{c.at && <span className="mr-mono mr-dim"> · {c.at}</span>}</span></div>
+            <div key={i} className="mr-row" style={{ alignItems: "baseline", gap: 10 }}><SevBars severity={c.severity} /><span className="mr-grow">{c.text}{c.at && <span className="mr-mono mr-dim"> · {c.at}</span>}</span></div>
           ))}
           {r.publish?.dropped ? <span className="mr-dim">{r.publish.dropped} dropped as duplicates of earlier threads</span> : null}
           {r.publish && !r.published && <Key k="⌘↵" tone="primary" onClick={() => reply("publish")}>Publish as one review</Key>}
@@ -126,17 +111,13 @@ export function AddressView({ s }: { s: SessionState }) {
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   });
-  const parts: [string, string][] = [["already", "var(--mr-done)"], ["fixed", "var(--mr-ink)"], ["deferred", "var(--mr-ink-3)"], ["open", "var(--mr-well)"]];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {threads.length > 0 && (
-        <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", height: 10, gap: 2 }}>{parts.map(([k, c]) => tally(k) > 0 && <span key={k} style={{ flex: tally(k), background: c }} />)}</div>
-          <div className="mr-row mr-ink2" style={{ flexWrap: "wrap" }}>
-            <span><b style={{ color: "var(--mr-done)" }}>{tally("already")}</b> already fixed</span><span><b>{tally("fixed")}</b> fixed now</span><span><b>{tally("deferred")}</b> deferred</span><span className="mr-dim">{tally("open")} to go</span>
-            <span className="mr-grow" /><span className="mr-dim">{a.list?.round}{a.list?.moved_commits ? ` · branch moved ${a.list.moved_commits} commits` : ""}</span>
-          </div>
+        <section style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <Tally b={{ type: "tally", items: [{ n: tally("already"), label: "already fixed", tone: "done" }, { n: tally("fixed"), label: "fixed now", tone: "now" }, { n: tally("deferred"), label: "deferred", tone: "deferred" }, { n: tally("open"), label: "to go", tone: "todo" }] }} />
+          {(a.list?.round || a.list?.moved_commits) && <span className="mr-dim" style={{ alignSelf: "flex-end" }}>{a.list?.round}{a.list?.moved_commits ? ` · branch moved ${a.list.moved_commits} commits` : ""}</span>}
         </section>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
@@ -151,23 +132,11 @@ export function AddressView({ s }: { s: SessionState }) {
         <section style={{ flex: "999 1 480px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {cur ? (
             <>
-              <article style={{ display: "flex", flexDirection: "column", gap: 6, padding: "14px 16px", background: "var(--mr-tile)" }}>
-                <div className="mr-row"><b>{cur.reviewer ? `@${cur.reviewer}` : "Reviewer"}</b><span className="mr-mono mr-dim">{cur.at}</span><span className="mr-grow" /><b style={{ color: stateOf(cur) === "open" ? "var(--mr-needs-ink)" : "var(--mr-done)" }}>{stateOf(cur) === "already" ? "✓ Already addressed" : stateOf(cur) === "fixed" ? "✓ Fixed in this session" : stateOf(cur) === "deferred" ? "– Pushed back" : "◆ Not addressed yet"}</b></div>
-                <span style={{ fontSize: 15 }}>{cur.body}</span>
-              </article>
+              <Thread b={{ type: "thread", author: cur.reviewer ?? "", where: cur.at, state: stateOf(cur), body: cur.body }} />
               {cur.evidence_code && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{cur.evidence_file}</span><Diff code={cur.evidence_code} /></div>}
               {(cur.options ?? []).length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
-                  {(cur.options ?? []).map((o) => {
-                    const picked = a.chosen[cur.id] === o.id;
-                    return (
-                      <button key={o.id} type="button" disabled={!canChoose && !picked} onClick={() => canChoose && choose(cur.id, o)} className="mr-row" style={{ alignItems: "baseline", padding: "10px 12px", border: 0, background: picked ? "var(--mr-ink)" : "var(--mr-tile)", color: picked ? "var(--mr-tile)" : "var(--mr-ink)", font: "inherit", textAlign: "left", cursor: "pointer" }}>
-                        <kbd className="mr-mono" style={{ padding: "0 6px", background: picked ? "transparent" : "var(--mr-well)" }}>{o.id}</kbd>
-                        <span className="mr-grow"><b>{o.label}</b>{o.recommended && <span style={{ opacity: 0.7 }}> · recommended</span>}<br /><span style={{ opacity: 0.8 }}>{o.detail}</span></span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <FixOptions b={{ type: "fix_options", options: cur.options ?? [] }} live={canChoose} picked={a.chosen[cur.id]} onReply={() => {}}
+                  onPick={(o) => { const opt = (cur.options ?? []).find((x) => x.id === o.id); if (opt) choose(cur.id, opt); }} />
               )}
             </>
           ) : <span className="mr-dim">{threads.length ? "Waiting for the next thread…" : "Fetching the review threads…"}</span>}
@@ -175,9 +144,9 @@ export function AddressView({ s }: { s: SessionState }) {
         {(proof || replyMsg) && (
           <aside style={{ flex: "1 1 260px", maxWidth: 360, display: "flex", flexDirection: "column", gap: 10 }}>
             {proof && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px", background: "var(--mr-tile)" }}>
-                <strong>Proof before reply</strong>
-                {proof.map((c, i) => <div key={i} className="mr-row"><span style={{ color: c.ok ? "var(--mr-done)" : c.ok === false ? "var(--mr-error)" : "var(--mr-ink-3)" }}>{c.ok ? "✓" : c.ok === false ? "✕" : "○"}</span><span className="mr-grow">{c.label}</span><span className="mr-mono mr-dim" style={{ fontSize: 11 }}>{c.proof}</span></div>)}
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <strong style={{ padding: "8px 16px 0", background: "var(--mr-tile)" }}>Proof before reply</strong>
+                <Checklist b={{ type: "checklist", items: proof }} />
               </div>
             )}
             {replyMsg && (

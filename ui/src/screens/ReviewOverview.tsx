@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { NoveltyTag, TierBadge } from "../components/CatalogView";
 import { Key } from "../components";
 import { keyOf } from "../components/keys";
 import { plural } from "../picker/title";
@@ -71,7 +72,7 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
       {/* 1. The answer */}
       <div style={{ padding: "14px 16px", background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 6 }}>
         <div className="mr-row" style={{ gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
-          {o.tier && <span title={o.tier_label} style={{ padding: "2px 8px", fontWeight: 700, background: o.tier === 1 ? "var(--mr-ink)" : "transparent", color: o.tier === 1 ? "var(--mr-tile)" : "var(--mr-ink)", boxShadow: o.tier === 1 ? undefined : "inset 0 0 0 1.5px var(--mr-ink)" }}>Tier {o.tier}</span>}
+          {o.tier && <TierBadge tier={o.tier} title={o.tier_label} />}
           <strong style={{ fontSize: 20, lineHeight: 1.2 }}>{verdict(o, pts)}</strong>
         </div>
         {o.tier_label && <span className="mr-ink2">{firstSentence(o.tier_label)}</span>}
@@ -129,9 +130,9 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
       {(o.novelty ?? []).length > 0 && (
         <details style={{ background: "var(--mr-tile)", padding: "10px 14px" }}>
           <summary style={{ cursor: "pointer", fontWeight: 600 }}>New vs. already in the codebase <span className="mr-dim" style={{ fontWeight: 400 }}>· {o.prior_threads ?? 0} earlier threads checked</span></summary>
-          <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
-            {(o.novelty ?? []).map((n, i) => <li key={i}><b>{n.label}</b> <span className="mr-ink2">{n.what}</span>{n.where && <span className="mr-mono mr-dim" style={{ fontSize: 12 }}> · {n.where}</span>}</li>)}
-          </ul>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+            {(o.novelty ?? []).map((n, i) => <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10 }}><NoveltyTag verdict={n.label} /><span className="mr-grow">{n.what}</span>{n.where && <span className="mr-mono mr-dim" style={{ fontSize: 11 }}>{n.where}</span>}</div>)}
+          </div>
         </details>
       )}
     </section>
