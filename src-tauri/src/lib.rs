@@ -74,6 +74,7 @@ pub fn run() {
             layer2::layer2_classify,
             layer3::layer3_diagram,
             sidecar::limits_refresh,
+            gh::pr_repo,
             folders::recent_folders,
             layer2::layer2_status,
             layer2::layer2_save_credentials,

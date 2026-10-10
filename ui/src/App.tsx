@@ -61,6 +61,7 @@ export default function App() {
   const [god, setGod] = useState(false);
   const [builds, setBuilds] = useState<string | null>(null); // worktree to build, "" = app repo
   const [pickerText, setPickerText] = useState("");
+  const [pickerMode, setPickerMode] = useState<"review" | "address" | undefined>(undefined);
   const [archive, setArchive] = useState(false);
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
   const [introClosed, setIntroClosed] = useState(false);
@@ -107,7 +108,7 @@ export default function App() {
   const buildsPanel = builds !== null && <Builds defaultWorktree={builds || undefined} onClose={() => setBuilds(null)} />;
   const archived = Object.values(state.sessions).filter((x) => x.archivedAt);
   const archivePanel = archive && <Archive sessions={archived} onClose={() => setArchive(false)} onOpen={(id) => { setArchive(false); setDocId(null); setFocus(id); }} />;
-  const overlay = picker && <StartPicker state={state} initialText={pickerText} onClose={() => { setPicker(false); setPickerText(""); }} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
+  const overlay = picker && <StartPicker state={state} initialText={pickerText} initialMode={pickerMode} onClose={() => { setPicker(false); setPickerText(""); setPickerMode(undefined); }} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
   // App shell: the workspace tabs stay put and only the view scrolls, so sticky headers work and
   // nothing pushes the tabs off-screen (MR-43).
   const shell = (view: React.ReactNode, overlays: React.ReactNode) => (
@@ -121,5 +122,5 @@ export default function App() {
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{godmode}{voice}{intro}</>);
   const focused = focus ? state.sessions[focus] : null;
   if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{godmode}{voice}{intro}</>);
-  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={() => setPicker(true)} /></ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{godmode}{voice}{intro}</>);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, <>{overlay}{buildsPanel}{signInPanel}{settings && <Settings state={all} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} />}{archivePanel}{godmode}{voice}{intro}</>);
 }

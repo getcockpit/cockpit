@@ -12,7 +12,7 @@ export type Suggestion = {
   id: string; // stable, so a dismissal sticks
   why: string;
   what: string;
-  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "start"; mode: "review" | "address"; value: string } | { kind: "build_mine" };
+  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "start"; mode: "review" | "address"; value: string; repo?: string } | { kind: "build_mine" };
   label: string;
   rank: number; // lower first
 };
@@ -35,8 +35,8 @@ export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine:
   const applied = sessions.filter((s) => s.fixApplied && s.fixApplied > (state.lastBuildAt ?? 0)).length;
   if (applied) out.push({ id: `rebuild:${applied}`, why: `${plural(applied, "fix")} applied to your app`, what: "Rebuild and relaunch to use it", action: { kind: "build_mine" }, label: "Rebuild & relaunch", rank: 1 });
   const reviewing = new Set(sessions.filter((s) => s.kind === "review").map((s) => s.title));
-  for (const p of prs.review) if (![...reviewing].some((t) => t.includes(String(p.number)))) out.push({ id: `pr-review:${p.number}`, why: `PR #${p.number} waits for your review${p.author ? ` (@${p.author.login})` : ""}`, what: p.title, action: { kind: "start", mode: "review", value: p.url }, label: "Start review", rank: 5 });
-  for (const p of prs.mine) if (p.reviewDecision === "CHANGES_REQUESTED") out.push({ id: `pr-address:${p.number}`, why: `Changes requested on your PR #${p.number}`, what: p.title, action: { kind: "start", mode: "address", value: String(p.number) }, label: "Address", rank: 2 });
+  for (const p of prs.review) if (![...reviewing].some((t) => t.includes(String(p.number)))) out.push({ id: `pr-review:${p.number}`, why: `PR #${p.number} waits for your review${p.author ? ` (@${p.author.login})` : ""}`, what: p.title, action: { kind: "start", mode: "review", value: p.url, repo: p.repository?.nameWithOwner }, label: "Start review", rank: 5 });
+  for (const p of prs.mine) if (p.reviewDecision === "CHANGES_REQUESTED") out.push({ id: `pr-address:${p.number}`, why: `Changes requested on your PR #${p.number}`, what: p.title, action: { kind: "start", mode: "address", value: p.url ?? String(p.number), repo: p.repository?.nameWithOwner }, label: "Address", rank: 2 });
 
   return out.filter((x) => !dismissed.has(x.id)).sort((a, b) => a.rank - b.rank).slice(0, 3);
 }
