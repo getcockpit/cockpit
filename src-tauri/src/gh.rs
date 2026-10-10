@@ -52,10 +52,39 @@ pub fn gh_prs(app: AppHandle, cwd: String, mode: String) -> Result<serde_json::V
     let cwd = crate::sidecar::expand_home(&app, &cwd);
     let cwd = if std::path::Path::new(&cwd).is_dir() { cwd } else { std::env::var("HOME").unwrap_or_default() };
     match mode.as_str() {
-        "review" => gh(&cwd, &["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt"]),
+        "review" => gh(&cwd, &["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"]),
         "address" => Ok(rank_mine(&gh(&cwd, &["api", "graphql", "-f", &format!("query={MINE}")])?["data"])),
         _ => Err(format!("unknown mode {mode}")),
     }
+}
+
+/// `owner`, `name` and the number from a PR URL.
+pub fn pr_parts(url: &str) -> Option<(String, String, u64)> {
+    let s = url.trim().trim_start_matches("https://").trim_start_matches("http://").trim_start_matches("github.com/");
+    let p: Vec<&str> = s.split('/').filter(|p| !p.is_empty()).collect();
+    match p.as_slice() {
+        [owner, name, "pull", n, ..] => Some(((*owner).into(), (*name).into(), n.parse().ok()?)),
+        _ => None,
+    }
+}
+
+/// What auto-review needs to decide on a PR (MR-72): is it a draft, its head commit and when it
+/// was made, and when I last reviewed it on GitHub. One GraphQL call.
+// Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
+#[tauri::command(async)]
+pub fn gh_review_state(url: String) -> Result<serde_json::Value, String> {
+    let (owner, name, n) = pr_parts(&url).ok_or_else(|| format!("not a PR URL: {url}"))?;
+    let q = "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){isDraft headRefOid viewerLatestReview{submittedAt} commits(last:1){nodes{commit{committedDate}}}}}}";
+    let home = std::env::var("HOME").unwrap_or_default();
+    let v = gh(&home, &["api", "graphql", "-f", &format!("query={q}"), "-F", &format!("o={owner}"), "-F", &format!("n={name}"), "-F", &format!("num={n}")])?;
+    let pr = &v["data"]["repository"]["pullRequest"];
+    if pr.is_null() { return Err(format!("PR not found: {url}")); }
+    Ok(serde_json::json!({
+        "isDraft": pr["isDraft"].as_bool().unwrap_or(false),
+        "headSha": pr["headRefOid"],
+        "lastCommitAt": pr["commits"]["nodes"][0]["commit"]["committedDate"],
+        "myLastReviewAt": pr["viewerLatestReview"]["submittedAt"],
+    }))
 }
 
 /// `owner/name` from a PR URL, `owner/name#123` or `owner/name`.
@@ -122,6 +151,13 @@ mod tests {
         assert_eq!((r[1]["waiting"].as_u64(), r[1]["unresolved"].as_u64()), (Some(1), Some(2)));
         assert_eq!(r[3]["waiting"].as_u64(), Some(0));
         assert!(r[0].get("reviewThreads").is_none());
+    }
+
+    #[test]
+    fn reads_owner_name_and_number_from_a_pr_url() {
+        assert_eq!(pr_parts("https://github.com/acme/platform/pull/482"), Some(("acme".into(), "platform".into(), 482)));
+        assert_eq!(pr_parts("https://github.com/acme/platform/pull/482/files"), Some(("acme".into(), "platform".into(), 482)));
+        assert_eq!(pr_parts("acme/platform#12"), None);
     }
 
     #[test]
