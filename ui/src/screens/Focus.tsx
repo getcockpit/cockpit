@@ -6,6 +6,8 @@ import { pickTile } from "../picker/pick";
 import { isAppChange, proposedReplies, proseQuestion, replyOptions } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { summarizeTool } from "../picker/toolSummary";
+import { editCard, isCard, isCheck } from "../picker/logCards";
+import { CheckList, EditSnippet } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
 import type { Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
@@ -203,16 +205,19 @@ function Transcript({ items, plan, running, raw, diagrams, onDiagram, onDiscover
         <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}</div>
       ) : t.kind === "tools" ? (
         <ToolGroup key={t.id} tools={t.tools} onDiscover={onDiscover} />
-      ) : (
-        <ToolRow key={t.id} t={t} onDiscover={onDiscover} />
-      );
+      ) : t.kind === "checks" ? (
+        <CheckList key={t.id} tools={t.tools} />
+      ) : (() => {
+        const c = editCard(t);
+        return c ? <EditSnippet key={t.id} t={t} c={c} onDiscover={onDiscover} /> : <ToolRow key={t.id} t={t} onDiscover={onDiscover} />;
+      })();
 
   return (
     <div className="mr-stream" style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
       {raw
         ? items.map((t) => <pre key={t.id} className="mr-code" style={{ fontSize: 11 }}>{JSON.stringify(t, null, 1)}</pre>)
         : groupSteps(items.filter((t) => !(t.kind === "tool" && HIDDEN_TOOLS.has(t.name)))).map((t) => t.kind === "step"
-          ? <StepGroup key={t.id} g={t} todo={plan.find((x) => x.content === t.step) ?? null} live={running} onDiscover={onDiscover}>{t.signal.map(one)}</StepGroup>
+          ? <StepGroup key={t.id} g={t} todo={plan.find((x) => x.content === t.step) ?? null} live={running} onDiscover={onDiscover}>{mergeChecks(t.signal).map(one)}</StepGroup>
           : one(t))}
       <div ref={end} />
     </div>
@@ -253,7 +258,7 @@ export function nextReplies(s: SessionState): string[] {
 
 type Tool = Extract<TranscriptItem, { kind: "tool" }>;
 type StepRow = { kind: "step"; id: string; step: string; tools: Tool[]; signal: Row[]; from: number; to: number };
-type Row = TranscriptItem | { kind: "tools"; id: string; tools: Tool[] } | StepRow;
+type Row = TranscriptItem | { kind: "tools"; id: string; tools: Tool[] } | { kind: "checks"; id: string; tools: Tool[] } | StepRow;
 
 // Group by plan step (MR-69): everything that happened while a step was in progress sits under that
 // step. Its routine tool calls fold into one line; what you'd want to read (Claude's prose, composed
@@ -271,8 +276,9 @@ export function groupSteps(items: TranscriptItem[]): Row[] {
       cur = { kind: "step", id: `step:${t.id}`, step: t.step, tools: [], signal: [], from: t.at, to: t.at };
       out.push(cur);
     }
+    // Edits and checks count as the step's actions and still show as cards under it (MR-75).
     if (t.kind === "tool" && !t.isError) cur.tools.push(t);
-    else cur.signal.push(t);
+    if (t.kind !== "tool" || t.isError || isCard(t)) cur.signal.push(t);
     cur.to = t.at;
   }
   flush();
@@ -322,10 +328,23 @@ function groupTools(items: TranscriptItem[]): Row[] {
     run = [];
   };
   for (const t of items) {
-    if (t.kind === "tool") run.push(t);
+    if (t.kind === "tool" && !isCard(t)) run.push(t);
     else { flush(); out.push(t); }
   }
   flush();
+  return mergeChecks(out);
+}
+
+// Back-to-back test, build and type-check runs read as one verification checklist (MR-75).
+export function mergeChecks(rows: Row[]): Row[] {
+  const out: Row[] = [];
+  for (const r of rows) {
+    const prev = out.at(-1);
+    if (r.kind === "tool" && isCheck(r)) {
+      if (prev?.kind === "checks") prev.tools.push(r);
+      else out.push({ kind: "checks", id: `c:${r.id}`, tools: [r] });
+    } else out.push(r);
+  }
   return out;
 }
 
