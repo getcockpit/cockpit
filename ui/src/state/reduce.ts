@@ -13,6 +13,7 @@ export const initialState: AppState = {
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
+  recovered: null,
   lastBuildAt: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
 };
@@ -56,6 +57,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     }
     return next;
   }
+  if (ev.kind === "app.recovered") return { ...next, recovered: { crashedSlot: String(p.crashed_slot ?? ""), log: String(p.log ?? ""), at: ev.created_at } };
+  if (ev.kind === "ui.recovery_dismissed") return { ...next, recovered: null };
   if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };
   if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false };
   if (ev.kind === "sidecar.limits") {
@@ -189,6 +192,11 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       break;
   }
   if (s.status !== base.status) s.spans = track(base, s.status, ev.created_at, s.status === "needs_you" ? askLabel(s.pending[0]) : undefined);
+  // Whatever this event added belongs to the plan step in progress (MR-69: the transcript groups by step).
+  const doing = s.todos.find((x) => x.status === "in_progress")?.content;
+  if (doing && s.transcript.length > base.transcript.length) {
+    s.transcript = s.transcript.map((x, i) => (i >= base.transcript.length && !x.step ? { ...x, step: doing } : x));
+  }
   return { ...next, sessions: { ...next.sessions, [sid]: s }, order };
 }
 
