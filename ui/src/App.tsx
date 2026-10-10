@@ -23,9 +23,11 @@ import { VoiceController, type PointTarget } from "./screens/Voice";
 import { api } from "./state/store";
 import { useDocs } from "./state/docs";
 import { useAppState } from "./state/store";
+import { useAutoReview } from "./state/useAutoReview";
 
 export default function App() {
   const all = useAppState();
+  useAutoReview(all);
   const allDocs = useDocs();
   const [workspace, setWorkspace] = useState(() => { try { return localStorage.getItem("mr.workspace") ?? "personal"; } catch { return "personal"; } });
   const [signIn, setSignIn] = useState<string | null>(null);
