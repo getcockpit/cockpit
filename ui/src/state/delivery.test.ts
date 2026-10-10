@@ -61,3 +61,13 @@ describe("now line", () => {
     expect(nowLine(replay([...start(), text("hi"), result()]).sessions.s1)).toBeNull();
   });
 });
+
+describe("composed views (MR-61)", () => {
+  test("view.rendered becomes a transcript item with its catalog blocks", () => {
+    const blocks = [{ type: "tally", items: [{ n: 3, label: "fixed", tone: "done" }] }, { type: "next", text: "Ship it?", replies: ["Open a PR"] }];
+    const s = replay([...start(), ev("view.rendered", { title: "Status", blocks })]).sessions.s1;
+    const v = s.transcript.at(-1);
+    expect(v?.kind).toBe("view");
+    expect(v && v.kind === "view" ? [v.title, v.blocks.length] : null).toEqual(["Status", 2]);
+  });
+});

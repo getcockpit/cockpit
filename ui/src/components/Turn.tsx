@@ -11,7 +11,7 @@ export { parseReport };
 // No model involved: this is plain parsing of the Markdown Claude is asked to write.
 
 // State marks from the canvas: shape and colour together.
-function Mark({ tone, done }: { tone: Section["tone"]; done?: boolean }) {
+export function Mark({ tone, done }: { tone: Section["tone"]; done?: boolean }) {
   if (done || tone === "done") return <svg width="12" height="12" viewBox="0 0 12 12" aria-label="Done" role="img"><path d="M2 6.3 4.8 9 10 3" fill="none" stroke="var(--mr-done)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>;
   if (tone === "you") return <svg width="12" height="12" viewBox="0 0 14 14" aria-label="Needs you" role="img"><path d="M7 1.5 13 12.5H1Z" fill="var(--mr-needs)" /></svg>;
   if (tone === "todo") return <svg width="12" height="12" viewBox="0 0 12 12" aria-label="To do" role="img"><circle cx="6" cy="6" r="4.5" fill="none" stroke="var(--mr-ink-3)" strokeWidth="1.5" /></svg>;
@@ -82,7 +82,7 @@ export function ReportView({ r, onReply, live }: { r: Report; onReply: (text: st
 }
 
 // Quick-reply chips from the canvas: 2–4 answers, one key each.
-function Chips({ options, onReply }: { options: string[]; onReply: (t: string) => void }) {
+export function Chips({ options, onReply }: { options: string[]; onReply: (t: string) => void }) {
   return (
     <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }} data-mr="QuickReplies">
       {options.map((o, i) => (

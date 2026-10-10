@@ -117,7 +117,27 @@ const shopEvents: E[] = [
   result("P", "done", 301, 0.9),
 ];
 
+
+// MR-61: a session that answered with a view composed from the catalog (render_view).
+const viewEvents: E[] = [
+  ...ready, onboarded,
+  ...start("V", "Where are we on the settings refactor?", { cwd: "/Users/me/code/shop-worktrees/settings", repo: "/Users/me/code/shop", branch: "mr/settings-schema" }, 10),
+  { session: "V", kind: "view.rendered", payload: { title: "Settings refactor: where it stands", blocks: [
+    { type: "progress", n: 4, total: 6, label: "Migrating readers", right: "about 30 min left" },
+    { type: "tally", items: [{ n: 9, label: "readers migrated", tone: "done" }, { n: 2, label: "in progress", tone: "now" }, { n: 1, label: "deferred", tone: "deferred" }, { n: 3, label: "to go", tone: "todo" }] },
+    { type: "takeaway", heading: "Done", status: "done", items: [{ title: "Typed schema", detail: "with defaults for every key" }, { title: "Migration", detail: "old files upgrade on first read" }] },
+    { type: "takeaway", heading: "Needs you", status: "you", items: [{ title: "Old desktop builds", detail: "can't read the new format: ship a reader shim or bump the minimum version?", time: "about 15 min" }] },
+    { type: "compare", criteria: ["Effort", "Risk", "Fit"], rows: [{ option: "Reader shim", values: ["2 h", "Low", "Keeps old builds working"], recommended: true }, { option: "Bump minimum version", values: ["10 min", "Medium", "Forces 4% of users to update"] }] },
+    { type: "change_graph", nodes: [{ label: "settings.json", mark: "~" }, { label: "SettingsSchema", mark: "+" }, { label: "readers (12)", mark: "~" }, { label: "legacy parser", mark: "-" }] },
+    { type: "checklist", items: [{ label: "Type-check", ok: true, proof: "tsc 0 errors" }, { label: "Unit tests", ok: true, proof: "211 passed" }, { label: "Migration on a real old file", ok: null }, { label: "Old desktop build reads it", ok: false, proof: "parse error" }] },
+    { type: "snippet", file: "src/settings/read.ts · 40–44", code: " export function read(path) {\n-  return JSON.parse(fs.readFileSync(path))\n+  return SettingsSchema.parse(migrate(load(path)))\n }", note: "Every reader goes through the schema now." },
+    { type: "next", text: "Add the reader shim, then run the old-build check.", replies: ["Add the shim", "Bump the minimum version", "Explain the risk"] },
+  ] }, at: 60 },
+  result("V", "ok", 61),
+];
+
 export const SCENARIOS: Record<string, Scenario> = {
+  view: { events: viewEvents, docs: [] },
   shop: { events: shopEvents, docs: [] },
   bugs: { events: bugEvents, docs: [] },
   review: { events: reviewEvents, docs: [] },

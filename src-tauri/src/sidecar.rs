@@ -139,6 +139,7 @@ pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout
 pub const VISUAL_GUIDANCE: &str = "You are running inside Minority report, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
 - When the user has to choose between options (which approach, which host, whether to continue), call the AskUserQuestion tool with 2-4 concrete options, each with a short description, instead of asking in prose. One decision per question.
 - Write replies in Markdown: short `## ` section headings, numbered lists for steps or todos, `- ` bullets for facts. Start a list item with a **bold short title**, then the detail. Put rough time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
+- For a status report, summary, comparison, verification result or progress, call the mr render_view tool with catalog blocks instead of writing it out, then add at most one line of text (decision 26).
 - End a turn that needs the user with one line starting `Next:`.";
 
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
@@ -190,6 +191,7 @@ pub fn session_start(
     msg["tools"] = tools.unwrap_or_else(|| {
         let mut specs = crate::docs::tool_specs().as_array().cloned().unwrap_or_default();
         specs.extend(crate::flows::tool_specs(&kind));
+        specs.push(crate::views::tool_spec());
         serde_json::Value::Array(specs)
     });
     if let Some(dir) = crate::workspaces::config_dir(&app, &workspace) {
@@ -296,6 +298,8 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     let tool = payload["tool"].as_str().unwrap_or_default();
     let (events, text, is_error) = if crate::flows::is_flow_tool(tool) {
         crate::flows::handle_tool(tool, &payload["args"])
+    } else if crate::views::is_view_tool(tool) {
+        crate::views::handle_tool(&payload["args"])
     } else {
         crate::docs::handle_tool(&app.state::<crate::docs::Docs>(), Some(&session), tool, &payload["args"])
     };
