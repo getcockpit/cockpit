@@ -64,6 +64,7 @@ pub fn run() {
             eventlog::event_append,
             eventlog::events_list,
             gh::gh_prs,
+            gh::gh_repo,
             gh::gh_review_state,
             docs::docs_list,
             daily::daily_driver,
