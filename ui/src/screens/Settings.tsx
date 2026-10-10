@@ -93,6 +93,14 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
           <span className="mr-dim" style={{ fontSize: 12 }}>Restyle starts a session on the app's own code. When it's done, apply it from the wall like a bug fix; undo it any time under Your changes.</span>
         </section>
 
+        <section data-mr="ReviewSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <h2 className="mr-h">Reviews</h2>
+          <div className="mr-row" style={{ gap: 12 }}>
+            <Segmented label="Auto-review" value={state.autoReview ? "on" : "off"} options={[["on", "On"], ["off", "Off"]]} onPick={(v) => void api.log("ui.auto_review_set", { on: v === "on" })} />
+            <span className="mr-dim" style={{ fontSize: 12 }}>Starts your /review by itself when a PR waits for you: never drafts, and only if you haven't reviewed it yet or it has new commits since.</span>
+          </div>
+        </section>
+
         {state.workspaces.length > 1 && (
           <section data-mr="WorkspacesSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
             <h2 className="mr-h">Workspaces <span className="mr-dim" style={{ fontWeight: 400 }}>double-click a tab to rename it · right-click it to delete</span></h2>
