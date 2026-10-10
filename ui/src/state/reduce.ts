@@ -12,6 +12,7 @@ export const initialState: AppState = {
   theme: "control-room",
   look: { scale: 1, density: "default" },
   autoReview: true,
+  presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
@@ -22,7 +23,7 @@ export const initialState: AppState = {
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, kind, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
+    id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
     pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
   };
 }
@@ -86,15 +87,21 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
+  if (ev.kind === "ui.preset_saved") {
+    const pr = { id: String(p.id), name: String(p.name ?? ""), template: String(p.template ?? ""), worktree: p.worktree !== false };
+    const at = next.presets.findIndex((x) => x.id === pr.id);
+    return { ...next, presets: at < 0 ? [...next.presets, pr] : next.presets.map((x, i) => (i === at ? pr : x)) };
+  }
+  if (ev.kind === "ui.preset_removed") return { ...next, presets: next.presets.filter((x) => x.id !== p.id) };
   if (ev.kind === "ui.suggestion_dismissed") return { ...next, dismissed: [...next.dismissed, String(p.id)] };
   if (ev.kind === "ui.session_requested" && sid) {
     const kind = (["review", "address", "plan", "blank"].includes(String(p.kind)) ? p.kind : "blank") as SessionKind;
     const existing = next.sessions[sid];
-    const where = { repo: (p.repo as string) ?? null, branch: (p.branch as string) ?? null, workspace: (p.workspace as string) ?? "personal" };
+    const where = { repo: (p.repo as string) ?? null, branch: (p.branch as string) ?? null, workspace: (p.workspace as string) ?? "personal", preset: (p.preset as string) ?? null };
     if (existing) {
       // A resume (or a request logged after early sidecar events): keep history, restart the status.
       const resumed = p.resume ? { status: "starting" as const, error: null, archivedAt: null } : {};
-      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, spans: p.resume ? track(existing, "starting", ev.created_at) : existing.spans, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch } } };
+      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, spans: p.resume ? track(existing, "starting", ev.created_at) : existing.spans, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch, preset: existing.preset ?? where.preset } } };
     }
     return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where } }, order: [...next.order, sid] };
   }

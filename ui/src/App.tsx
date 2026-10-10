@@ -1,7 +1,7 @@
 import { RecoveryBanner } from "./components/RecoveryBanner";
 import { keyOf } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { needsLayer2, wantsDiagram } from "./picker/pick";
+import { needsLayer2 } from "./picker/pick";
 import { DeleteWorkspace, WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
@@ -52,13 +52,7 @@ export default function App() {
       asked.current.add(item.id);
       api.classify(sess.id, item.id, item.text).catch(() => {});
     }
-    // Picker layer 3: long structured prose gets a diagram in the background.
-    for (const sess of Object.values(all.sessions)) {
-      const item = wantsDiagram(sess);
-      if (!item || asked.current.has(`d:${item.id}`)) continue;
-      asked.current.add(`d:${item.id}`);
-      api.diagram(sess.id, item.id, item.text).catch(() => {});
-    }
+    // Picker layer 3 (diagrams) runs only from the Diagram button: each one is a Haiku call on the user's plan.
   }, [all.sessions]);
   // Each workspace sees only its own sessions and docs (decision 24).
   const state: AppState = useMemo(() => {
