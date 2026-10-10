@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { replay } from "./reduce";
 import { nowLine, QUIET_MS } from "../picker/now";
+import { sessionTitle } from "../picker/title";
+import { proposedReplies, withoutReplyLine } from "../picker/queue";
+import { nextReplies } from "../screens/Focus";
 import type { MrEvent, TranscriptItem } from "./types";
 
 // MR-59: is my message queued, being worked on, or answered — and is anything happening at all?
@@ -91,5 +94,26 @@ describe("plan (MR-62)", () => {
     expect(s2.todos).toHaveLength(4);
     const s3 = replay([...start(), first, plan([["Read", "done"], ["Fix", "done"], ["Test", "doing"]])]).sessions.s1;
     expect(s3.todos[2].since).toBeGreaterThan(since!);
+  });
+});
+
+describe("titles and next steps (MR-63)", () => {
+  test("your name beats Claude's title beats the first prompt; clearing hands it back", () => {
+    const base = [...start(), ev("session.titled", { title: "Plan panel for live progress" })];
+    expect(sessionTitle(replay(base).sessions.s1)).toBe("Plan panel for live progress");
+    const named = [...base, ev("ui.session_renamed", { name: "My plan work" }), ev("session.titled", { title: "Something else" })];
+    expect(sessionTitle(replay(named).sessions.s1)).toBe("My plan work");
+    expect(sessionTitle(replay([...named, ev("ui.session_renamed", { name: "" })]).sessions.s1)).toBe("Something else");
+    expect(sessionTitle(replay(start()).sessions.s1)).toBe("go");
+  });
+
+  test("Claude's Next line becomes the replies; no hard-coded fallback", () => {
+    expect(proposedReplies('Done.\n\nNext: "Merge it" · "Show me the diff"')).toEqual(["Merge it", "Show me the diff"]);
+    expect(proposedReplies("**Next:** “Run the suite” or “Ship it”")).toEqual(["Run the suite", "Ship it"]);
+    expect(withoutReplyLine('All green.\n\nNext: "Merge it" · "Show me the diff"')).toBe("All green.");
+    expect(withoutReplyLine('All green.\nNext: decide whether to "merge" now')).toContain("Next:");
+    const s = replay([...start(), text('Fixed it.\n\nNext: "Open a PR" · "Run the tests"'), result()]).sessions.s1;
+    expect(nextReplies(s)).toEqual(["Open a PR", "Run the tests"]);
+    expect(nextReplies(replay([...start(), text("Fixed it."), result()]).sessions.s1)).toEqual([]);
   });
 });

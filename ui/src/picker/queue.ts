@@ -48,6 +48,23 @@ export function proseQuestion(text: string): string {
 // "…want me to X, or Y?" / "Should I X?" — the phrase that makes what follows a set of choices.
 const LEAD = /\b(?:do you want me to|would you like me to|if you want me to|want me to|should i|shall i|should we|shall we|would you like to)\s+/i;
 
+/** The replies Claude proposes on its `Next:` line (MR-63): `Next: "Merge it" · "Show me the diff"`
+ *  → ["Merge it", "Show me the diff"]. Up to three, in Claude's order. */
+export function proposedReplies(text: string): string[] {
+  const line = text.split("\n").map((l) => l.trim()).filter(Boolean).reverse().find((l) => /^(\*\*)?next:?(\*\*)?:?/i.test(l));
+  if (!line) return [];
+  const quoted = [...line.matchAll(/["“]([^"”\n]{1,60})["”]/g)].map((m) => m[1].trim()).filter(Boolean);
+  return [...new Set(quoted)].slice(0, 3);
+}
+
+/** The text without a trailing `Next:` line that only lists replies (they show as buttons instead). */
+export function withoutReplyLine(text: string): string {
+  const lines = text.trimEnd().split("\n");
+  const last = lines.at(-1)?.trim() ?? "";
+  const rest = last.replace(/^(\*\*)?next:?(\*\*)?:?/i, "").replace(/["“][^"”\n]{1,60}["”]/g, "").replace(/\bor\b/gi, "").replace(/[\s·•,|/–—-]+/g, "");
+  return /^(\*\*)?next/i.test(last) && proposedReplies(last).length && !rest ? lines.slice(0, -1).join("\n").trimEnd() : text;
+}
+
 /** Quick replies a question offers: "open a PR, or keep going?" → ["Open a PR", "Keep going"];
  *  quoted choices anywhere ("tell me “GCP” or “Fly”") → ["GCP", "Fly"] (MR-56). */
 export function replyOptions(question: string): string[] {
