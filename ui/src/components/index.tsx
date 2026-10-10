@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { DecisionSpec, Risk, TileSpec } from "../picker/pick";
+import type { Delivery } from "../state/types";
 
 // The component catalog (decision 16). Screens are composed only from these.
 
@@ -29,6 +30,26 @@ const LABEL: Record<TileSpec["state"], string> = { needs_you: "Needs you", worki
 
 export function StateMark({ s }: { s: TileSpec["state"] }) {
   return <span className="mr-mark" data-s={s}><span aria-hidden="true">{GLYPH[s]}</span>{LABEL[s]}</span>;
+}
+
+// Progress track (canvas: Glance): where you are and how much is left, as one segment per step.
+// `live` pulses the current segment while Claude works; `stale` turns it amber when Claude goes quiet.
+export type Seg = "done" | "current" | "todo";
+export function ProgressTrack({ segs, left, right, live, stale, source }: { segs: Seg[]; left: ReactNode; right?: ReactNode; live?: boolean; stale?: boolean; source?: string }) {
+  return (
+    <div className="mr-track" data-mr="ProgressTrack" data-mr-source={source} data-live={live || undefined} data-stale={stale || undefined} role="status">
+      <div className="mr-track-segs" aria-hidden="true">{segs.map((s, i) => <i key={i} data-seg={s} />)}</div>
+      <div className="mr-track-cap"><span className="mr-ellipsis">{left}</span>{right && <span className="mr-track-right">{right}</span>}</div>
+    </div>
+  );
+}
+
+// State marks for a message you sent (MR-59): same shape-plus-colour language as session states.
+const DGLYPH: Record<Delivery, string> = { sending: "…", queued: "◷", taken: "○", answered: "✓", lost: "✕" };
+const DLABEL: Record<Delivery, string> = { sending: "Sending", queued: "Queued · after this step", taken: "Claude has it", answered: "Answered", lost: "Not delivered" };
+const DTITLE: Record<Delivery, string> = { sending: "Handing it to Claude", queued: "Claude is mid-step: it reads this at its next step", taken: "Claude is working on this", answered: "Its turn finished", lost: "The session stopped before Claude read this: send it again" };
+export function DeliveryMark({ d, source }: { d: Delivery; source: string }) {
+  return <span className="mr-mark" data-mr="DeliveryMark" data-mr-source={source} data-d={d} title={DTITLE[d]}><span aria-hidden="true">{DGLYPH[d]}</span>{DLABEL[d]}</span>;
 }
 
 export function Bar({ value, tone }: { value: number | null; tone?: "needs" }) {

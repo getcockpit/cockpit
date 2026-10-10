@@ -1,9 +1,9 @@
 import { keyOf } from "../components/keys";
 import { useEffect, useState } from "react";
-import { Key } from "../components";
+import { Key, ProgressTrack } from "../components";
+import { Diff } from "../components/Diff";
 import { api } from "../state/store";
 import { ReviewOverview } from "./ReviewOverview";
-import { Working } from "../components/Toast";
 import { plural } from "../picker/title";
 import type { SessionState } from "../state/types";
 
@@ -26,21 +26,12 @@ function SevMark({ s }: { s: string }) {
   );
 }
 
-function Diff({ code }: { code: string }) {
-  return (
-    <div className="mr-mono" style={{ fontSize: 12, background: "var(--mr-well)", overflowX: "auto" }}>
-      {code.split("\n").map((l, i) => (
-        <div key={i} style={{ padding: "1px 12px", whiteSpace: "pre", background: l.startsWith("+") ? "rgba(30,122,76,.14)" : l.startsWith("-") ? "rgba(198,40,40,.12)" : "transparent" }}>{l || " "}</div>
-      ))}
-    </div>
-  );
-}
-
 export function ReviewView({ s }: { s: SessionState }) {
   const r = s.review!;
   const o = r.overview;
   const snip = r.current !== null ? r.snippets[r.current] : null;
-  const total = o?.total_snippets ?? snip?.total ?? 0;
+  // The overview's count is an estimate: never show "Snippet 3 of 2".
+  const total = Math.max(o?.total_snippets ?? snip?.total ?? 0, snip?.n ?? 0, Object.keys(r.snippets).length);
   const findings = Object.values(r.snippets).flatMap((x) => x.findings ?? []);
   const noted = findings.filter((f) => r.noted.includes(f.id));
   const reply = (text: string) => void api.send(s.id, text);
@@ -59,16 +50,12 @@ export function ReviewView({ s }: { s: SessionState }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {(s.status === "working" || s.status === "starting") && <Working what={!o ? "Reading the PR and earlier threads" : r.current === null && !r.publish ? "Preparing the first snippet" : "Working on it"} />}
       {o && <ReviewOverview o={o} started={r.current !== null || !!r.publish} onReply={reply} raised={r.noted}
         onRaise={(id, text) => { if (r.noted.includes(id)) return; void api.log("ui.review_noted", { finding_id: id }, s.id, `review:${id}`); reply(`Add this to the review as a comment: ${text}`); }} />}
 
       {snip && (
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="mr-row" style={{ gap: 3 }}>
-            {Array.from({ length: Math.max(total, snip.n) }, (_, i) => <span key={i} style={{ flex: 1, height: 6, background: i + 1 < snip.n ? "var(--mr-ink-3)" : i + 1 === snip.n ? "var(--mr-ink)" : "var(--mr-well)" }} />)}
-          </div>
-          <div className="mr-row mr-ink2"><span>Snippet {snip.n} of {total || "?"}{snip.area ? ` · ${snip.area}` : ""}</span><span className="mr-grow" /><span>{noted.length} noted</span></div>
+          <ProgressTrack segs={Array.from({ length: Math.max(total, snip.n) }, (_, i) => (i + 1 < snip.n ? "done" : i + 1 === snip.n ? "current" : "todo"))} left={`Snippet ${snip.n} of ${total || "?"}${snip.area ? ` · ${snip.area}` : ""}`} right={`${noted.length} noted`} source={s.id} />
           <article style={{ display: "flex", flexDirection: "column", gap: 12, padding: "16px 18px", background: "var(--mr-tile)" }}>
             <strong style={{ fontSize: 18 }}>{snip.title}</strong>
             {/* Answer first (MR-58): what's wrong, then why, then the code. */}
@@ -87,13 +74,13 @@ export function ReviewView({ s }: { s: SessionState }) {
             {snip.file && <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{snip.file}</span>}
             {snip.code && <Diff code={snip.code} />}
           </article>
-          <div className="mr-row"><Key k="space" tone="primary" onClick={() => reply("next")}>Next snippet</Key><span className="mr-dim">Only findings you note get published · ask anything below</span></div>
+          <div className="mr-row"><Key k="space" tone="primary" onClick={() => reply("next")}>{snip.n >= total ? "Finish walkthrough" : "Next snippet"}</Key><span className="mr-dim">Only findings you note get published · ask anything below</span></div>
         </section>
       )}
 
       {(r.publish || noted.length > 0) && (
         <section style={{ display: "flex", flexDirection: "column", gap: 8, padding: "14px 16px", background: "var(--mr-tile)" }}>
-          <strong>{r.published ? "✓ Published · " : "Your review "}{r.publish?.verdict ?? ""}</strong>
+          <strong>{r.published ? "✓ Published" : "Your review"}{r.publish?.verdict ? ` · ${r.publish.verdict}` : ""}</strong>
           {(r.publish?.comments ?? noted).map((c, i) => (
             <div key={i} className="mr-row" style={{ alignItems: "flex-start" }}><SevMark s={c.severity} /><span className="mr-grow">{c.text}{c.at && <span className="mr-mono mr-dim"> · {c.at}</span>}</span></div>
           ))}
@@ -143,7 +130,6 @@ export function AddressView({ s }: { s: SessionState }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {(s.status === "working" || s.status === "starting") && <Working what={threads.length ? "Working on the thread" : "Fetching the review threads"} />}
       {threads.length > 0 && (
         <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", height: 10, gap: 2 }}>{parts.map(([k, c]) => tally(k) > 0 && <span key={k} style={{ flex: tally(k), background: c }} />)}</div>

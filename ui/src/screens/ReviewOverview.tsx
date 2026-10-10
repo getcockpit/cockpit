@@ -31,8 +31,9 @@ export function keyPoints(o: Overview): Point[] {
 /** One line that answers "how worried should I be?". */
 export function verdict(o: Overview, pts: Point[]): string {
   const blockers = pts.filter((p) => p.tag === "Blocker").length;
-  const fresh = pts.filter((p) => p.tag === "New").length + (o.nodes ?? []).filter((n) => n.finding && !/prior|earlier/i.test(n.label)).length;
-  const parts = [blockers ? plural(blockers, "blocker") : "", fresh ? `${fresh} new to look at` : "", o.total_snippets ? `${plural(o.total_snippets, "snippet")} to walk` : ""].filter(Boolean);
+  // Count what the key points below show, so the verdict and the list agree.
+  const fresh = pts.filter((p) => p.tag === "New").length;
+  const parts = [blockers ? plural(blockers, "blocker") : "", fresh ? plural(fresh, "new finding") : "", o.total_snippets ? `${plural(o.total_snippets, "snippet")} to walk` : ""].filter(Boolean);
   return parts.length ? parts.join(" · ") : "Nothing new to raise";
 }
 
@@ -96,7 +97,8 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
             </button>
             {isOpen && (
               <div style={{ padding: "0 14px 12px 88px", display: "flex", flexDirection: "column", gap: 8 }}>
-                <span className="mr-ink2">{p.full}</span>
+                {/* Only what the headline doesn't already say. */}
+                {p.full.slice(p.line.length).trim() && <span className="mr-ink2">{p.full.slice(p.line.length).trim()}</span>}
                 <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }}>
                   <Key k="N" tone={isRaised ? undefined : "primary"} disabled={isRaised} onClick={() => onRaise(`ov:${i}`, p.full)}>{isRaised ? "Raised ✓" : "Raise it in the review"}</Key>
                   <button type="button" className="mr-link" onClick={() => { setSkipped((x) => (isSkipped ? x.filter((y) => y !== i) : [...x, i])); setOpen(null); }}>{isSkipped ? "Unskip" : "Skip"}</button>
