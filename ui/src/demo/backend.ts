@@ -136,7 +136,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       const cwd = String(a.cwd ?? "~/");
       const repo = cwd.startsWith("~") ? null : cwd;
       const slug = String(a.prompt ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24);
-      record(sid, "ui.session_requested", { cwd, prompt: a.prompt, kind: a.kind ?? "blank", resume: a.resume ?? null, workspace: a.workspace ?? "personal", ...(repo && a.worktree !== false && a.kind === "blank" ? { repo, branch: `mr/${slug}`, worktree: `${repo}-worktrees/${slug}` } : {}) });
+      record(sid, "ui.session_requested", { cwd, prompt: a.prompt, kind: a.kind ?? "blank", resume: a.resume ?? null, workspace: a.workspace ?? "personal", ...(a.preset ? { preset: a.preset } : {}), ...(repo && (a.worktree ?? a.kind === "blank") ? { repo, branch: `mr/${slug}`, worktree: `${repo}-worktrees/${slug}` } : {}) });
       runAgent(sid, String(a.prompt ?? ""));
       return sid;
     }
