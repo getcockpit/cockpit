@@ -7,6 +7,7 @@ import { api } from "./store";
 export type Block = {
   id: string; section: string; status: string; takeaway: string; key: string; body: string;
   data: { options?: { label: string; description: string }[] } | null; order: number; decision: string | null; updated: string;
+  since?: number; was?: string | null; // version it last changed in, and its takeaway before (MR-51)
 };
 export type Doc = {
   id: string; title: string; session_id: string | null; version: number;

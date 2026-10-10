@@ -26,6 +26,12 @@ pub struct Block {
     /// Set when the user decides an open question.
     pub decision: Option<String>,
     pub updated: String,
+    /// The doc version this block last changed in, so a regenerate shows what moved (MR-51).
+    #[serde(default)]
+    pub since: i64,
+    /// Its takeaway before that change, when the takeaway changed.
+    #[serde(default)]
+    pub was: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
@@ -92,8 +98,14 @@ fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
                     body: s("body", &prev.body),
                     data: if p["data"].is_null() { prev.data } else { p["data"].clone() },
                     order,
-                    decision: prev.decision,
+                    decision: prev.decision.clone(),
                     updated: ev.id.clone(),
+                    since: doc.version,
+                    was: match p["takeaway"].as_str() {
+                        Some(t) if !prev.takeaway.is_empty() && t != prev.takeaway => Some(prev.takeaway.clone()),
+                        _ if prev.since == doc.version => prev.was.clone(),
+                        _ => None,
+                    },
                 },
             );
         }
@@ -280,6 +292,22 @@ mod tests {
         assert_eq!(docs.get(&id).unwrap().blocks["g"].takeaway, "B");
         assert!(run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "section": "nonsense" })).1);
         assert!(run(&docs, &mut n, "doc_set_block", json!({ "doc_id": "missing", "section": "goal" })).1);
+    }
+
+    #[test]
+    fn a_regenerate_shows_which_blocks_changed_and_what_they_said_before() {
+        let docs = Docs::default();
+        let mut n = 0;
+        let (text, _) = run(&docs, &mut n, "doc_create", json!({ "title": "T" }));
+        let id = text.split_whitespace().nth(2).unwrap().to_owned();
+        run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "g", "section": "goal", "takeaway": "Export in a day" }));
+        run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "s", "section": "scope", "takeaway": "Invoices only" }));
+        n += 1;
+        docs.apply(&ev(n, "doc.regenerated", json!({ "doc_id": id })));
+        run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "g", "section": "goal", "takeaway": "Export in a minute" }));
+        let d = docs.get(&id).unwrap();
+        assert_eq!((d.version, d.blocks["g"].since, d.blocks["g"].was.as_deref()), (2, 2, Some("Export in a day")));
+        assert_eq!((d.blocks["s"].since, d.blocks["s"].was.as_deref()), (1, None));
     }
 
     #[test]
