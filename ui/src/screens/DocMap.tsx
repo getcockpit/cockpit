@@ -6,28 +6,20 @@ import { decideQuestion, docApi, sendDocFeedback, isOpenQuestion, orderedBlocks,
 import { api } from "../state/store";
 import type { AppState } from "../state/types";
 
-// The working doc as a zoomable map (decision 12): blocks show takeaways when zoomed out and open on
-// zoom; a walkthrough tours them in /prd order; questions are decided in place; everything is
+// The working doc as a map (decision 12): the overview shows every block's takeaway at reading size,
+// sized to its text; opening one zooms into a reading pane with the whole block and an outline of the
+// rest; a walkthrough tours them in /prd order; questions are decided in place; everything is
 // editable and annotateable. ⌘-click = go deeper, ⌥-click = discover in a side session (decision 21).
-
-const COLS = 3, W = 560, H = 300, GAP = 80;
-const pos = (i: number) => ({ x: (i % COLS) * (W + GAP), y: Math.floor(i / COLS) * (H + GAP) });
+// No fixed card sizes and no scale-to-fit: real docs have 10+ blocks with long bodies (MR-77).
 
 export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state: AppState; onBack: () => void; onOpenSession: (id: string) => void }) {
   const blocks = useMemo(() => orderedBlocks(doc), [doc]);
   const [step, setStep] = useState(0); // 0 = overview, n = blocks[n-1]
   const [deep, setDeep] = useState<Record<string, boolean>>({});
   const [threads, setThreads] = useState<Record<string, string>>({});
-  const [vp, setVp] = useState({ w: 1000, h: 640 });
-  const box = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setVp({ w: el.clientWidth, h: el.clientHeight }));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const pane = useRef<HTMLDivElement>(null);
+  // Each step starts at the top of its block.
+  useLayoutEffect(() => { pane.current?.scrollTo({ top: 0 }); }, [step]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -43,14 +35,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
     return () => window.removeEventListener("keydown", onKey);
   }, [blocks.length, step, onBack]);
 
-  const rows = Math.ceil(Math.max(1, blocks.length) / COLS);
-  const worldW = COLS * W + (COLS - 1) * GAP, worldH = rows * H + (rows - 1) * GAP;
-  const focus = step ? blocks[step - 1] : null;
-  const fi = focus ? blocks.indexOf(focus) : -1;
-  const overview = Math.min(1, (vp.w - 48) / worldW, (vp.h - 120) / worldH);
-  const cam = focus
-    ? { s: Math.min(1, (vp.w - 64) / (W + 40)), x: pos(fi).x + W / 2, y: pos(fi).y + H / 2 + 60 }
-    : { s: overview, x: worldW / 2, y: worldH / 2 };
+  const focus = step ? blocks[step - 1] ?? null : null;
 
   const session = doc.session_id ? state.sessions[doc.session_id] : null;
   const live = !!session && session.status !== "ended" && session.status !== "error";
@@ -102,19 +87,39 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
 
       <main style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, padding: 16 }}>
         <section style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div ref={box} style={{ position: "relative", flex: 1, minHeight: 480, overflow: "hidden", background: "var(--mr-well)" }}>
+          <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "var(--mr-well)" }}>
             {blocks.length === 0 && <div className="mr-dim" style={{ padding: 24 }}>No blocks yet. Claude adds them with the doc tools as it plans.</div>}
-            <div style={{ position: "absolute", left: "50%", top: "50%", width: 0, height: 0 }}>
-              <div style={{ position: "absolute", width: worldW, height: worldH, transformOrigin: "0 0", transform: `scale(${cam.s}) translate(${-cam.x}px, ${-cam.y}px)`, transition: "transform var(--mr-zoom) cubic-bezier(.2,.7,.2,1)" }}>
+            {!focus ? (
+              <div ref={pane} key="overview" className="mr-zoom-in" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gridAutoRows: "min-content", gap: 12, alignContent: "start" }}>
                 {blocks.map((b, i) => (
-                  <BlockCard key={b.id} doc={doc} b={b} at={pos(i)} open={focus?.id === b.id} dim={(!!focus && focus.id !== b.id) || (onlyChanged && !changed.includes(b))} changedIn={changed.includes(b) ? doc.version : null}
-                    deep={!!deep[b.id]} thread={threads[b.id]} onClick={(e) => clickBlock(b, i, e)} onDecide={(label) => void decideQuestion(doc, b.id, label, session)}
-                    onDeeper={() => setDeep((d) => ({ ...d, [b.id]: !d[b.id] }))} onDiscover={() => void discover(b)} onOpenThread={onOpenSession}
-                    onAsk={(q) => live && session ? void api.send(session.id, `About block [${b.section}] "${b.takeaway}" of doc ${doc.id}: ${q}`) : undefined} />
+                  <BlockTile key={b.id} doc={doc} b={b} dim={onlyChanged && !changed.includes(b)} changedIn={changed.includes(b) ? doc.version : null} thread={threads[b.id]} onClick={(e) => clickBlock(b, i, e)} />
                 ))}
               </div>
-            </div>
-            <div className="mr-row" style={{ position: "absolute", left: 12, right: 12, bottom: 12, padding: "10px 14px", background: "var(--mr-tile)" }}>
+            ) : (
+              <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+                {/* The rest of the map stays one click away while you read. */}
+                <nav aria-label="Blocks" data-mr="DocOutline" data-mr-source={doc.id} style={{ flex: "0 0 240px", overflowY: "auto", padding: "16px 0 16px 16px", display: "flex", flexDirection: "column", gap: 2 }}>
+                  <button type="button" onClick={() => setStep(0)} className="mr-dim" style={{ border: 0, background: "transparent", font: "inherit", fontSize: 12, textAlign: "left", padding: "6px 10px", cursor: "zoom-out" }}>↖ Overview <kbd className="mr-mono">o</kbd></button>
+                  {blocks.map((b, i) => {
+                    const here = b.id === focus.id, openQ = isOpenQuestion(b);
+                    return (
+                      <button key={b.id} type="button" aria-current={here || undefined} onClick={(e) => clickBlock(b, i, e)} title={b.takeaway}
+                        style={{ border: 0, padding: "6px 10px", font: "inherit", textAlign: "left", cursor: "pointer", color: "var(--mr-ink)", background: here ? "var(--mr-tile)" : "transparent", boxShadow: here ? "inset 3px 0 0 var(--mr-selected)" : openQ ? "inset 3px 0 0 var(--mr-needs)" : "none", display: "flex", flexDirection: "column", gap: 1 }}>
+                        <span style={{ fontSize: 11, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{kickerOf(b)}</span>
+                        <span className="mr-ellipsis" style={{ fontSize: 13, fontWeight: here ? 700 : 400 }}>{b.takeaway || "(no takeaway)"}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+                <div ref={pane} style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "16px 16px 80px" }}>
+                  <BlockOpen key={focus.id} doc={doc} b={focus} changedIn={changed.includes(focus) ? doc.version : null}
+                    deep={!!deep[focus.id]} thread={threads[focus.id]} onDecide={(label) => void decideQuestion(doc, focus.id, label, session)}
+                    onDeeper={() => setDeep((d) => ({ ...d, [focus.id]: !d[focus.id] }))} onDiscover={() => void discover(focus)} onOpenThread={onOpenSession}
+                    onAsk={(q) => live && session ? void api.send(session.id, `About block [${focus.section}] "${focus.takeaway}" of doc ${doc.id}: ${q}`) : undefined} />
+                </div>
+              </div>
+            )}
+            <div className="mr-row" style={{ flex: "none", padding: "10px 14px", background: "var(--mr-tile)", borderTop: "2px solid var(--mr-well)" }}>
               <span className="mr-mono mr-dim" style={{ flex: "none" }}>{focus ? `${step} / ${blocks.length}` : "Overview"}</span>
               <span className="mr-grow mr-ellipsis" style={{ fontWeight: 700, minWidth: 0 }}>{focus ? SECTION_LABEL[focus.section] ?? focus.section : "At a glance. Space walks through it block by block."}</span>
               {changed.length > 0 && !focus && <Key tone={onlyChanged ? "primary" : undefined} onClick={() => setOnlyChanged((x) => !x)}>{onlyChanged ? "Show everything" : `What changed in v${doc.version} · ${changed.length}`}</Key>}
@@ -167,39 +172,43 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
   );
 }
 
-function BlockCard(props: {
-  doc: Doc; b: Block; at: { x: number; y: number }; open: boolean; dim: boolean; deep: boolean; thread?: string; changedIn: number | null;
-  onClick: (e: React.MouseEvent) => void; onDecide: (label: string) => void; onDeeper: () => void; onDiscover: () => void; onOpenThread: (id: string) => void; onAsk: (q: string) => void;
+const kickerOf = (b: Block) => (b.section === "question" && b.decision ? "Decided" : `${SECTION_LABEL[b.section] ?? b.section}${b.status ? ` · ${b.status}` : ""}`);
+const edgeOf = (b: Block) => (isOpenQuestion(b) ? "var(--mr-needs)" : b.decision ? "var(--mr-done)" : "transparent");
+const clamp = (lines: number): React.CSSProperties => ({ display: "-webkit-box", WebkitLineClamp: lines, WebkitBoxOrient: "vertical", overflow: "hidden" });
+
+// Overview: a block at reading size, as tall as its text (clamped, so one long block can't swamp the grid).
+function BlockTile({ doc, b, dim, changedIn, thread, onClick }: { doc: Doc; b: Block; dim: boolean; changedIn: number | null; thread?: string; onClick: (e: React.MouseEvent) => void }) {
+  const openQ = isOpenQuestion(b), kicker = kickerOf(b);
+  return (
+    <button type="button" data-mr="DocBlock" data-mr-source={`${doc.id}:${b.id}`} onClick={onClick} aria-label={`Open ${kicker}: ${b.takeaway}`}
+      style={{ border: 0, borderLeft: `6px solid ${edgeOf(b)}`, padding: "14px 16px", background: "var(--mr-tile)", opacity: dim ? 0.35 : 1, transition: "opacity 200ms", textAlign: "left", font: "inherit", color: "var(--mr-ink)", cursor: "zoom-in", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      <span style={{ fontSize: 12, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{openQ ? "◆ " : b.decision ? "✓ " : ""}{kicker}</span>
+      <span style={{ fontSize: 16, lineHeight: 1.3, fontWeight: 700, ...clamp(4) }}>{b.takeaway || "(no takeaway)"}</span>
+      {(b.decision || b.key) && <span style={{ fontSize: 13, color: "var(--mr-ink-2)", ...clamp(2) }}>{b.decision ? `→ ${b.decision}` : b.key}</span>}
+      {changedIn && <span style={{ fontSize: 12, color: "var(--mr-selected)", fontWeight: 700 }}>● Changed in v{changedIn}</span>}
+      {thread && <span style={{ fontSize: 12, color: "var(--mr-selected)" }}>⌕ side session running</span>}
+    </button>
+  );
+}
+
+// Zoomed in: the whole block in a reading column, with its decision, note and ask.
+function BlockOpen(props: {
+  doc: Doc; b: Block; deep: boolean; thread?: string; changedIn: number | null;
+  onDecide: (label: string) => void; onDeeper: () => void; onDiscover: () => void; onOpenThread: (id: string) => void; onAsk: (q: string) => void;
 }) {
-  const { doc, b, at, open, dim, deep, thread } = props;
+  const { doc, b, deep, thread } = props;
   const [note, setNote] = useState("");
   const [ask, setAsk] = useState("");
   const question = b.section === "question";
-  const openQ = isOpenQuestion(b);
-  const kicker = question && b.decision ? "Decided" : `${SECTION_LABEL[b.section] ?? b.section}${b.status ? ` · ${b.status}` : ""}`;
-  const style: React.CSSProperties = {
-    position: "absolute", left: at.x, top: at.y, width: W, minHeight: H, boxSizing: "border-box",
-    background: "var(--mr-tile)", opacity: dim ? 0.35 : 1, transition: "opacity 200ms",
-    borderLeft: `8px solid ${openQ ? "var(--mr-needs)" : b.decision ? "var(--mr-done)" : "transparent"}`,
-  };
-  if (!open) {
-    return (
-      <button type="button" data-mr="DocBlock" data-mr-source={`${doc.id}:${b.id}`} style={{ ...style, height: H, border: 0, borderLeft: style.borderLeft, padding: "28px 32px", textAlign: "left", font: "inherit", color: "var(--mr-ink)", cursor: "zoom-in", display: "flex", flexDirection: "column", justifyContent: "center", gap: 10 }} onClick={props.onClick} aria-label={`Open ${kicker}: ${b.takeaway}`}>
-        <span style={{ fontSize: 26, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{openQ ? "◆ " : b.decision ? "✓ " : ""}{kicker}</span>
-        <span style={{ fontSize: 40, lineHeight: 1.1, fontWeight: 700, letterSpacing: "-0.02em" }}>{b.takeaway || "(no takeaway)"}</span>
-        <span style={{ fontSize: 28, color: "var(--mr-ink-2)" }}>{b.decision ? `→ ${b.decision}` : b.key}</span>
-        {props.changedIn && <span style={{ fontSize: 22, color: "var(--mr-selected)", fontWeight: 700 }}>● Changed in v{props.changedIn}</span>}
-        {thread && <span style={{ fontSize: 22, color: "var(--mr-selected)" }}>⌕ side session running</span>}
-      </button>
-    );
-  }
+  const kicker = kickerOf(b);
+  const style: React.CSSProperties = { maxWidth: 820, margin: "0 auto", boxSizing: "border-box", background: "var(--mr-tile)", borderLeft: `6px solid ${edgeOf(b)}` };
   return (
-    <div data-mr="DocBlockOpen" data-mr-source={`${doc.id}:${b.id}`} style={{ ...style, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 12, zIndex: 2 }}>
+    <div data-mr="DocBlockOpen" data-mr-source={`${doc.id}:${b.id}`} className="mr-zoom-in" style={{ ...style, padding: "22px 26px", display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="mr-row" style={{ alignItems: "baseline" }}>
         <span className="mr-grow" contentEditable suppressContentEditableWarning spellCheck={false} aria-label="Edit takeaway"
           onBlur={(e) => { const v = e.currentTarget.textContent ?? ""; if (v.trim() && v !== b.takeaway) void docApi.edit(doc, b.id, "takeaway", v.trim()); }}
           style={{ fontSize: 22, fontWeight: 700, outline: "none", borderBottom: "1px dotted var(--mr-ink-3)", cursor: "text" }}>{b.takeaway}</span>
-        <span className="mr-dim">{kicker}</span>
+        <span className="mr-dim" style={{ whiteSpace: "nowrap" }}>{kicker}</span>
       </div>
       {props.changedIn && b.was && <span style={{ color: "var(--mr-selected)" }}>Changed in v{props.changedIn}. Was: <s className="mr-dim">{b.was}</s></span>}
       <span contentEditable suppressContentEditableWarning aria-label="Edit key detail" className="mr-ink2"
@@ -218,7 +227,7 @@ function BlockCard(props: {
         </fieldset>
       )}
 
-      {(deep || !question) && b.body && <div style={{ maxHeight: deep ? "none" : 220, overflow: "hidden" }}><Markdown text={b.body} /></div>}
+      {(deep || !question) && b.body && <Markdown text={b.body} />}
 
       {thread && <button type="button" className="mr-row" onClick={() => props.onOpenThread(thread)} style={{ padding: "8px 10px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>⌕ Side session running — open it ↗</button>}
 
@@ -229,7 +238,7 @@ function BlockCard(props: {
         <input className="mr-input" style={{ minHeight: 32, fontSize: 13, background: "var(--mr-well)" }} placeholder="Ask about this block" value={ask} onChange={(e) => setAsk(e.target.value)} aria-label="Ask about this block" />
       </form>
       <div className="mr-row" style={{ flexWrap: "wrap" }}>
-        <Key k="⌘-click" onClick={props.onDeeper}>{deep ? "Less detail" : "Go deeper"}</Key>
+        {question && b.body && <Key k="⌘-click" onClick={props.onDeeper}>{deep ? "Less detail" : "Show the reasoning"}</Key>}
         <Key k="⌥-click" onClick={props.onDiscover} disabled={!!thread}>Discover in a side session</Key>
         <span className="mr-dim" style={{ fontSize: 12 }}>Click text to edit</span>
       </div>
