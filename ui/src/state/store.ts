@@ -61,6 +61,9 @@ export const api = {
     window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Sent: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}` }));
     return invoke("session_send", { session, text }).catch((e) => { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Not sent: ${String(e).split("\n")[0]}` })); throw e; });
   },
+  // Model and effort for one session (MR-73): null goes back to Claude Code's default, a missing key leaves it.
+  setModel: (session: string, change: { model?: string | null; effort?: string | null }) => invoke("session_set_model", { session, change }),
+  modelsRefresh: () => invoke("models_refresh"),
   interrupt: (session: string) => invoke("session_interrupt", { session }),
   stop: (session: string) => invoke("session_stop", { session }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),

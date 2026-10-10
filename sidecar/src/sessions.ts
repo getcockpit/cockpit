@@ -1,7 +1,14 @@
-import type { Inbound, Outbound, PermissionDecision, ToolSpec } from "./protocol";
+import type { Effort, Inbound, ModelRow, Outbound, PermissionDecision, ToolSpec } from "./protocol";
 
 // The slice of the Agent SDK this module needs, so tests can inject a fake.
-export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record<string, unknown> }) => AsyncIterable<unknown> & { interrupt(): Promise<unknown>; close?(): void };
+export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
+  interrupt(): Promise<unknown>;
+  close?(): void;
+  setModel?(model?: string): Promise<void>;
+  applyFlagSettings?(settings: { effortLevel?: Effort | null }): Promise<void>;
+  supportedModels?(): Promise<{ value: string; resolvedModel?: string; displayName: string; description: string; supportedEffortLevels?: Effort[] }[]>;
+};
+export type { ModelRow };
 export type McpFactory = (session: string, tools: ToolSpec[], call: (tool: string, args: Record<string, unknown>) => Promise<{ text: string; is_error?: boolean }>) => Record<string, unknown> | undefined;
 type UserMsg = { type: "user"; message: { role: "user"; content: string }; parent_tool_use_id: null };
 
@@ -24,7 +31,7 @@ class Inbox implements AsyncIterable<UserMsg> {
   }
 }
 
-type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; pending: Map<string, (d: PermissionDecision) => void>; calls: Map<string, (r: { text: string; is_error?: boolean }) => void> };
+type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; switching: Promise<void>; pending: Map<string, (d: PermissionDecision) => void>; calls: Map<string, (r: { text: string; is_error?: boolean }) => void> };
 
 export class Sessions {
   private live = new Map<string, Live>();
@@ -36,6 +43,7 @@ export class Sessions {
       case "start": return this.start(m);
       case "send": return void this.with(m.session, (s) => s.inbox.push(m.text));
       case "interrupt": return void this.with(m.session, (s) => { void s.q?.interrupt(); });
+      case "set_model": return void this.with(m.session, (s) => { s.switching = s.switching.then(() => this.setModel(m.session, s, m.model, m.effort)); });
       case "stop": return void this.with(m.session, (s) => { s.inbox.close(); s.q?.close?.(); });
       case "permission_response": return void this.with(m.session, (s) => {
         const r = s.pending.get(m.request_id);
@@ -50,6 +58,19 @@ export class Sessions {
     }
   }
 
+  // Model and effort apply from the next request on, without restarting the conversation.
+  // Switches run one at a time, in the order sent, so the last one asked for is the one that holds.
+  private async setModel(session: string, s: Live, model: string | null | undefined, effort: Effort | null | undefined) {
+    try {
+      if (!s.q?.setModel || !s.q.applyFlagSettings) throw new Error("this SDK can't switch models mid-session");
+      if (model !== undefined) await s.q.setModel(model ?? undefined);
+      if (effort !== undefined) await s.q.applyFlagSettings({ effortLevel: effort });
+      this.emit({ type: "model_set", session, model, effort, ok: true });
+    } catch (e) {
+      this.emit({ type: "model_set", session, model, effort, ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   private with(session: string, f: (s: Live) => void) {
     const s = this.live.get(session);
     if (!s) return this.emit({ type: "error", session, error: "unknown session" });
@@ -58,7 +79,7 @@ export class Sessions {
 
   private start(m: Extract<Inbound, { type: "start" }>) {
     if (this.live.has(m.session)) return this.emit({ type: "error", session: m.session, error: "session already running" });
-    const s: Live = { inbox: new Inbox(), q: null, pending: new Map(), calls: new Map() };
+    const s: Live = { inbox: new Inbox(), q: null, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
     this.live.set(m.session, s);
     s.inbox.push(m.prompt);
 
@@ -75,6 +96,7 @@ export class Sessions {
       // Per-workspace Claude config (CLAUDE_CONFIG_DIR) keeps memories and transcripts apart.
       env: m.env ? { ...process.env, ...m.env } : undefined,
       model: m.model,
+      effort: m.effort,
       pathToClaudeCodeExecutable: this.claudePath,
       systemPrompt: m.append_system_prompt ? { type: "preset", preset: "claude_code", append: m.append_system_prompt } : undefined,
       mcpServers: mcpServer ? { mr: mcpServer } : undefined,
