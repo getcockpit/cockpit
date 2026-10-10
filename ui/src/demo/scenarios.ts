@@ -144,6 +144,7 @@ const planEvents: E[] = [
   ...ready, onboarded,
   ...start("P", "Refactor settings into a typed schema", { cwd: "/Users/me/code/shop-worktrees/settings", repo: "/Users/me/code/shop", branch: "mr/settings-schema" }, 10),
   planStep(20, 0),
+  { session: "P", kind: "session.titled", payload: { title: "Typed settings schema migration" }, at: 21 },
   ...Array.from({ length: 14 }, (_, i) => tool("P", "Read", { file_path: `src/settings/reader${i}.ts` }, 30 + i)),
   planStep(60, 1),
   say("P", "The readers all parse JSON by hand. I'll introduce one schema with defaults and route every reader through it.", 70),
@@ -151,6 +152,7 @@ const planEvents: E[] = [
   ...Array.from({ length: 12 }, (_, i) => tool("P", "Edit", { file_path: `src/settings/reader${i}.ts`, old_string: "a", new_string: "a\nb" }, 2300 + i * 5)),
   say("P", "9 of 12 readers migrated. The last three share a legacy parser; doing those together.", 2370),
   tool("P", "Bash", { command: "bun test src/settings", description: "Run the settings tests" }, 2385),
+  
 ];
 
 // The user's real /review of PR #482 (MR-58): the overview, waiting for "ok".

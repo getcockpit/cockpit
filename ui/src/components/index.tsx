@@ -35,10 +35,15 @@ export function StateMark({ s }: { s: TileSpec["state"] }) {
 // Progress track (canvas: Glance): where you are and how much is left, as one segment per step.
 // `live` pulses the current segment while Claude works; `stale` turns it amber when Claude goes quiet.
 export type Seg = "done" | "current" | "todo";
-export function ProgressTrack({ segs, left, right, live, stale, source }: { segs: Seg[]; left: ReactNode; right?: ReactNode; live?: boolean; stale?: boolean; source?: string }) {
+// `fill` draws one continuous bar (done share filled, the current step pulsing after it) for the
+// higher levels, header and tiles, where "how far along" matters more than the step count (MR-63).
+export function ProgressTrack({ segs, left, right, live, stale, source, fill }: { segs: Seg[]; left: ReactNode; right?: ReactNode; live?: boolean; stale?: boolean; source?: string; fill?: boolean }) {
+  const n = Math.max(1, segs.length), done = segs.filter((s) => s === "done").length, cur = segs.includes("current") ? 1 : 0;
   return (
-    <div className="mr-track" data-mr="ProgressTrack" data-mr-source={source} data-live={live || undefined} data-stale={stale || undefined} role="status">
-      <div className="mr-track-segs" aria-hidden="true">{segs.map((s, i) => <i key={i} data-seg={s} />)}</div>
+    <div className="mr-track" data-mr="ProgressTrack" data-mr-source={source} data-live={live || undefined} data-stale={stale || undefined} data-fill={fill || undefined} role="progressbar" aria-valuenow={Math.round((done / n) * 100)}>
+      {fill
+        ? <div className="mr-track-fill" aria-hidden="true"><i data-seg="done" style={{ width: `${(done / n) * 100}%` }} /><i data-seg="current" style={{ width: `${(cur / n) * 100}%` }} /></div>
+        : <div className="mr-track-segs" aria-hidden="true">{segs.map((s, i) => <i key={i} data-seg={s} />)}</div>}
       <div className="mr-track-cap"><span className="mr-ellipsis">{left}</span>{right && <span className="mr-track-right">{right}</span>}</div>
     </div>
   );

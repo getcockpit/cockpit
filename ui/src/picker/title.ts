@@ -18,13 +18,15 @@ export function cleanTitle(raw: string, max = 72): string {
 
 const prRef = (t: string) => { const m = t.match(/(?:pull\/|#|\s)(\d{1,7})\b/); return m ? `#${m[1]}` : ""; };
 
-/** A session's display title. Review and Address sessions are named after their PR, using the
- *  PR's own title once the flow has reported it, never the raw slash command. */
-export function sessionTitle(s: Pick<SessionState, "title"> & Partial<Pick<SessionState, "review" | "address">>): string {
+/** A session's display title: your rename, else (for Review and Address) the PR, using its own
+ *  title once the flow has reported it, else what Claude says the thread is about (title_set),
+ *  else your first prompt. Never the raw slash command. */
+export function sessionTitle(s: Pick<SessionState, "title"> & Partial<Pick<SessionState, "review" | "address" | "name" | "autoTitle">>): string {
+  if (s.name) return cleanTitle(s.name);
   const raw = (s.title || "").trim();
   if (/^\/review\b/.test(raw)) { const o = s.review?.overview; return cleanTitle(`Review ${o?.pr ?? prRef(raw)}${o?.title ? `: ${o.title}` : ""}`.trim()); }
   if (/^\/pr-address\b/.test(raw)) return cleanTitle(`Address ${s.address?.list?.pr ?? prRef(raw)} comments`.replace(/\s+/g, " "));
-  return cleanTitle(raw || "Untitled");
+  return cleanTitle(s.autoTitle || raw || "Untitled");
 }
 
 /** "1 file", "3 files": counts in copy always agree in number. */

@@ -9,6 +9,8 @@ pub const TOOL: &str = "render_view";
 /// Claude's plan for the current work (MR-62). Claude Code no longer offers TodoWrite to SDK
 /// sessions, so the app owns the plan: the Plan panel, the progress tracks and the tiles read it.
 pub const PLAN: &str = "plan_set";
+/// The thread's title, kept current by Claude (MR-63): what this thread is about, in a few words.
+pub const TITLE: &str = "title_set";
 
 /// Field kinds a block can require.
 #[derive(Clone, Copy)]
@@ -58,8 +60,28 @@ pub fn plan_spec() -> Value {
     })
 }
 
+pub fn title_spec() -> Value {
+    json!({
+        "name": TITLE,
+        "description": "Name this thread for the user's wall: 2-6 words saying what it is about now (e.g. 'Plan panel for live progress', 'Fix login redirect loop'). Call it when the thread starts and again whenever its focus clearly shifts. Sentence case, no quotes or trailing period. Don't mention it in text.",
+        "params": { "title": "string" }
+    })
+}
+
 pub fn is_view_tool(tool: &str) -> bool {
-    tool == TOOL || tool == PLAN
+    tool == TOOL || tool == PLAN || tool == TITLE
+}
+
+/// A short title: trimmed, unquoted, one line, at most 60 characters.
+pub fn validate_title(args: &Value) -> Result<Value, String> {
+    let t = args["title"].as_str().unwrap_or("").lines().next().unwrap_or("").trim().trim_matches(|c| c == '"' || c == '\'' || c == '.').trim();
+    if t.is_empty() {
+        return Err("Title not set: 'title' must be a non-empty string of 2-6 words.".into());
+    }
+    if t.chars().count() > 60 {
+        return Err(format!("Title not set: '{t}' is too long; use 2-6 words (at most 60 characters)."));
+    }
+    Ok(json!({ "title": t }))
 }
 
 /// Checks a plan. Ok: the event payload. Err: what to fix.
@@ -112,6 +134,12 @@ pub fn validate(args: &Value) -> Result<Value, String> {
 }
 
 pub fn handle_tool(tool: &str, args: &Value) -> (Vec<(String, Value)>, String, bool) {
+    if tool == TITLE {
+        return match validate_title(args) {
+            Ok(title) => (vec![("session.titled".into(), title)], "Title set.".into(), false),
+            Err(e) => (vec![], e, true),
+        };
+    }
     if tool == PLAN {
         return match validate_plan(args) {
             Ok(plan) => (vec![("plan.updated".into(), plan)], "Plan shown to the user. Update it as each step starts or finishes.".into(), false),
@@ -159,6 +187,15 @@ mod tests {
         let (events, text, err) = handle_tool(PLAN, &json!({ "steps": [{ "step": "", "status": "started" }] }));
         assert!(err && events.is_empty() && text.contains("'step'") && text.contains("'status'"));
         assert!(is_view_tool(PLAN) && is_view_tool(TOOL) && !is_view_tool("doc_read"));
+    }
+
+    #[test]
+    fn titles_are_trimmed_and_bounded() {
+        let (events, _, err) = handle_tool(TITLE, &json!({ "title": " \"Plan panel for live progress.\" \nextra" }));
+        assert!(!err && events[0].0 == "session.titled");
+        assert_eq!(events[0].1["title"], "Plan panel for live progress");
+        assert!(handle_tool(TITLE, &json!({ "title": "  " })).2);
+        assert!(handle_tool(TITLE, &json!({ "title": "x".repeat(61) })).2);
     }
 
     #[test]
