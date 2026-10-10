@@ -94,6 +94,8 @@ export function pickTile(s: SessionState): TileSpec {
     : s.status === "ended" ? "done"
     : s.status === "starting" ? "starting"
     : s.status === "interrupted" ? "interrupted"
+    // A finished turn whose plan is all ticked off is done work waiting for review (F10), not "waiting".
+    : s.status === "idle" && total > 0 && done === total ? "done"
     : s.status === "idle" ? "idle"
     : total && (done >= total - 1 || done / total >= 0.8) ? "almost"
     : "working";
@@ -105,7 +107,7 @@ export function pickTile(s: SessionState): TileSpec {
     : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${String(lastTool.input.file_path).split("/").pop()}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");
   return {
     state,
-    step: total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Waiting for you" : "Working",
+    step: s.status === "idle" && total > 0 && done === total ? "Ready to review" : total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Your turn" : "Working",
     progress,
     progressLabel: progress === null ? "" : `${Math.round(progress * 100)}%`,
     doing,
