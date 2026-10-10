@@ -92,6 +92,7 @@ export type AppState = {
   dismissed: string[];
   workspaces: { id: string; name: string; configDir: string | null }[];
   theme: string;
+  look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
   clef: ClefMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;

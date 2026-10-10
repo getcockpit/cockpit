@@ -7,7 +7,8 @@ export function cleanTitle(raw: string, max = 72): string {
     .replace(/^Plan this with me before any code:\s*/i, "")
     .replace(/\.\s*Write the plan[\s\S]*$/i, "")
     .replace(/^Side thread about (?:the session )?"([^"]+)"[\s\S]*$/i, "About “$1”")
-    .replace(/^God-mode mark[\s\S]*?Their note: ([^\n]*)[\s\S]*$/, "Fix: $1");
+    .replace(/^God-mode mark[\s\S]*?Their note: ([^\n]*)[\s\S]*$/, "Fix: $1")
+    .replace(/^Restyle the app: ([^\n]*)[\s\S]*$/, "Style: $1");
   t = t.split("\n")[0].trim();
   if (!t) return "Untitled";
   if (t.length <= max) return t;
