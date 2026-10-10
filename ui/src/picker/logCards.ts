@@ -88,3 +88,39 @@ export function checkRow(t: Tool): CheckRow {
 export function isCard(t: TranscriptItem): t is Tool {
   return t.kind === "tool" && (isCheck(t) || editCard(t) !== null);
 }
+
+// A plan step at a glance (MR-76): its actions as Tally bar segments and the files it touched as
+// Change graph chips. Reads and searches are the quiet part; failures are red.
+export type StepTally = { n: number; label: string; tone: "done" | "now" | "deferred" | "todo" | "error" };
+export type TouchedFile = { label: string; path: string; mark: "+" | "~"; added: number; removed: number };
+
+const LOOK = new Set(["Read", "Grep", "Glob", "WebFetch", "WebSearch", "LS", "NotebookRead"]);
+
+export function stepSummary(tools: Tool[]): { tally: StepTally[]; files: TouchedFile[] } {
+  let edits = 0, passed = 0, failed = 0, commands = 0, looked = 0;
+  const files = new Map<string, TouchedFile>();
+  for (const t of tools) {
+    if (t.isError) { failed++; continue; }
+    const c = editCard(t);
+    if (c) {
+      edits++;
+      const f = files.get(c.path) ?? { label: c.file, path: c.path, mark: c.where === "new file" || rec(t.result).type === "create" ? "+" : "~", added: 0, removed: 0 };
+      f.added += c.added;
+      f.removed += c.removed;
+      files.set(c.path, f);
+    } else if (isCheck(t)) {
+      const ok = checkRow(t).ok;
+      if (ok === false) failed++;
+      else if (ok) passed++; // still running: the step header says "now: …"
+    } else if (t.name === "Bash") commands++;
+    else if (LOOK.has(t.name)) looked++;
+  }
+  const tally: StepTally[] = [
+    { n: edits, label: edits === 1 ? "edit" : "edits", tone: "now" },
+    { n: passed, label: passed === 1 ? "check passed" : "checks passed", tone: "done" },
+    { n: failed, label: "failed", tone: "error" },
+    { n: commands, label: commands === 1 ? "command" : "commands", tone: "todo" },
+    { n: looked, label: looked === 1 ? "read or search" : "reads and searches", tone: "deferred" },
+  ];
+  return { tally: tally.filter((x) => x.n > 0), files: [...files.values()] };
+}

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Diff } from "./Diff";
 import { Mark } from "./Turn";
 import { pointer } from "./pointer";
-import { checkRow, type EditCard } from "../picker/logCards";
+import { checkRow, stepSummary, type EditCard, type StepTally } from "../picker/logCards";
 import type { TranscriptItem } from "../state/types";
 
 // Task log cards (MR-75): a file edit as a Snippet card, a run of checks as a Verification checklist.
@@ -56,5 +56,36 @@ export function CheckList({ tools }: { tools: Tool[] }) {
         );
       })}
     </section>
+  );
+}
+
+// A plan step at a glance (MR-76): a Tally bar of its actions, then the files it touched as
+// Change graph chips (+ new, ~ edited) with their line counts.
+const TONE: Record<StepTally["tone"], string> = { done: "var(--mr-done)", now: "var(--mr-ink)", deferred: "var(--mr-ink-3)", todo: "var(--mr-well)", error: "var(--mr-error)" };
+
+export function StepSummary({ tools, source }: { tools: Tool[]; source: string }) {
+  const { tally, files } = stepSummary(tools);
+  // A bar for one or two actions of one kind only repeats the rows under it.
+  const total = tally.reduce((n, x) => n + x.n, 0);
+  if (tally.length < 2 && total < 3) return null;
+  return (
+    <div data-mr="StepSummary" data-mr-source={source} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 14px 10px 38px" }}>
+      <div style={{ display: "flex", height: 6, gap: 2 }} aria-hidden="true">
+        {tally.map((x) => <span key={x.label} style={{ flex: `${x.n} 1 0`, background: TONE[x.tone] }} />)}
+      </div>
+      <div className="mr-ink2" style={{ display: "flex", flexWrap: "wrap", gap: "2px 14px", fontSize: 12 }}>
+        {tally.map((x) => <span key={x.label}><strong style={{ color: x.tone === "todo" ? "var(--mr-ink-2)" : TONE[x.tone] }}>{x.n}</strong> {x.label}</span>)}
+      </div>
+      {files.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {files.map((f) => (
+            <span key={f.path} title={f.path} className="mr-mono" style={{ padding: "4px 8px", background: "var(--mr-well)", fontSize: 12 }}>
+              <b style={{ color: f.mark === "+" ? "var(--mr-done)" : "var(--mr-ink-2)" }}>{f.mark}</b> {f.label}
+              <span className="mr-dim"> {f.added > 0 && `+${f.added}`}{f.added > 0 && f.removed > 0 && " "}{f.removed > 0 && `−${f.removed}`}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
