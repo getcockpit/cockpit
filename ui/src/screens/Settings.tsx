@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Key } from "../components";
 import { api } from "../state/store";
 import { sessionTitle } from "../picker/title";
+import { isAppChange } from "../picker/queue";
 import type { AppState, MrEvent } from "../state/types";
 
 // Settings (decision 25): theme, and the history of your own changes to the app — collected on a
@@ -22,7 +23,16 @@ type Build = { id: string; sha: string; branch: string; worktree: string; at: nu
 
 export function Settings({ state, onClose, onOpenSession }: { state: AppState; onClose: () => void; onOpenSession: (id: string) => void }) {
   // Your god-mode reports, newest first, with where each one is (MR-47).
-  const reports = state.order.map((id) => state.sessions[id]).filter((x) => /^God-mode mark/.test(x.title)).reverse()
+  const [styleAsk, setStyleAsk] = useState("");
+  const restyle = async () => {
+    if (!styleAsk.trim()) return;
+    try {
+      const repo = await invoke<string>("app_repo_path");
+      const id = await api.start(repo, `Restyle the app: ${styleAsk.trim()}\n\nThis is Minority report's own repo. Change the look only through the design tokens in ui/src/design/tokens.css (colours, fonts, spacing variables; add or adjust a theme block if needed) and, only if a token can't express it, the shared styles in ui/src/design/components.css. Components must keep using var(--mr-*). Keep the signal colours' roles (amber = needs you, red = error, green = done, teal = selected) and light mode only. Run \`cd ui && bun run test && bun run build\`, then commit on this branch as one commit titled "Style: <what changed>". The user applies it to their app from the wall.`, "blank", true);
+      setStyleAsk(""); onClose(); onOpenSession(id);
+    } catch (e) { setMsg(String(e)); }
+  };
+  const reports = state.order.map((id) => state.sessions[id]).filter((x) => isAppChange(x)).reverse()
     .map((x) => ({ s: x, state: x.fixApplied ? "Applied" : x.status === "working" || x.status === "starting" ? "Fixing…" : x.status === "error" ? "Fix failed" : "Ready to apply" }));
   const [hist, setHist] = useState<History | null>(null);
   const [builds, setBuilds] = useState<Build[]>([]);
@@ -59,8 +69,8 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
       <div style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <div className="mr-row mr-band" style={{ padding: "12px 16px" }}><strong>Settings</strong><span className="mr-grow" /><Key onClick={() => { onClose(); api.report(); }}>Report a bug</Key><Key onClick={() => { void api.log("ui.onboarding_reset", {}); onClose(); }}>Show the intro</Key><Key k="esc" onClick={onClose}>Close</Key></div>
 
-        <section style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-          <h2 className="mr-h">Theme</h2>
+        <section data-mr="Look" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          <h2 className="mr-h">Look <span className="mr-dim" style={{ fontWeight: 400 }}>changes apply instantly</span></h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "var(--mr-gap)" }}>
             {THEMES.map((t) => (
               <button key={t.id} type="button" data-mr="ThemeOption" data-mr-source={t.id} onClick={() => void api.log("ui.theme_set", { theme: t.id })}
@@ -71,15 +81,24 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
               </button>
             ))}
           </div>
+          <div className="mr-row" style={{ gap: 18, flexWrap: "wrap", marginTop: 4 }}>
+            <Segmented label="Text size" value={String(state.look.scale)} options={[["0.9", "Smaller"], ["1", "Default"], ["1.12", "Larger"], ["1.25", "Largest"]]} onPick={(v) => void api.log("ui.look_set", { scale: Number(v) })} />
+            <Segmented label="Density" value={state.look.density} options={[["compact", "Compact"], ["default", "Default"], ["roomy", "Roomy"]]} onPick={(v) => void api.log("ui.look_set", { density: v })} />
+          </div>
+          <form className="mr-row" style={{ gap: 8, marginTop: 4 }} onSubmit={(e) => { e.preventDefault(); void restyle(); }}>
+            <input className="mr-input" value={styleAsk} onChange={(e) => setStyleAsk(e.target.value)} placeholder="Describe a change to the look, e.g. warmer greys and a bigger wall title" aria-label="Describe a change to the app's look" style={{ flex: 1, background: "var(--mr-well)" }} />
+            <Key k="↵" onClick={() => void restyle()} disabled={!styleAsk.trim()}>Restyle</Key>
+          </form>
+          <span className="mr-dim" style={{ fontSize: 12 }}>Restyle starts a session on the app's own code. When it's done, apply it from the wall like a bug fix; undo it any time under Your changes.</span>
         </section>
 
         {reports.length > 0 && (
           <section data-mr="Reports" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-            <h2 className="mr-h">Your bug reports <span className="mr-dim" style={{ fontWeight: 400 }}>each one runs a fix session; apply its fix from there</span></h2>
+            <h2 className="mr-h">Your reports and restyles <span className="mr-dim" style={{ fontWeight: 400 }}>each runs a session on the app; apply it from the wall or the session</span></h2>
             {reports.map(({ s, state }) => (
               <button key={s.id} type="button" onClick={() => { onClose(); onOpenSession(s.id); }} className="mr-row" style={{ padding: "8px 10px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
                 <span style={{ width: 16, color: state === "Applied" ? "var(--mr-done)" : state === "Ready to apply" ? "var(--mr-needs-ink)" : "var(--mr-ink-3)" }}>{state === "Applied" ? "✓" : state === "Ready to apply" ? "◆" : "…"}</span>
-                <span className="mr-grow mr-ellipsis">{sessionTitle(s).replace(/^Fix: /, "")}</span>
+                <span className="mr-grow mr-ellipsis">{sessionTitle(s)}</span>
                 <span className="mr-dim">{state}</span>
               </button>
             ))}
@@ -100,7 +119,7 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
             <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>{hist?.worktree}</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
-            {(hist?.changes ?? []).filter((c) => c.mine_only).length === 0 && <span className="mr-dim">No changes of your own yet. God-mode fixes appear above as “Apply”.</span>}
+            {(hist?.changes ?? []).filter((c) => c.mine_only).length === 0 && <span className="mr-dim">Nothing yet. Fixes and restyles you apply land here, each with Revert.</span>}
             {(hist?.changes ?? []).filter((c) => c.mine_only).map((c) => {
               const b = buildOf(c.sha);
               return (
@@ -149,6 +168,20 @@ export function Settings({ state, onClose, onOpenSession }: { state: AppState; o
           ))}
         </section>
         {msg && <div style={{ padding: "0 16px 16px", color: msg.includes("fail") || msg.includes("can't") || msg.includes("conflict") ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{msg}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Segmented({ label, value, options, onPick }: { label: string; value: string; options: [string, string][]; onPick: (v: string) => void }) {
+  return (
+    <div className="mr-row" style={{ gap: 8 }}>
+      <span className="mr-dim">{label}</span>
+      <div role="radiogroup" aria-label={label} className="mr-row" style={{ gap: 0, background: "var(--mr-well)", padding: 3 }}>
+        {options.map(([v, l]) => (
+          <button key={v} type="button" role="radio" aria-checked={value === v} onClick={() => onPick(v)}
+            style={{ border: 0, padding: "5px 12px", font: "inherit", cursor: "pointer", background: value === v ? "var(--mr-ink)" : "transparent", color: value === v ? "var(--mr-tile)" : "var(--mr-ink)" }}>{l}</button>
+        ))}
       </div>
     </div>
   );
