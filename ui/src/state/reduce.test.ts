@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay, workspaceFolder } from "./reduce";
-import { pickDecision, pickTile, bashRisk, needsLayer2, wantsDiagram } from "../picker/pick";
+import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
 import type { MrEvent } from "./types";
 
@@ -173,7 +173,7 @@ test("the theme is set through the log", () => {
   expect(replay([]).theme).toBe("control-room");
 });
 
-test("layer 3 asks for a diagram of a long step list once, and stores the answer", () => {
+test("layer 3 stores a diagram, and remembers when there was nothing to draw", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
   const plan = "Here's the plan.\n" + ["Reproduce the bug with a failing test", "Find where the token expiry is read", "Fix the off-by-one in the comparison", "Run the whole suite and the e2e check"].map((l, i) => `${i + 1}. ${l} and note anything surprising along the way, then report back.`).join("\n");
   const base = [
@@ -181,15 +181,12 @@ test("layer 3 asks for a diagram of a long step list once, and stores the answer
     ev("D2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: plan }] } } }),
     ev("D3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "x" } }),
   ];
-  expect(wantsDiagram(replay(base).sessions.s)?.id).toBe("D2:0");
   const diagram = { title: "Fix", nodes: [{ id: "a", label: "Reproduce", kind: "step" }, { id: "b", label: "Fix", kind: "step" }, { id: "c", label: "Suite green", kind: "done" }], edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }] };
   const after = replay([...base, ev("D4", "picker.layer3", { item_id: "D2:0", diagram })]);
   expect(after.sessions.s.diagrams["D2:0"]?.nodes).toHaveLength(3);
-  expect(wantsDiagram(after.sessions.s)).toBeNull();
-  // "Nothing worth drawing" is remembered too, so it isn't asked again.
-  expect(wantsDiagram(replay([...base, ev("D4", "picker.layer3", { item_id: "D2:0", diagram: null })]).sessions.s)).toBeNull();
-  // Short chat never triggers it.
-  expect(wantsDiagram(replay([base[0], ev("D2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "1. a\n2. b\n3. c" }] } } }), base[2]]).sessions.s)).toBeNull();
+  // "Nothing worth drawing" is remembered too, so the button says so instead of drawing.
+  const none = replay([...base, ev("D4", "picker.layer3", { item_id: "D2:0", diagram: null })]).sessions.s.diagrams;
+  expect("D2:0" in none && none["D2:0"] === null).toBe(true);
 });
 
 test("the flow layout ranks by longest path and survives cycles", () => {
