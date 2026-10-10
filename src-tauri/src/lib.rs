@@ -56,6 +56,8 @@ pub fn run() {
             sidecar::session_start,
             sidecar::session_send,
             sidecar::session_interrupt,
+            sidecar::session_set_model,
+            sidecar::models_refresh,
             sidecar::session_stop,
             sidecar::permission_respond,
             sidecar::tool_result,

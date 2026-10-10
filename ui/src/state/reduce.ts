@@ -4,6 +4,7 @@ export const initialState: AppState = {
   sessions: {},
   order: [],
   usage: { fiveHour: null, weekly: null, resetsAt: null, weeklyResetsAt: null },
+  models: [],
   sidecar: { up: false, claude: null },
   lastEventId: null,
   dismissed: [],
@@ -21,7 +22,7 @@ export const initialState: AppState = {
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, kind, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
+    id, kind, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
     pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
   };
 }
@@ -69,6 +70,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const f = p.five_hour as { utilization: number; resetsAt: number | null } | null, w = p.seven_day as { utilization: number; resetsAt: number | null } | null;
     return { ...next, account, usage: { fiveHour: f?.utilization ?? next.usage.fiveHour, weekly: w?.utilization ?? next.usage.weekly, resetsAt: f?.resetsAt ?? next.usage.resetsAt, weeklyResetsAt: w?.resetsAt ?? next.usage.weeklyResetsAt } };
   }
+  // An empty list is a failed lookup: keep the rows we had.
+  if (ev.kind === "sidecar.models") return Array.isArray(p.models) && p.models.length ? { ...next, models: p.models as AppState["models"] } : next;
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
   if (ev.kind === "ui.workspace_created") return { ...next, workspaces: [...next.workspaces, { id: String(p.id), name: String(p.name), configDir: (p.config_dir as string) ?? null, folder: null }] };
@@ -107,6 +110,18 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if ((ev.kind === "ui.session_archived" || ev.kind === "ui.session_unarchived") && sid && next.sessions[sid]) {
     return { ...next, sessions: { ...next.sessions, [sid]: { ...next.sessions[sid], archivedAt: ev.kind === "ui.session_archived" ? ev.created_at : null } } };
+  }
+  // Model and effort (MR-73): your pick shows at once; Claude Code's answer confirms or refuses it.
+  // Settings, not activity: they don't touch the session's status or sparkline.
+  if (ev.kind === "ui.model_set" && sid && next.sessions[sid]) {
+    const s = next.sessions[sid];
+    const str = (v: unknown) => (typeof v === "string" ? v : null);
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...s, modelError: null, ...("model" in p ? { modelChoice: str(p.model) } : {}), ...("effort" in p ? { effort: str(p.effort) } : {}) } } };
+  }
+  if (ev.kind === "sidecar.model_set" && sid && next.sessions[sid]) {
+    const s = next.sessions[sid];
+    const switched = p.ok && typeof p.model === "string" ? { model: p.model } : {};
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...s, ...switched, modelError: p.ok ? null : String(p.error ?? "Claude Code refused the switch") } } };
   }
   if (ev.kind === "picker.layer3" && sid) {
     const s = next.sessions[sid];
