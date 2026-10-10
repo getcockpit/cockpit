@@ -221,13 +221,19 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
           : s.todos.length > 0
             ? <ProgressTrack segs={planSegs(s.todos)} pct={tile.progress === null ? null : Math.round(tile.progress * 100)} left={tile.step} source={s.id} fill />
             : <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>}
-        <div className="mr-row" style={{ alignItems: "flex-end" }}>
-          <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tile.doing}</span>
+        {tileNote(tile) && <div className="mr-row" style={{ alignItems: "flex-end" }}>
+          <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tileNote(tile)}</span>
           <Sparkline values={s.activity} />
-        </div>
+        </div>}
       </div>
     </button>
   );
+}
+
+// The tile's last line, only when it tells you something: what Claude asks or wants, or where it
+// stopped. While it simply works, the running tool or command is noise the track already covers.
+export function tileNote(tile: TileSpec): string {
+  return tile.state === "working" || tile.state === "almost" || tile.state === "starting" ? "" : tile.doing;
 }
 
 // When a limit window resets: a short countdown shown inline, and the exact time for the tooltip.
