@@ -115,6 +115,12 @@
 .mr-track[data-live] .mr-track-segs i[data-seg="current"] { animation: mr-track-pulse 1.2s ease-in-out infinite; }
 .mr-track[data-stale] .mr-track-segs i[data-seg="current"] { background: var(--mr-needs); animation: none; }
 @keyframes mr-track-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.mr-track-fill { display: flex; height: 6px; background: var(--mr-well); }
+.mr-track-fill i { display: block; height: 6px; transition: width .3s; }
+.mr-track-fill i[data-seg="done"] { background: var(--mr-ink-2); }
+.mr-track-fill i[data-seg="current"] { background: var(--mr-ink); }
+.mr-track[data-live] .mr-track-fill i[data-seg="current"] { animation: mr-track-pulse 1.2s ease-in-out infinite; }
+.mr-track[data-stale] .mr-track-fill i[data-seg="current"] { background: var(--mr-needs); animation: none; }
 .mr-track-cap { display: flex; gap: 12px; color: var(--mr-ink-2); font-variant-numeric: tabular-nums; min-width: 0; }
 .mr-track-cap > :first-child { flex: 1; }
 .mr-track-right { flex: none; font-family: var(--mr-mono); font-size: 12px; }
