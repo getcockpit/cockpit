@@ -107,10 +107,10 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
 
   const m = MODES.find((x) => x.id === mode)!;
   return (
-    <div role="dialog" aria-label="Start something" onKeyDown={onKey}
+    <div role="dialog" className="mr-scrim" aria-label="Start something" onKeyDown={onKey}
       style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)", zIndex: 10 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
+      <div className="mr-sheet" style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)" }} onSubmit={(e) => { e.preventDefault(); void start(text); }}>
           {mode === "review" || mode === "address"
             ? <span className="mr-dim" style={{ flex: "0 1 240px", padding: "0 8px" }} title="Review and Address run in the PR's own clone">Runs in the PR's repo</span>

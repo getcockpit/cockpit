@@ -34,7 +34,7 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
     onSignIn(folderFor.id); setFolderFor(null);
   };
   return (
-    <nav aria-label="Workspaces" className="mr-row" style={{ gap: 2, padding: "0 12px", background: "var(--mr-ink)", minHeight: 36 }}>
+    <nav aria-label="Workspaces" className="mr-row mr-tabs-bar" style={{ gap: 2, padding: "0 12px", background: "var(--mr-ink)", minHeight: 36 }}>
       {state.workspaces.map((w, i) => {
         const n = needs(w.id);
         const on = w.id === active;
@@ -82,7 +82,7 @@ export function WorkspaceSwitcher({ state, docs, active, onSwitch, onClose }: { 
   useEffect(() => setSel(0), [q]);
   const go = (id: string) => { onSwitch(id); onClose(); };
   return (
-    <div role="dialog" aria-label="Switch workspace" data-mr="WorkspaceSwitcher" style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)" }}
+    <div role="dialog" className="mr-scrim" aria-label="Switch workspace" data-mr="WorkspaceSwitcher" style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)" }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       onKeyDown={(e) => {
         const k = keyOf(e);
@@ -91,7 +91,7 @@ export function WorkspaceSwitcher({ state, docs, active, onSwitch, onClose }: { 
         if (k === "ArrowUp") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
         if (k === "Enter" && list[sel]) { e.preventDefault(); go(list[sel].w.id); }
       }}>
-      <div style={{ width: "100%", maxWidth: 480, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
+      <div className="mr-sheet" style={{ width: "100%", maxWidth: 480, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <input autoFocus className="mr-input" placeholder="Switch to…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter workspaces" style={{ margin: 10, fontSize: 16, background: "var(--mr-well)" }} />
         {list.map((x, i) => (
           <button key={x.w.id} type="button" onClick={() => go(x.w.id)} onMouseEnter={() => setSel(i)} className="mr-row"
@@ -125,9 +125,9 @@ export function DeleteWorkspace({ state, docs, id, onClose, onDeleted }: { state
     try { await invoke("workspace_delete", { id, name: ws.name }); onDeleted(); onClose(); } catch (e) { setError(shortError(e)); setBusy(false); }
   };
   return (
-    <div role="dialog" aria-label={`Delete ${ws.name}`} data-mr="DeleteWorkspace" data-mr-source={id} style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)" }}
+    <div role="dialog" className="mr-scrim" aria-label={`Delete ${ws.name}`} data-mr="DeleteWorkspace" data-mr-source={id} style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)" }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} onKeyDown={(e) => { if (keyOf(e) === "Escape") { e.preventDefault(); onClose(); } }}>
-      <form onSubmit={(e) => { e.preventDefault(); void del(); }} style={{ width: "100%", maxWidth: 520, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 12, padding: 18, boxShadow: "inset 4px 0 0 var(--mr-error)" }}>
+      <form onSubmit={(e) => { e.preventDefault(); void del(); }} className="mr-sheet" style={{ width: "100%", maxWidth: 520, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 12, padding: 18, boxShadow: "inset 4px 0 0 var(--mr-error)" }}>
         <strong style={{ fontSize: 18 }}>Delete “{ws.name}”?</strong>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span>{sessions.length ? `${sessions.length} session${sessions.length === 1 ? "" : "s"}` : "No sessions"}{docCount ? ` and ${docCount} working doc${docCount === 1 ? "" : "s"}` : ""} {sessions.length + docCount === 1 ? "moves" : "move"} to Personal's archive as read-only history. They can't be resumed.</span>
