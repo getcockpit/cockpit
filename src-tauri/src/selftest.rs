@@ -100,7 +100,7 @@ pub fn run(app: AppHandle) {
                 "In the current directory, do these steps one at a time: create a.txt containing 'a', then create b.txt containing 'b', then create c.txt containing 'c', then list the directory to check all three exist. Then reply with exactly: SELFTEST DONE".into()
             } else if view_mode() {
                 // No tool named: the visual guidance alone should make Claude compose a view (MR-61).
-                "This is a UI test; nothing here is real and you don't need to look at any files. Give me a status report for a pretend settings refactor: 3 of 5 steps done, 211 tests passing, 1 test failing in the migration, and one open risk (old desktop builds can't read the new format). Then on a final line reply with exactly: SELFTEST DONE".into()
+                std::env::var("MR_VIEW_PROMPT").ok().filter(|p| !p.trim().is_empty()).unwrap_or_else(|| "This is a UI test; nothing here is real and you don't need to look at any files. Give me a status report for a pretend settings refactor: 3 of 5 steps done, 211 tests passing, 1 test failing in the migration, and one open risk (old desktop builds can't read the new format). Then on a final line reply with exactly: SELFTEST DONE".into())
             } else if doc_mode() {
                 "Create a working document titled 'Selftest plan' with the mr doc_create tool. Add a goal block (block_id goal) whose takeaway is 'Prove the doc loop works', and an open question block (section question, block_id q1, takeaway 'Pick a colour') with data options red and blue. Don't decide it. Then reply with exactly: SELFTEST DONE".into()
             } else {
