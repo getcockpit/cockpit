@@ -346,3 +346,28 @@ test("a rollback after a crash at start is shown until dismissed", () => {
   expect(st.recovered).toEqual({ crashedSlot: "b", log: "=== crash at start · slot b\npanicked", at: 7 });
   expect(replay([e("C1", "app.recovered", { crashed_slot: "b" }), e("C2", "ui.recovery_dismissed", {})]).recovered).toBeNull();
 });
+
+describe("model and effort (MR-73)", () => {
+  let n = 0;
+  const ev = (kind: string, payload: Record<string, unknown>, session: string | null = "m"): MrEvent => ({ id: `M${String(++n).padStart(4, "0")}`, session_id: session, kind, payload, anchor: null, created_at: 5000 + n });
+  const base = [ev("ui.session_requested", { prompt: "x", cwd: "/tmp" }), ev("sidecar.session_started", { sdk_session_id: "k", model: "claude-opus-5-5[1m]" })];
+
+  test("the model list is kept, and a failed lookup doesn't wipe it", () => {
+    const rows = [{ value: "haiku", resolved: "claude-haiku-5-5", displayName: "Haiku", description: "", efforts: [] }];
+    const st = replay([ev("sidecar.models", { models: rows }, null), ev("sidecar.models", { models: [], error: "timed out" }, null)]);
+    expect(st.models).toEqual(rows);
+  });
+
+  test("a pick shows at once, a confirm switches the model, and a refusal is shown without losing status", () => {
+    const st = replay([...base, ev("ui.model_set", { model: "haiku", effort: "low" }), ev("sidecar.model_set", { model: "haiku", effort: "low", ok: true })]);
+    const s = st.sessions.m;
+    expect([s.modelChoice, s.effort, s.model, s.modelError, s.status]).toEqual(["haiku", "low", "haiku", null, "working"]);
+    const bad = replay([...base, ev("ui.model_set", { effort: "max" }), ev("sidecar.model_set", { effort: "max", ok: false, error: "nope" })]).sessions.m;
+    expect([bad.modelChoice, bad.effort, bad.modelError]).toEqual([null, "max", "nope"]);
+  });
+
+  test("null goes back to the default; a missing key leaves the other as it is", () => {
+    const s = replay([...base, ev("ui.model_set", { model: "sonnet", effort: "high" }), ev("ui.model_set", { model: null })]).sessions.m;
+    expect([s.modelChoice, s.effort]).toEqual([null, "high"]);
+  });
+});
