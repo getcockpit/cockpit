@@ -37,15 +37,17 @@ export function StateMark({ s }: { s: TileSpec["state"] }) {
 export type Seg = "done" | "current" | "todo";
 // `fill` draws one continuous bar (done share filled, the current step pulsing after it) for the
 // higher levels, header and tiles, where "how far along" matters more than the step count (MR-63).
-// `pct` leads the caption as a bold figure, so the share done reads at a glance.
+// `pct` is the headline: a large figure at the end of the bar, in the same place on every tile, so
+// "how far along" reads first; the step and timer stay a quiet caption below.
 export function ProgressTrack({ segs, left, right, live, stale, source, fill, pct }: { segs: Seg[]; left: ReactNode; right?: ReactNode; live?: boolean; stale?: boolean; source?: string; fill?: boolean; pct?: number | null }) {
   const n = Math.max(1, segs.length), done = segs.filter((s) => s === "done").length, cur = segs.includes("current") ? 1 : 0;
+  const bar = fill
+    ? <div className="mr-track-fill" aria-hidden="true"><i data-seg="done" style={{ width: `${(done / n) * 100}%` }} /><i data-seg="current" style={{ width: `${(cur / n) * 100}%` }} /></div>
+    : <div className="mr-track-segs" aria-hidden="true">{segs.map((s, i) => <i key={i} data-seg={s} />)}</div>;
   return (
     <div className="mr-track" data-mr="ProgressTrack" data-mr-source={source} data-live={live || undefined} data-stale={stale || undefined} data-fill={fill || undefined} role="progressbar" aria-valuenow={Math.round((done / n) * 100)}>
-      {fill
-        ? <div className="mr-track-fill" aria-hidden="true"><i data-seg="done" style={{ width: `${(done / n) * 100}%` }} /><i data-seg="current" style={{ width: `${(cur / n) * 100}%` }} /></div>
-        : <div className="mr-track-segs" aria-hidden="true">{segs.map((s, i) => <i key={i} data-seg={s} />)}</div>}
-      <div className="mr-track-cap">{pct != null && <b className="mr-track-pct">{pct}%</b>}<span className="mr-ellipsis">{left}</span>{right && <span className="mr-track-right">{right}</span>}</div>
+      {pct != null ? <div className="mr-track-bar">{bar}<b className="mr-track-pct">{pct}%</b></div> : bar}
+      <div className="mr-track-cap"><span className="mr-ellipsis">{left}</span>{right && <span className="mr-track-right">{right}</span>}</div>
     </div>
   );
 }
