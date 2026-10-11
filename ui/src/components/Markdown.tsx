@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { fenceCommand, inlineCommand } from "../picker/commands";
+import { RunKey } from "./RunCommand";
 
 // A deliberately small Markdown renderer for doc bodies: headings, lists, code fences, tables,
 // bold and inline code. Text is never injected as HTML.
@@ -10,7 +12,13 @@ export function Markdown({ text }: { text: string }) {
     if (l.startsWith("```")) {
       const code: string[] = [];
       for (i++; i < lines.length && !lines[i].startsWith("```"); i++) code.push(lines[i]);
-      out.push(<pre key={i} className="mr-code" style={{ fontSize: 12 }}>{code.join("\n")}</pre>);
+      const cmd = fenceCommand(l.slice(3), code);
+      out.push(
+        <div key={i} style={{ position: "relative" }}>
+          <pre className="mr-code" style={{ fontSize: 12, margin: 0 }}>{code.join("\n")}</pre>
+          {cmd && <span style={{ position: "absolute", top: 4, right: 4 }}><RunKey command={cmd} /></span>}
+        </div>,
+      );
     } else if (/^\s*[-*] /.test(l)) {
       const items: string[] = [];
       for (; i < lines.length && /^\s*[-*] /.test(lines[i]); i++) items.push(lines[i].replace(/^\s*[-*] /, ""));
@@ -43,10 +51,16 @@ export function Markdown({ text }: { text: string }) {
 }
 
 export function inline(t: string): ReactNode[] {
-  return t.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g).map((part, i) =>
+  return t.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g).map((part, i, parts) =>
     part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong>
     : part.length > 2 && part.startsWith("*") && part.endsWith("*") ? <em key={i}>{part.slice(1, -1)}</em>
-    : part.startsWith("`") && part.endsWith("`") ? <code key={i} className="mr-mono" style={{ background: "var(--mr-well)", padding: "0 4px" }}>{part.slice(1, -1)}</code>
+    : part.startsWith("`") && part.endsWith("`") ? <Code key={i} code={part.slice(1, -1)} before={parts[i - 1] ?? ""} />
     : part,
   );
+}
+
+// Inline code; a command Claude tells you to run gets a Run button after it (MR-85).
+function Code({ code, before }: { code: string; before: string }) {
+  const cmd = inlineCommand(code, before);
+  return <><code className="mr-mono" style={{ background: "var(--mr-well)", padding: "0 4px" }}>{code}</code>{cmd && <RunKey command={cmd} compact />}</>;
 }
