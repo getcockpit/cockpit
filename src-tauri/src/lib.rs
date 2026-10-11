@@ -1,4 +1,5 @@
 mod changes;
+mod cockpit_layer;
 mod daily;
 mod docs;
 mod eventlog;
@@ -93,6 +94,8 @@ pub fn run() {
             personal::fix_apply,
             personal::personal_sync,
             layer2::layer2_classify,
+            cockpit_layer::cockpit_save_key,
+            cockpit_layer::cockpit_status,
             layer3::layer3_diagram,
             sidecar::limits_refresh,
             gh::pr_repo,
