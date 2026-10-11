@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { autoReviewDefault, initialState, introOpen, replay, workspaceFolder } from "./reduce";
+import { autoReviewDefault, elsewhere, initialState, introOpen, replay, workspaceFolder } from "./reduce";
+import { dedupe } from "./store";
 import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
 import type { MrEvent } from "./types";
@@ -506,5 +507,56 @@ describe("auto-review default (MR-93)", () => {
     const off = { ...initialState, autoReview: autoReviewDefault({ VITE_MR_PACKAGED: "1" }) };
     const ev = { id: "01A", session_id: null, kind: "ui.auto_review_set", payload: { on: true }, anchor: null, created_at: 1 };
     expect(replay([ev] as never, off).autoReview).toBe(true);
+  });
+});
+
+// Dev and /Applications share one log (MR-99): each row says which copy wrote it.
+describe("several copies of the app on one log", () => {
+  let n = 0;
+  const ev = (kind: string, origin: string | null, payload: Record<string, unknown> = {}, session: string | null = null): MrEvent => ({ id: `E${String(++n).padStart(4, "0")}`, session_id: session, kind, payload, anchor: null, created_at: 2_000_000 + n * 1000, origin });
+  const twoCopies = () => [
+    ev("app.started", "A"), ev("sidecar.ready", "A"),
+    ev("ui.session_requested", "A", { prompt: "mine", cwd: "/tmp/a" }, "sa"), ev("sidecar.session_started", "A", { sdk_session_id: "x" }, "sa"),
+    ev("ui.run_started", "A", { run_id: "r1", command: "bun dev" }, "sa"),
+    ev("app.started", "B"), ev("sidecar.ready", "B"),
+    ev("ui.session_requested", "B", { prompt: "theirs", cwd: "/tmp/b" }, "sb"), ev("sidecar.session_started", "B", { sdk_session_id: "y" }, "sb"),
+  ];
+
+  test("another copy starting doesn't stop this copy's sessions or runs", () => {
+    const s = replay(twoCopies(), { ...initialState, instance: "A" });
+    expect(s.sessions.sa.status).not.toBe("interrupted");
+    expect(s.sessions.sa.runs[0].status).toBe("running");
+    expect(s.sessions.sb.owner).toBe("B");
+  });
+
+  test("a session open in the other copy is shown but driven there", () => {
+    const s = replay(twoCopies(), { ...initialState, instance: "A" });
+    expect(elsewhere(s, s.sessions.sb)).toBe(true);
+    expect(elsewhere(s, s.sessions.sa)).toBe(false);
+  });
+
+  test("when the other copy goes, its sessions stop and can be resumed here", () => {
+    const s = replay([...twoCopies(), ev("app.stopped", "A", { origin: "B", reason: "gone" })], { ...initialState, instance: "A" });
+    expect(s.sessions.sb.status).toBe("interrupted");
+    expect(elsewhere(s, s.sessions.sb)).toBe(false);
+    expect(s.sessions.sa.status).not.toBe("interrupted");
+  });
+
+  test("rows from before origins keep the old rule: a start stops everything", () => {
+    const s = replay([ev("sidecar.ready", null), ev("ui.session_requested", null, { prompt: "old" }, "so"), ev("sidecar.session_started", null, { sdk_session_id: "z" }, "so"), ev("sidecar.ready", "A")]);
+    expect(s.sessions.so.status).toBe("interrupted");
+  });
+});
+
+describe("live events from two copies", () => {
+  const e = (id: string, at: number): MrEvent => ({ id, session_id: null, kind: "k", payload: {}, anchor: null, created_at: at });
+
+  test("a late row with an older id still applies; repeats don't", () => {
+    const d = dedupe();
+    d.replayed([e("E1", 1), e("E2", 2)]);
+    expect(d.fresh(e("E2", 2))).toBe(false);
+    expect(d.fresh(e("E4", 4))).toBe(true);
+    expect(d.fresh(e("E3", 3))).toBe(true);
+    expect(d.fresh(e("E3", 3))).toBe(false);
   });
 });
