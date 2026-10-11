@@ -154,6 +154,7 @@ export type AppState = {
   cockpit: CockpitMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;
+  onboardingResetAt: string | null; // id of the last Settings → Show the intro
   recovered: { crashedSlot: string; log: string; at: number } | null; // the dev loop rolled back after a crash at start (MR-70)
   lastBuildAt: number | null; // last successful self-build
   update: UpdateState;

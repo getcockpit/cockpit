@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { replay, workspaceFolder } from "./reduce";
+import { initialState, introOpen, replay, workspaceFolder } from "./reduce";
 import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
 import type { MrEvent } from "./types";
@@ -468,4 +468,17 @@ describe("slash commands and MCP servers (MR-87)", () => {
     expect(after.mcp).toMatchObject({ busy: null, done: { ok: false, error: "401" }, servers: [{ status: "failed", error: "401" }] });
     expect(after.status).toBe(before.status);
   });
+});
+
+// God-mode mark: "Show the intro" in Settings did nothing once the intro had been closed in this run.
+test("Show the intro reopens the intro after it was closed in the same run", () => {
+  const e = (id: string, kind: string): MrEvent => ({ id, session_id: null, kind, payload: {}, anchor: null, created_at: 1 });
+  expect(introOpen(initialState, null)).toBe(false); // waits for the replay
+  expect(introOpen(replay([e("A1", "app.started")]), null)).toBe(true); // first run
+  const closedAt = "O1"; // closed (finished or skipped) when the last event was O1
+  const done = [e("A1", "app.started"), e("O1", "ui.onboarded")];
+  expect(introOpen(replay(done), closedAt)).toBe(false);
+  expect(introOpen(replay([...done, e("O2", "ui.onboarding_reset")]), closedAt)).toBe(true);
+  // Closed before ui.onboarded arrives: stays closed.
+  expect(introOpen(replay([e("A1", "app.started"), e("X1", "ui.other")]), "A1")).toBe(false);
 });
