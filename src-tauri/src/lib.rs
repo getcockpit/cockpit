@@ -13,6 +13,7 @@ mod selftest;
 mod sidecar;
 mod terminal;
 mod update;
+mod usage;
 mod views;
 mod voice;
 mod workspaces;
@@ -42,6 +43,7 @@ pub fn run() {
             for ev in log.list(None, None, i64::MAX)? {
                 docs.apply(&ev);
             }
+            app.manage(usage::Usage::open(&dir.join("events.sqlite"))?);
             app.manage(log);
             app.manage(docs);
             update::on_start(app.handle());
@@ -102,7 +104,9 @@ pub fn run() {
             workspaces::workspace_delete,
             workspaces::workspace_sign_in,
             docs::doc_feedback,
-            docs::doc_archive
+            docs::doc_archive,
+            usage::usage_track,
+            usage::usage_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
