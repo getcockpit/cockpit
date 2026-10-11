@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -59,6 +59,14 @@ fn view_mode() -> bool {
 fn layer_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "layer")
 }
+
+/// Skip on a question card (I75): Claude's question is declined with the card's Skip message.
+fn skip_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "skip")
+}
+
+/// What the card's Skip sends; the same text as `SKIPPED` in ui/src/components/index.tsx.
+const SKIPPED: &str = "I skipped this question: none of the options fit. Don't ask it again. Carry on with your best judgment and say in one line what you assumed, or stop if you can't go on without it.";
 
 fn doc_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "doc")
@@ -146,7 +154,11 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 }
                 input["answers"] = serde_json::Value::Object(answers);
             }
-            let decision = serde_json::json!({ "behavior": "allow", "updatedInput": input });
+            let decision = if skip_mode() && payload["tool"] == "AskUserQuestion" {
+                serde_json::json!({ "behavior": "deny", "message": SKIPPED })
+            } else {
+                serde_json::json!({ "behavior": "allow", "updatedInput": input })
+            };
             let _ = crate::sidecar::permission_respond(
                 app.clone(),
                 app.state::<crate::sidecar::Sidecar>(),
