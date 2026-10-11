@@ -1,5 +1,5 @@
 import { needsQueue } from "../picker/queue";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { keyOf } from "../components/keys";
 import { shortError } from "../components/ErrorLine";
 import { invoke } from "@tauri-apps/api/core";
@@ -22,32 +22,72 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
   const [folderFor, setFolderFor] = useState<{ id: string; name: string } | null>(null);
   const needs = (ws: string) => needsIn(state, docs, ws);
   // Drag a tab to reorder (MR-84). Pointer events, not HTML5 drag: the webview's file drop takes those.
-  // Midpoints are measured once at press, so the preview doesn't flicker as tabs shift under the pointer.
-  const [drag, setDrag] = useState<{ id: string; x0: number; mids: { id: string; mid: number }[]; to: number; moved: boolean } | null>(null);
+  // The tab follows the pointer, the others slide aside to open its slot, and on drop it glides in.
+  // Slots are measured once at press, so nothing flickers as tabs shift under the pointer.
+  const [drag, setDrag] = useState<{ id: string; x0: number; dx: number; slots: { id: string; left: number; width: number }[]; from: number; to: number; moved: boolean } | null>(null);
   const [held, setHeld] = useState<string[] | null>(null);
   const tabs = useRef(new Map<string, HTMLElement>());
   const dragged = useRef(false);
+  const settle = useRef<{ id: string; left: number } | null>(null);
   const ids = state.workspaces.map((w) => w.id).join(" ");
   useEffect(() => setHeld(null), [ids]);
   const base = held ?? state.workspaces.map((w) => w.id);
-  const order = drag?.moved ? (() => { const rest = base.filter((x) => x !== drag.id); rest.splice(drag.to, 0, drag.id); return rest; })() : base;
   const byId = new Map(state.workspaces.map((w) => [w.id, w]));
+  const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const GAP = 2, EASE = "transform 160ms cubic-bezier(.2,.7,.3,1)";
+  // FLIP: after the drop re-renders in the new order, start the tab where it was let go and ease it home.
+  useLayoutEffect(() => {
+    const s = settle.current, el = s && tabs.current.get(s.id);
+    settle.current = null;
+    if (!s || !el || still) return;
+    const delta = s.left - el.getBoundingClientRect().left;
+    if (Math.abs(delta) < 1) return;
+    el.style.transition = "none";
+    el.style.transform = `translateX(${delta}px)`;
+    void el.offsetWidth;
+    el.style.transition = EASE;
+    el.style.transform = "";
+  });
+  const shift = (id: string): number => {
+    if (!drag?.moved) return 0;
+    if (id === drag.id) return drag.dx;
+    const j = base.indexOf(id), w = drag.slots[drag.from].width + GAP;
+    if (drag.from < drag.to && j > drag.from && j <= drag.to) return -w;
+    if (drag.to < drag.from && j >= drag.to && j < drag.from) return w;
+    return 0;
+  };
+  // Where a tab will land if dropped now, so ⌘1–9 renumber live during a drag.
+  const slot = (id: string, i: number): number => {
+    if (!drag?.moved) return i;
+    if (id === drag.id) return drag.to;
+    return i + Math.sign(shift(id));
+  };
   const press = (e: React.PointerEvent, id: string) => {
     if (e.button !== 0) return;
-    const mids = base.filter((x) => x !== id).map((x) => { const r = tabs.current.get(x)?.getBoundingClientRect(); return { id: x, mid: r ? r.left + r.width / 2 : 0 }; });
+    const slots = base.map((x) => { const r = tabs.current.get(x)?.getBoundingClientRect(); return { id: x, left: r?.left ?? 0, width: r?.width ?? 0 }; });
     e.currentTarget.setPointerCapture(e.pointerId);
-    setDrag({ id, x0: e.clientX, mids, to: base.indexOf(id), moved: false });
+    setDrag({ id, x0: e.clientX, dx: 0, slots, from: base.indexOf(id), to: base.indexOf(id), moved: false });
   };
   const move = (e: React.PointerEvent) => {
     if (!drag) return;
     if (!drag.moved && Math.abs(e.clientX - drag.x0) < 5) return;
-    setDrag({ ...drag, moved: true, to: drag.mids.filter((m) => m.mid < e.clientX).length });
+    const me = drag.slots[drag.from], first = drag.slots[0], last = drag.slots[drag.slots.length - 1];
+    // Kept inside the row of tabs. It takes a neighbour's slot once its leading edge passes that
+    // neighbour's middle, so a wide tab can still swap with a narrow one at the end of the row.
+    const dx = Math.max(first.left - me.left, Math.min(last.left + last.width - me.width - me.left, e.clientX - drag.x0));
+    const l = me.left + dx, r = l + me.width;
+    const mid = (x: { left: number; width: number }) => x.left + x.width / 2;
+    const to = drag.from + drag.slots.slice(drag.from + 1).filter((x) => mid(x) < r).length - drag.slots.slice(0, drag.from).filter((x) => mid(x) > l).length;
+    setDrag({ ...drag, moved: true, dx, to });
   };
   const drop = () => {
     if (!drag) return;
     setDrag(null);
     if (!drag.moved) return;
     dragged.current = true;
+    const order = base.filter((x) => x !== drag.id);
+    order.splice(drag.to, 0, drag.id);
+    settle.current = { id: drag.id, left: drag.slots[drag.from].left + drag.dx };
     if (order.join(" ") !== base.join(" ")) { setHeld(order); void invoke("workspace_reorder", { order }); }
   };
   const loggedOut = (ws: string) => Object.values(state.sessions).some((s) => s.workspace === ws && /not logged in|\/login/i.test(s.error ?? "") );
@@ -64,11 +104,12 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
   };
   return (
     <nav aria-label="Workspaces" className="mr-row mr-tabs-bar" style={{ gap: 2, padding: "0 12px", background: "var(--mr-ink)", minHeight: 36 }}>
-      {order.map((wid, i) => {
+      {base.map((wid, i) => {
         const w = byId.get(wid);
         if (!w) return null;
         const n = needs(w.id);
         const on = w.id === active;
+        const lifted = !!drag?.moved && drag.id === w.id;
         return renaming === w.id ? (
           <form key={w.id} onSubmit={(e) => { e.preventDefault(); void invoke("workspace_rename", { id: w.id, name }); setRenaming(null); }}>
             <input autoFocus className="mr-input" style={{ minHeight: 28, width: 160, fontSize: 13 }} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setRenaming(null)} aria-label="Workspace name" />
@@ -77,10 +118,11 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
           <button key={w.id} type="button" data-mr="WorkspaceTab" data-mr-source={w.id} ref={(el) => { if (el) tabs.current.set(w.id, el); else tabs.current.delete(w.id); }}
             onClick={() => { if (dragged.current) { dragged.current = false; return; } onSwitch(w.id); }} onDoubleClick={() => { if (w.id !== "personal") { setRenaming(w.id); setName(w.name); } }}
             onPointerDown={(e) => press(e, w.id)} onPointerMove={move} onPointerUp={drop} onPointerCancel={() => setDrag(null)}
-            className="mr-row" style={{ gap: 8, padding: "8px 14px", border: 0, font: "inherit", cursor: drag?.moved ? "grabbing" : "pointer", touchAction: "none", background: on ? "var(--mr-band)" : "transparent", color: on ? "var(--mr-ink)" : "var(--mr-well)", fontWeight: on ? 700 : 400, boxShadow: drag?.moved && drag.id === w.id ? "inset 0 -3px 0 var(--mr-selected)" : undefined }}
+            className="mr-row" style={{ gap: 8, padding: "8px 14px", border: 0, font: "inherit", cursor: drag?.moved ? "grabbing" : "pointer", touchAction: "none", background: on || lifted ? "var(--mr-band)" : "transparent", color: on || lifted ? "var(--mr-ink)" : "var(--mr-well)", fontWeight: on ? 700 : 400,
+              position: "relative", zIndex: lifted ? 1 : undefined, transform: drag?.moved ? `translateX(${shift(w.id)}px)${lifted ? " translateY(-2px)" : ""}` : undefined, transition: drag?.moved && !lifted && !still ? EASE : undefined, boxShadow: lifted ? "inset 0 -3px 0 var(--mr-selected)" : undefined }}
             title={`${w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}${w.folder ? `\nStarts in ${w.folder}` : ""}\nDrag to reorder`}>
             {w.name}
-            {i < 9 && <kbd className="mr-mono" style={{ fontSize: 11, opacity: 0.55 }}>⌘{i + 1}</kbd>}
+            {slot(w.id, i) < 9 && <kbd className="mr-mono" style={{ fontSize: 11, opacity: 0.55 }}>⌘{slot(w.id, i) + 1}</kbd>}
             {n > 0 && <span className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-needs)", color: "var(--mr-ink)", fontWeight: 700 }}>{n}</span>}
             {loggedOut(w.id) && <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onSignIn(w.id); }} style={{ color: "var(--mr-needs)" }}>sign in</span>}
           </button>
