@@ -6,18 +6,17 @@ import { pointer } from "../components/pointer";
 import { suggest, type Suggestion } from "../picker/suggest";
 import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
-import { Bar, Key, ProgressTrack, Sparkline, StateMark } from "../components";
+import { Bar, Key, ProgressTrack, StateMark } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
 import { isOpenQuestion, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
 import { loadPrs as fetchPrs, PRS_TTL, startCwd } from "../state/prs";
-import type { AppState, SessionState } from "../state/types";
+import type { AppState, SessionState, Todo } from "../state/types";
 import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
 import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
-import { backgroundTasks } from "../components/BackgroundPanel";
 import { plural, sessionTitle } from "../picker/title";
 import { ViewTabs } from "../components/ViewTabs";
 
@@ -211,7 +210,6 @@ export function sideThread(s: SessionState): Promise<string> {
 }
 
 function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; onOpen: (id: string) => void; onDiscover: () => void }) {
-  const bg = backgroundTasks(s).filter((x) => x.live);
   return (
     <button type="button" className="mr-tile" data-mr="Tile" data-mr-source={s.id} data-mr-layer="code" data-s={tile.state} onClick={pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })} aria-label={`Open ${s.title}`}>
       <div className="mr-flag" />
@@ -224,24 +222,26 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
         {s.status === "working" || s.status === "starting"
           ? <LiveTrack s={s} compact />
           : s.todos.length > 0
-            ? <ProgressTrack segs={planSegs(s.todos)} pct={tile.progress === null ? null : Math.round(tile.progress * 100)} left={tile.step} source={s.id} fill />
+            ? <ProgressTrack segs={planSegs(s.todos)} pct={tile.progress === null ? null : Math.round(tile.progress * 100)} left={tileStep(s.todos, tile.step)} source={s.id} fill />
             : <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>}
-        {bg.length > 0 && <span data-mr="TileBackground" data-mr-source={s.id} className="mr-mono mr-ink2 mr-ellipsis" style={{ fontSize: 12 }} title={bg.map((x) => String(x.tool.input.description ?? x.tool.input.command ?? x.tool.name)).join("\n")}>
-          ▸ {bg.length} running in background · {String(bg[0].tool.input.description ?? bg[0].tool.input.command ?? bg[0].tool.name)}
-        </span>}
-        {tileNote(tile) && <div className="mr-row" style={{ alignItems: "flex-end" }}>
-          <span className="mr-grow mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tileNote(tile)}</span>
-          <Sparkline values={s.activity} />
-        </div>}
+        {tileNote(tile) && <span className="mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tileNote(tile)}</span>}
       </div>
     </button>
   );
 }
 
-// The tile's last line, only when it tells you something: what Claude asks or wants, or where it
-// stopped. While it simply works, the running tool or command is noise the track already covers.
+// The tile's last line, only when it needs you: what Claude asks or wants, or where it stopped.
+// Activity (the running tool or command, background tasks, the sparkline) never shows on a tile;
+// the track's caption names the plan step instead (god-mode mark).
 export function tileNote(tile: TileSpec): string {
-  return tile.state === "working" || tile.state === "almost" || tile.state === "starting" ? "" : tile.doing;
+  return tile.state === "needs_you" || tile.state === "interrupted" ? tile.doing : "";
+}
+
+// The track's caption on a resting tile: the name of the plan step in progress (or next up),
+// falling back to the picker's "Step n of m" / "Ready to review".
+export function tileStep(todos: Todo[], fallback: string): string {
+  const t = todos.find((x) => x.status === "in_progress") ?? todos.find((x) => x.status === "pending");
+  return t ? t.activeForm || t.content : fallback;
 }
 
 // When a limit window resets: a short countdown shown inline, and the exact time for the tooltip.
