@@ -68,7 +68,7 @@ describe("notifications (MR-94)", () => {
 });
 
 describe("wayOut: leaving a question when no option fits (I75)", async () => {
-  const { wayOut, ASK_FIRST, SKIPPED } = await import("../components");
+  const { wayOut, pickAnswer, ASK_FIRST, SKIPPED } = await import("../components");
   const q = (question: string) => ({ question });
   test("skip and ask-first decline the question with an instruction for Claude", () => {
     expect(wayOut([q("A?")], { kind: "skip" })).toEqual({ kind: "deny", note: SKIPPED });
@@ -77,6 +77,16 @@ describe("wayOut: leaving a question when no option fits (I75)", async () => {
   test("a typed reply answers one question, or goes back as a note for several", () => {
     expect(wayOut([q("A?")], { kind: "reply", text: "neither" })).toEqual({ kind: "answer", answers: { "A?": "neither" } });
     expect(wayOut([q("A?"), q("B?")], { kind: "reply", text: "neither" })).toEqual({ kind: "deny", note: "None of the options fit. My answer: neither" });
+  });
+  test("several questions are sent together, once each has an answer (not on the first click)", () => {
+    const qs = [q("Backup?"), q("Late joiners?"), q("How offline?")];
+    let r = pickAnswer(qs, {}, "Backup?", "Yes");
+    expect(r.done).toBe(false);
+    r = pickAnswer(qs, r.picks, "Late joiners?", "Full history");
+    r = pickAnswer(qs, r.picks, "Backup?", "No");
+    expect(r.done).toBe(false);
+    r = pickAnswer(qs, r.picks, "How offline?", "Days, on planes");
+    expect(r).toEqual({ done: true, picks: { "Backup?": "No", "Late joiners?": "Full history", "How offline?": "Days, on planes" } });
   });
 });
 
