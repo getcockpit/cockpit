@@ -118,9 +118,8 @@ pub fn validate_plan(args: &Value) -> Result<Value, String> {
     Ok(json!({ "steps": steps }))
 }
 
-/// Checks every block against the catalog. Ok: the event to record. Err: what to fix, per block.
-pub fn validate(args: &Value) -> Result<Value, String> {
-    let blocks = args["blocks"].as_array().filter(|b| !b.is_empty()).ok_or("blocks must be a non-empty array of catalog blocks")?;
+/// Checks catalog blocks. Err: what to fix, one line per problem.
+pub fn check_blocks(blocks: &[Value]) -> Result<(), Vec<String>> {
     let mut errors = vec![];
     for (i, b) in blocks.iter().enumerate() {
         let ty = b["type"].as_str().unwrap_or("");
@@ -142,9 +141,13 @@ pub fn validate(args: &Value) -> Result<Value, String> {
             }
         }
     }
-    if !errors.is_empty() {
-        return Err(format!("Not shown. Fix and call render_view again:\n{}", errors.join("\n")));
-    }
+    if errors.is_empty() { Ok(()) } else { Err(errors) }
+}
+
+/// Checks every block against the catalog. Ok: the event to record. Err: what to fix, per block.
+pub fn validate(args: &Value) -> Result<Value, String> {
+    let blocks = args["blocks"].as_array().filter(|b| !b.is_empty()).ok_or("blocks must be a non-empty array of catalog blocks")?;
+    check_blocks(blocks).map_err(|e| format!("Not shown. Fix and call render_view again:\n{}", e.join("\n")))?;
     Ok(json!({ "title": args["title"].as_str().unwrap_or(""), "blocks": blocks }))
 }
 
