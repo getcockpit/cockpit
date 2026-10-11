@@ -101,7 +101,7 @@ export default function App() {
   const [introClosedAt, setIntroClosedAt] = useState<string | null>(null);
   const intro = introOpen(all, introClosedAt) && <Onboarding state={all} onDone={() => setIntroClosedAt(all.lastEventId)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
   // A notification's click lands on its decision (MR-94): its workspace, then the session or doc, over anything open.
-  useNotify(all, allDocs, (t) => {
+  useNotify(all, allDocs, { workspace, session: focus, doc: docId }, (t) => {
     const w = getCurrentWindow();
     void w.unminimize().then(() => w.show()).then(() => w.setFocus()).catch(() => {});
     setPicker(false); setArchive(false); setSettings(false); setGod(false); setBuilds(null);
