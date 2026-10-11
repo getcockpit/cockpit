@@ -86,7 +86,7 @@ export type Answer =
   | { kind: "answer"; answers: Record<string, string> };
 
 // When none of the options fit (I75): what Claude is told for each way out of a question.
-export const ASK_FIRST = "None of these options fit. Before offering options again, ask me 1-3 short clarifying questions in plain text and wait for my reply; then ask again with better options.";
+export const ASK_FIRST = "None of these options fit. Before offering options again, ask me 1-3 short clarifying questions in one AskUserQuestion call (all of them together, each with your best-guess options; I can answer in my own words), then ask again with better options.";
 export const SKIPPED = "I skipped this question: none of the options fit. Don't ask it again. Carry on with your best judgment and say in one line what you assumed, or stop if you can't go on without it.";
 
 /** The way out of a question card: Claude gets the user's own words, a request to ask first, or a skip. */
