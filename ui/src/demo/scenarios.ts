@@ -2,6 +2,7 @@ import type { Doc } from "../state/docs";
 import shop from "./shop.txt?raw";
 import REVIEW482 from "./review482.json";
 import planViewDoc from "./planview-doc.json";
+import multiplayerDoc from "./multiplayer-doc.json";
 
 // Demo scenarios (MR-40). Each is an event log the real reducer replays, plus the docs the core
 // would have folded. `at` is seconds after a base 40 minutes ago.
@@ -241,6 +242,8 @@ export const SCENARIOS: Record<string, Scenario> = {
   busy: { events: busy, docs: [planDoc] },
   // A real 13-block working doc with long bodies, tables and lists (the doc map must stay usable).
   bigdoc: { events: [...ready, onboarded], docs: [planViewDoc as Doc] },
+  // A real plan doc with a view on every block (MR-102/103): ?demo=multiplayer
+  multiplayer: { events: [...ready, onboarded], docs: [multiplayerDoc as unknown as Doc] },
   broken: { events: [...busy, { session: "C", kind: "sidecar.session_ended", payload: { ok: false, reason: "Claude Code process exited with code 1\nError: ENOENT: no such file or directory, open '/Users/me/.claude/settings.json'\n    at Object.openSync (node:fs:596:3)\n    at readSettings (cli.js:12:9)" }, at: 2395 }], docs: [planDoc] },
   archive: {
     events: [...busy, { session: "D", kind: "ui.session_archived", at: 2400 }, { session: "C", kind: "sidecar.session_ended", payload: { ok: true }, at: 2390 }, { session: "C", kind: "ui.session_archived", at: 2401 }],
