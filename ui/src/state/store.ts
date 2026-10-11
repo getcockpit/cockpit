@@ -15,6 +15,19 @@ function reducer(state: AppState, a: Action): AppState {
   return reduce(state, a.event);
 }
 
+// The whole log, a page at a time. One capped read silently dropped every event past the cap,
+// so after a restart the newest sessions came back without their history (MR-97).
+const PAGE = 5000;
+export async function loadLog(list = (args: { after: string | null; limit: number }) => invoke<MrEvent[]>("events_list", args)): Promise<MrEvent[]> {
+  const all: MrEvent[] = [];
+  for (let after: string | null = null; ; ) {
+    const page = await list({ after, limit: PAGE });
+    all.push(...page);
+    if (page.length < PAGE) return all;
+    after = page[page.length - 1].id;
+  }
+}
+
 // The app's single source of truth: replay the log on boot, then apply live events.
 export function useAppState(): AppState {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -26,7 +39,7 @@ export function useAppState(): AppState {
       if (!replayed) pending.push(payload);
       else dispatch({ type: "event", event: payload });
     });
-    invoke<MrEvent[]>("events_list", { limit: 20000 }).then((events) => {
+    loadLog().then((events) => {
       if (!alive) return;
       dispatch({ type: "replay", events });
       replayed = true;
