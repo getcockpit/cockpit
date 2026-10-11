@@ -63,9 +63,39 @@ pub fn notify(app: AppHandle, note: Note) -> Result<(), String> {
     Ok(())
 }
 
+/// macOS shows no banner for the frontmost app unless the center's delegate answers YES to
+/// `userNotificationCenter:shouldPresentNotification:`, and mac-notification-sys's delegate doesn't
+/// implement it. The installed Cockpit.app is the frontmost app whenever you press Send a test, so
+/// the test landed in Notification Center silently (a dev binary escaped this: its borrowed bundle
+/// id isn't the frontmost app's). Adds the method to that class before its delegate is first set.
+#[cfg(target_os = "macos")]
+fn present_while_frontmost() {
+    use std::ffi::{c_char, c_void};
+    #[link(name = "objc")]
+    unsafe extern "C" {
+        fn objc_getClass(name: *const c_char) -> *mut c_void;
+        fn sel_registerName(name: *const c_char) -> *const c_void;
+        fn class_addMethod(cls: *mut c_void, sel: *const c_void, imp: *const c_void, types: *const c_char) -> bool;
+    }
+    extern "C" fn should_present(_this: *mut c_void, _cmd: *const c_void, _center: *mut c_void, _note: *mut c_void) -> bool {
+        true
+    }
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| unsafe {
+        let cls = objc_getClass(c"NotificationCenterDelegate".as_ptr());
+        if cls.is_null() {
+            eprintln!("[notify] no NotificationCenterDelegate class; banners only while Cockpit is in the background");
+            return;
+        }
+        let sel = sel_registerName(c"userNotificationCenter:shouldPresentNotification:".as_ptr());
+        class_addMethod(cls, sel, should_present as *const c_void, c"c@:@@".as_ptr());
+    });
+}
+
 #[cfg(target_os = "macos")]
 fn show(note: &Note) -> Response {
     use mac_notification_sys::{set_application, MainButton, Notification, NotificationResponse};
+    present_while_frontmost();
     // A dev build is a bare binary with no bundle id; borrow the installed app's so macOS shows it
     // under Cockpit. Errors only mean it was already set (or no Cockpit.app is registered).
     let _ = set_application("dev.minorityreport.app");
@@ -104,6 +134,24 @@ mod tests {
     fn actions_survive_the_comma_joined_dropdown() {
         let got = clean_actions(&["Allow".into(), "Yes, go ahead".into(), "  ".into(), "c".into(), "d".into(), "e".into()]);
         assert_eq!(got, vec!["Allow", "Yes go ahead", "c", "d"]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_delegate_asks_for_a_banner_while_frontmost() {
+        use std::ffi::{c_char, c_void};
+        #[link(name = "objc")]
+        unsafe extern "C" {
+            fn objc_getClass(name: *const c_char) -> *mut c_void;
+            fn sel_registerName(name: *const c_char) -> *const c_void;
+            fn class_respondsToSelector(cls: *mut c_void, sel: *const c_void) -> bool;
+        }
+        present_while_frontmost();
+        unsafe {
+            let cls = objc_getClass(c"NotificationCenterDelegate".as_ptr());
+            assert!(!cls.is_null(), "mac-notification-sys renamed its delegate class");
+            assert!(class_respondsToSelector(cls, sel_registerName(c"userNotificationCenter:shouldPresentNotification:".as_ptr())));
+        }
     }
 
     #[test]
