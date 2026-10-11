@@ -60,7 +60,7 @@ export function ProseRow({ s, question, options, selected, onOpen }: { s: Sessio
   );
 }
 
-// A doc question's way out (I74) is recorded as its decision, which Claude reads with the doc.
+// A doc question's way out (I75) is recorded as its decision, which Claude reads with the doc.
 const DOC_SKIPPED = "Skipped: none of the options fit. Your call; say what you assumed.";
 const DOC_ASK_FIRST = "None of the options fit. Ask me clarifying questions, then offer better options.";
 
