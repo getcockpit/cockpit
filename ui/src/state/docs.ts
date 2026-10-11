@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "./listen";
-import type { MrEvent, SessionState } from "./types";
+import type { MrEvent, SessionState, ViewBlock } from "./types";
 import { api } from "./store";
 
 export type Block = {
   id: string; section: string; status: string; takeaway: string; key: string; body: string;
   data: { options?: { label: string; description: string }[] } | null; order: number; decision: string | null; updated: string;
   since?: number; was?: string | null; // version it last changed in, and its takeaway before (MR-51)
+  view?: ViewBlock[] | null; // catalog blocks drawn with it (MR-100)
 };
+
+// The catalog blocks a block draws, if any.
+export const blockView = (b: Block): ViewBlock[] => (Array.isArray(b.view) ? b.view : []);
 export type Doc = {
   id: string; title: string; session_id: string | null; version: number;
   blocks: Record<string, Block>; pending_notes: [string, string][]; pending_changes: string[];
