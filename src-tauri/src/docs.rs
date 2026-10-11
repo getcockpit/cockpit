@@ -22,6 +22,10 @@ pub struct Block {
     pub body: String,
     /// Structured content, e.g. `{"options":[{"label","description"}]}` for an open question.
     pub data: Value,
+    /// Catalog blocks drawn with the block (the same catalog as render_view): a compare for a
+    /// question, a change graph for components, a checklist for verification. Null or [] = none.
+    #[serde(default)]
+    pub view: Value,
     pub order: i64,
     /// Set when the user decides an open question.
     pub decision: Option<String>,
@@ -97,6 +101,7 @@ fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
                     key: s("key", &prev.key),
                     body: s("body", &prev.body),
                     data: if p["data"].is_null() { prev.data } else { p["data"].clone() },
+                    view: if p["view"].is_null() { prev.view } else { p["view"].clone() },
                     order,
                     decision: prev.decision.clone(),
                     updated: ev.id.clone(),
@@ -178,6 +183,9 @@ pub fn to_markdown(doc: &Doc) -> String {
                 out.push_str(&format!("- option: {} — {}\n", o["label"].as_str().unwrap_or_default(), o["description"].as_str().unwrap_or_default()));
             }
         }
+        if let Some(v) = b.view.as_array().filter(|v| !v.is_empty()) {
+            out.push_str(&format!("view: {}\n", Value::Array(v.clone())));
+        }
         if let Some(d) = &b.decision {
             out.push_str(&format!("**Decided by the user: {d}**\n"));
         }
@@ -192,7 +200,7 @@ pub fn to_markdown(doc: &Doc) -> String {
 pub fn tool_specs() -> Value {
     json!([
         { "name": "doc_create", "description": "Create a working document (a plan/spec the user reviews visually). Returns its doc_id. Use for any plan, spec or design before writing code.", "params": { "title": "string" } },
-        { "name": "doc_set_block", "description": "Create or update one block of a working document. section is one of goal, scope, success, design, risk, question, components, verification, log. takeaway is one short line readable at a glance; key is one key detail; body is Markdown with the full content. For an open question the user must decide, use section=question and data={\"options\":[{\"label\":..,\"description\":..}]}, and never decide it yourself. Reuse block_id to update a block.", "params": { "doc_id": "string", "block_id": "string", "section": "string", "takeaway": "string", "key": "string", "body": "string", "status": "string", "data": "object" } },
+        { "name": "doc_set_block", "description": "Create or update one block of a working document. section is one of goal, scope, success, design, risk, question, components, verification, log. takeaway is one short line readable at a glance; key is one key detail; body is Markdown with the full content. For an open question the user must decide, use section=question and data={\"options\":[{\"label\":..,\"description\":..}]}, and never decide it yourself. view is an optional array of catalog blocks drawn with the block, the same blocks and fields as render_view; use one wherever the content has a shape: compare for a question's options against criteria, change_graph for the flow or the files a design touches (components), tradeoff when a number must be picked, takeaway with timed items for phases, checklist for verification, snippet for the lines that matter, novelty for what already exists, tier for what's at stake. Keep the body for the reasoning. Send view: [] to remove it. Reuse block_id to update a block.", "params": { "doc_id": "string", "block_id": "string", "section": "string", "takeaway": "string", "key": "string", "body": "string", "status": "string", "data": "object", "view": "array" } },
         { "name": "doc_read", "description": "Read a working document as Markdown, including the user's decisions and notes. Read it before updating or implementing a doc.", "params": { "doc_id": "string" } },
         { "name": "doc_list", "description": "List the working documents with their ids and titles.", "params": {} }
     ])
@@ -225,6 +233,17 @@ pub fn handle_tool(docs: &Docs, session: Option<&str>, tool: &str, args: &Value)
             }
             if args["data"].is_object() {
                 payload["data"] = args["data"].clone();
+            }
+            // A view is checked against the catalog like render_view; [] removes it.
+            match &args["view"] {
+                Value::Array(v) => {
+                    if let Err(e) = crate::views::check_blocks(v) {
+                        return (vec![], format!("Block not saved. Fix its view and call doc_set_block again:\n{}", e.join("\n")), true);
+                    }
+                    payload["view"] = args["view"].clone();
+                }
+                Value::Null => {}
+                _ => return (vec![], "Block not saved: view must be an array of catalog blocks.".into(), true),
             }
             (vec![("doc.block_set".into(), payload)], format!("Saved block {block_id}."), false)
         }
@@ -296,6 +315,27 @@ mod tests {
         assert_eq!(docs.get(&id).unwrap().blocks["g"].takeaway, "B");
         assert!(run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "section": "nonsense" })).1);
         assert!(run(&docs, &mut n, "doc_set_block", json!({ "doc_id": "missing", "section": "goal" })).1);
+    }
+
+    #[test]
+    fn blocks_carry_checked_catalog_views_that_read_back_and_can_be_removed() {
+        let docs = Docs::default();
+        let mut n = 0;
+        let (text, _) = run(&docs, &mut n, "doc_create", json!({ "title": "T" }));
+        let id = text.split_whitespace().nth(2).unwrap().to_owned();
+        let graph = json!([{ "type": "change_graph", "nodes": [{ "label": "Queue", "mark": "+" }, { "label": "Worker", "mark": "~" }] }]);
+        run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "c", "section": "components", "takeaway": "Queue then worker", "view": graph }));
+        // An update that doesn't mention the view keeps it.
+        run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "c", "section": "components", "key": "2 parts" }));
+        assert_eq!(docs.get(&id).unwrap().blocks["c"].view, graph);
+        assert!(run(&docs, &mut n, "doc_read", json!({ "doc_id": id })).0.contains("view: [{\"nodes\""));
+        // A view outside the catalog is refused with what to fix, and nothing changes.
+        let (text, err) = run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "c", "section": "components", "view": [{ "type": "chart" }] }));
+        assert!(err && text.contains("unknown type 'chart'"), "{text}");
+        assert!(run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "c", "section": "components", "view": "graph" })).1);
+        assert_eq!(docs.get(&id).unwrap().blocks["c"].view, graph);
+        run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "c", "section": "components", "view": [] }));
+        assert_eq!(docs.get(&id).unwrap().blocks["c"].view, json!([]));
     }
 
     #[test]
