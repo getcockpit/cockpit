@@ -1,7 +1,7 @@
 import { shortError } from "../components/ErrorLine";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../state/listen";
 
 // Push-to-talk (MR-18) and point + talk (MR-19). Hold ⌥ Space and speak; release to stop.
 // Where the words go:
