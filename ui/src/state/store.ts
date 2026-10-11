@@ -6,13 +6,30 @@ import type { AppState, MrEvent } from "./types";
 
 export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string };
 
-type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent };
+type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent } | { type: "instance"; id: string };
 
 function reducer(state: AppState, a: Action): AppState {
-  if (a.type === "replay") return replay(a.events, initialState);
-  // Live events can race the initial replay; skip anything already applied.
-  if (state.lastEventId && a.event.id <= state.lastEventId) return state;
+  if (a.type === "instance") return { ...state, instance: a.id };
+  if (a.type === "replay") return replay(a.events, { ...initialState, instance: state.instance });
   return reduce(state, a.event);
+}
+
+// Live events can race the initial replay, and rows from another copy of the app (MR-99) can come
+// in after newer ones of ours, so repeats are dropped by id rather than by order.
+export function dedupe() {
+  let seen = new Set<string>();
+  return {
+    replayed(events: MrEvent[]) {
+      const recent = (events.at(-1)?.created_at ?? 0) - 60_000;
+      for (const e of events) if (e.created_at >= recent) seen.add(e.id);
+    },
+    fresh(e: MrEvent): boolean {
+      if (seen.has(e.id)) return false;
+      if (seen.size > 20_000) seen = new Set();
+      seen.add(e.id);
+      return true;
+    },
+  };
 }
 
 // The whole log, a page at a time. One capped read silently dropped every event past the cap,
@@ -35,15 +52,21 @@ export function useAppState(): AppState {
     let alive = true;
     const pending: MrEvent[] = [];
     let replayed = false;
+    const seen = dedupe();
     const un = listen<MrEvent>("mr-event", ({ payload }) => {
       if (!replayed) pending.push(payload);
-      else dispatch({ type: "event", event: payload });
+      else if (seen.fresh(payload)) dispatch({ type: "event", event: payload });
     });
-    loadLog().then((events) => {
+    // Which copy this is comes first: the replay needs it to tell this copy's sessions from others'.
+    invoke<string>("instance_id").catch(() => null).then((id) => {
+      if (id && alive) dispatch({ type: "instance", id });
+      return loadLog();
+    }).then((events) => {
       if (!alive) return;
       dispatch({ type: "replay", events });
+      seen.replayed(events);
       replayed = true;
-      for (const e of pending) dispatch({ type: "event", event: e });
+      for (const e of pending) if (seen.fresh(e)) dispatch({ type: "event", event: e });
     });
     return () => { alive = false; un.then((f) => f()); };
   }, []);

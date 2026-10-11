@@ -248,7 +248,7 @@ mod tests {
     use super::*;
 
     fn ev(n: u32, kind: &str, payload: Value) -> Event {
-        Event { id: format!("E{n:04}"), session_id: Some("s1".into()), kind: kind.into(), payload, anchor: None, created_at: n as i64 }
+        Event { id: format!("E{n:04}"), session_id: Some("s1".into()), kind: kind.into(), payload, anchor: None, created_at: n as i64, origin: None }
     }
 
     fn run(docs: &Docs, n: &mut u32, tool: &str, args: Value) -> (String, bool) {

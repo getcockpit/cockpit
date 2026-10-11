@@ -242,6 +242,9 @@ fn append_prompt(kind: &str, layer: bool) -> Option<String> {
     (!out.is_empty()).then_some(out)
 }
 
+/// Another copy of the app (dev or /Applications) is running this session (MR-99).
+const ELSEWHERE: &str = "this session is open in another copy of Cockpit: continue it there, or quit that copy";
+
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
 /// Blank sessions in a git repo get their own worktree unless `worktree` is false (decision 7).
 #[tauri::command]
@@ -268,6 +271,9 @@ pub fn session_start(
         if live.len() >= session_cap() {
             return Err(format!("{} sessions are already running (the cap). Finish or stop one first.", live.len()));
         }
+    }
+    if let (Some(_), Some(id)) = (&resume, &session_id) && crate::instances::owned_elsewhere(&app, id).is_some() {
+        return Err(ELSEWHERE.into());
     }
     let kind = kind.unwrap_or_else(|| "blank".into());
     let session = session_id.unwrap_or_else(|| ulid::Ulid::new().to_string());
@@ -345,6 +351,9 @@ pub fn session_start(
 #[tauri::command]
 pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, text: String) -> Result<(), String> {
     let live = state.live.lock().unwrap().contains(&session);
+    if !live && crate::instances::owned_elsewhere(&app, &session).is_some() {
+        return Err(ELSEWHERE.into());
+    }
     crate::eventlog::record(&app, Some(&session), "ui.message_sent", &serde_json::json!({ "text": text }), None);
     if live {
         return sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }));

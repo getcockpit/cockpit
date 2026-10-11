@@ -5,6 +5,7 @@ mod docs;
 mod eventlog;
 mod flows;
 mod gh;
+mod instances;
 mod folders;
 mod layer3;
 mod layer2;
@@ -50,6 +51,8 @@ pub fn run() {
             app.manage(usage::Usage::open(&dir.join("events.sqlite"))?);
             app.manage(log);
             app.manage(docs);
+            // Before app.started: copies that died since are reported first (MR-99).
+            instances::start(app.handle(), &dir);
             update::on_start(app.handle());
             sidecar::start(app.handle())?;
             if selftest::enabled() {
@@ -120,8 +123,14 @@ pub fn run() {
             docs::doc_feedback,
             docs::doc_archive,
             usage::usage_track,
-            usage::usage_report
+            usage::usage_report,
+            instances::instance_id
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, ev| {
+            if let tauri::RunEvent::Exit = ev {
+                instances::stop(app);
+            }
+        });
 }
