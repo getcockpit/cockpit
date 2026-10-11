@@ -11,6 +11,7 @@ import { Usage } from "./Usage";
 
 // Settings (decision 25): theme, and the history of your own changes to the app — collected on a
 // local branch `mine` that's never pushed — with apply / revert / build & relaunch / roll back.
+// Five tabs (MR-89): Look · Sessions · Keys & models · Your changes · Usage.
 
 const THEMES = [
   { id: "control-room", name: "Control Room", what: "Industrial grey, amber when it needs you", swatch: ["#d3d6d9", "#e4e7ea", "#ffb300", "#15181b"] },
@@ -18,7 +19,12 @@ const THEMES = [
   { id: "transit", name: "Transit", what: "Signage white, black bands, signal yellow", swatch: ["#ffffff", "#f0f0f0", "#fccc0a", "#111111"] },
 ];
 
-type Change = { sha: string; subject: string; at: number; mine_only: boolean };
+// Tabs (MR-89): one page held too much. The last tab stays picked while the app runs.
+const TABS = [["look", "Look"], ["sessions", "Sessions"], ["keys", "Keys & models"], ["changes", "Your changes"], ["usage", "Usage"]] as const;
+type Tab = (typeof TABS)[number][0];
+let lastTab: Tab = "look";
+
+type Change ={ sha: string; subject: string; at: number; mine_only: boolean };
 type Pending = { branch: string; commits: number; subject: string };
 type History = { worktree: string; changes: Change[]; pending: Pending[] };
 type Build = { id: string; sha: string; branch: string; worktree: string; at: number; current: boolean };
@@ -36,6 +42,8 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
   };
   const reports = state.order.map((id) => state.sessions[id]).filter((x) => isAppChange(x)).reverse()
     .map((x) => ({ s: x, state: x.fixApplied ? "Applied" : x.status === "working" || x.status === "starting" ? "Fixing…" : x.status === "error" ? "Fix failed" : "Ready to apply" }));
+  const [tab, setTabState] = useState<Tab>(lastTab);
+  const setTab = (t: Tab) => { lastTab = t; setTabState(t); };
   const [hist, setHist] = useState<History | null>(null);
   const [builds, setBuilds] = useState<Build[]>([]);
   const [msg, setMsg] = useState("");
@@ -73,8 +81,20 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <div className="mr-row mr-band" style={{ padding: "12px 16px" }}><strong>Settings</strong><span className="mr-grow" /><Key onClick={() => { onClose(); api.report(); }}>Report a bug</Key><Key onClick={() => { void api.log("ui.onboarding_reset", {}); onClose(); }}>Show the intro</Key><Key k="esc" onClick={onClose}>Close</Key></div>
+        <div role="tablist" aria-label="Settings sections" className="mr-row mr-band" style={{ gap: 2, padding: "0 16px" }}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+            const i = TABS.findIndex(([id]) => id === tab), n = TABS[(i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length][0];
+            setTab(n); (e.currentTarget.querySelector(`[data-mr-source="${n}"]`) as HTMLElement | null)?.focus();
+          }}>
+          {TABS.map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} data-mr="SettingsTab" data-mr-source={id} onClick={() => setTab(id)}
+              style={{ padding: "8px 14px", border: 0, font: "inherit", fontWeight: 700, cursor: tab === id ? "default" : "pointer", background: tab === id ? "var(--mr-tile)" : "transparent", color: tab === id ? "var(--mr-ink)" : "var(--mr-ink-3)" }}>{label}</button>
+          ))}
+        </div>
 
-        <section data-mr="Look" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div role="tabpanel" aria-label={TABS.find(([id]) => id === tab)?.[1]} style={{ paddingTop: 16, minHeight: 360 }}>
+        {tab === "look" && <section data-mr="Look" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           <h2 className="mr-h">Look <span className="mr-dim" style={{ fontWeight: 400 }}>changes apply instantly</span></h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "var(--mr-gap)" }}>
             {THEMES.map((t) => (
@@ -95,17 +115,17 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
             <Key k="↵" onClick={() => void restyle()} disabled={!styleAsk.trim()}>Restyle</Key>
           </form>
           <span className="mr-dim" style={{ fontSize: 12 }}>Restyle starts a session on the app's own code. When it's done, apply it from the wall like a bug fix; undo it any time under Your changes.</span>
-        </section>
+        </section>}
 
-        <section data-mr="SessionSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+        {tab === "sessions" && <section data-mr="SessionSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 className="mr-h">Sessions</h2>
           <div className="mr-row" style={{ gap: 12 }}>
             <Segmented label="Compact at" value={String(state.compactWindow ?? "off")} options={[["120000", "120k"], ["200000", "200k"], ["400000", "400k"], ["off", "Model limit"]]} onPick={(v) => void api.log("ui.compact_window_set", { tokens: v === "off" ? null : Number(v) })} />
             <span className="mr-dim" style={{ fontSize: 12 }}>Sessions summarise their history once it reaches this many tokens. Every reply re-reads the whole history, so sooner uses less of your plan; later keeps more exact detail. Applies to sessions started or resumed after the change.</span>
           </div>
-        </section>
+        </section>}
 
-        <section data-mr="CockpitLayerSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {tab === "keys" && <section data-mr="CockpitLayerSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h">Cockpit layer <span className="mr-dim" style={{ fontWeight: 400 }}>who draws the cards, plans and titles</span></h2>
           <div className="mr-row" style={{ gap: 12 }}>
             <Segmented label="Cards by" value={state.cockpitLayer ? "layer" : "session"} options={[["session", "Claude, in the session"], ["layer", "Cockpit layer"]]} onPick={(v) => void api.log("ui.cockpit_layer_set", { on: v === "layer" })} />
@@ -125,17 +145,17 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
             <input aria-label="Cockpit API key" placeholder="Anthropic API key (sk-ant-…)" type="password" value={cockpitKey} onChange={(e) => setCockpitKey(e.target.value)} style={{ flex: 1, font: "inherit", padding: "6px 8px", background: "var(--mr-well)", border: 0, color: "var(--mr-ink)" }} />
             <Key onClick={() => { if (cockpitKey.trim()) void act(() => api.cockpitSaveKey(cockpitKey).then(() => { setCockpitKey(""); setCockpitOn(true); }), "Saved to the Keychain."); }}>Save</Key>
           </div>
-        </section>
+        </section>}
 
-        <section data-mr="ReviewSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+        {tab === "sessions" && <section data-mr="ReviewSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 className="mr-h">Reviews</h2>
           <div className="mr-row" style={{ gap: 12 }}>
             <Segmented label="Auto-review" value={state.autoReview ? "on" : "off"} options={[["on", "On"], ["off", "Off"]]} onPick={(v) => void api.log("ui.auto_review_set", { on: v === "on" })} />
             <span className="mr-dim" style={{ fontSize: 12 }}>Starts your /review by itself when a PR waits for you: never drafts, and only if you haven't reviewed it yet or it has new commits since.</span>
           </div>
-        </section>
+        </section>}
 
-        {state.workspaces.length > 1 && (
+        {tab === "sessions" && state.workspaces.length > 1 && (
           <section data-mr="WorkspacesSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
             <h2 className="mr-h">Workspaces <span className="mr-dim" style={{ fontWeight: 400 }}>double-click a tab to rename it · right-click it to delete</span></h2>
             {state.workspaces.filter((w) => w.id !== "personal").map((w) => (
@@ -148,7 +168,7 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
           </section>
         )}
 
-        {reports.length > 0 && (
+        {tab === "changes" && reports.length > 0 && (
           <section data-mr="Reports" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
             <h2 className="mr-h">Your reports and restyles <span className="mr-dim" style={{ fontWeight: 400 }}>each runs a session on the app; apply it from the wall or the session</span></h2>
             {reports.map(({ s, state }) => (
@@ -161,7 +181,7 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
           </section>
         )}
 
-        <section style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {tab === "changes" && <section data-mr="YourChanges" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           <h2 className="mr-h">Your changes <span className="mr-dim" style={{ fontWeight: 400 }}>on the local branch “mine”, never pushed</span></h2>
           {hist?.pending.map((p) => (
             <div key={p.branch} className="mr-row" style={{ padding: "8px 10px", background: "var(--mr-well)" }}>
@@ -189,11 +209,11 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
               );
             })}
           </div>
-        </section>
+        </section>}
 
-        <Usage />
+        {tab === "usage" && <Usage />}
 
-        <section data-mr="ClefSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {tab === "keys" && <section data-mr="ClefSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h">Picker model <span className="mr-dim" style={{ fontWeight: 400 }}>Cloudflare Clef-flash reads unclear prose; without it the app uses its own rules</span></h2>
           {(() => {
             const m = state.clef.day === new Date().toISOString().slice(0, 10) ? state.clef : { calls: 0, tokens: 0, errors: 0 };
@@ -211,9 +231,9 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
             <input aria-label="Cloudflare API token" placeholder="API token (Workers AI: read)" type="password" value={token} onChange={(e) => setToken(e.target.value)} style={{ flex: 1, font: "inherit", padding: "6px 8px", background: "var(--mr-well)", border: 0, color: "var(--mr-ink)" }} />
             <Key onClick={() => { if (acct.trim() && token.trim()) void act(() => api.layer2Save(acct, token).then(() => { setAcct(""); setToken(""); }), "Saved to the Keychain."); }}>Save</Key>
           </div>
-        </section>
+        </section>}
 
-        <section style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+        {tab === "changes" && <section data-mr="BuildsSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 className="mr-h">Builds <span className="mr-dim" style={{ fontWeight: 400 }}>launch any to roll back; a failed launch falls back automatically</span></h2>
           {builds.length === 0 && <span className="mr-dim">None yet.</span>}
           {builds.map((b) => (
@@ -223,7 +243,8 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
               {b.current ? <span style={{ color: "var(--mr-done)" }}>● running</span> : <Key onClick={() => void invoke("selfbuild_relaunch", { buildId: b.id }).catch((e) => setMsg(shortError(e)))}>Launch</Key>}
             </div>
           ))}
-        </section>
+        </section>}
+        </div>
         {msg && <div style={{ padding: "0 16px 16px", color: msg.includes("fail") || msg.includes("can't") || msg.includes("conflict") ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{msg}</div>}
       </div>
     </div>
