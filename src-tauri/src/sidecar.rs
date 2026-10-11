@@ -161,6 +161,22 @@ pub fn fold_model_choice<'a>(payloads: impl IntoIterator<Item = &'a serde_json::
     (model, effort)
 }
 
+/// Sessions auto-compact once their context reaches this many tokens. Re-reading a long conversation
+/// on every call is most of a session's cost, and on 1M-context models Claude Code otherwise waits
+/// until ~967k (token diet, decision I62).
+pub const COMPACT_WINDOW: u64 = 200_000;
+
+/// The compaction window folded from `ui.compact_window_set` events in order; `tokens: null` means
+/// Claude Code's own default (the model's limit).
+pub fn fold_compact_window<'a>(payloads: impl IntoIterator<Item = &'a serde_json::Value>) -> Option<u64> {
+    payloads.into_iter().fold(Some(COMPACT_WINDOW), |_, p| p["tokens"].as_u64())
+}
+
+fn compact_window(app: &AppHandle) -> Option<u64> {
+    let evs = app.state::<crate::eventlog::EventLog>().list_kind("ui.compact_window_set").unwrap_or_default();
+    fold_compact_window(evs.iter().map(|e| &e.payload))
+}
+
 fn model_choice(app: &AppHandle, session: &str) -> (Option<String>, Option<String>) {
     let evs = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).unwrap_or_default();
     fold_model_choice(evs.iter().filter(|e| e.kind == "ui.model_set").map(|e| &e.payload))
@@ -245,6 +261,9 @@ pub fn session_start(
     if let Some(id) = preset {
         payload["preset"] = id.into();
     }
+    // What the session compacts at, so usage reports can tell sessions apart (I62).
+    let compact = compact_window(&app);
+    payload["compact_window"] = compact.into();
     crate::eventlog::record(&app, Some(&session), "ui.session_requested", &payload, None);
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
     if let Some(r) = resume {
@@ -265,8 +284,15 @@ pub fn session_start(
         specs.push(crate::views::title_spec());
         serde_json::Value::Array(specs)
     });
+    let mut env = serde_json::Map::new();
     if let Some(dir) = crate::workspaces::config_dir(&app, &workspace) {
-        msg["env"] = serde_json::json!({ "CLAUDE_CONFIG_DIR": dir });
+        env.insert("CLAUDE_CONFIG_DIR".into(), dir.display().to_string().into());
+    }
+    if let Some(w) = compact {
+        env.insert("CLAUDE_CODE_AUTO_COMPACT_WINDOW".into(), w.to_string().into());
+    }
+    if !env.is_empty() {
+        msg["env"] = env.into();
     }
     // Every session gets the visual-app guidance (MR-56); Review/Address add their flow steps.
     let append = match crate::flows::system_prompt(&kind) {
@@ -383,7 +409,7 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::fold_model_choice;
+    use super::{fold_compact_window, fold_model_choice, COMPACT_WINDOW};
     use serde_json::json;
 
     #[test]
@@ -392,5 +418,13 @@ mod tests {
         assert_eq!(fold_model_choice(&evs), (None, Some("low".into())));
         assert_eq!(fold_model_choice(&evs[..2]), (Some("opus".into()), Some("low".into())));
         assert_eq!(fold_model_choice(&[]), (None, None));
+    }
+
+    #[test]
+    fn compact_window_defaults_low_and_the_last_choice_wins() {
+        assert_eq!(fold_compact_window(&[]), Some(COMPACT_WINDOW));
+        let evs = [json!({ "tokens": 400_000 }), json!({ "tokens": null }), json!({ "tokens": 120_000 })];
+        assert_eq!(fold_compact_window(&evs), Some(120_000));
+        assert_eq!(fold_compact_window(&evs[..2]), None);
     }
 }

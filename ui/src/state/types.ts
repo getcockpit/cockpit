@@ -132,6 +132,7 @@ export type AppState = {
   look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
   presets: Preset[]; // your own kinds in the start picker (MR-80)
   autoReview: boolean; // start /review by itself for PRs waiting on you (MR-72)
+  compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I62)
   clef: ClefMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;

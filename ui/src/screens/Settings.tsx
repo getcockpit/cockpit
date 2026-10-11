@@ -94,6 +94,14 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
           <span className="mr-dim" style={{ fontSize: 12 }}>Restyle starts a session on the app's own code. When it's done, apply it from the wall like a bug fix; undo it any time under Your changes.</span>
         </section>
 
+        <section data-mr="SessionSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <h2 className="mr-h">Sessions</h2>
+          <div className="mr-row" style={{ gap: 12 }}>
+            <Segmented label="Compact at" value={String(state.compactWindow ?? "off")} options={[["120000", "120k"], ["200000", "200k"], ["400000", "400k"], ["off", "Model limit"]]} onPick={(v) => void api.log("ui.compact_window_set", { tokens: v === "off" ? null : Number(v) })} />
+            <span className="mr-dim" style={{ fontSize: 12 }}>Sessions summarise their history once it reaches this many tokens. Every reply re-reads the whole history, so sooner uses less of your plan; later keeps more exact detail. Applies to sessions started or resumed after the change.</span>
+          </div>
+        </section>
+
         <section data-mr="ReviewSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 className="mr-h">Reviews</h2>
           <div className="mr-row" style={{ gap: 12 }}>

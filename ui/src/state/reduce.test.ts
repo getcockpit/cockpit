@@ -396,3 +396,12 @@ test("your own start-picker kinds are saved, edited and removed through the log 
   expect(st.presets.map((x) => x.id)).toEqual(["b"]);
   expect(replay([]).presets).toEqual([]);
 });
+
+describe("compaction window (I62)", () => {
+  const ev = (id: string, tokens: number | null): MrEvent => ({ id, session_id: null, kind: "ui.compact_window_set", payload: { tokens }, anchor: null, created_at: 1 });
+  test("defaults to 200k; the last choice wins and null means the model's limit", () => {
+    expect(replay([]).compactWindow).toBe(200_000);
+    expect(replay([ev("A", 400_000), ev("B", 120_000)]).compactWindow).toBe(120_000);
+    expect(replay([ev("A", 400_000), ev("B", null)]).compactWindow).toBeNull();
+  });
+});
