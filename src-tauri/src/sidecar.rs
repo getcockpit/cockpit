@@ -223,7 +223,7 @@ pub const VISUAL_GUIDANCE: &str = "You are running inside Cockpit, a visual fron
 
 /// Appended to blank sessions only (MR-98): Plan sessions already write a doc, and Review/Address
 /// follow their flow. Claude, having read the code, judges better than a heuristic on the prompt.
-pub const PLAN_NUDGE: &str = "- If the task turns out to need larger decisions, context only the user has, or a round of context gathering before any code (several open design choices, unclear scope, a cross-cutting change), ask with AskUserQuestion whether to plan it in a working doc first, with the options \"Plan it in a doc\" (recommended) and \"Just do it\". If the user picks the doc, write it in this session with the mr doc tools (mcp__mr__doc_create, then mcp__mr__doc_set_block per section, open choices as section=question) and stop for their review before writing code. Don't ask for small or clear tasks.";
+pub const PLAN_NUDGE: &str = "- If the task turns out to need larger decisions, context only the user has, or a round of context gathering before any code (several open design choices, unclear scope, a cross-cutting change), ask with AskUserQuestion whether to plan it in a working doc first, with the options \"Plan it in a doc\" (recommended) and \"Just do it\". If the user picks the doc, write it in this session with the mr doc tools (mcp__mr__doc_create, then mcp__mr__doc_set_block per section, open choices as section=question, each block with a view) and stop for their review before writing code. Don't ask for small or clear tasks.";
 
 /// The system prompt appended for a session of this kind; `layer` means the Cockpit layer draws
 /// the cards, so the visual guidance is left out (decision 34).
