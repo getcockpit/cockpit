@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Token use per session, from the event log (no Claude usage).
 
-  python3 -I scripts/token-usage.py [--db PATH] [--last N]
+  python3 -I scripts/token-usage.py [--db PATH] [--last N] [--window before|200k|limit|...]
 
 prefix = input + cache tokens of a session's first API call: the fixed cost every session
 pays before the user's first word (system prompt, tool schemas, skills list, CLAUDE.md).
+window = the auto-compact window the session ran with (I63); "before" = started before it was recorded.
+ctx/call = average input per API call, which a smaller window keeps down.
 """
 import argparse, json, os, sqlite3
 from collections import defaultdict
@@ -16,12 +18,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=os.environ.get("MR_DATA_DIR") and os.path.join(os.environ["MR_DATA_DIR"], "events.sqlite") or DEFAULT_DB)
     ap.add_argument("--last", type=int, default=20)
+    ap.add_argument("--window", help="only sessions with this compaction window, e.g. before, 200k, limit")
     a = ap.parse_args()
     db = sqlite3.connect(f"file:{a.db}?mode=ro", uri=True)
     rows = db.execute(
         "select session_id, payload from events where kind = 'sidecar.sdk' and json_extract(payload, '$.message.type') in ('assistant', 'result') order by id"
     )
-    s = defaultdict(lambda: {"prefix": None, "fresh": 0, "write": 0, "read": 0, "out": 0, "usd": 0.0, "turns": 0, "calls": set(), "models": set()})
+    # The window each session last (re)started with; resumes record it again.
+    win = {}
+    for sid, w, t in db.execute("select session_id, json_extract(payload, '$.compact_window'), json_type(payload, '$.compact_window') from events where kind = 'ui.session_requested' order by id"):
+        win[sid] = "before" if t is None else "limit" if t == "null" else f"{int(w) // 1000}k"
+    s = defaultdict(lambda: {"prefix": None, "fresh": 0, "write": 0, "read": 0, "out": 0, "usd": 0.0, "turns": 0, "calls": {}, "models": set()})
     seen = set()
     for sid, p in rows:
         m = json.loads(p)["message"]
@@ -30,7 +37,8 @@ def main():
             u = m.get("message", {}).get("usage") or {}
             mid = m.get("message", {}).get("id")
             if mid and u:
-                r["calls"].add(mid)
+                # Input per API call, from the call itself: result totals miss interrupted turns.
+                r["calls"][mid] = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
             if r["prefix"] is None and u:
                 r["prefix"] = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
             continue
@@ -46,12 +54,14 @@ def main():
             r["usd"] += mu.get("costUSD", 0.0)
             r["models"].add(name.split("[")[0].replace("claude-", ""))
     # How much of all input is the fixed prefix re-read on every API call: what trimming it can save.
-    share = lambda v: min(1.0, (v["prefix"] or 0) * len(v["calls"]) / max(1, v["fresh"] + v["write"] + v["read"]))
-    done = [(k, v) for k, v in s.items() if v["turns"]]
+    share = lambda v: min(1.0, (v["prefix"] or 0) * len(v["calls"]) / max(1, sum(v["calls"].values())))
+    ins = lambda v: v["fresh"] + v["write"] + v["read"]
+    ctx = lambda v: sum(v["calls"].values()) / max(1, len(v["calls"]))
+    done = [(k, v) for k, v in s.items() if v["turns"] and (not a.window or win.get(k, "before") == a.window)]
     k = lambda n: f"{n / 1000:.1f}k"
-    print(f"{'session':<28}{'turns':>6}{'prefix':>9}{'fresh':>9}{'c.write':>10}{'c.read':>10}{'out':>9}{'list $':>9}{'calls':>7}{'prefix%':>8}  models")
+    print(f"{'session':<28}{'turns':>6}{'prefix':>9}{'fresh':>9}{'c.write':>10}{'c.read':>10}{'out':>9}{'list $':>9}{'calls':>7}{'prefix%':>8}{'ctx/call':>9}{'window':>8}  models")
     for sid, v in done[-a.last:]:
-        print(f"{sid or '-':<28}{v['turns']:>6}{k(v['prefix'] or 0):>9}{k(v['fresh']):>9}{k(v['write']):>10}{k(v['read']):>10}{k(v['out']):>9}{v['usd']:>9.2f}{len(v['calls']):>7}{share(v):>8.0%}  {','.join(sorted(v['models']))}")
+        print(f"{sid or '-':<28}{v['turns']:>6}{k(v['prefix'] or 0):>9}{k(v['fresh']):>9}{k(v['write']):>10}{k(v['read']):>10}{k(v['out']):>9}{v['usd']:>9.2f}{len(v['calls']):>7}{share(v):>8.0%}{k(ctx(v)):>9}{win.get(sid, 'before'):>8}  {','.join(sorted(v['models']))}")
     t = {f: sum(v[f] for _, v in done) for f in ("fresh", "write", "read", "out", "usd", "turns")}
     pre = sorted(v["prefix"] for _, v in done if v["prefix"])
     tot_in = t["fresh"] + t["write"] + t["read"]
@@ -59,8 +69,20 @@ def main():
     if pre:
         print(f"prefix per session: median {k(pre[len(pre) // 2])}, max {k(pre[-1])}")
     if tot_in:
-        print(f"prefix share of all input: {sum((v['prefix'] or 0) * len(v['calls']) for _, v in done) / tot_in:.0%}")
+        print(f"prefix share of all input: {sum((v['prefix'] or 0) * len(v['calls']) for _, v in done) / max(1, sum(sum(v['calls'].values()) for _, v in done)):.0%}")
         print(f"input mix: {t['read'] / tot_in:.0%} cache reads, {t['write'] / tot_in:.0%} cache writes, {t['fresh'] / tot_in:.0%} uncached; output {k(t['out'])}")
+    # Before/after: the same numbers per compaction window, per turn so long and short sessions compare.
+    groups = defaultdict(list)
+    for sid, v in done:
+        groups[win.get(sid, "before")].append(v)
+    if len(groups) > 1 or a.window:
+        print(f"\n{'window':<8}{'sessions':>9}{'turns':>7}{'ctx/call':>10}{'input/turn':>12}{'list $/turn':>13}")
+        for w, vs in sorted(groups.items()):
+            turns = sum(v["turns"] for v in vs)
+            calls = sum(len(v["calls"]) for v in vs)
+            tin = sum(ins(v) for v in vs)
+            per_call = sum(sum(v["calls"].values()) for v in vs) / max(1, calls)
+            print(f"{w:<8}{len(vs):>9}{turns:>7}{k(per_call):>10}{k(tin / max(1, turns)):>12}{sum(v['usd'] for v in vs) / max(1, turns):>13.2f}")
 
 
 main()
