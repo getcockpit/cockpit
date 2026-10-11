@@ -30,8 +30,12 @@ export function VoiceController({ resolve, send, onFallback }: { resolve: Resolv
   useEffect(() => {
     const move = (e: MouseEvent) => { mouse.current = { x: e.clientX, y: e.clientY }; };
     const down = (e: KeyboardEvent) => {
-      if (!(e.altKey && e.code === "Space") || e.repeat || live) return;
+      if (!(e.altKey && e.code === "Space")) return;
+      // Swallow every ⌥ Space, auto-repeats included: on macOS each one would type a non-breaking
+      // space into the focused field while the user holds the keys to talk.
       e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat || live) return;
       const a = document.activeElement;
       const input = a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement ? a : null;
       const point = input ? null : pointed(document.elementFromPoint(mouse.current.x, mouse.current.y));
