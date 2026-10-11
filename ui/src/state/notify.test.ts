@@ -7,7 +7,7 @@ import type { MrEvent, PendingAsk, SessionState } from "./types";
 const sent: { cmd: string; args: unknown }[] = [];
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (cmd: string, args: unknown) => { sent.push({ cmd, args }); return Promise.resolve(); } }));
 vi.stubGlobal("window", { dispatchEvent: () => true, addEventListener: () => {} });
-const { answerFrom, noteFor, targetFor } = await import("./notify");
+const { answerFrom, cleanAction, noteFor, targetFor } = await import("./notify");
 
 let n = 0;
 const ev = (kind: string, payload: Record<string, unknown> = {}, session: string | null = "s1"): MrEvent => ({ id: `E${String(++n).padStart(4, "0")}`, session_id: session, kind, payload, anchor: null, created_at: 1_000_000 + n * 1000 });
@@ -47,8 +47,8 @@ describe("notifications (MR-94)", () => {
   test("answers from the notification go where the in-app buttons send them", async () => {
     sent.length = 0;
     const a: PendingAsk = { kind: "question", requestId: "r2", questions: [{ question: "Which database?", header: "", options: [{ label: "Postgres, managed", description: "" }] }], input: {}, at: 1 };
-    // macOS returns the action's label as shown, commas and all.
-    expect(await answerFrom(ask(a), { kind: "action", value: "Postgres, managed" }, sessions)).toBe(true);
+    // macOS returns the comma-free label the core showed; it maps back to the real one.
+    expect(await answerFrom(ask(a), { kind: "action", value: cleanAction("Postgres, managed") }, sessions)).toBe(true);
     expect(sent.at(-1)).toMatchObject({ cmd: "permission_respond", args: { requestId: "r2", decision: { behavior: "allow", updatedInput: { answers: { "Which database?": "Postgres, managed" } } } } });
     const prose: QueueItem = { kind: "prose", key: "prose:t1", s, question: "Name?", options: [], at: 1 };
     expect(await answerFrom(prose, { kind: "reply", value: "invoices.csv" }, sessions)).toBe(true);
