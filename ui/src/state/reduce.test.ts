@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { initialState, introOpen, replay, workspaceFolder } from "./reduce";
+import { autoReviewDefault, initialState, introOpen, replay, workspaceFolder } from "./reduce";
 import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
 import type { MrEvent } from "./types";
@@ -481,4 +481,14 @@ test("Show the intro reopens the intro after it was closed in the same run", () 
   expect(introOpen(replay([...done, e("O2", "ui.onboarding_reset")]), closedAt)).toBe(true);
   // Closed before ui.onboarded arrives: stays closed.
   expect(introOpen(replay([e("A1", "app.started"), e("X1", "ui.other")]), "A1")).toBe(false);
+});
+
+describe("auto-review default (MR-93)", () => {
+  test("on in dev builds, off in packaged builds; the user's toggle still wins", () => {
+    expect(autoReviewDefault({})).toBe(true);
+    expect(autoReviewDefault({ VITE_MR_PACKAGED: "1" })).toBe(false);
+    const off = { ...initialState, autoReview: autoReviewDefault({ VITE_MR_PACKAGED: "1" }) };
+    const ev = { id: "01A", session_id: null, kind: "ui.auto_review_set", payload: { on: true }, anchor: null, created_at: 1 };
+    expect(replay([ev] as never, off).autoReview).toBe(true);
+  });
 });
