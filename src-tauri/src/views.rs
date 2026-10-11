@@ -42,6 +42,11 @@ const CATALOG: &[(&str, &[(&str, F)])] = &[
     ("scope", &[("in", F::List)]),
     ("steps", &[("items", F::List)]),
     ("risks", &[("items", F::List)]),
+    ("lanes", &[("lanes", F::List)]),
+    ("cards", &[("items", F::List)]),
+    ("decision", &[("chosen", F::Str)]),
+    ("phases", &[("items", F::List)]),
+    ("matrix", &[("cols", F::List), ("rows", F::List)]),
 ];
 
 pub fn tool_spec() -> Value {
@@ -66,6 +71,11 @@ pub fn tool_spec() -> Value {
 - scope {in: [string], out: [string]}: what's in and out, side by side.\n\
 - steps {items: [{text, actor?: 'Owner', detail?}]}: a numbered sequence (a flow, a protocol, a rollout); actor says who does it.\n\
 - risks {items: [{risk, mitigation, level?: 'high'|'medium'|'low'}]}: each risk beside what contains it, worst first.\n\
+- lanes {lanes: [{name: 'Mac A', nodes: [string]}], links?: [string]}: an architecture as side-by-side zones (machines, services, layers); links[i] labels the hop from lane i to i+1.\n\
+- cards {items: [{title, detail?, mark?: '+'|'~'|'-'}]}: parts or concepts as a grid of short cards; mark = new, changed, removed.\n\
+- decision {chosen, why?, rejected?: [string], recommended?}: a settled question as its outcome; recommended shows when the choice overrode it.\n\
+- phases {items: [{name, detail?, min, max?}], unit?: 'days'}: sequential phases as bars sized by estimate (max = upper bound).\n\
+- matrix {cols: [string], rows: [{label, cells: [string]}]}: a grid of rules or support; cells 'yes', 'no', 'partial' draw as marks, other text as is.\n\
 - text {markdown}: a short paragraph, only when no other block fits.\n\
 Every block except next and text carries Deeper / Discover actions. Use AskUserQuestion, not render_view, for any other choice the user must make.",
         "params": { "title": "string", "blocks": "array" },
@@ -214,6 +224,15 @@ mod tests {
             { "type": "risks", "items": [{ "risk": "Leaks", "mitigation": "Local by default", "level": "high" }] },
         ] });
         assert!(validate(&ok).is_ok());
+        let more = json!({ "blocks": [
+            { "type": "lanes", "lanes": [{ "name": "Mac A", "nodes": ["core"] }, { "name": "Relay", "nodes": ["rows"] }], "links": ["push"] },
+            { "type": "cards", "items": [{ "title": "Identity", "mark": "~" }] },
+            { "type": "decision", "chosen": "Async doc review", "recommended": "Pair on a session" },
+            { "type": "phases", "items": [{ "name": "Doc review", "min": 4, "max": 5 }] },
+            { "type": "matrix", "cols": ["Phase 1"], "rows": [{ "label": "doc.*", "cells": ["yes"] }] },
+        ] });
+        assert!(validate(&more).is_ok());
+        assert!(validate(&json!({ "blocks": [{ "type": "decision", "chosen": " " }] })).is_err());
         let err = validate(&json!({ "blocks": [{ "type": "scope", "out": ["x"] }, { "type": "risks", "items": [] }] })).unwrap_err();
         assert!(err.contains("'in' must be a non-empty array") && err.contains("(risks): 'items'"), "{err}");
     }
