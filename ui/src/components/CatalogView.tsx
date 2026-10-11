@@ -357,6 +357,21 @@ function Actions({ b, title, onReply, onDiscover, live }: { b: ViewBlock; title:
   );
 }
 
+// Blocks that draw nothing clickable without live replies, so they can sit inside a doc tile's button.
+const GLANCE = new Set(["takeaway", "tally", "checklist", "progress", "compare", "change_graph", "findings", "tier", "novelty", "snippet", "thread"]);
+
+// A doc tile's glance at its view (MR-100): the first block that reads at a glance, not interactive.
+export function ViewGlance({ blocks, source }: { blocks: ViewBlock[]; source: string }) {
+  const b = blocks.find((x) => GLANCE.has(x.type));
+  if (!b) return null;
+  return (
+    <span data-mr={`View:${b.type}`} data-mr-source={source} data-mr-layer="model" aria-hidden="true"
+      style={{ display: "block", maxHeight: 200, overflow: "hidden", pointerEvents: "none", fontSize: 13, background: "var(--mr-well)", padding: 2 }}>
+      <Block b={b} onReply={() => {}} live={false} />
+    </span>
+  );
+}
+
 // The replies a view's Suggested next offers: Focus binds them to ⌥1–3.
 export function viewReplies(blocks: ViewBlock[]): string[] {
   const next = [...blocks].reverse().find((b) => b.type === "next");

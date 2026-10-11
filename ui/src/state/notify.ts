@@ -4,6 +4,7 @@ import { pickDecision } from "../picker/pick";
 import { needsQueue, type QueueItem } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { answerAsk } from "../screens/AskRow";
+import { wayOut } from "../components";
 import { decideQuestion, type Doc } from "./docs";
 import { listen } from "./listen";
 import { api } from "./store";
@@ -35,7 +36,7 @@ export function noteFor(item: QueueItem, sessions: Record<string, SessionState>,
       if (spec.component === "QuestionCard") {
         const [q, ...more] = spec.questions;
         const single = !more.length && !q.multiSelect;
-        return note(q.header ? `Claude asks: ${q.header}` : "Claude asks", `${q.question}${more.length ? ` (+${more.length} more)` : ""}`, single ? q.options.map((o) => o.label).slice(0, 4) : []);
+        return note(q.header ? `Claude asks: ${q.header}` : "Claude asks", `${q.question}${more.length ? ` (+${more.length} more)` : ""}`, single ? q.options.map((o) => o.label).slice(0, 4) : [], !more.length);
       }
       const yesNo = ["Allow", "Deny"];
       if (spec.component === "CommandCard") return note(spec.risk === "high" ? "Allow a risky command?" : "Allow a command?", `${spec.description ? `${spec.description}\n` : ""}$ ${spec.command}`, yesNo);
@@ -68,6 +69,8 @@ export async function answerFrom(item: QueueItem, r: Response, sessions: Record<
         return true;
       }
       const q = item.a.questions[0];
+      // A typed reply when none of the options fit (I75).
+      if (r.kind === "reply") { if (!r.value.trim()) return false; await answerAsk(item.s, item.a, wayOut(item.a.questions, { kind: "reply", text: r.value.trim() })); return true; }
       const label = q && pick(q.options.map((o) => o.label));
       if (!label) return false;
       await answerAsk(item.s, item.a, { kind: "answer", answers: { [q.question]: label } });
