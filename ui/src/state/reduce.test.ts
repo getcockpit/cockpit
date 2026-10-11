@@ -167,6 +167,17 @@ test("workspaces are created from the log and sessions stay in theirs", () => {
   expect(st.sessions.s2.workspace).toBe("personal");
 });
 
+test("workspace tabs keep the order they were dragged into", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind, payload, anchor: null, created_at: 1 });
+  const st = replay([
+    ev("W1", "ui.workspace_created", { id: "ws_a", name: "Acme" }),
+    ev("W2", "ui.workspace_created", { id: "ws_b", name: "Beta" }),
+    ev("W3", "ui.workspaces_reordered", { order: ["ws_b", "personal", "ws_a"] }),
+    ev("W4", "ui.workspace_created", { id: "ws_c", name: "Gamma" }),
+  ]);
+  expect(st.workspaces.map((w) => w.id)).toEqual(["ws_b", "personal", "ws_a", "ws_c"]);
+});
+
 test("the theme is set through the log", () => {
   const st = replay([{ id: "T1", session_id: null, kind: "ui.theme_set", payload: { theme: "transit" }, anchor: null, created_at: 1 }]);
   expect(st.theme).toBe("transit");

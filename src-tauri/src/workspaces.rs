@@ -53,6 +53,13 @@ pub fn workspace_rename(app: AppHandle, id: String, name: String) -> Result<(), 
     Ok(())
 }
 
+/// The tab order after a drag in the top bar (MR-84): the full list of ids, left to right.
+#[tauri::command]
+pub fn workspace_reorder(app: AppHandle, order: Vec<String>) -> Result<(), String> {
+    crate::eventlog::record(&app, None, "ui.workspaces_reordered", &serde_json::json!({ "order": order }), None);
+    Ok(())
+}
+
 /// Pins the folder new sessions in this workspace start in (MR-65); `None` unpins, so the picker
 /// falls back to the last folder a session started in there.
 #[tauri::command(async)]
