@@ -1,4 +1,4 @@
-import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
+import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
@@ -24,7 +24,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
   };
 }
 
@@ -54,7 +54,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       case "update.finished": return { ...next, update: { ...u, phase: p.ok ? "ready" : "failed", step: p.ok ? null : String(p.step ?? ""), log: p.ok ? null : String(p.log ?? "") } };
       case "update.restarting": return { ...next, update: { ...u, restarting: strs(p.subjects) } };
       // A fresh start: whatever was building belonged to the old app; an update we restarted for is now live.
-      case "app.started": return { ...next, lastBuildAt: ev.created_at, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
+      // Runs still marked running were children of the old app: how they ended wasn't seen (MR-85).
+      case "app.started": return { ...next, sessions: loseRuns(next.sessions, ev.created_at), lastBuildAt: ev.created_at, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
       case "ui.update_seen": return { ...next, update: { ...u, whatsNew: null } };
       case "ui.update_dismissed": return { ...next, update: { ...u, phase: "idle", step: null, log: null } };
     }
@@ -174,6 +175,14 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
       break;
+    case "ui.run_started":
+      s.runs = [...s.runs, { id: String(p.run_id ?? ev.id), command: String(p.command ?? ""), cwd: String(p.cwd ?? ""), status: "running", code: null, from: ev.created_at, to: null }];
+      break;
+    case "run.finished": {
+      const status = (["completed", "failed", "stopped"].includes(String(p.status)) ? p.status : "completed") as Run["status"];
+      s.runs = s.runs.map((r) => (r.id === p.run_id ? { ...r, status, code: typeof p.code === "number" ? p.code : null, to: ev.created_at } : r));
+      break;
+    }
     case "session.titled":
       s.autoTitle = String(p.title ?? "").trim() || s.autoTitle;
       break;
@@ -228,6 +237,14 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     s.transcript = s.transcript.map((x, i) => (i >= base.transcript.length && !x.step ? { ...x, step: doing } : x));
   }
   return { ...next, sessions: { ...next.sessions, [sid]: s }, order };
+}
+
+function loseRuns(sessions: AppState["sessions"], at: number): AppState["sessions"] {
+  const out = { ...sessions };
+  for (const [id, s] of Object.entries(sessions)) {
+    if (s.runs.some((r) => r.status === "running")) out[id] = { ...s, runs: s.runs.map((r) => (r.status === "running" ? { ...r, status: "lost" as const, to: at } : r)) };
+  }
+  return out;
 }
 
 // Closes the open span and opens one for the new status. Keeps the last 60: the Timeline shows 30 minutes.

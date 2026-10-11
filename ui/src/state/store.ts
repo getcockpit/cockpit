@@ -67,6 +67,12 @@ export const api = {
   setModel: (session: string, change: { model?: string | null; effort?: string | null }) => invoke("session_set_model", { session, change }),
   modelsRefresh: () => invoke("models_refresh"),
   interrupt: (session: string) => invoke("session_interrupt", { session }),
+  // A command from a reply's Run button (MR-85): runs in the session's folder, listed in its side panel.
+  run: (session: string, cwd: string, command: string) => {
+    window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Running: ${command.length > 60 ? `${command.slice(0, 57)}…` : command}` }));
+    return invoke<string>("run_command", { session, cwd, command }).catch((e) => { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Didn't run: ${String(e).split("\n")[0]}` })); throw e; });
+  },
+  runStop: (session: string, runId: string) => invoke("run_stop", { session, runId }),
   stop: (session: string) => invoke("session_stop", { session }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
   log: (kind: string, payload: Record<string, unknown>, sessionId?: string, anchor?: string) => invoke("event_append", { sessionId, kind, payload, anchor }),
