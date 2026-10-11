@@ -11,6 +11,7 @@ export const initialState: AppState = {
   models: [],
   sidecar: { up: false, claude: null },
   lastEventId: null,
+  instance: null,
   dismissed: [],
   workspaces: [{ id: "personal", name: "Personal", configDir: null, folder: null }],
   theme: "control-room",
@@ -34,7 +35,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [],
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], owner: null,
   };
 }
 
@@ -43,16 +44,20 @@ const lines = (s: unknown) => (typeof s === "string" && s.length ? s.split("\n")
 // Replays one event onto the state. Pure: the same log always yields the same state.
 export function reduce(state: AppState, ev: MrEvent): AppState {
   const p = ev.payload;
-  const next: AppState = { ...state, lastEventId: ev.id };
+  // Another copy's rows can arrive a little out of order (MR-99): the newest id wins.
+  const next: AppState = { ...state, lastEventId: state.lastEventId && state.lastEventId > ev.id ? state.lastEventId : ev.id };
   const sid = ev.session_id;
 
   if (ev.kind === "sidecar.ready") {
-    // A fresh sidecar means any session still running before it died with the old one.
-    const sessions = { ...next.sessions };
-    for (const [id, s] of Object.entries(sessions)) {
-      if (!["ended", "error", "interrupted"].includes(s.status)) sessions[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", ev.created_at), pending: [], turnOpen: false, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
-    }
-    return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
+    // A fresh sidecar means any session still running before it died with the old one; another
+    // copy's sidecar starting doesn't touch this copy's sessions (MR-99).
+    const sessions = interrupt(next.sessions, ev.created_at, (s) => ownedBy(s, ev.origin));
+    return { ...next, sessions, sidecar: ev.origin && next.instance && ev.origin !== next.instance ? next.sidecar : { up: true, claude: (p.claude as string) ?? null } };
+  }
+  // Another copy quit or died: its sessions stop there and can be resumed here (MR-99).
+  if (ev.kind === "app.stopped") {
+    const gone = (s: SessionState) => s.owner !== null && s.owner === p.origin;
+    return { ...next, sessions: loseRuns(interrupt(next.sessions, ev.created_at, gone), ev.created_at, gone) };
   }
   // A build done in the background offers to relaunch into it, wherever you are, until you do or say later.
   if (ev.kind === "selfbuild.started") return { ...next, selfbuild: { id: String(p.build_id), branch: String(p.branch ?? ""), sha: String(p.sha ?? ""), phase: "building" } };
@@ -71,7 +76,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       case "update.restarting": return { ...next, update: { ...u, restarting: strs(p.subjects) } };
       // A fresh start: whatever was building belonged to the old app; an update we restarted for is now live.
       // Runs still marked running were children of the old app: how they ended wasn't seen (MR-85).
-      case "app.started": return { ...next, sessions: loseRuns(next.sessions, ev.created_at), lastBuildAt: ev.created_at, selfbuild: null, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
+      case "app.started": return { ...next, sessions: loseRuns(next.sessions, ev.created_at, (s) => ownedBy(s, ev.origin)), lastBuildAt: ev.created_at, selfbuild: null, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
       case "ui.update_seen": return { ...next, update: { ...u, whatsNew: null } };
       case "ui.update_dismissed": return { ...next, update: { ...u, phase: "idle", step: null, log: null } };
     }
@@ -134,9 +139,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     if (existing) {
       // A resume (or a request logged after early sidecar events): keep history, restart the status.
       const resumed = p.resume ? { status: "starting" as const, error: null, archivedAt: null } : {};
-      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, spans: p.resume ? track(existing, "starting", ev.created_at) : existing.spans, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch, preset: existing.preset ?? where.preset } } };
+      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, owner: ev.origin ?? null, spans: p.resume ? track(existing, "starting", ev.created_at) : existing.spans, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch, preset: existing.preset ?? where.preset } } };
     }
-    return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where } }, order: [...next.order, sid] };
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where, owner: ev.origin ?? null } }, order: [...next.order, sid] };
   }
   if (ev.kind === "picker.layer2" && sid) {
     // A render decision, not session activity: annotate the item and tick the meter, nothing else.
@@ -275,10 +280,29 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   return { ...next, sessions: { ...next.sessions, [sid]: s }, order };
 }
 
-function loseRuns(sessions: AppState["sessions"], at: number): AppState["sessions"] {
+// Whether a start or sidecar restart by copy `origin` affects this session. Rows and sessions from
+// before MR-99 carry no origin: those keep the old rule (everything).
+function ownedBy(s: SessionState, origin: string | null | undefined): boolean {
+  return !origin || s.owner === null || s.owner === origin;
+}
+
+function interrupt(sessions: AppState["sessions"], at: number, which: (s: SessionState) => boolean): AppState["sessions"] {
   const out = { ...sessions };
   for (const [id, s] of Object.entries(sessions)) {
-    if (s.runs.some((r) => r.status === "running")) out[id] = { ...s, runs: s.runs.map((r) => (r.status === "running" ? { ...r, status: "lost" as const, to: at } : r)) };
+    if (which(s) && !["ended", "error", "interrupted"].includes(s.status)) out[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", at), pending: [], turnOpen: false, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
+  }
+  return out;
+}
+
+/** Open in another running copy of the app (dev vs /Applications): shown here, driven there (MR-99). */
+export function elsewhere(state: AppState, s: SessionState): boolean {
+  return s.owner !== null && state.instance !== null && s.owner !== state.instance && !["ended", "error", "interrupted"].includes(s.status);
+}
+
+function loseRuns(sessions: AppState["sessions"], at: number, which: (s: SessionState) => boolean): AppState["sessions"] {
+  const out = { ...sessions };
+  for (const [id, s] of Object.entries(sessions)) {
+    if (which(s) && s.runs.some((r) => r.status === "running")) out[id] = { ...s, runs: s.runs.map((r) => (r.status === "running" ? { ...r, status: "lost" as const, to: at } : r)) };
   }
   return out;
 }

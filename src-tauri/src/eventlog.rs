@@ -18,12 +18,17 @@ pub struct Event {
     pub payload: serde_json::Value,
     pub anchor: Option<String>,
     pub created_at: i64,
+    /// Which running copy of the app wrote it (`EventLog::origin`); None in rows from before MR-99.
+    pub origin: Option<String>,
 }
 
 pub struct EventLog {
     conn: Mutex<Connection>,
     /// Monotonic within a millisecond, so id order is always append order.
     ids: Mutex<ulid::Generator>,
+    /// This process's id. Several copies (dev, /Applications) share one log (MR-99), so every row
+    /// says who wrote it and each copy can tell its own sessions from the others'.
+    origin: String,
 }
 
 impl EventLog {
@@ -50,7 +55,15 @@ impl EventLog {
              CREATE INDEX IF NOT EXISTS events_session ON events (session_id, id);
              CREATE INDEX IF NOT EXISTS events_kind ON events (kind, id);",
         )?;
-        Ok(Self { conn: Mutex::new(conn), ids: Mutex::new(ulid::Generator::new()) })
+        let has_origin = conn.prepare("SELECT origin FROM events LIMIT 0").is_ok();
+        if !has_origin {
+            conn.execute_batch("ALTER TABLE events ADD COLUMN origin TEXT")?;
+        }
+        Ok(Self { conn: Mutex::new(conn), ids: Mutex::new(ulid::Generator::new()), origin: ulid::Ulid::new().to_string() })
+    }
+
+    pub fn origin(&self) -> &str {
+        &self.origin
     }
 
     /// Appends one event and returns it. ULIDs sort by time, so `id` order is event order.
@@ -65,8 +78,8 @@ impl EventLog {
         let created_at = id.timestamp_ms() as i64;
         let id = id.to_string();
         self.conn.lock().unwrap().execute(
-            "INSERT INTO events (id, session_id, kind, payload, anchor, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, session_id, kind, payload.to_string(), anchor, created_at],
+            "INSERT INTO events (id, session_id, kind, payload, anchor, created_at, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, session_id, kind, payload.to_string(), anchor, created_at, self.origin],
         )?;
         Ok(Event {
             id,
@@ -75,6 +88,7 @@ impl EventLog {
             payload: payload.clone(),
             anchor: anchor.map(str::to_owned),
             created_at,
+            origin: Some(self.origin.clone()),
         })
     }
 
@@ -82,32 +96,32 @@ impl EventLog {
     /// Every event of one kind, oldest first (cheap lookups that shouldn't read the whole log).
     pub fn list_kind(&self, kind: &str) -> rusqlite::Result<Vec<Event>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, session_id, kind, payload, anchor, created_at FROM events WHERE kind = ?1 ORDER BY id")?;
-        let rows = stmt.query_map(params![kind], |r| {
-            let payload: String = r.get(3)?;
-            Ok(Event { id: r.get(0)?, session_id: r.get(1)?, kind: r.get(2)?, payload: serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null), anchor: r.get(4)?, created_at: r.get(5)? })
-        })?;
+        let mut stmt = conn.prepare("SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events WHERE kind = ?1 ORDER BY id")?;
+        let rows = stmt.query_map(params![kind], row)?;
         rows.collect()
     }
 
     pub fn list(&self, session_id: Option<&str>, after: Option<&str>, limit: i64) -> rusqlite::Result<Vec<Event>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, session_id, kind, payload, anchor, created_at FROM events
+            "SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
              WHERE (?1 IS NULL OR session_id = ?1) AND (?2 IS NULL OR id > ?2)
              ORDER BY id LIMIT ?3",
         )?;
-        let rows = stmt.query_map(params![session_id, after, limit], |r| {
-            let payload: String = r.get(3)?;
-            Ok(Event {
-                id: r.get(0)?,
-                session_id: r.get(1)?,
-                kind: r.get(2)?,
-                payload: serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null),
-                anchor: r.get(4)?,
-                created_at: r.get(5)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![session_id, after, limit], row)?;
+        rows.collect()
+    }
+
+    /// Rows other copies of the app wrote since `since_ms` (MR-99). Another process can commit a
+    /// row with an id older than ones already seen, so callers re-read a window and drop repeats.
+    pub fn foreign_since(&self, since_ms: i64) -> rusqlite::Result<Vec<Event>> {
+        let lower = ulid::Ulid::from_parts(since_ms.max(0) as u64, 0).to_string();
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
+             WHERE id >= ?1 AND (origin IS NULL OR origin <> ?2) ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![lower, self.origin], row)?;
         rows.collect()
     }
 
@@ -119,6 +133,19 @@ impl EventLog {
             .query_row("SELECT id FROM events ORDER BY id DESC LIMIT 1", [], |r| r.get(0))
             .optional()
     }
+}
+
+fn row(r: &rusqlite::Row) -> rusqlite::Result<Event> {
+    let payload: String = r.get(3)?;
+    Ok(Event {
+        id: r.get(0)?,
+        session_id: r.get(1)?,
+        kind: r.get(2)?,
+        payload: serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null),
+        anchor: r.get(4)?,
+        created_at: r.get(5)?,
+        origin: r.get(6)?,
+    })
 }
 
 /// Appends an event and pushes the stored row to the UI on `mr-event`. Logging must never take
