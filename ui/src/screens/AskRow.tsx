@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { DecisionCard, Key, type Answer } from "../components";
+import { DecisionCard, Key, WayOut, type Answer } from "../components";
 import { decideQuestion, type Block, type Doc } from "../state/docs";
 import { plural, sessionTitle } from "../picker/title";
 import { shortError } from "../components/ErrorLine";
@@ -60,6 +60,10 @@ export function ProseRow({ s, question, options, selected, onOpen }: { s: Sessio
   );
 }
 
+// A doc question's way out (I74) is recorded as its decision, which Claude reads with the doc.
+const DOC_SKIPPED = "Skipped: none of the options fit. Your call; say what you assumed.";
+const DOC_ASK_FIRST = "None of the options fit. Ask me clarifying questions, then offer better options.";
+
 // An open question in a working doc, decided right here. Deciding the last one sends the doc back
 // to its plan session so it carries on.
 export function DocQuestionRow({ d, b, session, selected, onOpen }: { d: Doc; b: Block; session?: SessionState | null; selected?: boolean; onOpen: () => void }) {
@@ -84,6 +88,7 @@ export function DocQuestionRow({ d, b, session, selected, onOpen }: { d: Doc; b:
             ))}
           </div>
         ) : <span className="mr-dim">{b.body}</span>}
+        <WayOut source={`${d.id}:${b.id}`} onOut={(x) => void decide(x.kind === "reply" ? x.text : x.kind === "skip" ? DOC_SKIPPED : DOC_ASK_FIRST)} />
       </div>
     </div>
   );
