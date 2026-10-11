@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -59,6 +60,11 @@ fn record(app: &AppHandle, kind: &str, payload: serde_json::Value) {
 #[tauri::command]
 pub fn selfbuild_start(app: AppHandle, worktree: String) -> Result<String, String> {
     let dir = PathBuf::from(crate::sidecar::expand_home(&app, &worktree));
+    start(app, dir, false)
+}
+
+/// The build itself; with `relaunch`, a passing build is launched straight away (app_update, MR-96).
+fn start(app: AppHandle, dir: PathBuf, relaunch: bool) -> Result<String, String> {
     if !dir.join("src-tauri/tauri.conf.json").exists() {
         return Err(format!("{} is not a Cockpit checkout", dir.display()));
     }
@@ -75,6 +81,7 @@ pub fn selfbuild_start(app: AppHandle, worktree: String) -> Result<String, Strin
             let out = Command::new("bash").arg("-c").arg(cmd).current_dir(&dir).env("PATH", sh_path()).output();
             let ok = out.as_ref().map(|o| o.status.success()).unwrap_or(false);
             if !ok {
+                UPDATING.store(false, Ordering::SeqCst);
                 let tail = out.map(|o| { let e = String::from_utf8_lossy(&o.stderr).into_owned(); e[e.len().saturating_sub(3000)..].to_owned() }).unwrap_or_else(|e| e.to_string());
                 record(&app2, "selfbuild.finished", serde_json::json!({ "build_id": id2, "ok": false, "step": name, "log": tail }));
                 return;
@@ -91,8 +98,16 @@ pub fn selfbuild_start(app: AppHandle, worktree: String) -> Result<String, Strin
             std::fs::write(dest.join("build.json"), meta.to_string())
         };
         match copy() {
-            Ok(()) => record(&app2, "selfbuild.finished", serde_json::json!({ "build_id": id2, "ok": true, "seconds": started.elapsed().as_secs() })),
-            Err(e) => record(&app2, "selfbuild.finished", serde_json::json!({ "build_id": id2, "ok": false, "step": "store", "log": e.to_string() })),
+            Ok(()) => {
+                record(&app2, "selfbuild.finished", serde_json::json!({ "build_id": id2, "ok": true, "seconds": started.elapsed().as_secs() }));
+                if relaunch && selfbuild_relaunch(app2.clone(), id2.clone()).is_err() {
+                    UPDATING.store(false, Ordering::SeqCst);
+                }
+            }
+            Err(e) => {
+                UPDATING.store(false, Ordering::SeqCst);
+                record(&app2, "selfbuild.finished", serde_json::json!({ "build_id": id2, "ok": false, "step": "store", "log": e.to_string() }));
+            }
         }
     });
     Ok(id)
@@ -164,6 +179,59 @@ pub fn selfbuild_relaunch(app: AppHandle, build_id: String) -> Result<(), String
     Ok(())
 }
 
+/// `app_update` (MR-96): Claude rebuilds and relaunches the running app at the end of a fix, so the
+/// user doesn't have to click Rebuild & relaunch. Same path as Settings → Build my changes: main
+/// into `mine` (plus an optional fix branch), build `mine`, then relaunch through the supervisor
+/// (health check, fallback, sessions resumed). A failed build never relaunches.
+pub const UPDATE_TOOL: &str = "app_update";
+
+/// One update at a time: a second call while one builds is refused.
+static UPDATING: AtomicBool = AtomicBool::new(false);
+
+pub fn update_spec() -> serde_json::Value {
+    serde_json::json!({
+        "name": UPDATE_TOOL,
+        "description": "Rebuild the Cockpit app the user is running from their `mine` branch and relaunch into it. Use only when the user asks to update, apply or rebuild the app, after your change is committed. apply_branch: an mr/* branch to apply to `mine` first (main is always brought in). Returns at once; the build takes a few minutes, then the app restarts and this session resumes. If the build fails nothing restarts and the log is in Builds. Tell the user, then end your turn.",
+        "params": { "apply_branch": "string" }
+    })
+}
+
+/// Offered only in sessions working on the app's own repo (its checkout or its worktrees).
+pub fn update_available(cwd: &str) -> bool {
+    crate::changes::app_repo().is_some_and(|repo| in_app_repo(Path::new(cwd), &repo))
+}
+
+fn in_app_repo(cwd: &Path, repo: &Path) -> bool {
+    let name = repo.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let worktrees = repo.with_file_name(format!("{name}-worktrees"));
+    cwd.starts_with(repo) || cwd.starts_with(&worktrees)
+}
+
+pub fn handle_update(app: &AppHandle, args: &serde_json::Value) -> (Vec<(String, serde_json::Value)>, String, bool) {
+    let Some(repo) = crate::changes::app_repo() else { return (vec![], "Not updated: this app has no repo to build from.".into(), true) };
+    if UPDATING.swap(true, Ordering::SeqCst) {
+        return (vec![], "Not updated: an update is already building. Its progress is in Builds.".into(), true);
+    }
+    let branch = args["apply_branch"].as_str().map(str::trim).filter(|b| !b.is_empty());
+    let prepared = match branch {
+        Some(b) => crate::personal::apply(&repo, b),
+        None => crate::personal::sync_with_main(&repo),
+    }
+    .and_then(|_| crate::personal::mine_worktree(&repo));
+    let started = prepared.and_then(|mine| start(app.clone(), mine, true));
+    match started {
+        Ok(id) => (
+            vec![("selfbuild.update_requested".into(), serde_json::json!({ "build_id": id, "apply_branch": branch }))],
+            format!("Building `mine` (build {id}). When it passes, the app relaunches into it and this session resumes; if it fails, nothing restarts and the log is in Builds. Tell the user, then end your turn."),
+            false,
+        ),
+        Err(e) => {
+            UPDATING.store(false, Ordering::SeqCst);
+            (vec![], format!("Not updated: {e}"), true)
+        }
+    }
+}
+
 /// Called when the sidecar is ready: proves this build works (for the supervisor) and, after a
 /// self-build relaunch, resumes the sessions that were running.
 pub fn on_ready(app: &AppHandle) {
@@ -224,6 +292,15 @@ fn resume_interrupted(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_update_is_offered_only_on_the_apps_own_repo_and_worktrees() {
+        let repo = Path::new("/Users/u/minority-report");
+        assert!(in_app_repo(Path::new("/Users/u/minority-report"), repo));
+        assert!(in_app_repo(Path::new("/Users/u/minority-report-worktrees/fix-tile-ab12"), repo));
+        assert!(!in_app_repo(Path::new("/Users/u/minority-report-old"), repo));
+        assert!(!in_app_repo(Path::new("/Users/u/other-project"), repo));
+    }
 
     #[test]
     fn supervisor_falls_back_when_the_new_build_never_gets_healthy() {
