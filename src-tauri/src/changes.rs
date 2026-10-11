@@ -111,7 +111,24 @@ pub fn app_repo() -> Option<PathBuf> {
         return Some(PathBuf::from(p));
     }
     let exe = std::env::current_exe().ok()?;
-    exe.ancestors().find(|d| d.join("src-tauri").is_dir() && d.join(".git").exists()).map(Path::to_path_buf)
+    exe.ancestors().find(|d| d.join("src-tauri").is_dir() && d.join(".git").exists()).map(main_checkout)
+}
+
+/// A build made inside a linked worktree still belongs to the main checkout: `mine`, god-mode
+/// fixes and marks live next to it, not next to the worktree (else Rebuild looked for `mine` in
+/// `<worktree>-worktrees/` and failed).
+pub fn main_checkout(dir: &Path) -> PathBuf {
+    if dir.join(".git").is_dir() {
+        return dir.to_path_buf();
+    }
+    let out = Command::new("git").arg("-C").arg(dir).args(["rev-parse", "--path-format=absolute", "--git-common-dir"]).output();
+    match out {
+        Ok(o) if o.status.success() => {
+            let common = PathBuf::from(String::from_utf8_lossy(&o.stdout).trim());
+            common.parent().filter(|_| common.ends_with(".git")).map(Path::to_path_buf).unwrap_or_else(|| dir.to_path_buf())
+        }
+        _ => dir.to_path_buf(),
+    }
 }
 
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
@@ -142,6 +159,25 @@ pub fn godmode_save_mark(app: tauri::AppHandle, packet: serde_json::Value) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_build_in_a_linked_worktree_belongs_to_the_main_checkout() {
+        let root = std::env::temp_dir().join(format!("mr-main-{}", ulid::Ulid::new()));
+        let repo = root.join("app");
+        std::fs::create_dir_all(&repo).unwrap();
+        let run = |args: &[&str]| assert!(Command::new("git").arg("-C").arg(&repo).args(["-c", "user.email=t@t", "-c", "user.name=t"]).args(args).status().unwrap().success());
+        run(&["init", "-q", "-b", "main"]);
+        run(&["commit", "-q", "--allow-empty", "-m", "init"]);
+        let wt = root.join("app-worktrees").join("installer");
+        run(&["worktree", "add", "-q", "-b", "mr/installer", wt.to_str().unwrap()]);
+        let repo = repo.canonicalize().unwrap();
+        assert_eq!(main_checkout(&repo), repo);
+        assert_eq!(main_checkout(&wt).canonicalize().unwrap(), repo);
+        let plain = root.join("not-a-repo");
+        std::fs::create_dir_all(&plain).unwrap();
+        assert_eq!(main_checkout(&plain), plain);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn lists_modified_and_untracked_files_with_risk_and_diffs() {
