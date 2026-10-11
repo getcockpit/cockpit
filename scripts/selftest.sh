@@ -15,7 +15,9 @@ db="$data/events.sqlite"
 echo "--- event kinds recorded"
 sqlite3 "$db" "SELECT kind, COUNT(*) FROM events GROUP BY kind ORDER BY MIN(id);"
 need() { sqlite3 "$db" "SELECT COUNT(*) FROM events WHERE kind='$1';" | grep -qv '^0$' || { echo "MISSING: $1"; exit 1; }; }
-for k in sidecar.ready ui.session_requested sidecar.session_started sidecar.permission_request ui.permission_answered sidecar.sdk; do need "$k"; done
+for k in sidecar.ready ui.session_requested sidecar.session_started sidecar.commands sidecar.permission_request ui.permission_answered sidecar.sdk; do need "$k"; done
+# The / menu (MR-87): the session listed its commands, with descriptions.
+sqlite3 "$db" "SELECT COUNT(*) FROM events, json_each(json_extract(payload,'$.commands')) WHERE kind='sidecar.commands' AND json_extract(value,'$.name')='mcp' AND json_extract(value,'$.description')<>'';" | grep -qv '^0$' || { echo "MISSING: /mcp in sidecar.commands"; exit 1; }
 dir="$(sqlite3 "$db" "SELECT json_extract(payload,'$.cwd') FROM events WHERE kind='ui.session_requested' LIMIT 1;")"
 [ -f "$dir/selftest-beta.txt" ] || { echo "MISSING: $dir/selftest-beta.txt (the answer did not reach Claude)"; ls "$dir"; exit 1; }
 echo "SELFTEST PASSED ($db)"
