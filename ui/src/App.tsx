@@ -26,6 +26,8 @@ import { api } from "./state/store";
 import { useDocs } from "./state/docs";
 import { useAppState } from "./state/store";
 import { useAutoReview } from "./state/useAutoReview";
+import { useNotify } from "./state/notify";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installUsage, useViews } from "./state/usage";
 
 export default function App() {
@@ -98,6 +100,14 @@ export default function App() {
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
   const [introClosedAt, setIntroClosedAt] = useState<string | null>(null);
   const intro = introOpen(all, introClosedAt) && <Onboarding state={all} onDone={() => setIntroClosedAt(all.lastEventId)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
+  // A notification's click lands on its decision (MR-94): its workspace, then the session or doc, over anything open.
+  useNotify(all, allDocs, (t) => {
+    const w = getCurrentWindow();
+    void w.unminimize().then(() => w.show()).then(() => w.setFocus()).catch(() => {});
+    setPicker(false); setArchive(false); setSettings(false); setGod(false); setBuilds(null);
+    views.current[workspace] = { focus, docId };
+    navigate("deeper", () => { setWorkspace(t.workspace); setDocIdNow(t.doc); setFocusNow(t.session); });
+  });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
