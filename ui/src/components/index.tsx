@@ -16,9 +16,9 @@ export function Lamp({ value, label, on, onClick }: { value: string | number; la
     : <div className="mr-lamp" data-mr="Lamp" data-mr-source={label} data-on={on || undefined}>{body}</div>;
 }
 
-export function Key({ k, children, tone, onClick, disabled }: { k?: string; children: ReactNode; tone?: "primary" | "needs"; onClick?: () => void; disabled?: boolean }) {
+export function Key({ k, children, tone, onClick, disabled, submit }: { k?: string; children: ReactNode; tone?: "primary" | "needs"; onClick?: () => void; disabled?: boolean; submit?: boolean }) {
   return (
-    <button type="button" className="mr-key" data-tone={tone} onClick={onClick} disabled={disabled}>
+    <button type={submit ? "submit" : "button"} className="mr-key" data-tone={tone} onClick={onClick} disabled={disabled}>
       {k && <kbd>{k}</kbd>}
       {children}
     </button>
