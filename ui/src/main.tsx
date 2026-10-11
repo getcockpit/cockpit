@@ -11,7 +11,8 @@ import "./design/motion.css";
 import App from "./App";
 
 // Outside the desktop app (a plain browser), run against the scripted demo core: ?demo=busy etc.
-const demo = !("__TAURI_INTERNALS__" in window) ? new URLSearchParams(location.search).get("demo") ?? "busy" : null;
+// Packaged builds leave the demo out entirely: its fixtures come from real sessions (MR-93).
+const demo = import.meta.env.VITE_MR_PACKAGED !== "1" && !("__TAURI_INTERNALS__" in window) ? new URLSearchParams(location.search).get("demo") ?? "busy" : null;
 (demo ? import("./demo/backend").then((m) => m.install(demo)) : Promise.resolve()).then(() =>
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
