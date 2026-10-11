@@ -9,7 +9,7 @@ import { needsQueue } from "../picker/queue";
 import { plural, sessionTitle } from "../picker/title";
 import type { Doc } from "../state/docs";
 import type { AppState, SessionState, Span } from "../state/types";
-import { sideThread } from "./Wall";
+import { inReviewTray, sideThread } from "./Wall";
 import { ViewTabs } from "../components/ViewTabs";
 
 // The Timeline (decision 29, MR-32): the wall is now, this is before and after. One lane per
@@ -20,7 +20,6 @@ const PAST = 30, AHEAD = 15, MIN = 60_000;
 const X = (min: number) => ((min + PAST) / (PAST + AHEAD)) * 1000; // svg x for minutes from now
 const pct = (min: number) => `${(X(Math.max(-PAST, Math.min(AHEAD, min))) / 10).toFixed(2)}%`;
 const H = 44; // lane height in svg units
-const REVIEW = new Set<TileSpec["state"]>(["idle", "done", "interrupted", "error"]);
 
 type Lane = { s: SessionState; tile: TileSpec; f: Forecast };
 
@@ -35,10 +34,10 @@ export function Timeline({ state, docs, onOpen, onOpenDoc, onWall }: { state: Ap
     return sessions.map((s) => ({ s, tile: pickTile(s), f: forecast(s, all, now, typicalStep(s, all)) }));
   }, [sessions, state.sessions, minute]); // eslint-disable-line react-hooks/exhaustive-deps
   const since = now - PAST * MIN;
-  const recent = (s: SessionState) => (s.spans.at(-1)?.from ?? s.lastActivity) >= since || !REVIEW.has(pickTile(s).state);
+  const recent = (s: SessionState) => (s.spans.at(-1)?.from ?? s.lastActivity) >= since || !inReviewTray(pickTile(s));
   const planned = lanes.filter((l) => l.s.todos.length > 0 && recent(l.s));
-  const unplanned = lanes.filter((l) => l.s.todos.length === 0 && !REVIEW.has(l.tile.state));
-  const review = lanes.filter((l) => REVIEW.has(l.tile.state) && l.tile.state !== "needs_you");
+  const unplanned = lanes.filter((l) => l.s.todos.length === 0 && !inReviewTray(l.tile));
+  const review = lanes.filter((l) => inReviewTray(l.tile));
   const upcoming: Upcoming[] = soonest(planned.flatMap((l) => (l.f.kind === "eta" ? [{ title: sessionTitle(l.s), f: l.f }] : [])));
   const rank = new Map(upcoming.map((u, i) => [u.f, i]));
   const top = queue[0];
