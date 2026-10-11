@@ -27,6 +27,11 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Opened from Finder, the app inherits launchd's /usr/bin:/bin:/usr/sbin:/sbin, so git hooks
+    // (git-lfs) and Claude's own Bash miss Homebrew tools. Fix it once, before any thread spawns.
+    let path = full_path(&std::env::var("PATH").unwrap_or_default(), login_path().as_deref());
+    // SAFETY: single-threaded here; nothing else reads the environment yet.
+    unsafe { std::env::set_var("PATH", path) };
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -133,4 +138,58 @@ pub fn run() {
                 instances::stop(app);
             }
         });
+}
+
+/// The login shell's PATH, if it answers within a few seconds (a slow rc file must not block launch).
+fn login_path() -> Option<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let mut child = std::process::Command::new(shell)
+        .args(["-l", "-c", "printf %s \"$PATH\""])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let start = std::time::Instant::now();
+    while child.try_wait().ok()?.is_none() {
+        if start.elapsed() > std::time::Duration::from_secs(3) {
+            let _ = child.kill();
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let mut out = String::new();
+    std::io::Read::read_to_string(&mut child.stdout.take()?, &mut out).ok()?;
+    Some(out.trim().to_owned()).filter(|p| !p.is_empty())
+}
+
+/// Login PATH first, then the inherited one, then the tool dirs scripts rely on; no duplicates.
+fn full_path(current: &str, login: Option<&str>) -> String {
+    let base = selfbuild::sh_path();
+    let mut seen = std::collections::HashSet::new();
+    [login.unwrap_or(""), current, base.as_str()]
+        .iter()
+        .flat_map(|p| p.split(':'))
+        .filter(|d| !d.is_empty() && seen.insert(*d))
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::full_path;
+
+    #[test]
+    fn adds_homebrew_and_keeps_order_without_duplicates() {
+        let p = full_path("/usr/bin:/bin", Some("/custom/bin:/usr/bin"));
+        let dirs: Vec<&str> = p.split(':').collect();
+        assert_eq!(&dirs[..3], &["/custom/bin", "/usr/bin", "/bin"]);
+        assert!(dirs.contains(&"/opt/homebrew/bin"));
+        assert_eq!(dirs.iter().filter(|d| **d == "/usr/bin").count(), 1);
+    }
+
+    #[test]
+    fn works_without_a_login_shell() {
+        assert!(full_path("/usr/bin:/bin", None).split(':').any(|d| d == "/opt/homebrew/bin"));
+    }
 }
