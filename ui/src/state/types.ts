@@ -115,6 +115,8 @@ export type Diagram = { title?: string | null; nodes: { id: string; label: strin
 export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "other"; p: number; layer: "model" | "code" };
 // Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
 export type ClefMeter = { day: string; calls: number; tokens: number; errors: number };
+/** What the Cockpit layer spent this month on its own key (decision 34): the overhead, metered apart from Claude. */
+export type CockpitMeter = { month: string; calls: number; tokens: number; usd: number; errors: number };
 
 // A row of the model picker: what Claude Code offers this login (MR-73).
 export type ModelRow = { value: string; resolved: string | null; displayName: string; description: string; efforts: string[] };
@@ -139,6 +141,8 @@ export type AppState = {
   autoReview: boolean; // start /review by itself for PRs waiting on you (MR-72)
   compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I63)
   clef: ClefMeter;
+  cockpitLayer: boolean; // cards drawn by the Cockpit layer on its own key, sessions run plain (decision 34)
+  cockpit: CockpitMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;
   recovered: { crashedSlot: string; log: string; at: number } | null; // the dev loop rolled back after a crash at start (MR-70)

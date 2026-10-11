@@ -15,6 +15,8 @@ export const initialState: AppState = {
   compactWindow: 200_000,
   presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
+  cockpitLayer: false,
+  cockpit: { month: "", calls: 0, tokens: 0, usd: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
   recovered: null,
@@ -93,6 +95,14 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     return { ...next, workspaces: [...next.workspaces].sort((a, b) => rank(a.id) - rank(b.id)) };
   }
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
+  if (ev.kind === "ui.cockpit_layer_set") return { ...next, cockpitLayer: p.on === true };
+  if (ev.kind === "cockpit.usage") {
+    // One model call Cockpit made on its own key: metered, never session activity.
+    const month = new Date(ev.created_at).toISOString().slice(0, 7);
+    const m = next.cockpit.month === month ? next.cockpit : { month, calls: 0, tokens: 0, usd: 0, errors: 0 };
+    const tokens = ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"].reduce((n, k) => n + Number(p[k] ?? 0), 0);
+    return { ...next, cockpit: p.ok ? { ...m, calls: m.calls + 1, tokens: m.tokens + tokens, usd: m.usd + Number(p.cost_usd ?? 0) } : { ...m, errors: m.errors + 1 } };
+  }
   if (ev.kind === "ui.compact_window_set") return { ...next, compactWindow: typeof p.tokens === "number" ? p.tokens : null };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };

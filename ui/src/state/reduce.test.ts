@@ -421,3 +421,16 @@ describe("compaction window (I63)", () => {
     expect(replay([ev("A", 400_000), ev("B", null)]).compactWindow).toBeNull();
   });
 });
+
+describe("Cockpit layer (decision 34)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, at = "2026-10-11T10:00:00Z"): MrEvent => ({ id, session_id: "S1", kind, payload, anchor: null, created_at: at });
+  test("is off until switched on", () => {
+    expect(replay([]).cockpitLayer).toBe(false);
+    expect(replay([ev("A", "ui.cockpit_layer_set", { on: true })]).cockpitLayer).toBe(true);
+  });
+  test("meters the month's calls apart from Claude", () => {
+    const u = (id: string, at: string, ok = true) => ev(id, "cockpit.usage", { ok, input_tokens: 1000, output_tokens: 200, cost_usd: 0.002 }, at);
+    const m = replay([u("A", "2026-09-30T10:00:00Z"), u("B", "2026-10-01T10:00:00Z"), u("C", "2026-10-02T10:00:00Z"), u("D", "2026-10-03T10:00:00Z", false)]).cockpit;
+    expect(m).toEqual({ month: "2026-10", calls: 2, tokens: 2400, usd: 0.004, errors: 1 });
+  });
+});
