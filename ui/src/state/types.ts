@@ -19,11 +19,19 @@ export type Question = { question: string; header: string; options: { label: str
 
 export type TranscriptItem = (
   | { kind: "text"; id: string; text: string; at: number }
-  | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; background?: { status: string; summary?: string }; at: number }
+  | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; background?: Background; at: number }
   | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery }
   | { kind: "view"; id: string; title: string; blocks: ViewBlock[]; at: number }
   | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number }
 ) & { step?: string }; // the plan step in progress when it arrived (MR-69)
+
+// A backgrounded command or agent (run_in_background): it outlives its tool call. output: the file
+// Claude Code writes its output to; from/to: when it started and ended.
+export type Background = { status: string; summary?: string; output?: string; from?: number; to?: number };
+
+// A command you ran from a reply's Run button (MR-85). output: the run's id, read with run_output.
+// lost: the app restarted while it ran, so how it ended wasn't seen.
+export type Run = { id: string; command: string; cwd: string; status: "running" | "completed" | "failed" | "stopped" | "lost"; code: number | null; from: number; to: number | null };
 
 // A view Claude composed from the catalog with render_view (decision 26, MR-61). Blocks were
 // validated by the core; fields beyond the required ones may be missing.
@@ -59,11 +67,22 @@ export type AddressFlow = {
   chosen: Record<string, string>;
 };
 
+// A slash command or skill a session offers (the / menu, MR-87). terminal: it only works in Claude Code's own terminal.
+export type CommandRow = { name: string; description: string; hint: string; aliases: string[]; builtin: boolean; skill: boolean; terminal: boolean };
+// One MCP server as /mcp shows it (MR-87).
+export type McpServer = { name: string; status: string; source: string | null; scope: string | null; error: string | null; version: string | null; url: string | null; tools: string[] };
+// busy: the server an action was just asked for; done: how the last action went.
+export type McpState = { servers: McpServer[]; at: number; busy: string | null; done: { server: string; action: string; ok: boolean; error?: string } | null; error: string | null };
+
 export type SessionKind = "review" | "address" | "plan" | "blank";
+
+// One of your own kinds in the start picker (MR-80): a prompt template, `{text}` is what you type.
+export type Preset = { id: string; name: string; template: string; worktree: boolean };
 
 export type SessionState = {
   id: string;
   kind: SessionKind;
+  preset: string | null; // started from one of your own kinds (MR-80)
   workspace: string;
   title: string; // the first prompt
   name: string | null; // your rename: always wins (MR-63)
@@ -72,7 +91,10 @@ export type SessionState = {
   repo: string | null;
   branch: string | null;
   sdkSessionId: string | null;
-  model: string | null;
+  model: string | null; // what Claude Code reports it runs (init), or the alias last switched to
+  modelChoice: string | null; // your pick in the model picker (null: Claude Code's default, MR-73)
+  effort: string | null; // your effort pick (null: the model's default)
+  modelError: string | null; // the last switch Claude Code refused
   status: SessionStatus;
   startedAt: number;
   lastActivity: number;
@@ -81,6 +103,7 @@ export type SessionState = {
   pending: PendingAsk[];
   transcript: TranscriptItem[];
   todos: Todo[];
+  runs: Run[]; // commands you ran from Run buttons, oldest first (MR-85)
   files: Record<string, FileChange>;
   activity: number[]; // events per minute, last 30 minutes (sparkline)
   spans: Span[]; // status history, newest last (Timeline, MR-32)
@@ -92,6 +115,8 @@ export type SessionState = {
   archivedAt: number | null;
   fixApplied: number | null;
   fromDeleted: string | null; // name of the deleted workspace it came from: read-only history (MR-54) // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
+  commands: CommandRow[]; // its slash commands and skills (MR-87): names from init, descriptions once asked
+  mcp: McpState | null; // its MCP servers (MR-87): from init, fresh from /mcp
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 
@@ -99,6 +124,11 @@ export type Diagram = { title?: string | null; nodes: { id: string; label: strin
 export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "other"; p: number; layer: "model" | "code" };
 // Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
 export type ClefMeter = { day: string; calls: number; tokens: number; errors: number };
+/** What the Cockpit layer spent this month on its own key (decision 34): the overhead, metered apart from Claude. */
+export type CockpitMeter = { month: string; calls: number; tokens: number; usd: number; errors: number };
+
+// A row of the model picker: what Claude Code offers this login (MR-73).
+export type ModelRow = { value: string; resolved: string | null; displayName: string; description: string; efforts: string[] };
 
 export type Usage = { fiveHour: number | null; weekly: number | null; resetsAt: number | null; weeklyResetsAt: number | null };
 
@@ -109,15 +139,22 @@ export type AppState = {
   sessions: Record<string, SessionState>;
   order: string[]; // sessions in start order (the wall never reorders by state)
   usage: Usage;
+  models: ModelRow[];
   sidecar: { up: boolean; claude: string | null };
   lastEventId: string | null;
   dismissed: string[];
   workspaces: { id: string; name: string; configDir: string | null; folder: string | null }[]; // folder: pinned start folder (MR-65)
   theme: string;
   look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
+  presets: Preset[]; // your own kinds in the start picker (MR-80)
+  autoReview: boolean; // start /review by itself for PRs waiting on you (MR-72)
+  compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I63)
   clef: ClefMeter;
+  cockpitLayer: boolean; // cards drawn by the Cockpit layer on its own key, sessions run plain (decision 34)
+  cockpit: CockpitMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;
+  onboardingResetAt: string | null; // id of the last Settings → Show the intro
   recovered: { crashedSlot: string; log: string; at: number } | null; // the dev loop rolled back after a crash at start (MR-70)
   lastBuildAt: number | null; // last successful self-build
   update: UpdateState;

@@ -1,18 +1,25 @@
-import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
+import type { AppState, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
   order: [],
   usage: { fiveHour: null, weekly: null, resetsAt: null, weeklyResetsAt: null },
+  models: [],
   sidecar: { up: false, claude: null },
   lastEventId: null,
   dismissed: [],
   workspaces: [{ id: "personal", name: "Personal", configDir: null, folder: null }],
   theme: "control-room",
   look: { scale: 1, density: "default" },
+  autoReview: true,
+  compactWindow: 200_000,
+  presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
+  cockpitLayer: false,
+  cockpit: { month: "", calls: 0, tokens: 0, usd: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
+  onboardingResetAt: null,
   recovered: null,
   lastBuildAt: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
@@ -20,8 +27,8 @@ export const initialState: AppState = {
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
-    id, kind, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
+    id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null,
   };
 }
 
@@ -51,7 +58,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       case "update.finished": return { ...next, update: { ...u, phase: p.ok ? "ready" : "failed", step: p.ok ? null : String(p.step ?? ""), log: p.ok ? null : String(p.log ?? "") } };
       case "update.restarting": return { ...next, update: { ...u, restarting: strs(p.subjects) } };
       // A fresh start: whatever was building belonged to the old app; an update we restarted for is now live.
-      case "app.started": return { ...next, lastBuildAt: ev.created_at, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
+      // Runs still marked running were children of the old app: how they ended wasn't seen (MR-85).
+      case "app.started": return { ...next, sessions: loseRuns(next.sessions, ev.created_at), lastBuildAt: ev.created_at, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
       case "ui.update_seen": return { ...next, update: { ...u, whatsNew: null } };
       case "ui.update_dismissed": return { ...next, update: { ...u, phase: "idle", step: null, log: null } };
     }
@@ -60,7 +68,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "app.recovered") return { ...next, recovered: { crashedSlot: String(p.crashed_slot ?? ""), log: String(p.log ?? ""), at: ev.created_at } };
   if (ev.kind === "ui.recovery_dismissed") return { ...next, recovered: null };
   if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };
-  if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false };
+  if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false, onboardingResetAt: ev.id };
   if (ev.kind === "sidecar.limits") {
     // Limits double as the sign-in check: they're only available to a signed-in subscription.
     const account = { checked: true, signedIn: !!p.available, plan: (p.plan as string) ?? null };
@@ -68,6 +76,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const f = p.five_hour as { utilization: number; resetsAt: number | null } | null, w = p.seven_day as { utilization: number; resetsAt: number | null } | null;
     return { ...next, account, usage: { fiveHour: f?.utilization ?? next.usage.fiveHour, weekly: w?.utilization ?? next.usage.weekly, resetsAt: f?.resetsAt ?? next.usage.resetsAt, weeklyResetsAt: w?.resetsAt ?? next.usage.weeklyResetsAt } };
   }
+  // An empty list is a failed lookup: keep the rows we had.
+  if (ev.kind === "sidecar.models") return Array.isArray(p.models) && p.models.length ? { ...next, models: p.models as AppState["models"] } : next;
   if (ev.kind === "sidecar.terminated") return { ...next, sidecar: { up: false, claude: state.sidecar.claude } };
 
   if (ev.kind === "ui.workspace_created") return { ...next, workspaces: [...next.workspaces, { id: String(p.id), name: String(p.name), configDir: (p.config_dir as string) ?? null, folder: null }] };
@@ -79,17 +89,39 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if (ev.kind === "ui.workspace_folder_set") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, folder: (p.folder as string) ?? null } : w)) };
   if (ev.kind === "ui.workspace_renamed") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, name: String(p.name) } : w)) };
+  if (ev.kind === "ui.workspaces_reordered") {
+    // Ids in the given order first; any it doesn't name (created since) keep their place after them.
+    const order = Array.isArray(p.order) ? (p.order as unknown[]).map(String) : [];
+    const rank = (id: string) => { const i = order.indexOf(id); return i < 0 ? order.length : i; };
+    return { ...next, workspaces: [...next.workspaces].sort((a, b) => rank(a.id) - rank(b.id)) };
+  }
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
+  if (ev.kind === "ui.cockpit_layer_set") return { ...next, cockpitLayer: p.on === true };
+  if (ev.kind === "cockpit.usage") {
+    // One model call Cockpit made on its own key: metered, never session activity.
+    const month = new Date(ev.created_at).toISOString().slice(0, 7);
+    const m = next.cockpit.month === month ? next.cockpit : { month, calls: 0, tokens: 0, usd: 0, errors: 0 };
+    const tokens = ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"].reduce((n, k) => n + Number(p[k] ?? 0), 0);
+    return { ...next, cockpit: p.ok ? { ...m, calls: m.calls + 1, tokens: m.tokens + tokens, usd: m.usd + Number(p.cost_usd ?? 0) } : { ...m, errors: m.errors + 1 } };
+  }
+  if (ev.kind === "ui.compact_window_set") return { ...next, compactWindow: typeof p.tokens === "number" ? p.tokens : null };
+  if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
+  if (ev.kind === "ui.preset_saved") {
+    const pr = { id: String(p.id), name: String(p.name ?? ""), template: String(p.template ?? ""), worktree: p.worktree !== false };
+    const at = next.presets.findIndex((x) => x.id === pr.id);
+    return { ...next, presets: at < 0 ? [...next.presets, pr] : next.presets.map((x, i) => (i === at ? pr : x)) };
+  }
+  if (ev.kind === "ui.preset_removed") return { ...next, presets: next.presets.filter((x) => x.id !== p.id) };
   if (ev.kind === "ui.suggestion_dismissed") return { ...next, dismissed: [...next.dismissed, String(p.id)] };
   if (ev.kind === "ui.session_requested" && sid) {
     const kind = (["review", "address", "plan", "blank"].includes(String(p.kind)) ? p.kind : "blank") as SessionKind;
     const existing = next.sessions[sid];
-    const where = { repo: (p.repo as string) ?? null, branch: (p.branch as string) ?? null, workspace: (p.workspace as string) ?? "personal" };
+    const where = { repo: (p.repo as string) ?? null, branch: (p.branch as string) ?? null, workspace: (p.workspace as string) ?? "personal", preset: (p.preset as string) ?? null };
     if (existing) {
       // A resume (or a request logged after early sidecar events): keep history, restart the status.
       const resumed = p.resume ? { status: "starting" as const, error: null, archivedAt: null } : {};
-      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, spans: p.resume ? track(existing, "starting", ev.created_at) : existing.spans, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch } } };
+      return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, spans: p.resume ? track(existing, "starting", ev.created_at) : existing.spans, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch, preset: existing.preset ?? where.preset } } };
     }
     return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where } }, order: [...next.order, sid] };
   }
@@ -105,6 +137,28 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if ((ev.kind === "ui.session_archived" || ev.kind === "ui.session_unarchived") && sid && next.sessions[sid]) {
     return { ...next, sessions: { ...next.sessions, [sid]: { ...next.sessions[sid], archivedAt: ev.kind === "ui.session_archived" ? ev.created_at : null } } };
+  }
+  // Model and effort (MR-73): your pick shows at once; Claude Code's answer confirms or refuses it.
+  // Settings, not activity: they don't touch the session's status or sparkline.
+  if (ev.kind === "ui.model_set" && sid && next.sessions[sid]) {
+    const s = next.sessions[sid];
+    const str = (v: unknown) => (typeof v === "string" ? v : null);
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...s, modelError: null, ...("model" in p ? { modelChoice: str(p.model) } : {}), ...("effort" in p ? { effort: str(p.effort) } : {}) } } };
+  }
+  if (ev.kind === "sidecar.model_set" && sid && next.sessions[sid]) {
+    const s = next.sessions[sid];
+    const switched = p.ok && typeof p.model === "string" ? { model: p.model } : {};
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...s, ...switched, modelError: p.ok ? null : String(p.error ?? "Claude Code refused the switch") } } };
+  }
+  // Slash commands and MCP servers (MR-87): what the session offers, not activity.
+  if ((ev.kind === "sidecar.commands" || ev.kind === "sidecar.mcp_status" || ev.kind === "ui.mcp_action") && sid && next.sessions[sid]) {
+    const s = next.sessions[sid];
+    const upd = (x: Partial<SessionState>) => ({ ...next, sessions: { ...next.sessions, [sid]: { ...s, ...x } } });
+    if (ev.kind === "sidecar.commands") return Array.isArray(p.commands) && p.commands.length ? upd({ commands: p.commands as CommandRow[] }) : next;
+    const mcp: McpState = s.mcp ?? { servers: [], at: ev.created_at, busy: null, done: null, error: null };
+    if (ev.kind === "ui.mcp_action") return upd({ mcp: { ...mcp, busy: String(p.server ?? ""), done: null } });
+    const fresh = Array.isArray(p.servers) && p.servers.length ? (p.servers as McpServer[]) : mcp.servers;
+    return upd({ mcp: { servers: fresh, at: ev.created_at, busy: null, done: (p.done as McpState["done"]) ?? null, error: typeof p.error === "string" ? p.error : null } });
   }
   if (ev.kind === "picker.layer3" && sid) {
     const s = next.sessions[sid];
@@ -144,6 +198,14 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
       break;
+    case "ui.run_started":
+      s.runs = [...s.runs, { id: String(p.run_id ?? ev.id), command: String(p.command ?? ""), cwd: String(p.cwd ?? ""), status: "running", code: null, from: ev.created_at, to: null }];
+      break;
+    case "run.finished": {
+      const status = (["completed", "failed", "stopped"].includes(String(p.status)) ? p.status : "completed") as Run["status"];
+      s.runs = s.runs.map((r) => (r.id === p.run_id ? { ...r, status, code: typeof p.code === "number" ? p.code : null, to: ev.created_at } : r));
+      break;
+    }
     case "session.titled":
       s.autoTitle = String(p.title ?? "").trim() || s.autoTitle;
       break;
@@ -198,6 +260,14 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     s.transcript = s.transcript.map((x, i) => (i >= base.transcript.length && !x.step ? { ...x, step: doing } : x));
   }
   return { ...next, sessions: { ...next.sessions, [sid]: s }, order };
+}
+
+function loseRuns(sessions: AppState["sessions"], at: number): AppState["sessions"] {
+  const out = { ...sessions };
+  for (const [id, s] of Object.entries(sessions)) {
+    if (s.runs.some((r) => r.status === "running")) out[id] = { ...s, runs: s.runs.map((r) => (r.status === "running" ? { ...r, status: "lost" as const, to: at } : r)) };
+  }
+  return out;
 }
 
 // Closes the open span and opens one for the new status. Keeps the last 60: the Timeline shows 30 minutes.
@@ -259,9 +329,24 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
       for (const c of content as Record<string, unknown>[]) {
         if (c.type !== "tool_result") continue;
         const id = String(c.tool_use_id ?? "");
-        s.transcript = s.transcript.map((t) => (t.kind === "tool" && t.toolUseId === id ? { ...t, result: m.tool_use_result ?? c.content, isError: Boolean(c.is_error) } : t));
+        s.transcript = s.transcript.map((t) => (t.kind === "tool" && t.toolUseId === id ? { ...t, result: m.tool_use_result ?? c.content, isError: Boolean(c.is_error), ...(t.background && { background: { ...t.background, output: t.background.output ?? outputFile(c.content) } }) } : t));
       }
     }
+    return;
+  }
+  if (type === "system" && m.subtype === "init") {
+    // Names only; the sidecar follows up with descriptions (sidecar.commands). MCP: status as of start.
+    const names = (k: string) => (Array.isArray(m[k]) ? (m[k] as unknown[]).map(String) : []);
+    const skills = new Set(names("skills")), terminal = new Set(names("terminal_slash_commands"));
+    if (!s.commands.length) s.commands = names("slash_commands").map((name) => ({ name, description: "", hint: "", aliases: [], builtin: false, skill: skills.has(name), terminal: terminal.has(name) }));
+    const servers = Array.isArray(m.mcp_servers) ? (m.mcp_servers as { name?: unknown; status?: unknown; source?: unknown }[]) : [];
+    if (servers.length) s.mcp = { servers: servers.map((x) => ({ name: String(x.name ?? ""), status: String(x.status ?? ""), source: x.source ? String(x.source) : null, scope: null, error: null, version: null, url: null, tools: [] })), at: ev.created_at, busy: null, done: null, error: null };
+    return;
+  }
+  if (type === "system" && m.subtype === "commands_changed" && Array.isArray(m.commands)) {
+    // Skills found mid-session: the list is replaced; what we knew about each name is kept.
+    const was = new Map(s.commands.map((c) => [c.name, c]));
+    s.commands = (m.commands as { name: string; description?: string; argumentHint?: string; aliases?: string[]; builtin?: boolean }[]).map((c) => ({ name: c.name, description: c.description ?? "", hint: c.argumentHint ?? "", aliases: c.aliases ?? [], builtin: !!c.builtin, skill: was.get(c.name)?.skill ?? !c.builtin, terminal: was.get(c.name)?.terminal ?? false }));
     return;
   }
   if (type === "system" && (m.subtype === "task_started" || m.subtype === "task_notification")) {
@@ -270,8 +355,8 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     const id = String(m.tool_use_id ?? "");
     s.transcript = s.transcript.map((t) => {
       if (t.kind !== "tool" || t.toolUseId !== id) return t;
-      if (m.subtype === "task_started") return m.is_backgrounded ? { ...t, background: { status: "running" } } : t;
-      return t.background ? { ...t, background: { status: String(m.status ?? "completed"), summary: (m.summary as string) ?? undefined } } : t;
+      if (m.subtype === "task_started") return m.is_backgrounded ? { ...t, background: { status: "running", from: ev.created_at } } : t;
+      return t.background ? { ...t, background: { ...t.background, status: String(m.status ?? "completed"), summary: (m.summary as string) ?? undefined, output: (m.output_file as string) ?? t.background.output, to: ev.created_at } } : t;
     });
     return;
   }
@@ -284,6 +369,12 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     // Turn finished: waiting for the next message, unless one is already queued for the next turn.
     if (s.status !== "needs_you") s.status = s.transcript.some((t) => t.kind === "user" && t.delivery === "queued") ? "working" : "idle";
   }
+}
+
+// Where a background task writes its output: its tool result says "Output is being written to: <path>.output".
+function outputFile(content: unknown): string | undefined {
+  const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((c) => (c as { text?: string })?.text ?? "").join("\n") : "";
+  return /written to: (\S+\.output)/.exec(text)?.[1];
 }
 
 function settle(items: TranscriptItem[], from: Delivery[], to: Delivery): TranscriptItem[] {
@@ -330,6 +421,13 @@ function addressStep(a: SessionState["address"], kind: string, p: Record<string,
 
 /** Where a new session in this workspace starts (MR-65): its pinned folder, else the folder its
  *  latest session ran in, else null (the picker's own fallback). */
+// The intro is open on first run (after the replay) and again after each Settings → Show the intro,
+// even when it was closed earlier in this run (closedAt = the last event id when it closed).
+export function introOpen(state: AppState, closedAt: string | null): boolean {
+  if (state.lastEventId === null || state.onboarded) return false;
+  return closedAt === null || (state.onboardingResetAt !== null && state.onboardingResetAt > closedAt);
+}
+
 export function workspaceFolder(state: AppState, ws: string): string | null {
   const pinned = state.workspaces.find((w) => w.id === ws)?.folder;
   if (pinned) return pinned;

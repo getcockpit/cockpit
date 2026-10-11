@@ -149,6 +149,10 @@ fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
                 doc.pending_changes.push(format!("Edited the {field} of block {block_id} from \"{before}\" to \"{value}\""));
             }
         }
+        // Deleting a doc hides it: the log keeps its events, the fold drops it.
+        "ui.doc_archived" => {
+            docs.remove(&doc_id);
+        }
         "ui.doc_feedback_sent" => {
             if let Some(doc) = docs.get_mut(&doc_id) {
                 doc.pending_notes.clear();
@@ -325,11 +329,33 @@ mod tests {
         docs.apply(&ev(n, "ui.doc_feedback_sent", json!({ "doc_id": id })));
         assert!(docs.get(&id).unwrap().pending_changes.is_empty());
     }
+
+    #[test]
+    fn an_archived_doc_is_gone_and_later_writes_to_it_are_ignored() {
+        let docs = Docs::default();
+        let mut n = 0;
+        let (text, _) = run(&docs, &mut n, "doc_create", json!({ "title": "T" }));
+        let id = text.split_whitespace().nth(2).unwrap().to_owned();
+        n += 1;
+        docs.apply(&ev(n, "ui.doc_archived", json!({ "doc_id": id })));
+        assert!(docs.get(&id).is_none());
+        assert!(docs.list().is_empty());
+        assert!(run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "section": "goal", "takeaway": "A" })).1);
+        assert!(docs.get(&id).is_none());
+    }
 }
 
 #[tauri::command]
 pub fn docs_list(docs: tauri::State<'_, Docs>) -> Vec<Doc> {
     docs.list()
+}
+
+/// Deletes a working doc for the user. The log is append-only, so it's hidden, not erased.
+#[tauri::command]
+pub fn doc_archive(app: tauri::AppHandle, docs: tauri::State<'_, Docs>, doc_id: String) -> Result<(), String> {
+    let doc = docs.get(&doc_id).ok_or("no such doc")?;
+    crate::eventlog::record(&app, doc.session_id.as_deref(), "ui.doc_archived", &json!({ "doc_id": doc.id, "title": doc.title }), Some(&format!("doc:{}", doc.id)));
+    Ok(())
 }
 
 /// Turns the user's pending notes, decisions and edits into one message for Claude, logs that it

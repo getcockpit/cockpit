@@ -6,9 +6,11 @@ import { pickTile } from "../picker/pick";
 import { isAppChange, proposedReplies, proseQuestion, replyOptions } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { summarizeTool } from "../picker/toolSummary";
+import { editCard, isCard, isCheck } from "../picker/logCards";
+import { CheckList, EditSnippet, StepSummary } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
-import type { Diagram, SessionState, Todo, TranscriptItem } from "../state/types";
+import type { Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
 import type { Doc } from "../state/docs";
 import { AskRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
@@ -17,12 +19,18 @@ import { FlowDiagram } from "../components/FlowDiagram";
 import { parseReport, TurnText } from "../components/Turn";
 import { ChangeMap } from "./ChangeMap";
 import { PlanPanel } from "../components/PlanPanel";
+import { BackgroundPanel } from "../components/BackgroundPanel";
+import { RunCommand } from "../components/RunCommand";
 import { CatalogView, viewReplies } from "../components/CatalogView";
 import { Mark } from "../components/Turn";
 import { useTick } from "../components/Now";
 import { ago } from "../picker/now";
 import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
+import { ModelPicker } from "../components/ModelPicker";
+import { SlashMenu } from "../components/SlashMenu";
+import { McpPanel } from "../components/McpPanel";
+import { matchCommands, routeSlash, typedCommand } from "../picker/slash";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
@@ -31,7 +39,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: SessionState; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void }) {
+export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: { s: SessionState; models: ModelRow[]; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -42,9 +50,11 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
   }, [s.cwd, s.repo]);
   const tile = useMemo(() => pickTile(s), [s]);
   const [showRaw, setShowRaw] = useState(false);
-  const [term, setTerm] = useState(false);
+  // The terminal takeover; `command`: a slash command it runs first (MR-87: /doctor, /mcp sign-in…).
+  const [term, setTerm] = useState<false | { command?: string }>(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
+  const [unknown, setUnknown] = useState<string | null>(null); // a /command this session doesn't know: ask first
   const [reviewing, setReviewing] = useState<string | null>(null); // a file path: the review panel is open
-  const [text, setText] = useState("");
   const live = s.status !== "ended" && s.status !== "error";
   // A turn is in flight: only then does interrupting mean anything (F9).
   const running = s.status === "working" || s.status === "starting";
@@ -76,12 +86,28 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
       if (keyOf(e) === "d" && e.metaKey && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
       if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
       if (keyOf(e) === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
-      if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => !x); }
+      if (keyOf(e) === "m" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
+      if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => (x ? false : {})); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack, s.id, running, replies]);
 
+
+  const openTerminal = (command?: string) => {
+    if (!s.sdkSessionId) { window.dispatchEvent(new CustomEvent("mr:toast", { detail: "The terminal opens once Claude has started this session" })); return; }
+    setMcpOpen(false); setTerm({ command });
+  };
+  // A message starting with / may be a command the app shows itself or one only Claude Code's terminal can run (MR-87).
+  const submit = (msg: string) => {
+    const r = routeSlash(msg, s.commands);
+    setUnknown(null);
+    if (r.to === "native" && r.name === "mcp") { setMcpOpen(true); return; }
+    if (r.to === "native" && r.name === "model") { document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); return; }
+    if (r.to === "terminal") { openTerminal(r.command); return; }
+    if (r.to === "unknown") { setUnknown(msg); return; }
+    void api.send(s.id, msg);
+  };
 
   // The pinned side panel sits just under the sticky header, whatever height it has right now.
   const head = useRef<HTMLElement>(null);
@@ -109,11 +135,12 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
         {running && <LiveTrack s={s} />}
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10 }}>
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
-          {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => !x)}>{term ? "Back to visual" : "Open in terminal"}</Key>}
+          {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => (x ? false : {}))}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
           <span className="mr-grow" />
+          {!s.fromDeleted && <ModelPicker s={s} models={models} />}
           {running && <Key k="⌘." onClick={() => void api.interrupt(s.id)}>Interrupt</Key>}
           {s.archivedAt
             ? <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Archived · restore</Key>
@@ -134,7 +161,7 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
           ))}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
-          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <Transcript items={s.transcript} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} />}
+          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} command={term.command} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider>}
           {live && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {!running && replies.length > 0 && !repliesInline && (
@@ -143,11 +170,19 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
                   {replies.map((r, i) => <Key key={r} k={i < 3 ? `⌥${i + 1}` : undefined} tone={i === 0 ? "primary" : undefined} onClick={() => void api.send(s.id, r)}>{r}</Key>)}
                 </div>
               )}
-              <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>
-                <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
-                <input className="mr-input" placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next"} value={text} onChange={(e) => setText(e.target.value)} aria-label="Message this session" />
-                <Key k="↵" onClick={() => { if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>Send</Key>
-              </form>
+              {/* Right above the message box the command was typed in: higher up, a long session has them off-screen. */}
+              {mcpOpen && !term && <McpPanel s={s} onClose={() => setMcpOpen(false)} onSignIn={() => openTerminal("/mcp")} />}
+              {unknown && (
+                <div className="mr-qrow" data-mr="UnknownCommand" data-mr-source={s.id}><div className="mr-flag" style={{ background: "var(--mr-needs)" }} /><div className="mr-qbody">
+                  <span><b className="mr-mono">{unknown.split(/\s/)[0]}</b> isn't a command this session knows.</span>
+                  <span className="mr-row" style={{ gap: 8 }}>
+                    {s.sdkSessionId && <Key tone="primary" onClick={() => { openTerminal(unknown); setUnknown(null); }}>Run it in the terminal</Key>}
+                    <Key onClick={() => { void api.send(s.id, unknown); setUnknown(null); }}>Send to Claude anyway</Key>
+                    <Key onClick={() => setUnknown(null)}>Cancel</Key>
+                  </span>
+                </div></div>
+              )}
+              <Composer s={s} running={running} onSubmit={submit} />
             </div>
           )}
         </section>
@@ -156,11 +191,48 @@ export function Focus({ s, docs, onOpenDoc, onBack, onBuild, onDone }: { s: Sess
         <aside style={{ flex: "1 1 300px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12, position: "sticky", top: "var(--mr-focus-head, 0px)", alignSelf: "flex-start", maxHeight: "calc(100vh - var(--mr-focus-head, 0px) - 16px)", overflowY: "auto" }}>
           {/* Only what this session has: no empty plan box, no local change map for a PR review (J8). */}
           {s.todos.length > 0 && <PlanPanel s={s} />}
+          <BackgroundPanel s={s} />
           {s.kind !== "review" && <ChangeMap s={s} onReview={setReviewing} />}
-          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.model ?? ""}{s.costUsd ? ` · $${s.costUsd.toFixed(2)} equiv.` : ""}</span>
+          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{s.costUsd ? `$${s.costUsd.toFixed(2)} equiv.` : ""}</span>
         </aside>
       </main>
     </div>
+  );
+}
+
+// The message box, with the / menu (MR-87): typing / lists this session's commands and skills.
+function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean; onSubmit: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const [active, setActive] = useState(0);
+  const [closed, setClosed] = useState(false); // Esc hides the menu for what's typed now
+  const asked = useRef(false);
+  const typed = typedCommand(text);
+  const rows = useMemo(() => (typed === null || closed ? [] : matchCommands(s.commands, typed)), [typed, closed, s.commands]);
+  // Names come with init; descriptions need one ask of the running session.
+  useEffect(() => {
+    if (typed === null || asked.current || s.commands.some((c) => c.description)) return;
+    asked.current = true;
+    api.commands(s.id).catch(() => {});
+  }, [typed, s.id, s.commands]);
+  useEffect(() => { setActive(0); }, [typed]);
+  const pick = (name: string) => { setText(`/${name} `); setClosed(true); };
+  const send = () => { const t = text.trim(); if (t) { onSubmit(t); setText(""); setClosed(false); } };
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!rows.length) return;
+    const k = keyOf(e.nativeEvent);
+    if (k === "ArrowDown" || k === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (k === "ArrowDown" ? 1 : rows.length - 1)) % rows.length); }
+    else if (k === "Tab") { e.preventDefault(); pick(rows[active].name); }
+    // ↵ on a row: an exact name runs, anything else completes it first (so arguments can follow).
+    else if (k === "Enter" && rows[active].name !== typed) { e.preventDefault(); pick(rows[active].name); }
+    else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); setClosed(true); }
+  };
+  return (
+    <form className="mr-row" style={{ position: "relative" }} onSubmit={(e) => { e.preventDefault(); send(); }}>
+      <SlashMenu rows={rows} active={active} onPick={(r) => pick(r.name)} onHover={setActive} source={s.id} />
+      <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
+      <input className="mr-input" placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next · / for commands and skills"} value={text} onChange={(e) => { setText(e.target.value); setClosed(false); }} onKeyDown={onKey} aria-label="Message this session" aria-autocomplete="list" aria-expanded={rows.length > 0} />
+      <Key k="↵" onClick={send}>Send</Key>
+    </form>
   );
 }
 
@@ -200,16 +272,24 @@ function Transcript({ items, plan, running, raw, diagrams, onDiagram, onDiscover
         <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}</div>
       ) : t.kind === "tools" ? (
         <ToolGroup key={t.id} tools={t.tools} onDiscover={onDiscover} />
-      ) : (
-        <ToolRow key={t.id} t={t} onDiscover={onDiscover} />
-      );
+      ) : t.kind === "checks" ? (
+        <CheckList key={t.id} tools={t.tools} />
+      ) : (() => {
+        const c = editCard(t);
+        return c ? <EditSnippet key={t.id} t={t} c={c} onDiscover={onDiscover} /> : <ToolRow key={t.id} t={t} onDiscover={onDiscover} />;
+      })();
 
   return (
     <div className="mr-stream" style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
       {raw
         ? items.map((t) => <pre key={t.id} className="mr-code" style={{ fontSize: 11 }}>{JSON.stringify(t, null, 1)}</pre>)
         : groupSteps(items.filter((t) => !(t.kind === "tool" && HIDDEN_TOOLS.has(t.name)))).map((t) => t.kind === "step"
-          ? <StepGroup key={t.id} g={t} todo={plan.find((x) => x.content === t.step) ?? null} live={running} onDiscover={onDiscover}>{t.signal.map(one)}</StepGroup>
+          ? (() => {
+              // More than three edits in a step fold behind one button: its summary already lists the files (MR-76).
+              const edits = t.signal.filter((x) => x.kind === "tool" && editCard(x));
+              const fold = edits.length > 3;
+              return <StepGroup key={t.id} g={t} todo={plan.find((x) => x.content === t.step) ?? null} live={running} onDiscover={onDiscover} folded={fold ? edits.map(one) : undefined}>{mergeChecks(fold ? t.signal.filter((x) => !edits.includes(x)) : t.signal).map(one)}</StepGroup>;
+            })()
           : one(t))}
       <div ref={end} />
     </div>
@@ -260,7 +340,7 @@ export function nextReplies(s: SessionState): string[] {
 
 type Tool = Extract<TranscriptItem, { kind: "tool" }>;
 type StepRow = { kind: "step"; id: string; step: string; tools: Tool[]; signal: Row[]; from: number; to: number };
-type Row = TranscriptItem | { kind: "tools"; id: string; tools: Tool[] } | StepRow;
+type Row = TranscriptItem | { kind: "tools"; id: string; tools: Tool[] } | { kind: "checks"; id: string; tools: Tool[] } | StepRow;
 
 // Group by plan step (MR-69): everything that happened while a step was in progress sits under that
 // step. Its routine tool calls fold into one line; what you'd want to read (Claude's prose, composed
@@ -278,8 +358,10 @@ export function groupSteps(items: TranscriptItem[]): Row[] {
       cur = { kind: "step", id: `step:${t.id}`, step: t.step, tools: [], signal: [], from: t.at, to: t.at };
       out.push(cur);
     }
+    // Edits and checks count as the step's actions and still show as cards under it (MR-75).
+    // Background tasks stay out of the step's actions: they outlive the step that started them.
     if (t.kind === "tool" && !t.isError && !t.background) cur.tools.push(t);
-    else cur.signal.push(t);
+    if (t.kind !== "tool" || t.isError || t.background || isCard(t)) cur.signal.push(t);
     cur.to = t.at;
   }
   flush();
@@ -288,8 +370,9 @@ export function groupSteps(items: TranscriptItem[]): Row[] {
 
 // One plan step: its state, name, what it did and for how long. The routine actions open on click;
 // the rows that matter (children) are always shown under it.
-function StepGroup({ g, todo, live, onDiscover, children }: { g: StepRow; todo: Todo | null; live: boolean; onDiscover: (what: string) => void; children: React.ReactNode }) {
+function StepGroup({ g, todo, live, onDiscover, folded, children }: { g: StepRow; todo: Todo | null; live: boolean; onDiscover: (what: string) => void; folded?: React.ReactNode[]; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [showEdits, setShowEdits] = useState(false);
   const state = todo?.status ?? null;
   const doing = state === "in_progress" && live;
   const t = useTick(doing);
@@ -306,14 +389,21 @@ function StepGroup({ g, todo, live, onDiscover, children }: { g: StepRow; todo: 
           </span>
           <strong style={{ flex: "none", maxWidth: "45%" }} className="mr-ellipsis">{g.step}</strong>
           <span className="mr-ink2 mr-grow mr-ellipsis">
-            {now ? `now: ${summarizeTool(now.name, now.input)}` : g.tools.length ? summarise(g.tools) : ""}
+            {now ? `now: ${summarizeTool(now.name, now.input)}` : ""}
           </span>
           {g.tools.length > 0 && <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{g.tools.length} {g.tools.length === 1 ? "action" : "actions"}</span>}
           {took >= 1000 && <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{ago(took)}</span>}
           {g.tools.length > 0 && <span className="mr-mono" style={{ fontSize: 12 }}>{open ? "▾" : "▸"}</span>}
         </button>
+        <StepSummary tools={[...g.tools, ...g.signal.filter((x): x is Tool => x.kind === "tool" && !!x.isError)]} source={g.id} />
         {open && <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{g.tools.map((x) => <ToolRow key={x.id} t={x} onDiscover={onDiscover} />)}</div>}
       </div>
+      {folded && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)", paddingLeft: 24 }}>
+          <span style={{ alignSelf: "flex-start" }}><Key onClick={() => setShowEdits((x) => !x)}>{showEdits ? "Hide" : "Show"} {folded.length} edits</Key></span>
+          {showEdits && folded}
+        </div>
+      )}
       {children && <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)", paddingLeft: 24 }}>{children}</div>}
     </section>
   );
@@ -330,10 +420,23 @@ function groupTools(items: TranscriptItem[]): Row[] {
     run = [];
   };
   for (const t of items) {
-    if (t.kind === "tool" && !t.background) run.push(t);
+    if (t.kind === "tool" && !t.background && !isCard(t)) run.push(t);
     else { flush(); out.push(t); }
   }
   flush();
+  return mergeChecks(out);
+}
+
+// Back-to-back test, build and type-check runs read as one verification checklist (MR-75).
+export function mergeChecks(rows: Row[]): Row[] {
+  const out: Row[] = [];
+  for (const r of rows) {
+    const prev = out.at(-1);
+    if (r.kind === "tool" && isCheck(r)) {
+      if (prev?.kind === "checks") prev.tools.push(r);
+      else out.push({ kind: "checks", id: `c:${r.id}`, tools: [r] });
+    } else out.push(r);
+  }
   return out;
 }
 

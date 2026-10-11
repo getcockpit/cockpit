@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { initialState, reduce, replay } from "./reduce";
 import type { AppState, MrEvent } from "./types";
 
-export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string };
+export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string };
 
 type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent };
 
@@ -51,16 +51,34 @@ export const api = {
   classify: (session: string, itemId: string, text: string) => invoke("layer2_classify", { session, itemId, text }),
   layer2Status: () => invoke<{ configured: boolean }>("layer2_status"),
   layer2Save: (accountId: string, apiToken: string) => invoke("layer2_save_credentials", { accountId, apiToken }),
-  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean, workspace?: string) => invoke<string>("session_start", { cwd, prompt, kind, worktree, workspace: workspace ?? currentWorkspace() }),
+  cockpitStatus: () => invoke<{ configured: boolean }>("cockpit_status"),
+  cockpitSaveKey: (key: string) => invoke("cockpit_save_key", { key }),
+  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean, workspace?: string, preset?: string) => invoke<string>("session_start", { cwd, prompt, kind, worktree, workspace: workspace ?? currentWorkspace(), preset }),
   resume: (s: { id: string; cwd: string; kind: string; sdkSessionId: string | null }) =>
     invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
-  prs: (cwd: string, mode: "review" | "address") => invoke<Pr[]>("gh_prs", { cwd, mode }),
+  // Every repo by default (MR-48); `repo` ("owner/name") keeps one (MR-79).
+  prs: (cwd: string, mode: "review" | "address", repo?: string) => invoke<Pr[]>("gh_prs", { cwd, mode, repo }),
+  ghRepo: (cwd: string) => invoke<string | null>("gh_repo", { cwd }),
+  reviewState: (url: string) => invoke<unknown>("gh_review_state", { url }),
   // Every message you send is acknowledged on screen right away (MR-58), then the session shows it's working.
   send: (session: string, text: string) => {
     window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Sent: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}` }));
     return invoke("session_send", { session, text }).catch((e) => { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Not sent: ${String(e).split("\n")[0]}` })); throw e; });
   },
+  // Model and effort for one session (MR-73): null goes back to Claude Code's default, a missing key leaves it.
+  setModel: (session: string, change: { model?: string | null; effort?: string | null }) => invoke("session_set_model", { session, change }),
+  modelsRefresh: () => invoke("models_refresh"),
   interrupt: (session: string) => invoke("session_interrupt", { session }),
+  // Slash commands and /mcp (MR-87): answers arrive as sidecar.commands / sidecar.mcp_status.
+  commands: (session: string) => invoke("session_commands", { session }),
+  mcpStatus: (session: string) => invoke("session_mcp_status", { session }),
+  mcpAction: (session: string, server: string, action: "reconnect" | "enable" | "disable") => invoke("session_mcp_action", { session, server, action }),
+  // A command from a reply's Run button (MR-85): runs in the session's folder, listed in its side panel.
+  run: (session: string, cwd: string, command: string) => {
+    window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Running: ${command.length > 60 ? `${command.slice(0, 57)}…` : command}` }));
+    return invoke<string>("run_command", { session, cwd, command }).catch((e) => { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Didn't run: ${String(e).split("\n")[0]}` })); throw e; });
+  },
+  runStop: (session: string, runId: string) => invoke("run_stop", { session, runId }),
   stop: (session: string) => invoke("session_stop", { session }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
   log: (kind: string, payload: Record<string, unknown>, sessionId?: string, anchor?: string) => invoke("event_append", { sessionId, kind, payload, anchor }),

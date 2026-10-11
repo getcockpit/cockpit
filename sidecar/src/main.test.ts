@@ -79,3 +79,41 @@ test("limits are read without running a turn", async () => {
   expect(out.find((m) => m.type === "limits")).toMatchObject({ available: true, plan: "max", five_hour: { utilization: 0.42, resetsAt: 1791576000 }, seven_day: { utilization: 0.07, resetsAt: null } });
   expect(out.some((m) => m.type === "session_started")).toBe(false);
 });
+
+test("the model list is read without running a turn, with each model's effort levels", async () => {
+  const out = await run([{ type: "models" }], ["ready", "models"]);
+  const m = out.find((x) => x.type === "models") as { models: { value: string; efforts: string[] }[] };
+  expect(m.models.map((r) => r.value)).toEqual(["default", "haiku"]);
+  expect(m.models[0].efforts).toContain("xhigh");
+  expect(m.models[1].efforts).toEqual([]);
+});
+
+test("model and effort switch mid-session, and a refused switch reports why", async () => {
+  const out = await run(
+    [{ type: "start", session: "m1", cwd: "/tmp", prompt: "hi", model: "opus", effort: "high" }, { type: "set_model", session: "m1", model: "haiku", effort: "low" }, { type: "set_model", session: "m1", model: "broken" }],
+    ["ready", "model_set", "model_set"],
+  );
+  const sets = out.filter((x) => x.type === "model_set");
+  expect(sets[0]).toMatchObject({ session: "m1", model: "haiku", effort: "low", ok: true });
+  expect(sets[1]).toMatchObject({ session: "m1", model: "broken", ok: false, error: "unknown model" });
+});
+
+test("a session lists its commands once it starts, marking skills and terminal-only ones", async () => {
+  const out = await run([{ type: "start", session: "c1", cwd: "/tmp", prompt: "hi" }], ["ready", "session_started", "commands"]);
+  const c = out.find((x) => x.type === "commands") as { session: string; commands: { name: string; skill: boolean; terminal: boolean; hint: string }[] };
+  expect(c.session).toBe("c1");
+  expect(c.commands.find((r) => r.name === "mr-task")).toMatchObject({ skill: true, terminal: false, hint: "<task>" });
+  expect(c.commands.find((r) => r.name === "doctor")).toMatchObject({ skill: false, terminal: true });
+});
+
+test("MCP servers are listed, toggled and reconnected, and a failed action says why", async () => {
+  const out = await run(
+    [{ type: "start", session: "x1", cwd: "/tmp", prompt: "hi" }, { type: "mcp_status", session: "x1" }, { type: "mcp_action", session: "x1", server: "docs", action: "disable" }, { type: "mcp_action", session: "x1", server: "nope", action: "reconnect" }],
+    ["ready", "mcp_status", "mcp_status", "mcp_status"],
+  );
+  const st = out.filter((x) => x.type === "mcp_status") as { servers: { name: string; status: string; tools: string[] }[]; done?: { ok: boolean; error?: string } }[];
+  expect(st[0].servers).toEqual([expect.objectContaining({ name: "docs", status: "connected", tools: ["read"] }), expect.objectContaining({ name: "mail", status: "needs-auth" })]);
+  expect(st[1].done).toMatchObject({ server: "docs", action: "disable", ok: true });
+  expect(st[1].servers[0].status).toBe("disabled");
+  expect(st[2].done).toMatchObject({ server: "nope", ok: false, error: "no server nope" });
+});

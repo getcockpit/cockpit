@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -52,7 +52,12 @@ fn plan_mode() -> bool {
 }
 
 fn view_mode() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "view")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "view" || v == "layer")
+}
+
+/// The Cockpit layer (decision 34): a plain session, with the cards drawn afterwards on the layer's key.
+fn layer_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "layer")
 }
 
 fn doc_mode() -> bool {
@@ -77,6 +82,9 @@ pub fn run(app: AppHandle) {
             for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
                 let _ = std::process::Command::new("git").arg("-C").arg(&dir).args(&args).status();
             }
+        }
+        if layer_mode() {
+            crate::eventlog::record(&app, None, "ui.cockpit_layer_set", &serde_json::json!({ "on": true }), None);
         }
         let ws = if workspace_mode() { Some(crate::workspaces::workspace_create(app.clone(), "Selftest".into()).expect("workspace")) } else { None };
         let state = app.state::<crate::sidecar::Sidecar>();
@@ -112,6 +120,7 @@ pub fn run(app: AppHandle) {
             Some(resume_mode()),
             None,
             ws,
+            None,
         );
         if let Err(e) = res {
             eprintln!("[selftest] start failed: {e}");
@@ -153,6 +162,22 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(300)).await; app.exit(if text.to_lowercase().contains("not logged in") { 0 } else { 1 }); });
         }
+        Some("sdk") if payload["message"]["type"] == "result" && layer_mode() => {
+            // Wait for the layer's metered call after the turn, then stop; the script checks the log.
+            let app = app.clone();
+            std::thread::spawn(move || {
+                for _ in 0..60 {
+                    std::thread::sleep(Duration::from_millis(500));
+                    if !app.state::<crate::eventlog::EventLog>().list_kind("cockpit.usage").unwrap_or_default().is_empty() {
+                        std::thread::sleep(Duration::from_millis(500));
+                        app.exit(0);
+                        return;
+                    }
+                }
+                eprintln!("[selftest] the layer never called");
+                app.exit(1);
+            });
+        }
         Some("session_ended") if workspace_mode() => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(500)).await; app.exit(1); });
@@ -166,7 +191,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
             let app2 = app.clone();
             std::thread::spawn(move || {
-                let r = crate::terminal::term_open(app2.clone(), session.clone(), sdk, cwd, 100, 30);
+                let r = crate::terminal::term_open(app2.clone(), session.clone(), sdk, cwd, 100, 30, None);
                 if let Err(e) = r { eprintln!("[selftest] term_open failed: {e}"); std::process::exit(1); }
                 std::thread::sleep(Duration::from_secs(8));
                 let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session.clone(), "/exit".into());
@@ -194,7 +219,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let res = crate::sidecar::session_start(
                 app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd,
                 "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(),
-                sdk, None, Some("blank".into()), Some(false), Some(session), None,
+                sdk, None, Some("blank".into()), Some(false), Some(session), None, None,
             );
             if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
         }

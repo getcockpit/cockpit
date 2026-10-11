@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=terminal MR_DATA_DIR="$data" perl -e 'alarm 240; exec @ARGV' "$root/src-tauri/target/debug/minority-report" || true
+MR_SELFTEST=terminal MR_DATA_DIR="$data" perl -e 'alarm 240; exec @ARGV' "$root/src-tauri/target/debug/Cockpit" || true
 db="$data/events.sqlite"
 sqlite3 "$db" "SELECT kind, COUNT(*) FROM events WHERE kind LIKE 'ui.terminal%' OR kind='ui.session_requested' GROUP BY kind ORDER BY MIN(id);"
 need() { [ "$(sqlite3 "$db" "$1")" != "0" ] || { echo "FAILED: $2"; exit 1; }; }

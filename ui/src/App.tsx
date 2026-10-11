@@ -1,7 +1,7 @@
 import { RecoveryBanner } from "./components/RecoveryBanner";
 import { keyOf } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { needsLayer2, wantsDiagram } from "./picker/pick";
+import { needsLayer2 } from "./picker/pick";
 import { DeleteWorkspace, WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
@@ -10,6 +10,7 @@ import { Toast } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { navigate, Presence } from "./components/motion";
 import type { AppState } from "./state/types";
+import { introOpen } from "./state/reduce";
 const SignInPane = lazy(() => import("./screens/Terminal").then((m) => ({ default: m.SignInPane })));
 import { Focus } from "./screens/Focus";
 import { StartPicker } from "./screens/StartPicker";
@@ -23,9 +24,12 @@ import { VoiceController, type PointTarget } from "./screens/Voice";
 import { api } from "./state/store";
 import { useDocs } from "./state/docs";
 import { useAppState } from "./state/store";
+import { useAutoReview } from "./state/useAutoReview";
+import { installUsage, useViews } from "./state/usage";
 
 export default function App() {
   const all = useAppState();
+  useAutoReview(all);
   const allDocs = useDocs();
   const [workspace, setWorkspace] = useState(() => { try { return localStorage.getItem("mr.workspace") ?? "personal"; } catch { return "personal"; } });
   const [signIn, setSignIn] = useState<string | null>(null);
@@ -50,13 +54,7 @@ export default function App() {
       asked.current.add(item.id);
       api.classify(sess.id, item.id, item.text).catch(() => {});
     }
-    // Picker layer 3: long structured prose gets a diagram in the background.
-    for (const sess of Object.values(all.sessions)) {
-      const item = wantsDiagram(sess);
-      if (!item || asked.current.has(`d:${item.id}`)) continue;
-      asked.current.add(`d:${item.id}`);
-      api.diagram(sess.id, item.id, item.text).catch(() => {});
-    }
+    // Picker layer 3 (diagrams) runs only from the Diagram button: each one is a Haiku call on the user's plan.
   }, [all.sessions]);
   // Each workspace sees only its own sessions and docs (decision 24).
   const state: AppState = useMemo(() => {
@@ -97,8 +95,8 @@ export default function App() {
   const [wallView, setWallViewNow] = useState<"wall" | "timeline">(() => { try { return localStorage.getItem("mr.wallView") === "timeline" ? "timeline" : "wall"; } catch { return "wall"; } });
   const setWallView = (v: "wall" | "timeline") => navigate("side", () => { setWallViewNow(v); try { localStorage.setItem("mr.wallView", v); } catch { /* per-viewer convenience */ } });
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
-  const [introClosed, setIntroClosed] = useState(false);
-  const intro = all.lastEventId !== null && !all.onboarded && !introClosed && <Onboarding state={all} onDone={() => setIntroClosed(true)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
+  const [introClosedAt, setIntroClosedAt] = useState<string | null>(null);
+  const intro = introOpen(all, introClosedAt) && <Onboarding state={all} onDone={() => setIntroClosedAt(all.lastEventId)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -128,6 +126,9 @@ export default function App() {
   });
 
   const view = docId ? "doc map" : focus ? "focus" : wallView;
+  // Feature usage (MR-83): the main screen first, then every open overlay.
+  useEffect(() => installUsage(), []);
+  useViews([view, picker && "start picker", settings && "settings", god && "god mode", archive && "archive", builds !== null && "builds", switcher && "workspace switcher", signIn && "sign in", deleting && "delete workspace", intro && "intro"].filter((v): v is string => typeof v === "string"));
   const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src, component) => { if (component === "WorkspaceTab") return src !== "personal" ? { label: "Delete workspace…", run: () => setDeleting(src) } : null; const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
   // Point + talk: which session does the thing under the pointer belong to?
   const resolve = (t: PointTarget) => {
@@ -178,7 +179,7 @@ export default function App() {
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, overlays);
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} models={state.models} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docs.filter((d) => d.session_id === focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, overlays);
   if (wallView === "timeline") return shell(<ErrorBoundary key="timeline" name="timeline"><Timeline state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onWall={() => setWallView("wall")} /></ErrorBoundary>, overlays);
   return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
 }

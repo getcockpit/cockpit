@@ -17,6 +17,13 @@ export type Suggestion = {
   rank: number; // lower first
 };
 
+// One of my PRs is worth addressing when a reviewer asked for changes or a thread waits on my reply.
+export const toAddress = (p: Pr) => p.reviewDecision === "CHANGES_REQUESTED" || (p.waiting ?? 0) > 0;
+export function addressNote(p: Pr): string {
+  const parts = [p.reviewDecision === "CHANGES_REQUESTED" && "changes requested", p.waiting && `${plural(p.waiting, "thread")} waiting on you`, p.isDraft && "draft"];
+  return parts.filter(Boolean).join(" · ");
+}
+
 export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine: Pr[] }, dismissed: Set<string>): Suggestion[] {
   const out: Suggestion[] = [];
   const sessions = state.order.map((id) => state.sessions[id]);
@@ -36,7 +43,8 @@ export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine:
   if (applied) out.push({ id: `rebuild:${applied}`, why: `${plural(applied, "fix")} applied to your app`, what: "Rebuild and relaunch to use it", action: { kind: "build_mine" }, label: "Rebuild & relaunch", rank: 1 });
   const reviewing = new Set(sessions.filter((s) => s.kind === "review").map((s) => s.title));
   for (const p of prs.review) if (![...reviewing].some((t) => t.includes(String(p.number)))) out.push({ id: `pr-review:${p.number}`, why: `PR #${p.number} waits for your review${p.author ? ` (@${p.author.login})` : ""}`, what: p.title, action: { kind: "start", mode: "review", value: p.url, repo: p.repository?.nameWithOwner }, label: "Start review", rank: 5 });
-  for (const p of prs.mine) if (p.reviewDecision === "CHANGES_REQUESTED") out.push({ id: `pr-address:${p.number}`, why: `Changes requested on your PR #${p.number}`, what: p.title, action: { kind: "start", mode: "address", value: p.url ?? String(p.number), repo: p.repository?.nameWithOwner }, label: "Address", rank: 2 });
+  const addressing = sessions.filter((s) => s.kind === "address").map((s) => s.title);
+  for (const p of prs.mine) if (toAddress(p) && !addressing.some((t) => t.includes(String(p.number)))) out.push({ id: `pr-address:${p.number}:${p.waiting ?? 0}`, why: p.reviewDecision === "CHANGES_REQUESTED" ? `Changes requested on your PR #${p.number}` : `${plural(p.waiting ?? 0, "thread")} waiting on you in PR #${p.number}`, what: p.title, action: { kind: "start", mode: "address", value: p.url ?? String(p.number), repo: p.repository?.nameWithOwner }, label: "Address", rank: 2 });
 
   return out.filter((x) => !dismissed.has(x.id)).sort((a, b) => a.rank - b.rank).slice(0, 3);
 }

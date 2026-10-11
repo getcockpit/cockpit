@@ -1,4 +1,5 @@
 mod changes;
+mod cockpit_layer;
 mod daily;
 mod docs;
 mod eventlog;
@@ -8,11 +9,13 @@ mod folders;
 mod layer3;
 mod layer2;
 mod personal;
+mod runs;
 mod selfbuild;
 mod selftest;
 mod sidecar;
 mod terminal;
 mod update;
+mod usage;
 mod views;
 mod voice;
 mod workspaces;
@@ -29,6 +32,7 @@ pub fn run() {
         .manage(sidecar::Sidecar::default())
         .manage(terminal::Terminals::default())
         .manage(voice::Voice::default())
+        .manage(runs::Runs::default())
         .setup(|app| {
             // MR_DATA_DIR keeps tests and self-builds away from the real event log.
             let dir = match std::env::var("MR_DATA_DIR") {
@@ -42,6 +46,7 @@ pub fn run() {
             for ev in log.list(None, None, i64::MAX)? {
                 docs.apply(&ev);
             }
+            app.manage(usage::Usage::open(&dir.join("events.sqlite"))?);
             app.manage(log);
             app.manage(docs);
             update::on_start(app.handle());
@@ -56,16 +61,27 @@ pub fn run() {
             sidecar::session_start,
             sidecar::session_send,
             sidecar::session_interrupt,
+            sidecar::session_set_model,
+            sidecar::session_commands,
+            sidecar::session_mcp_status,
+            sidecar::session_mcp_action,
+            sidecar::models_refresh,
             sidecar::session_stop,
             sidecar::permission_respond,
             sidecar::tool_result,
             eventlog::event_append,
             eventlog::events_list,
             gh::gh_prs,
+            gh::gh_repo,
+            gh::gh_review_state,
             docs::docs_list,
             daily::daily_driver,
             changes::session_changes,
             changes::session_diff,
+            changes::task_output,
+            runs::run_command,
+            runs::run_stop,
+            runs::run_output,
             changes::app_repo_path,
             changes::godmode_save_mark,
             selfbuild::selfbuild_start,
@@ -78,6 +94,8 @@ pub fn run() {
             personal::fix_apply,
             personal::personal_sync,
             layer2::layer2_classify,
+            cockpit_layer::cockpit_save_key,
+            cockpit_layer::cockpit_status,
             layer3::layer3_diagram,
             sidecar::limits_refresh,
             gh::pr_repo,
@@ -93,10 +111,14 @@ pub fn run() {
             voice::voice_stop,
             workspaces::workspace_create,
             workspaces::workspace_rename,
+            workspaces::workspace_reorder,
             workspaces::workspace_set_folder,
             workspaces::workspace_delete,
             workspaces::workspace_sign_in,
-            docs::doc_feedback
+            docs::doc_feedback,
+            docs::doc_archive,
+            usage::usage_track,
+            usage::usage_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -55,6 +55,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                             crate::selfbuild::on_ready(&handle);
                             // Show plan limits straight away, not only once a session reports them.
                             let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "limits" }));
+                            let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "models" }));
                         }
                         if payload["type"] == "session_ended" {
                             if let Some(id) = payload["session"].as_str() {
@@ -63,6 +64,12 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         }
                         if payload["type"] == "tool_call" {
                             answer_tool_call(&handle, &payload);
+                        }
+                        // The Cockpit layer draws the cards once a turn ends (decision 34).
+                        if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
+                            if let Some(id) = session.as_deref() {
+                                crate::cockpit_layer::after_turn(handle.clone(), id.to_owned());
+                            }
                         }
                         if crate::selftest::enabled() {
                             crate::selftest::on_message(&handle, &payload);
@@ -112,6 +119,75 @@ pub fn limits_refresh(state: State<'_, Sidecar>) -> Result<(), String> {
     sidecar_send(state, serde_json::json!({ "type": "limits" }))
 }
 
+/// Re-reads the models Claude Code offers this login; the answer arrives as `sidecar.models`.
+#[tauri::command]
+pub fn models_refresh(state: State<'_, Sidecar>) -> Result<(), String> {
+    sidecar_send(state, serde_json::json!({ "type": "models" }))
+}
+
+/// Switches a session's model and/or effort (MR-73). `change` holds `model` and/or `effort`; null
+/// means Claude Code's default, an absent key leaves it as it is. Logged first, so a session that
+/// isn't running picks it up when it resumes.
+#[tauri::command]
+pub fn session_set_model(app: AppHandle, state: State<'_, Sidecar>, session: String, change: serde_json::Value) -> Result<(), String> {
+    let mut payload = serde_json::json!({});
+    for key in ["model", "effort"] {
+        if let Some(v) = change.get(key) {
+            if !(v.is_null() || v.is_string()) {
+                return Err(format!("{key} must be a string or null"));
+            }
+            payload[key] = v.clone();
+        }
+    }
+    if payload.as_object().is_none_or(|o| o.is_empty()) {
+        return Err("nothing to change: give a model or an effort".into());
+    }
+    crate::eventlog::record(&app, Some(&session), "ui.model_set", &payload, None);
+    if !state.live.lock().unwrap().contains(&session) {
+        return Ok(());
+    }
+    let mut msg = payload;
+    msg["type"] = "set_model".into();
+    msg["session"] = session.into();
+    sidecar_send(state, msg)
+}
+
+/// The model and effort a session was last switched to, folded from its `ui.model_set` events in
+/// order (None: Claude Code's default). Resumes start with these.
+pub fn fold_model_choice<'a>(payloads: impl IntoIterator<Item = &'a serde_json::Value>) -> (Option<String>, Option<String>) {
+    let (mut model, mut effort) = (None, None);
+    for p in payloads {
+        if let Some(v) = p.get("model") {
+            model = v.as_str().map(str::to_owned);
+        }
+        if let Some(v) = p.get("effort") {
+            effort = v.as_str().map(str::to_owned);
+        }
+    }
+    (model, effort)
+}
+
+/// Sessions auto-compact once their context reaches this many tokens. Re-reading a long conversation
+/// on every call is most of a session's cost, and on 1M-context models Claude Code otherwise waits
+/// until ~967k (token diet, decision I63).
+pub const COMPACT_WINDOW: u64 = 200_000;
+
+/// The compaction window folded from `ui.compact_window_set` events in order; `tokens: null` means
+/// Claude Code's own default (the model's limit).
+pub fn fold_compact_window<'a>(payloads: impl IntoIterator<Item = &'a serde_json::Value>) -> Option<u64> {
+    payloads.into_iter().fold(Some(COMPACT_WINDOW), |_, p| p["tokens"].as_u64())
+}
+
+fn compact_window(app: &AppHandle) -> Option<u64> {
+    let evs = app.state::<crate::eventlog::EventLog>().list_kind("ui.compact_window_set").unwrap_or_default();
+    fold_compact_window(evs.iter().map(|e| &e.payload))
+}
+
+fn model_choice(app: &AppHandle, session: &str) -> (Option<String>, Option<String>) {
+    let evs = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).unwrap_or_default();
+    fold_model_choice(evs.iter().filter(|e| e.kind == "ui.model_set").map(|e| &e.payload))
+}
+
 /// Runs one tool-less, unsaved turn in the sidecar and waits for its text (blocking; call off the UI thread).
 pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout: std::time::Duration) -> Result<String, String> {
     let id = ulid::Ulid::new().to_string();
@@ -136,14 +212,14 @@ pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout
 
 /// Appended to every session's system prompt (MR-56). The app renders choices as decision cards
 /// and structured replies as visual blocks, so it asks Claude for those shapes instead of prose.
-pub const VISUAL_GUIDANCE: &str = "You are running inside Minority report, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
-- Harness tools never get a turn of their own: send every mr call in the same message as real work (parallel tool calls). In your first message with tool calls, call ToolSearch \"select:mcp__mr__title_set,mcp__mr__plan_set\" alongside your first real tool call (Read, Grep, Bash…), and from then on add mr calls to the messages you are already sending.
-- Name the thread with mcp__mr__title_set (2-6 words) as soon as it is loaded, and again whenever the thread's focus clearly shifts. The user's wall shows it.
-- The user follows your work through your plan, so keep it current. Whenever a request takes 3 or more steps (even small ones), publish mcp__mr__plan_set with every step as soon as it is loaded, and update it with the full list each time a step starts or finishes, inside the message that starts the next step's work. Never skip this for short tasks.
-- When the user has to choose between options (which approach, which host, whether to continue), call the AskUserQuestion tool with 2-4 concrete options, each with a short description, instead of asking in prose. One decision per question.
-- Write replies in Markdown: short `## ` section headings, numbered lists for steps or todos, `- ` bullets for facts. Start a list item with a **bold short title**, then the detail. Put rough time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
-- For a status report, summary, comparison, verification result or progress, call the mr render_view tool with catalog blocks instead of writing it out, then add at most one line of text (decision 26). Pick the block that fits the content: review findings → `findings` (with a `tier` first for what's at stake); concrete fixes for one finding → `fix_options`; a number to choose (timeout, batch size, retention) → `tradeoff`; whether something already exists → `novelty`; a reviewer's comment and its state → `thread`.
-- End every turn with one line: `Next:` then 1-3 replies the user is likely to send, each in double quotes, best first (e.g. Next: \"Merge it\" · \"Show me the diff\"). They become one-click buttons, so phrase them as the user would. When the turn ends with render_view, put them in its next block instead.";
+pub const VISUAL_GUIDANCE: &str = "You are running inside Cockpit, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
+- The mr tools never get a model call of their own: send each mr call in the same message as real work (parallel tool calls).
+- Name the thread with mcp__mr__title_set (2-6 words) in your first message with tool calls, and again only when its focus clearly shifts.
+- For work with 3 or more steps, publish mcp__mr__plan_set with every step, and send the full list again only when a step starts or finishes, in the message that starts the next step's work.
+- When the user must choose between options, use AskUserQuestion with 2-4 concrete options, each with a short description. One decision per question.
+- Write replies in Markdown: short `## ` headings, numbered lists for steps, `- ` bullets for facts. Start a list item with a **bold short title**. Put time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
+- For a status report, summary, comparison, verification result or progress, use mcp__mr__render_view instead of prose (decision 26) as the turn's last call, with no text after it. Review findings → `findings` (with a `tier` first); fixes for one finding → `fix_options`; a number to choose → `tradeoff`; does it already exist → `novelty`; a reviewer's comment → `thread`.
+- End every turn with one line: `Next:` then 1-3 replies the user is likely to send, each in double quotes, best first (e.g. Next: \"Merge it\" · \"Show me the diff\"). After render_view, put them in its `next` block instead.";
 
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
 /// Blank sessions in a git repo get their own worktree unless `worktree` is false (decision 7).
@@ -160,6 +236,7 @@ pub fn session_start(
     worktree: Option<bool>,
     session_id: Option<String>,
     workspace: Option<String>,
+    preset: Option<String>,
 ) -> Result<String, String> {
     let mut cwd = expand_home(&app, &cwd);
     if !std::path::Path::new(&cwd).is_dir() {
@@ -186,28 +263,61 @@ pub fn session_start(
     if let (Some(p), Some(e)) = (payload.as_object_mut(), extra.as_object()) {
         p.extend(e.clone());
     }
+    // Started from one of your own kinds in the start picker (MR-80).
+    if let Some(id) = preset {
+        payload["preset"] = id.into();
+    }
+    // What the session compacts at, so usage reports can tell sessions apart (I63).
+    let compact = compact_window(&app);
+    payload["compact_window"] = compact.into();
+    // With the Cockpit layer on, the session runs as plain Claude Code and the layer draws the
+    // cards on its own key after each turn (decision 34).
+    let layer = crate::cockpit_layer::on(&app);
+    if layer {
+        payload["cockpit_layer"] = true.into();
+    }
     crate::eventlog::record(&app, Some(&session), "ui.session_requested", &payload, None);
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
+    let (model, effort) = model_choice(&app, &session);
+    if let Some(m) = model {
+        msg["model"] = m.into();
+    }
+    if let Some(e) = effort {
+        msg["effort"] = e.into();
+    }
     msg["tools"] = tools.unwrap_or_else(|| {
         let mut specs = crate::docs::tool_specs().as_array().cloned().unwrap_or_default();
         specs.extend(crate::flows::tool_specs(&kind));
-        specs.push(crate::views::tool_spec());
-        specs.push(crate::views::plan_spec());
-        specs.push(crate::views::title_spec());
+        if !layer {
+            specs.push(crate::views::tool_spec());
+            specs.push(crate::views::plan_spec());
+            specs.push(crate::views::title_spec());
+        }
         serde_json::Value::Array(specs)
     });
+    let mut env = serde_json::Map::new();
     if let Some(dir) = crate::workspaces::config_dir(&app, &workspace) {
-        msg["env"] = serde_json::json!({ "CLAUDE_CONFIG_DIR": dir });
+        env.insert("CLAUDE_CONFIG_DIR".into(), dir.display().to_string().into());
+    }
+    if let Some(w) = compact {
+        env.insert("CLAUDE_CODE_AUTO_COMPACT_WINDOW".into(), w.to_string().into());
+    }
+    if !env.is_empty() {
+        msg["env"] = env.into();
     }
     // Every session gets the visual-app guidance (MR-56); Review/Address add their flow steps.
-    let append = match crate::flows::system_prompt(&kind) {
-        Some(p) => format!("{VISUAL_GUIDANCE}\n\n{p}"),
-        None => VISUAL_GUIDANCE.to_owned(),
+    let append = match (crate::flows::system_prompt(&kind), layer) {
+        (Some(p), true) => Some(p.to_string()),
+        (Some(p), false) => Some(format!("{VISUAL_GUIDANCE}\n\n{p}")),
+        (None, true) => None,
+        (None, false) => Some(VISUAL_GUIDANCE.to_owned()),
     };
-    msg["append_system_prompt"] = append.into();
+    if let Some(a) = append {
+        msg["append_system_prompt"] = a.into();
+    }
     state.live.lock().unwrap().insert(session.clone());
     sidecar_send(state, msg)?;
     Ok(session)
@@ -223,7 +333,7 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     // Not running any more (app restarted, or it ended): resume the same conversation with this
     // message instead of failing with "unknown session" (MR-52).
     let (cwd, kind, workspace, sdk) = resume_info(&app, &session).ok_or("this session can't be resumed; start a new one")?;
-    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace)).map(|_| ())
+    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace), None).map(|_| ())
 }
 
 /// Where and how a session ran, from the log: (cwd, kind, workspace, Claude session id).
@@ -233,6 +343,38 @@ fn resume_info(app: &AppHandle, session: &str) -> Option<(String, String, String
     let sdk = evs.iter().rev().find(|e| e.kind == "sidecar.session_started")?.payload["sdk_session_id"].as_str()?.to_owned();
     let p = &req.payload;
     Some((p["worktree"].as_str().or(p["cwd"].as_str())?.to_owned(), p["kind"].as_str().unwrap_or("blank").to_owned(), p["workspace"].as_str().unwrap_or(crate::workspaces::PERSONAL).to_owned(), sdk))
+}
+
+/// Asks a running session for its slash commands and skills (the / menu); the answer arrives as `sidecar.commands`.
+#[tauri::command]
+pub fn session_commands(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    if !state.live.lock().unwrap().contains(&session) {
+        return Err("this session isn't running".into());
+    }
+    sidecar_send(state, serde_json::json!({ "type": "commands", "session": session }))
+}
+
+/// What /mcp shows, for a running session; the answer arrives as `sidecar.mcp_status`.
+#[tauri::command]
+pub fn session_mcp_status(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    if !state.live.lock().unwrap().contains(&session) {
+        return Err("this session isn't running: resume it to see its MCP servers".into());
+    }
+    sidecar_send(state, serde_json::json!({ "type": "mcp_status", "session": session }))
+}
+
+/// Reconnects, enables or disables one MCP server of a running session. Logged before it's sent;
+/// the fresh list (with how the action went) arrives as `sidecar.mcp_status`.
+#[tauri::command]
+pub fn session_mcp_action(app: AppHandle, state: State<'_, Sidecar>, session: String, server: String, action: String) -> Result<(), String> {
+    if !["reconnect", "enable", "disable"].contains(&action.as_str()) {
+        return Err(format!("unknown MCP action: {action}"));
+    }
+    if !state.live.lock().unwrap().contains(&session) {
+        return Err("this session isn't running: resume it to manage its MCP servers".into());
+    }
+    crate::eventlog::record(&app, Some(&session), "ui.mcp_action", &serde_json::json!({ "server": server, "action": action }), None);
+    sidecar_send(state, serde_json::json!({ "type": "mcp_action", "session": session, "server": server, "action": action }))
 }
 
 #[tauri::command]
@@ -313,4 +455,26 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
         crate::eventlog::record(app, Some(&session), &kind, &p, anchor.as_deref());
     }
     let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{fold_compact_window, fold_model_choice, COMPACT_WINDOW};
+    use serde_json::json;
+
+    #[test]
+    fn model_choice_folds_in_order_and_null_means_default() {
+        let evs = [json!({ "model": "opus", "effort": "high" }), json!({ "effort": "low" }), json!({ "model": null })];
+        assert_eq!(fold_model_choice(&evs), (None, Some("low".into())));
+        assert_eq!(fold_model_choice(&evs[..2]), (Some("opus".into()), Some("low".into())));
+        assert_eq!(fold_model_choice(&[]), (None, None));
+    }
+
+    #[test]
+    fn compact_window_defaults_low_and_the_last_choice_wins() {
+        assert_eq!(fold_compact_window(&[]), Some(COMPACT_WINDOW));
+        let evs = [json!({ "tokens": 400_000 }), json!({ "tokens": null }), json!({ "tokens": 120_000 })];
+        assert_eq!(fold_compact_window(&evs), Some(120_000));
+        assert_eq!(fold_compact_window(&evs[..2]), None);
+    }
 }

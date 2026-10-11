@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { replay, workspaceFolder } from "./reduce";
-import { pickDecision, pickTile, bashRisk, needsLayer2, wantsDiagram } from "../picker/pick";
+import { initialState, introOpen, replay, workspaceFolder } from "./reduce";
+import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
 import type { MrEvent } from "./types";
 
@@ -167,13 +167,24 @@ test("workspaces are created from the log and sessions stay in theirs", () => {
   expect(st.sessions.s2.workspace).toBe("personal");
 });
 
+test("workspace tabs keep the order they were dragged into", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: null, kind, payload, anchor: null, created_at: 1 });
+  const st = replay([
+    ev("W1", "ui.workspace_created", { id: "ws_a", name: "Acme" }),
+    ev("W2", "ui.workspace_created", { id: "ws_b", name: "Beta" }),
+    ev("W3", "ui.workspaces_reordered", { order: ["ws_b", "personal", "ws_a"] }),
+    ev("W4", "ui.workspace_created", { id: "ws_c", name: "Gamma" }),
+  ]);
+  expect(st.workspaces.map((w) => w.id)).toEqual(["ws_b", "personal", "ws_a", "ws_c"]);
+});
+
 test("the theme is set through the log", () => {
   const st = replay([{ id: "T1", session_id: null, kind: "ui.theme_set", payload: { theme: "transit" }, anchor: null, created_at: 1 }]);
   expect(st.theme).toBe("transit");
   expect(replay([]).theme).toBe("control-room");
 });
 
-test("layer 3 asks for a diagram of a long step list once, and stores the answer", () => {
+test("layer 3 stores a diagram, and remembers when there was nothing to draw", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
   const plan = "Here's the plan.\n" + ["Reproduce the bug with a failing test", "Find where the token expiry is read", "Fix the off-by-one in the comparison", "Run the whole suite and the e2e check"].map((l, i) => `${i + 1}. ${l} and note anything surprising along the way, then report back.`).join("\n");
   const base = [
@@ -181,15 +192,12 @@ test("layer 3 asks for a diagram of a long step list once, and stores the answer
     ev("D2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: plan }] } } }),
     ev("D3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "x" } }),
   ];
-  expect(wantsDiagram(replay(base).sessions.s)?.id).toBe("D2:0");
   const diagram = { title: "Fix", nodes: [{ id: "a", label: "Reproduce", kind: "step" }, { id: "b", label: "Fix", kind: "step" }, { id: "c", label: "Suite green", kind: "done" }], edges: [{ from: "a", to: "b" }, { from: "b", to: "c" }] };
   const after = replay([...base, ev("D4", "picker.layer3", { item_id: "D2:0", diagram })]);
   expect(after.sessions.s.diagrams["D2:0"]?.nodes).toHaveLength(3);
-  expect(wantsDiagram(after.sessions.s)).toBeNull();
-  // "Nothing worth drawing" is remembered too, so it isn't asked again.
-  expect(wantsDiagram(replay([...base, ev("D4", "picker.layer3", { item_id: "D2:0", diagram: null })]).sessions.s)).toBeNull();
-  // Short chat never triggers it.
-  expect(wantsDiagram(replay([base[0], ev("D2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "1. a\n2. b\n3. c" }] } } }), base[2]]).sessions.s)).toBeNull();
+  // "Nothing worth drawing" is remembered too, so the button says so instead of drawing.
+  const none = replay([...base, ev("D4", "picker.layer3", { item_id: "D2:0", diagram: null })]).sessions.s.diagrams;
+  expect("D2:0" in none && none["D2:0"] === null).toBe(true);
 });
 
 test("the flow layout ranks by longest path and survives cycles", () => {
@@ -242,7 +250,7 @@ test("a bug report's fix waits in the queue until applied, then asks for a rebui
   const { suggest } = await import("../picker/suggest");
   const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = "g", at = 1): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: at });
   const base = [
-    ev("G1", "ui.session_requested", { prompt: "God-mode mark on Minority report.\n\nTheir note: lamps are wrong\n\nWhat it showed: x", cwd: "/r-worktrees/g", branch: "mr/g", worktree: "/r-worktrees/g" }),
+    ev("G1", "ui.session_requested", { prompt: "God-mode mark on Cockpit.\n\nTheir note: lamps are wrong\n\nWhat it showed: x", cwd: "/r-worktrees/g", branch: "mr/g", worktree: "/r-worktrees/g" }),
     ev("G2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "tool_use", id: "t", name: "Edit", input: { file_path: "a.ts", old_string: "a", new_string: "b" } }] } } }),
     ev("G3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } }),
   ];
@@ -262,7 +270,7 @@ test("look settings replay and a restyle session is an app change", async () => 
   expect(replay([e("L1", { scale: 1.12 }), e("L2", { density: "compact" })]).look).toEqual({ scale: 1.12, density: "compact" });
   expect(replay([e("L1", { density: "huge" })]).look.density).toBe("default");
   expect(isAppChange({ title: "Restyle the app: warmer\n\nThis is…" })).toBe(true);
-  expect(cleanTitle("Restyle the app: warmer greys\n\nThis is Minority report's own repo.")).toBe("Style: warmer greys");
+  expect(cleanTitle("Restyle the app: warmer greys\n\nThis is Cockpit's own repo.")).toBe("Style: warmer greys");
 });
 
 test("deleting a workspace moves its sessions to Personal's archive as read-only history", () => {
@@ -345,4 +353,132 @@ test("a rollback after a crash at start is shown until dismissed", () => {
   const st = replay([e("C1", "app.recovered", { crashed_slot: "b", slot: "a", log: "=== crash at start · slot b\npanicked" })]);
   expect(st.recovered).toEqual({ crashedSlot: "b", log: "=== crash at start · slot b\npanicked", at: 7 });
   expect(replay([e("C1", "app.recovered", { crashed_slot: "b" }), e("C2", "ui.recovery_dismissed", {})]).recovered).toBeNull();
+});
+
+describe("model and effort (MR-73)", () => {
+  let n = 0;
+  const ev = (kind: string, payload: Record<string, unknown>, session: string | null = "m"): MrEvent => ({ id: `M${String(++n).padStart(4, "0")}`, session_id: session, kind, payload, anchor: null, created_at: 5000 + n });
+  const base = [ev("ui.session_requested", { prompt: "x", cwd: "/tmp" }), ev("sidecar.session_started", { sdk_session_id: "k", model: "claude-opus-5-5[1m]" })];
+
+  test("the model list is kept, and a failed lookup doesn't wipe it", () => {
+    const rows = [{ value: "haiku", resolved: "claude-haiku-5-5", displayName: "Haiku", description: "", efforts: [] }];
+    const st = replay([ev("sidecar.models", { models: rows }, null), ev("sidecar.models", { models: [], error: "timed out" }, null)]);
+    expect(st.models).toEqual(rows);
+  });
+
+  test("a pick shows at once, a confirm switches the model, and a refusal is shown without losing status", () => {
+    const st = replay([...base, ev("ui.model_set", { model: "haiku", effort: "low" }), ev("sidecar.model_set", { model: "haiku", effort: "low", ok: true })]);
+    const s = st.sessions.m;
+    expect([s.modelChoice, s.effort, s.model, s.modelError, s.status]).toEqual(["haiku", "low", "haiku", null, "working"]);
+    const bad = replay([...base, ev("ui.model_set", { effort: "max" }), ev("sidecar.model_set", { effort: "max", ok: false, error: "nope" })]).sessions.m;
+    expect([bad.modelChoice, bad.effort, bad.modelError]).toEqual([null, "max", "nope"]);
+  });
+
+  test("null goes back to the default; a missing key leaves the other as it is", () => {
+    const s = replay([...base, ev("ui.model_set", { model: "sonnet", effort: "high" }), ev("ui.model_set", { model: null })]).sessions.m;
+    expect([s.modelChoice, s.effort]).toEqual([null, "high"]);
+  });
+});
+
+test("your own start-picker kinds are saved, edited and removed through the log (MR-80)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: 1 });
+  const saved = [
+    ev("K1", "ui.preset_saved", { id: "a", name: "Triage", template: "/triage {text}", worktree: false }),
+    ev("K2", "ui.preset_saved", { id: "b", name: "Tests", template: "Write tests for", worktree: true }),
+    ev("K3", "ui.preset_saved", { id: "a", name: "Triage it", template: "/triage {text}", worktree: false }),
+    ev("K4", "ui.session_requested", { prompt: "/triage 12", cwd: "/w", kind: "blank", preset: "a" }, "s1"),
+  ];
+  let st = replay(saved);
+  expect(st.presets).toEqual([{ id: "a", name: "Triage it", template: "/triage {text}", worktree: false }, { id: "b", name: "Tests", template: "Write tests for", worktree: true }]);
+  expect(st.sessions.s1.preset).toBe("a");
+  expect(st.sessions.s1.kind).toBe("blank");
+  st = replay([...saved, ev("K5", "ui.preset_removed", { id: "a" })]);
+  expect(st.presets.map((x) => x.id)).toEqual(["b"]);
+  expect(replay([]).presets).toEqual([]);
+});
+
+test("commands you run from a reply are tracked to their end, and an app restart loses the running ones (MR-85)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = "s"): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: Number(id.slice(1)) });
+  const st = replay([
+    ev("R1", "ui.session_requested", { prompt: "p", cwd: "/w" }),
+    ev("R2", "ui.run_started", { run_id: "a", command: "bun test", cwd: "/w" }),
+    ev("R3", "ui.run_started", { run_id: "b", command: "false", cwd: "/w" }),
+    ev("R4", "ui.run_started", { run_id: "c", command: "sleep 99", cwd: "/w" }),
+    ev("R5", "run.finished", { run_id: "a", code: 0, status: "completed" }),
+    ev("R6", "run.finished", { run_id: "b", code: 1, status: "failed" }),
+  ]);
+  expect(st.sessions.s.runs.map((r) => [r.command, r.status, r.code])).toEqual([["bun test", "completed", 0], ["false", "failed", 1], ["sleep 99", "running", null]]);
+  expect(st.sessions.s.status).toBe("starting"); // a run is yours, not Claude's work
+  const restarted = replay([ev("R7", "app.started", {}, null)], st);
+  expect(restarted.sessions.s.runs.map((r) => r.status)).toEqual(["completed", "failed", "lost"]);
+});
+
+describe("compaction window (I63)", () => {
+  const ev = (id: string, tokens: number | null): MrEvent => ({ id, session_id: null, kind: "ui.compact_window_set", payload: { tokens }, anchor: null, created_at: 1 });
+  test("defaults to 200k; the last choice wins and null means the model's limit", () => {
+    expect(replay([]).compactWindow).toBe(200_000);
+    expect(replay([ev("A", 400_000), ev("B", 120_000)]).compactWindow).toBe(120_000);
+    expect(replay([ev("A", 400_000), ev("B", null)]).compactWindow).toBeNull();
+  });
+});
+
+describe("Cockpit layer (decision 34)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, at = "2026-10-11T10:00:00Z"): MrEvent => ({ id, session_id: "S1", kind, payload, anchor: null, created_at: at });
+  test("is off until switched on", () => {
+    expect(replay([]).cockpitLayer).toBe(false);
+    expect(replay([ev("A", "ui.cockpit_layer_set", { on: true })]).cockpitLayer).toBe(true);
+  });
+  test("meters the month's calls apart from Claude", () => {
+    const u = (id: string, at: string, ok = true) => ev(id, "cockpit.usage", { ok, input_tokens: 1000, output_tokens: 200, cost_usd: 0.002 }, at);
+    const m = replay([u("A", "2026-09-30T10:00:00Z"), u("B", "2026-10-01T10:00:00Z"), u("C", "2026-10-02T10:00:00Z"), u("D", "2026-10-03T10:00:00Z", false)]).cockpit;
+    expect(m).toEqual({ month: "2026-10", calls: 2, tokens: 2400, usd: 0.004, errors: 1 });
+  });
+});
+
+describe("slash commands and MCP servers (MR-87)", () => {
+  let n = 0;
+  const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `C${String(++n).padStart(4, "0")}`, session_id: "c", kind, payload, anchor: null, created_at: 7000 + n });
+  // From a real init: names only, skills and terminal-only commands marked.
+  const init = { type: "system", subtype: "init", slash_commands: ["mr-task", "mcp", "doctor"], skills: ["mr-task"], terminal_slash_commands: ["doctor"], mcp_servers: [{ name: "claude.ai Gmail", source: "claudeai", status: "needs-auth" }, { name: "mr", source: "sdk", status: "connected" }] };
+  const base = [ev("ui.session_requested", { prompt: "x", cwd: "/tmp" }), ev("sidecar.sdk", { message: init })];
+
+  test("init gives the menu its names and the panel its first status", () => {
+    const s = replay(base).sessions.c;
+    expect(s.commands.map((c) => [c.name, c.skill, c.terminal])).toEqual([["mr-task", true, false], ["mcp", false, false], ["doctor", false, true]]);
+    expect(s.mcp?.servers.map((x) => [x.name, x.status])).toEqual([["claude.ai Gmail", "needs-auth"], ["mr", "connected"]]);
+  });
+
+  test("the sidecar's list adds descriptions; an empty failed one keeps what we had", () => {
+    const rows = [{ name: "mr-task", description: "Run one task", hint: "<task>", aliases: [], builtin: false, skill: true, terminal: false }];
+    const s = replay([...base, ev("sidecar.commands", { commands: rows }), ev("sidecar.commands", { commands: [], error: "gone" })]).sessions.c;
+    expect(s.commands).toEqual(rows);
+  });
+
+  test("skills found mid-session replace the list, keeping what each name was", () => {
+    const s = replay([...base, ev("sidecar.sdk", { message: { type: "system", subtype: "commands_changed", commands: [{ name: "doctor", description: "d", argumentHint: "", builtin: true }, { name: "new-skill", description: "n", argumentHint: "" }] } })]).sessions.c;
+    expect(s.commands.map((c) => [c.name, c.skill, c.terminal])).toEqual([["doctor", false, true], ["new-skill", true, false]]);
+  });
+
+  test("an MCP action shows as busy until the fresh status says how it went, without counting as activity", () => {
+    const before = replay(base).sessions.c;
+    const busy = replay([...base, ev("ui.mcp_action", { server: "claude.ai Gmail", action: "reconnect" })]).sessions.c;
+    expect(busy.mcp?.busy).toBe("claude.ai Gmail");
+    expect(busy.activity).toEqual(before.activity);
+    const after = replay([...base, ev("ui.mcp_action", { server: "claude.ai Gmail", action: "reconnect" }), ev("sidecar.mcp_status", { servers: [{ name: "claude.ai Gmail", status: "failed", source: "claudeai", scope: null, error: "401", version: null, url: null, tools: [] }], done: { server: "claude.ai Gmail", action: "reconnect", ok: false, error: "401" } })]).sessions.c;
+    expect(after.mcp).toMatchObject({ busy: null, done: { ok: false, error: "401" }, servers: [{ status: "failed", error: "401" }] });
+    expect(after.status).toBe(before.status);
+  });
+});
+
+// God-mode mark: "Show the intro" in Settings did nothing once the intro had been closed in this run.
+test("Show the intro reopens the intro after it was closed in the same run", () => {
+  const e = (id: string, kind: string): MrEvent => ({ id, session_id: null, kind, payload: {}, anchor: null, created_at: 1 });
+  expect(introOpen(initialState, null)).toBe(false); // waits for the replay
+  expect(introOpen(replay([e("A1", "app.started")]), null)).toBe(true); // first run
+  const closedAt = "O1"; // closed (finished or skipped) when the last event was O1
+  const done = [e("A1", "app.started"), e("O1", "ui.onboarded")];
+  expect(introOpen(replay(done), closedAt)).toBe(false);
+  expect(introOpen(replay([...done, e("O2", "ui.onboarding_reset")]), closedAt)).toBe(true);
+  // Closed before ui.onboarded arrives: stays closed.
+  expect(introOpen(replay([e("A1", "app.started"), e("X1", "ui.other")]), "A1")).toBe(false);
 });

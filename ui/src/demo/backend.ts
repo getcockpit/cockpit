@@ -10,6 +10,7 @@ import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
 let seq = 0;
 const events: MrEvent[] = [];
+const usage: { kind: string; name: string; detail: string; at: number }[] = [];
 let docs: Doc[] = [];
 const id = () => `D${String(++seq).padStart(9, "0")}`;
 
@@ -108,7 +109,23 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
   switch (cmd) {
     case "events_list": return events;
     case "event_append": return record((a.sessionId as string) ?? null, String(a.kind), (a.payload as Record<string, unknown>) ?? {}).id;
+    // Feature usage (MR-83): kept in memory, aggregated like the core's usage_report.
+    case "usage_track": usage.push(...((a.items as typeof usage) ?? [])); return null;
+    case "usage_report": {
+      const m = new Map<string, { kind: string; name: string; detail: string; count: number; total: number; last_at: number }>();
+      const add = (kind: string, name: string, detail: string, at: number) => { const k = `${kind}|${name}|${detail}`; const r = m.get(k) ?? { kind, name, detail, count: 0, total: 0, last_at: 0 }; r.total++; if (at >= Number(a.since ?? 0)) r.count++; r.last_at = Math.max(r.last_at, at); m.set(k, r); };
+      for (const u of usage) add(u.kind, u.name, u.detail, u.at);
+      for (const e of events) if (e.kind.startsWith("ui.")) add("action", e.kind.slice(3), "", e.created_at);
+      return [...m.values()];
+    }
     case "docs_list": return structuredClone(docs); // the real core serializes over IPC
+    case "doc_archive": {
+      const d = docs.find((x) => x.id === a.docId);
+      if (!d) throw new Error("no such doc");
+      docs = docs.filter((x) => x !== d);
+      record(d.session_id, "ui.doc_archived", { doc_id: d.id, title: d.title });
+      return null;
+    }
     case "doc_feedback": {
       const d = docs.find((x) => x.id === a.docId);
       if (!d) throw new Error("no such doc");
@@ -129,7 +146,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       const cwd = String(a.cwd ?? "~/");
       const repo = cwd.startsWith("~") ? null : cwd;
       const slug = String(a.prompt ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24);
-      record(sid, "ui.session_requested", { cwd, prompt: a.prompt, kind: a.kind ?? "blank", resume: a.resume ?? null, workspace: a.workspace ?? "personal", ...(repo && a.worktree !== false && a.kind === "blank" ? { repo, branch: `mr/${slug}`, worktree: `${repo}-worktrees/${slug}` } : {}) });
+      record(sid, "ui.session_requested", { cwd, prompt: a.prompt, kind: a.kind ?? "blank", resume: a.resume ?? null, workspace: a.workspace ?? "personal", ...(a.preset ? { preset: a.preset } : {}), ...(repo && (a.worktree ?? a.kind === "blank") ? { repo, branch: `mr/${slug}`, worktree: `${repo}-worktrees/${slug}` } : {}) });
       runAgent(sid, String(a.prompt ?? ""));
       return sid;
     }
@@ -153,6 +170,25 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       return null;
     }
     case "session_interrupt": record(String(a.session), "sidecar.sdk", { message: { type: "result", is_error: true, result: "interrupted" } }); return null;
+    case "session_set_model": {
+      const c = a.change as Record<string, unknown>;
+      record(String(a.session), "ui.model_set", c);
+      later(300, () => record(String(a.session), "sidecar.model_set", { ...c, ok: true }));
+      return null;
+    }
+    // Slash commands and /mcp (MR-87), like the sidecar answers them.
+    case "session_commands": later(200, () => record(String(a.session), "sidecar.commands", { commands: DEMO_COMMANDS })); return null;
+    case "session_mcp_status": later(300, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp })); return null;
+    case "session_mcp_action": {
+      const server = String(a.server), action = String(a.action);
+      record(String(a.session), "ui.mcp_action", { server, action });
+      const x = demoMcp.find((m) => m.name === server);
+      if (x && action !== "reconnect") x.status = action === "enable" ? "connected" : "disabled";
+      const ok = !(x?.status === "failed" && action === "reconnect");
+      later(900, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp, done: { server, action, ok, ...(ok ? {} : { error: "connection refused (localhost:4100)" }) } }));
+      return null;
+    }
+    case "models_refresh": record(null, "sidecar.models", { models: DEMO_MODELS }); return null;
     case "session_stop": record(String(a.session), "sidecar.session_ended", { ok: true }); return null;
     case "session_changes": return [
       { path: "src/app/routes.ts", added: 24, removed: 9, status: "M", risky: null },
@@ -160,20 +196,36 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       { path: "src/app/routes.test.ts", added: 58, removed: 0, status: "A", risky: null },
       { path: "migrations/0042_sessions.sql", added: 7, removed: 0, status: "A", risky: "migration" },
     ];
+    case "task_output": return `$ bun run build:all\n[billing-core] compiled 212 modules in 4.1s\n[billing-api] compiled 88 modules in 2.3s\n[billing-web] building… ${new Date().toLocaleTimeString()}`;
+    case "run_command": {
+      const id = `run${Date.now().toString(36)}`;
+      record(String(a.session), "ui.run_started", { run_id: id, command: a.command, cwd: a.cwd });
+      later(/sleep|watch|dev/.test(String(a.command)) ? 60_000 : 2500, () => { if (!events.some((e) => e.kind === "run.finished" && e.payload.run_id === id)) record(String(a.session), "run.finished", { run_id: id, code: /lint/.test(String(a.command)) ? 1 : 0, status: /lint/.test(String(a.command)) ? "failed" : "completed" }); });
+      return id;
+    }
+    case "run_stop": record(String(a.session), "ui.run_stopped", { run_id: a.runId }); record(String(a.session), "run.finished", { run_id: a.runId, code: null, status: "stopped" }); return null;
+    case "run_output": return `$ ${events.find((e) => e.kind === "ui.run_started" && e.payload.run_id === a.runId)?.payload.command ?? "…"}\nsrc/invoice.ts:12:1  error  Imports must be sorted  import/order\n\n1 problem (1 error, 0 warnings)`;
     case "session_diff": return `--- a/${a.path}\n+++ b/${a.path}\n@@ -10,6 +10,9 @@\n export function guard(req) {\n-  if (!req.session) return redirect("/login");\n+  if (!req.session?.user) {\n+    return redirect(\`/login?next=\${encodeURIComponent(req.url)}\`);\n+  }\n   return next();\n }`;
     case "recent_folders": return [
       { path: "/Users/me/code/shop", name: "shop", repo: true, at: 0 },
       { path: "/Users/me/code/billing", name: "billing", repo: true, at: 0 },
-      { path: "/Users/me/code/minority-report", name: "minority-report", repo: true, at: 0 },
+      { path: "/Users/me/code/cockpit", name: "cockpit", repo: true, at: 0 },
       { path: "/Users/me/notes", name: "notes", repo: false, at: 0 },
     ];
-    case "gh_prs": return a.mode === "review"
+    case "gh_repo": return /shop|billing|cockpit/.test(String(a.cwd)) ? `acme/${String(a.cwd).split("/").pop()}` : null;
+    case "gh_prs": if (a.repo && a.mode === "review") return [
+      { number: 491, title: "Checkout: idempotent order ids", url: `https://github.com/${a.repo}/pull/491`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: a.repo }, reviewNote: "new changes since your review" },
+      { number: 495, title: "Cart: keep items across devices", url: `https://github.com/${a.repo}/pull/495`, updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: a.repo }, reviewNote: "not reviewed yet" }];
+      if (a.repo) return (handle("gh_prs", { ...a, repo: undefined }) as { repository: { nameWithOwner: string } }[]).filter((p) => p.repository.nameWithOwner === a.repo);
+      return a.mode === "review"
       ? [{ number: 482, title: "Checkout: retry failed payments", url: "https://github.com/acme/shop/pull/482", updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: "acme/shop" } }]
-      : [{ number: 479, title: "Billing CSV export", url: "https://github.com/acme/billing/pull/479", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, reviewDecision: "CHANGES_REQUESTED" }];
+      : [{ number: 479, title: "Billing CSV export", url: "https://github.com/acme/billing/pull/479", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, reviewDecision: "CHANGES_REQUESTED", unresolved: 3, waiting: 2 },
+        { number: 486, title: "Invoices: tax line per country", url: "https://github.com/acme/billing/pull/486", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, unresolved: 1, waiting: 1 },
+        { number: 490, title: "Shop: faster search index", url: "https://github.com/acme/shop/pull/490", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/shop" }, unresolved: 0, waiting: 0 }];
     case "daily_driver": return { streak: 2, goal: 7 };
     case "selfbuild_list": return [];
-    case "personal_history": return { worktree: "/Users/me/code/minority-report-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
-    case "app_repo_path": return "/Users/me/code/minority-report";
+    case "personal_history": return { worktree: "/Users/me/code/cockpit-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
+    case "app_repo_path": return "/Users/me/code/cockpit";
     // One-click Update (MR-66): ?demo=busy&update=1 offers two updates; &update=fail fails the build.
     case "update_status": {
       const u = new URLSearchParams(location.search).get("update");
@@ -200,7 +252,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       later(1200, () => record(String(a.session), "picker.layer3", { item_id: a.itemId, diagram: diagramFor(String(a.text)), ms: 1200, error: null }));
       return null;
     case "limits_refresh": record(null, "sidecar.limits", { available: true, plan: "max", five_hour: { utilization: 0.34, resetsAt: Math.round(Date.now() / 1000) + 7200 }, seven_day: { utilization: 0.58, resetsAt: null } }); return null;
-    case "godmode_save_mark": return "/Users/me/code/minority-report";
+    case "godmode_save_mark": return "/Users/me/code/cockpit";
     case "personal_sync": return "";
     case "pr_repo": return String(a.spec).includes("acme/shop") ? "/Users/me/code/shop" : null;
     case "fix_apply": record(String(a.session), "ui.fix_applied", { branch: "mr/god-mode-mark-ab12" }); return "merged";
@@ -210,6 +262,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "workspace_delete": record(null, "ui.workspace_deleted", { id: a.id, name: a.name, stopped: 0, trashed_to: "~/.Trash/…" }); return null;
     case "workspace_set_folder": record(null, "ui.workspace_folder_set", { id: a.id, folder: a.folder ?? null }); return null;
     case "workspace_rename": record(null, "ui.workspace_renamed", { id: a.id, name: a.name }); return null;
+    case "workspace_reorder": record(null, "ui.workspaces_reordered", { order: a.order }); return null;
     default: return null;
   }
 }
@@ -228,3 +281,29 @@ export function install(name: string) {
   // Expose for scripted walkthroughs (e.g. advancing an agent from the browser console).
   (window as unknown as { __mrDemo: unknown }).__mrDemo = { events, record, scenario: name };
 }
+
+// What Claude Code offers a Max login, for the model picker (MR-73).
+const DEMO_COMMANDS = [
+  { name: "mcp", description: "Manage MCP servers", hint: "", aliases: [], builtin: true, skill: false, terminal: false },
+  { name: "model", description: "Set the AI model for Claude Code", hint: "[model]", aliases: [], builtin: true, skill: false, terminal: false },
+  { name: "compact", description: "Clear conversation history but keep a summary in context", hint: "<instructions>", aliases: [], builtin: true, skill: false, terminal: false },
+  { name: "context", description: "Show current context usage", hint: "", aliases: [], builtin: true, skill: false, terminal: false },
+  { name: "doctor", description: "Diagnose and verify your Claude Code installation", hint: "", aliases: [], builtin: true, skill: false, terminal: true },
+  { name: "usage", description: "Show plan usage limits", hint: "", aliases: ["cost"], builtin: true, skill: false, terminal: false },
+  { name: "review", description: "Review a PR or branch: accepts a branch name or GitHub PR URL", hint: "<pr>", aliases: [], builtin: false, skill: true, terminal: false },
+  { name: "mr-task", description: "Run one Cockpit task end to end", hint: "<task>", aliases: [], builtin: false, skill: true, terminal: false },
+  { name: "agent-skills:test", description: "Run TDD workflow: write failing tests, implement, verify", hint: "", aliases: [], builtin: false, skill: true, terminal: false },
+  { name: "pinchtab", description: "Browser automation through PinchTab", hint: "", aliases: [], builtin: false, skill: true, terminal: false },
+];
+const demoMcp = [
+  { name: "claude.ai Slack", status: "connected", source: "claudeai", scope: "claudeai", error: null, version: "1.4.0", url: null, tools: ["slack_send_message", "slack_read_channel", "slack_search_public", "slack_read_thread"] },
+  { name: "claude.ai Gmail", status: "needs-auth", source: "claudeai", scope: "claudeai", error: null, version: null, url: null, tools: [] },
+  { name: "linear", status: "failed", source: "user", scope: "user", error: "connection refused (localhost:4100)", version: null, url: "http://localhost:4100/mcp", tools: [] },
+  { name: "figma", status: "disabled", source: "plugin", scope: "user", error: null, version: null, url: null, tools: [] },
+  { name: "mr", status: "connected", source: "sdk", scope: null, error: null, version: null, url: null, tools: ["plan_set"] },
+];
+const DEMO_MODELS = [
+  { value: "default", resolved: "claude-opus-5-5", displayName: "Default (recommended)", description: "Opus 5.5 with 1M context · most capable", efforts: ["low", "medium", "high", "xhigh", "max"] },
+  { value: "sonnet", resolved: "claude-sonnet-5-5", displayName: "Sonnet", description: "Sonnet 5.5 · everyday tasks", efforts: ["low", "medium", "high"] },
+  { value: "haiku", resolved: "claude-haiku-5-5", displayName: "Haiku", description: "Haiku 5.5 · fastest for quick answers", efforts: [] },
+];

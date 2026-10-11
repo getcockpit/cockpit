@@ -9,7 +9,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/ui" && bun run build >/dev/null)
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
-MR_SELFTEST=selfbuild MR_DATA_DIR="$data" MR_APP_REPO="$root" "$root/src-tauri/target/debug/minority-report" || true
+MR_SELFTEST=selfbuild MR_DATA_DIR="$data" MR_APP_REPO="$root" "$root/src-tauri/target/debug/Cockpit" || true
 id="$(ls "$data/builds" | grep -v fallbacks | head -1)"
 [ -n "$id" ] || { echo "FAILED: no build stored"; sqlite3 "$data/events.sqlite" "SELECT payload FROM events WHERE kind='selfbuild.finished'"; exit 1; }
 for _ in $(seq 1 120); do [ -f "$data/healthy-$id" ] && break; sleep 1; done

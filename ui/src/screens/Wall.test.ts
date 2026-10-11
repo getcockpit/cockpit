@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { replay } from "../state/reduce";
-import { resetLabel } from "./Wall";
+import { resetLabel, tileNote } from "./Wall";
+import type { TileSpec } from "../picker/pick";
 
 // God-mode mark: the header showed "5-hour 10% · Week 64%" with no hint of when either limit resets.
 test("both limit windows carry their reset time, shown as a short countdown", () => {
@@ -12,4 +13,16 @@ test("both limit windows carry their reset time, shown as a short countdown", ()
   expect(resetLabel(st.usage.weeklyResetsAt, now * 1000)?.short).toMatch(/^\D{2,}/);
   expect(resetLabel(st.usage.weeklyResetsAt, now * 1000)?.full).toMatch(/^Resets /);
   expect(resetLabel(null)).toBeNull();
+});
+
+// God-mode mark: a working tile spent a line on the running bash command, repeating the step the
+// track already names. That line now only shows what Claude asks or wants, or where it stopped.
+test("a working tile drops its activity line; asks and permission requests keep it", () => {
+  const tile = (state: TileSpec["state"], doing: string): TileSpec => ({ state, step: "Step 4 of 5", progress: 0.8, progressLabel: "80%", doing });
+  expect(tileNote(tile("almost", "Running the full suite"))).toBe("");
+  expect(tileNote(tile("working", "Bash: bun run test"))).toBe("");
+  expect(tileNote(tile("starting", "Starting…"))).toBe("");
+  expect(tileNote(tile("needs_you", "Wants to use Bash"))).toBe("Wants to use Bash");
+  expect(tileNote(tile("needs_you", "Asks: Where should the limiter live?"))).toBe("Asks: Where should the limiter live?");
+  expect(tileNote(tile("interrupted", "Stopped when the app closed."))).toBe("Stopped when the app closed.");
 });

@@ -4,7 +4,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { resolveClaude } from "./claude-path";
 import { relayMcp } from "./mcp";
 import { oneshot } from "./oneshot";
-import { limits } from "./limits";
+import { limits, models } from "./limits";
 import type { Inbound, Outbound } from "./protocol";
 import { Sessions, type QueryFn } from "./sessions";
 
@@ -24,8 +24,9 @@ const sessions = new Sessions(emit, queryFn, claudePath, relayMcp);
 function handle(message: Inbound): void {
   if (message.type === "ping") return emit({ type: "pong", id: message.id ?? null, at: Date.now() });
   if (message.type === "limits") return void limits(queryFn, claudePath ?? undefined, message.env, emit);
+  if (message.type === "models") return void models(queryFn, claudePath ?? undefined, message.env, emit);
   if (message.type === "oneshot") return void oneshot(queryFn, claudePath ?? undefined, message, emit);
-  if (["start", "send", "interrupt", "stop", "permission_response", "tool_result"].includes(message.type)) return sessions.handle(message);
+  if (["start", "send", "interrupt", "set_model", "stop", "permission_response", "tool_result", "commands", "mcp_status", "mcp_action"].includes(message.type)) return sessions.handle(message);
   emit({ type: "error", error: `unknown message type: ${(message as { type: string }).type}` });
 }
 

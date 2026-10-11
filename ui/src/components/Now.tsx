@@ -28,8 +28,8 @@ export function LiveTrack({ s, compact }: { s: SessionState; compact?: boolean }
   return <ProgressTrack segs={segs} pct={pct} left={liveCaption(s.todos, n.label, compact)} right={right} live stale={n.stale} source={s.id} fill />;
 }
 
-// The track's caption. On a wall tile the line below already shows the running tool, so the
-// caption names the plan step Claude is on instead of "Thinking" (god-mode mark). The percent is
+// The track's caption. On a wall tile it names the plan step Claude is on instead of "Thinking"
+// (god-mode mark); the tile shows no running tool or command below it (see `tileNote`). The percent is
 // not in it: the track shows it as the headline figure beside the bar.
 export function liveCaption(todos: Todo[], label: string, compact?: boolean): string {
   const segs = todos.length ? planSegs(todos, true) : ["current" as Seg];

@@ -1,6 +1,7 @@
 import type { Doc } from "../state/docs";
 import shop from "./shop.txt?raw";
 import REVIEW482 from "./review482.json";
+import planViewDoc from "./planview-doc.json";
 
 // Demo scenarios (MR-40). Each is an event log the real reducer replays, plus the docs the core
 // would have folded. `at` is seconds after a base 40 minutes ago.
@@ -38,6 +39,17 @@ const busy: E[] = [
   // C: running, almost done
   ...start("C", "Bump dependencies and fix breakages", { cwd: "/Users/me/code/billing-worktrees/deps", repo: "/Users/me/code/billing", branch: "mr/deps" }, 40),
   todos("C", 4, [["Update lockfile", "Updating lockfile"], ["Fix type errors", "Fixing type errors"], ["Fix failing tests", "Fixing failing tests"], ["Update changelog", "Updating changelog"], ["Run the full suite", "Running the full suite"]], 2340),
+  // A long build left running in the background (run_in_background), and one that already finished.
+  tool("C", "Bash", { command: "bun install", description: "Install updated dependencies", run_in_background: true }, 2100, "bgC0"),
+  { session: "C", kind: "sidecar.sdk", payload: { message: { type: "system", subtype: "task_started", tool_use_id: "bgC0", task_id: "b0", is_backgrounded: true, task_type: "local_bash" } }, at: 2100 },
+  { session: "C", kind: "sidecar.sdk", payload: { message: { type: "system", subtype: "task_notification", tool_use_id: "bgC0", task_id: "b0", status: "completed", output_file: "/tmp/claude-501/deps/sdk-C/tasks/b0.output", summary: "Background command \"Install updated dependencies\" completed" } }, at: 2160 },
+  tool("C", "Bash", { command: "bun run build:all > /tmp/build.log 2>&1", description: "Build every package", run_in_background: true }, 2200, "bgC1"),
+  { session: "C", kind: "sidecar.sdk", payload: { message: { type: "system", subtype: "task_started", tool_use_id: "bgC1", task_id: "b1", is_backgrounded: true, task_type: "local_bash" } }, at: 2200 },
+  { session: "C", kind: "sidecar.sdk", payload: { message: { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bgC1", content: "Command running in background with ID: b1. Output is being written to: /tmp/claude-501/deps/sdk-C/tasks/b1.output." }] } } }, at: 2200 },
+  // Commands Claude suggests get a Run button; one you already ran sits in the side panel (MR-85).
+  say("C", "Types compile again. While the suite runs, check the lockfile diff yourself:\n```bash\ngit diff --stat bun.lock\n```\nThen run `bun run lint` to catch the import order rule.", 2300),
+  { session: "C", kind: "ui.run_started", payload: { run_id: "runC0", command: "bun outdated", cwd: "/Users/me/code/billing-worktrees/deps" }, at: 2310 },
+  { session: "C", kind: "run.finished", payload: { run_id: "runC0", code: 0, status: "completed" }, at: 2318 },
   tool("C", "Bash", { command: "bun test --coverage" }, 2380),
   // B: plan session with a working doc; asked in prose
   { session: "B", kind: "ui.session_requested", payload: { prompt: "Plan this with me before any code: CSV export for invoices", kind: "plan", cwd: "/Users/me/code/billing", workspace: "personal" }, at: 50 },
@@ -80,7 +92,7 @@ const reviewEvents: E[] = [
   ...ready, onboarded,
   { session: "R", kind: "ui.session_requested", payload: { prompt: "/review https://github.com/acme/shop/pull/482", kind: "review", cwd: "/Users/me/code/shop", workspace: "personal" }, at: 10 },
   { session: "R", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-R", model: "claude-opus-5-5" }, at: 11 },
-  { session: "R", kind: "flow.review_overview", payload: { pr: "#482", title: "Checkout: retry failed payments", tier: 2, tier_label: "Careful", summary: "Adds retries around the Stripe charge and a webhook that marks orders paid.", nodes: [{ label: "charge.ts", mark: "!", finding: "f1" }, { label: "webhook.ts" }, { label: "charge.test.ts", mark: "?" }], novelty: [{ label: "Retry with backoff", what: "First retry logic in payments", where: "charge.ts" }], questions: ["Is the charge idempotent on Stripe's side?"], prior_threads: 0, total_snippets: 3 }, at: 30 },
+  { session: "R", kind: "flow.review_overview", payload: { pr: "#482", title: "Checkout: retry failed payments", tier: 2, tier_label: "Careful", summary: "Adds retries around the Stripe charge and a webhook that marks orders paid.", nodes: [{ label: "charge.ts", mark: "!", finding: "f1" }, { label: "webhook.ts" }, { label: "charge.test.ts", mark: "?" }], novelty: [{ label: "net-new", what: "Retry with backoff, the first retry logic in payments", where: "charge.ts" }, { label: "overlapping", what: "Idempotency key helper", where: "lib/stripe.ts:20" }], questions: ["Is the charge idempotent on Stripe's side?"], prior_threads: 0, total_snippets: 3 }, at: 30 },
   { session: "R", kind: "flow.review_snippet", payload: REVIEW_SNIPPETS[0], at: 40 },
   { session: "R", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "snippet 1", total_cost_usd: 0.2 } }, at: 41 },
 ];
@@ -99,7 +111,7 @@ const addressEvents: E[] = [
 const bugEvents: E[] = [
   ...ready, onboarded,
   { session: "G", kind: "ui.godmode_mark", payload: { note: "The changes box shows git's whole usage text", component: "ChangeMap" }, at: 5 },
-  { session: "G", kind: "ui.session_requested", payload: { prompt: "God-mode mark on Minority report (this app's own repo). The user marked the \"ChangeMap\" component as wrong in the focus view.\n\nTheir note: The changes box shows git's whole usage text\n\nWhat it showed: …", kind: "blank", cwd: "/Users/me/code/minority-report-worktrees/god-mode-mark-ab12", repo: "/Users/me/code/minority-report", branch: "mr/god-mode-mark-ab12", worktree: "/Users/me/code/minority-report-worktrees/god-mode-mark-ab12", workspace: "personal" }, at: 6 },
+  { session: "G", kind: "ui.session_requested", payload: { prompt: "God-mode mark on Cockpit (this app's own repo). The user marked the \"ChangeMap\" component as wrong in the focus view.\n\nTheir note: The changes box shows git's whole usage text\n\nWhat it showed: …", kind: "blank", cwd: "/Users/me/code/cockpit-worktrees/god-mode-mark-ab12", repo: "/Users/me/code/cockpit", branch: "mr/god-mode-mark-ab12", worktree: "/Users/me/code/cockpit-worktrees/god-mode-mark-ab12", workspace: "personal" }, at: 6 },
   { session: "G", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-G", model: "claude-opus-5-5" }, at: 7 },
   todos("G", 3, [["Find why", "Finding why"], ["Fix it", "Fixing it"], ["Add a regression test", "Adding a regression test"]], 60),
   tool("G", "Edit", { file_path: "ui/src/screens/ChangeMap.tsx", old_string: "a", new_string: "b\nc" }, 90),
@@ -227,6 +239,8 @@ export const SCENARIOS: Record<string, Scenario> = {
   fresh: { events: [...ready], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
+  // A real 13-block working doc with long bodies, tables and lists (the doc map must stay usable).
+  bigdoc: { events: [...ready, onboarded], docs: [planViewDoc as Doc] },
   broken: { events: [...busy, { session: "C", kind: "sidecar.session_ended", payload: { ok: false, reason: "Claude Code process exited with code 1\nError: ENOENT: no such file or directory, open '/Users/me/.claude/settings.json'\n    at Object.openSync (node:fs:596:3)\n    at readSettings (cli.js:12:9)" }, at: 2395 }], docs: [planDoc] },
   archive: {
     events: [...busy, { session: "D", kind: "ui.session_archived", at: 2400 }, { session: "C", kind: "sidecar.session_ended", payload: { ok: true }, at: 2390 }, { session: "C", kind: "ui.session_archived", at: 2401 }],

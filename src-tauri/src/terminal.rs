@@ -86,25 +86,29 @@ pub fn open_command(app: &AppHandle, key: &str, argv: Vec<String>, cwd: &str, en
 }
 
 /// Opens a terminal for `session`: stops the SDK run, then starts `claude --resume <sdk id>` in its
-/// folder (and its workspace's Claude config), handing it back to the SDK on exit.
+/// folder (and its workspace's Claude config), handing it back to the SDK on exit. `command`: a slash
+/// command that needs Claude Code's own terminal (/mcp sign-in, /doctor…), run as the first input.
 #[tauri::command]
-pub fn term_open(app: AppHandle, session: String, sdk_session_id: String, cwd: String, cols: u16, rows: u16) -> Result<(), String> {
+pub fn term_open(app: AppHandle, session: String, sdk_session_id: String, cwd: String, cols: u16, rows: u16, command: Option<String>) -> Result<(), String> {
     if app.state::<Terminals>().terms.lock().unwrap().contains_key(&session) {
         return Ok(());
     }
     let workspace = crate::workspaces::workspace_of(&app, &session);
     let env: Vec<(String, String)> = crate::workspaces::config_dir(&app, &workspace).map(|c| vec![("CLAUDE_CONFIG_DIR".into(), c.display().to_string())]).unwrap_or_default();
     let _ = crate::sidecar::session_stop(app.state::<crate::sidecar::Sidecar>(), session.clone());
-    crate::eventlog::record(&app, Some(&session), "ui.terminal_opened", &serde_json::json!({ "sdk_session_id": sdk_session_id }), None);
+    let command = command.filter(|c| c.starts_with('/') && !c.contains('\n'));
+    crate::eventlog::record(&app, Some(&session), "ui.terminal_opened", &serde_json::json!({ "sdk_session_id": sdk_session_id, "command": command }), None);
     // Let the SDK run release the conversation before the CLI picks it up.
     std::thread::sleep(std::time::Duration::from_millis(800));
     let (sid, cwd2, sdk) = (session.clone(), cwd.clone(), sdk_session_id.clone());
-    open_command_with(&app, &session, vec![claude_path(), "--resume".into(), sdk_session_id], &cwd, env, cols, rows, Box::new(move |app: &AppHandle| {
+    let mut argv = vec![claude_path(), "--resume".into(), sdk_session_id];
+    argv.extend(command);
+    open_command_with(&app, &session, argv, &cwd, env, cols, rows, Box::new(move |app: &AppHandle| {
         crate::eventlog::record(app, Some(&sid), "ui.terminal_closed", &serde_json::json!({}), None);
         let _ = crate::sidecar::session_start(
             app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd2,
             "I'm back from the terminal. Say in one line what changed there, then continue.".into(),
-            Some(sdk), None, None, Some(false), Some(sid), Some(workspace),
+            Some(sdk), None, None, Some(false), Some(sid), Some(workspace), None,
         );
     }))
 }
