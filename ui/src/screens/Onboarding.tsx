@@ -218,7 +218,7 @@ function PictureStep({ onNext }: { onNext: () => void }) {
   return (
     <>
       <Title kicker="Pictures, not transcripts" sub="Long plans, recaps and reviews turn into diagrams, cards and maps you can scan in a second. Questions buried in prose get pulled out as decisions. Flip it and see.">
-        Same message. <span style={{ textDecoration: pic ? "none" : "line-through", textDecorationColor: "var(--mr-error)" }}>Wall of text</span>{pic ? " → a picture." : "?"}
+        Same message. <span style={{ textDecorationLine: pic ? "none" : "line-through", textDecorationColor: "var(--mr-error)" }}>Wall of text</span>{pic ? " → a picture." : "?"}
       </Title>
       <div className="mr-row" style={{ gap: 12 }}>
         <div role="radiogroup" aria-label="Show as" className="mr-row" style={{ gap: 0, background: "var(--mr-well)", padding: 3 }}>

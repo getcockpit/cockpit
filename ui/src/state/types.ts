@@ -157,5 +157,6 @@ export type AppState = {
   onboardingResetAt: string | null; // id of the last Settings → Show the intro
   recovered: { crashedSlot: string; log: string; at: number } | null; // the dev loop rolled back after a crash at start (MR-70)
   lastBuildAt: number | null; // last successful self-build
+  selfbuild: { id: string; branch: string; sha: string; phase: "building" | "ready" } | null; // the latest self-build until relaunched or dismissed
   update: UpdateState;
 };

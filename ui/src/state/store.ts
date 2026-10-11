@@ -1,6 +1,6 @@
 import { useEffect, useReducer } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "./listen";
 import { initialState, reduce, replay } from "./reduce";
 import type { AppState, MrEvent } from "./types";
 
