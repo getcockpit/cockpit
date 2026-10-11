@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Key } from ".";
 import { shortError } from "./ErrorLine";
 import { api } from "../state/store";
@@ -19,6 +19,8 @@ export function McpPanel({ s, onClose, onSignIn }: { s: SessionState; onClose: (
   const live = s.status !== "ended" && s.status !== "error" && s.status !== "interrupted";
   const [err, setErr] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => { box.current?.scrollIntoView({ block: "nearest" }); }, []);
   useEffect(() => { if (live) api.mcpStatus(s.id).catch((e) => setErr(shortError(e))); }, [s.id, live]);
   // Servers still connecting: look again in a few seconds, as /mcp would update in place.
   const connecting = live && !!s.mcp?.servers.some((x) => x.status === "pending");
@@ -38,7 +40,7 @@ export function McpPanel({ s, onClose, onSignIn }: { s: SessionState; onClose: (
   const count = (st: string) => servers.filter((x) => x.status === st).length;
   const done = s.mcp?.done;
   return (
-    <section data-mr="McpPanel" data-mr-source={s.id} style={{ background: "var(--mr-well)", display: "flex", flexDirection: "column", gap: 2 }}>
+    <section ref={box} data-mr="McpPanel" data-mr-source={s.id} style={{ background: "var(--mr-well)", display: "flex", flexDirection: "column", gap: 2 }}>
       <header className="mr-row" style={{ gap: 10, padding: "10px 12px", background: "var(--mr-band)" }}>
         <strong className="mr-mono">/mcp</strong>
         <span className="mr-dim">{servers.length} servers · {count("connected")} connected{count("needs-auth") ? ` · ${count("needs-auth")} need sign-in` : ""}{count("failed") ? ` · ${count("failed")} failed` : ""}</span>
