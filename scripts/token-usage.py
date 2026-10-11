@@ -30,6 +30,10 @@ def main():
         win[sid] = "before" if t is None else "limit" if t == "null" else f"{int(w) // 1000}k"
     s = defaultdict(lambda: {"prefix": None, "fresh": 0, "write": 0, "read": 0, "out": 0, "usd": 0.0, "turns": 0, "calls": {}, "models": set()})
     seen = set()
+    # A result's modelUsage is the running total of its SDK run, not the turn's own use: count only
+    # the growth since the last result, and start over when a new run (resume) resets it.
+    last = {}
+    fields = (("fresh", "inputTokens"), ("write", "cacheCreationInputTokens"), ("read", "cacheReadInputTokens"), ("out", "outputTokens"), ("usd", "costUSD"))
     for sid, p in rows:
         m = json.loads(p)["message"]
         r = s[sid]
@@ -47,11 +51,13 @@ def main():
         seen.add(m.get("uuid"))
         r["turns"] += 1
         for name, mu in (m.get("modelUsage") or {}).items():
-            r["fresh"] += mu.get("inputTokens", 0)
-            r["write"] += mu.get("cacheCreationInputTokens", 0)
-            r["read"] += mu.get("cacheReadInputTokens", 0)
-            r["out"] += mu.get("outputTokens", 0)
-            r["usd"] += mu.get("costUSD", 0.0)
+            now = [mu.get(f, 0) for _, f in fields]
+            prev = last.get((sid, name))
+            if prev is None or any(n < p for n, p in zip(now, prev)):
+                prev = [0] * len(fields)
+            for (key, _), n, p in zip(fields, now, prev):
+                r[key] += n - p
+            last[(sid, name)] = now
             r["models"].add(name.split("[")[0].replace("claude-", ""))
     # How much of all input is the fixed prefix re-read on every API call: what trimming it can save.
     share = lambda v: min(1.0, (v["prefix"] or 0) * len(v["calls"]) / max(1, sum(v["calls"].values())))
