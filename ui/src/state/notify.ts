@@ -89,26 +89,42 @@ export async function answerFrom(item: QueueItem, r: Response, sessions: Record<
   }
 }
 
+/** Where you're looking: the open workspace, and the session or doc in it (both null on the Wall). */
+export type Here = { workspace: string; session: string | null; doc: string | null };
+
+/** Whether a decision is already in front of you, so a banner would only repeat it: the window is
+ *  focused on its workspace and shows it (its session or doc, or the Wall, whose queue lists it). */
+export function inView(t: Target, here: Here, focused: boolean): boolean {
+  if (!focused || t.workspace !== here.workspace) return false;
+  if (!here.session && !here.doc) return true;
+  return t.doc ? here.doc === t.doc : !here.doc && here.session === t.session;
+}
+
 // Anything already waiting when the app opens (or whose docs load just after) isn't news.
 const SETTLE_MS = 3000;
 
-/** Posts a notification for each new needs-you item while the window is in the background, and
- *  routes what you did with it: open → `onOpen(target)`, an answer → sent without opening. */
-export function useNotify(all: AppState, docs: Doc[], onOpen: (t: Target) => void) {
+/** Posts a notification for each new needs-you item you aren't looking at (in the background, or in
+ *  Cockpit on another workspace, session or doc), and routes what you did with it: open →
+ *  `onOpen(target)`, an answer → sent without opening. */
+export function useNotify(all: AppState, docs: Doc[], here: Here, onOpen: (t: Target) => void) {
   const queue = useMemo(() => needsQueue(Object.values(all.sessions), docs), [all.sessions, docs]);
   const seen = useRef<Set<string> | null>(null);
   const mounted = useRef(Date.now());
-  const latest = useRef({ queue, all, onOpen });
-  latest.current = { queue, all, onOpen };
+  const latest = useRef({ queue, all, onOpen, here });
+  latest.current = { queue, all, onOpen, here };
 
   useEffect(() => {
     if (all.lastEventId === null) return; // still replaying
     const fresh = queue.filter((x) => !seen.current?.has(x.key));
     seen.current ??= new Set();
     for (const x of fresh) seen.current.add(x.key);
-    if (Date.now() - mounted.current < SETTLE_MS || !all.notifications || document.hasFocus()) return;
+    if (Date.now() - mounted.current < SETTLE_MS || !all.notifications) return;
     const name = (id: string) => (all.workspaces.length > 1 ? all.workspaces.find((w) => w.id === id)?.name ?? null : null);
-    for (const x of fresh) void invoke("notify", { note: noteFor(x, all.sessions, name) }).catch(() => {});
+    const focused = document.hasFocus();
+    for (const x of fresh) {
+      if (inView(targetFor(x, all.sessions), latest.current.here, focused)) continue;
+      void invoke("notify", { note: noteFor(x, all.sessions, name) }).catch(() => {});
+    }
   }, [queue, all.lastEventId, all.notifications, all.workspaces, all.sessions]);
 
   useEffect(() => {

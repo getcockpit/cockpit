@@ -221,6 +221,27 @@ pub const VISUAL_GUIDANCE: &str = "You are running inside Cockpit, a visual fron
 - For a status report, summary, comparison, verification result or progress, use mcp__mr__render_view instead of prose (decision 26) as the turn's last call, with no text after it. Review findings → `findings` (with a `tier` first); fixes for one finding → `fix_options`; a number to choose → `tradeoff`; does it already exist → `novelty`; a reviewer's comment → `thread`.
 - End every turn with one line: `Next:` then 1-3 replies the user is likely to send, each in double quotes, best first (e.g. Next: \"Merge it\" · \"Show me the diff\"). After render_view, put them in its `next` block instead.";
 
+/// Appended to blank sessions only (MR-98): Plan sessions already write a doc, and Review/Address
+/// follow their flow. Claude, having read the code, judges better than a heuristic on the prompt.
+pub const PLAN_NUDGE: &str = "- If the task turns out to need larger decisions, context only the user has, or a round of context gathering before any code (several open design choices, unclear scope, a cross-cutting change), ask with AskUserQuestion whether to plan it in a working doc first, with the options \"Plan it in a doc\" (recommended) and \"Just do it\". If the user picks the doc, write it in this session with the mr doc tools (mcp__mr__doc_create, then mcp__mr__doc_set_block per section, open choices as section=question) and stop for their review before writing code. Don't ask for small or clear tasks.";
+
+/// The system prompt appended for a session of this kind; `layer` means the Cockpit layer draws
+/// the cards, so the visual guidance is left out (decision 34).
+fn append_prompt(kind: &str, layer: bool) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if !layer {
+        parts.push(VISUAL_GUIDANCE.to_owned());
+    }
+    if kind == "blank" {
+        parts.push(PLAN_NUDGE.to_owned());
+    }
+    let mut out = parts.join("\n");
+    if let Some(p) = crate::flows::system_prompt(kind) {
+        out = if out.is_empty() { p.to_string() } else { format!("{out}\n\n{p}") };
+    }
+    (!out.is_empty()).then_some(out)
+}
+
 /// Starts (or resumes) a Claude Code session; returns the app's session id (a ULID).
 /// Blank sessions in a git repo get their own worktree unless `worktree` is false (decision 7).
 #[tauri::command]
@@ -311,14 +332,9 @@ pub fn session_start(
     if !env.is_empty() {
         msg["env"] = env.into();
     }
-    // Every session gets the visual-app guidance (MR-56); Review/Address add their flow steps.
-    let append = match (crate::flows::system_prompt(&kind), layer) {
-        (Some(p), true) => Some(p.to_string()),
-        (Some(p), false) => Some(format!("{VISUAL_GUIDANCE}\n\n{p}")),
-        (None, true) => None,
-        (None, false) => Some(VISUAL_GUIDANCE.to_owned()),
-    };
-    if let Some(a) = append {
+    // Every session gets the visual-app guidance (MR-56); blank ones the plan nudge (MR-98);
+    // Review/Address add their flow steps.
+    if let Some(a) = append_prompt(&kind, layer) {
         msg["append_system_prompt"] = a.into();
     }
     state.live.lock().unwrap().insert(session.clone());
@@ -464,8 +480,20 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{fold_compact_window, fold_model_choice, COMPACT_WINDOW};
+    use super::{append_prompt, fold_compact_window, fold_model_choice, COMPACT_WINDOW, PLAN_NUDGE, VISUAL_GUIDANCE};
     use serde_json::json;
+
+    #[test]
+    fn only_blank_sessions_get_the_plan_nudge() {
+        let blank = append_prompt("blank", false).unwrap();
+        assert!(blank.starts_with(VISUAL_GUIDANCE) && blank.ends_with(PLAN_NUDGE));
+        assert_eq!(append_prompt("blank", true).as_deref(), Some(PLAN_NUDGE));
+        assert_eq!(append_prompt("plan", false).as_deref(), Some(VISUAL_GUIDANCE));
+        assert_eq!(append_prompt("plan", true), None);
+        let review = append_prompt("review", false).unwrap();
+        assert!(review.starts_with(VISUAL_GUIDANCE) && !review.contains(PLAN_NUDGE));
+        assert!(!append_prompt("review", true).unwrap().contains(VISUAL_GUIDANCE));
+    }
 
     #[test]
     fn model_choice_folds_in_order_and_null_means_default() {
