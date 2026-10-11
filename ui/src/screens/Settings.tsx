@@ -7,6 +7,7 @@ import { api } from "../state/store";
 import { sessionTitle } from "../picker/title";
 import { isAppChange } from "../picker/queue";
 import type { AppState, MrEvent } from "../state/types";
+import { Usage } from "./Usage";
 
 // Settings (decision 25): theme, and the history of your own changes to the app — collected on a
 // local branch `mine` that's never pushed — with apply / revert / build & relaunch / roll back.
@@ -156,6 +157,8 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
             })}
           </div>
         </section>
+
+        <Usage />
 
         <section data-mr="ClefSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h">Picker model <span className="mr-dim" style={{ fontWeight: 400 }}>Cloudflare Clef-flash reads unclear prose; without it the app uses its own rules</span></h2>

@@ -24,6 +24,7 @@ import { api } from "./state/store";
 import { useDocs } from "./state/docs";
 import { useAppState } from "./state/store";
 import { useAutoReview } from "./state/useAutoReview";
+import { installUsage, useViews } from "./state/usage";
 
 export default function App() {
   const all = useAppState();
@@ -124,6 +125,9 @@ export default function App() {
   });
 
   const view = docId ? "doc map" : focus ? "focus" : wallView;
+  // Feature usage (MR-83): the main screen first, then every open overlay.
+  useEffect(() => installUsage(), []);
+  useViews([view, picker && "start picker", settings && "settings", god && "god mode", archive && "archive", builds !== null && "builds", switcher && "workspace switcher", signIn && "sign in", deleting && "delete workspace", intro && "intro"].filter((v): v is string => typeof v === "string"));
   const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src, component) => { if (component === "WorkspaceTab") return src !== "personal" ? { label: "Delete workspace…", run: () => setDeleting(src) } : null; const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
   // Point + talk: which session does the thing under the pointer belong to?
   const resolve = (t: PointTarget) => {
