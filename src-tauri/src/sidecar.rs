@@ -296,6 +296,9 @@ pub fn session_start(
             specs.push(crate::views::plan_spec());
             specs.push(crate::views::title_spec());
         }
+        if crate::selfbuild::update_available(&cwd) {
+            specs.push(crate::selfbuild::update_spec());
+        }
         serde_json::Value::Array(specs)
     });
     let mut env = serde_json::Map::new();
@@ -447,6 +450,8 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
         crate::flows::handle_tool(tool, &payload["args"])
     } else if crate::views::is_view_tool(tool) {
         crate::views::handle_tool(tool, &payload["args"])
+    } else if tool == crate::selfbuild::UPDATE_TOOL {
+        crate::selfbuild::handle_update(app, &payload["args"])
     } else {
         crate::docs::handle_tool(&app.state::<crate::docs::Docs>(), Some(&session), tool, &payload["args"])
     };
