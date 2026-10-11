@@ -24,15 +24,18 @@ import { ViewTabs } from "../components/ViewTabs";
 // The wall (decision 17): lamps, a keyboard-driven needs-you queue, a stable running grid that
 // never reorders by state, and a compact ready-to-review tray.
 
-const REVIEW = new Set<TileSpec["state"]>(["idle", "done", "interrupted", "error"]);
+// A session waiting for your next step ("idle") stays in the running grid, where its tile says
+// "Waiting · Your turn"; only finished, stopped or failed work goes to the review tray.
+const REVIEW = new Set<TileSpec["state"]>(["done", "interrupted", "error"]);
+export const inReviewTray = (t: TileSpec) => REVIEW.has(t.state);
 
 export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild, onTimeline }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
   const queue = useMemo(() => needsQueue(sessions, docs), [sessions, docs]);
-  const running = tiles.filter((t) => !REVIEW.has(t.tile.state));
-  const review = tiles.filter((t) => REVIEW.has(t.tile.state));
+  const running = tiles.filter((t) => !inReviewTray(t.tile));
+  const review = tiles.filter((t) => inReviewTray(t.tile));
   const count = (k: TileSpec["state"]) => tiles.filter((t) => t.tile.state === k).length;
   const [sel, setSel] = useState(0);
   const cwd = startCwd();
