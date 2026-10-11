@@ -7,6 +7,7 @@ export type MrEvent = {
   payload: Record<string, unknown>;
   anchor: string | null;
   created_at: number;
+  origin?: string | null; // which running copy of the app wrote it (MR-99); absent in older rows
 };
 
 export type SessionStatus = "starting" | "working" | "needs_you" | "idle" | "ended" | "error" | "interrupted";
@@ -117,6 +118,7 @@ export type SessionState = {
   fromDeleted: string | null; // name of the deleted workspace it came from: read-only history (MR-54) // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
   commands: CommandRow[]; // its slash commands and skills (MR-87): names from init, descriptions once asked
   mcp: McpState | null; // its MCP servers (MR-87): from init, fresh from /mcp
+  owner: string | null; // origin of the copy that last started or resumed it (MR-99)
   backgroundTasks: { id: string; description: string }[]; // commands and agents still running after the turn ended
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
@@ -143,6 +145,7 @@ export type AppState = {
   models: ModelRow[];
   sidecar: { up: boolean; claude: string | null };
   lastEventId: string | null;
+  instance: string | null; // this copy's origin id; other copies (dev, /Applications) share the log (MR-99)
   dismissed: string[];
   workspaces: { id: string; name: string; configDir: string | null; folder: string | null }[]; // folder: pinned start folder (MR-65)
   theme: string;

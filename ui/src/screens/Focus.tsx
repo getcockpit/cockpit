@@ -39,7 +39,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: { s: SessionState; models: ModelRow[]; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void }) {
+export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone, elsewhere = false }: { s: SessionState; models: ModelRow[]; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; elsewhere?: boolean }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -182,7 +182,12 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
                   </span>
                 </div></div>
               )}
-              <Composer s={s} running={running} onSubmit={submit} />
+              {elsewhere ? (
+                // Open in the other copy of the app (dev vs /Applications): shown live here, driven there (MR-99).
+                <div className="mr-qrow" data-mr="OpenElsewhere" data-mr-source={s.id}><div className="mr-qbody">
+                  <span className="mr-dim">Open in another copy of Cockpit. Follow it here; reply there, or quit that copy to take it over.</span>
+                </div></div>
+              ) : <Composer s={s} running={running} onSubmit={submit} />}
             </div>
           )}
         </section>
