@@ -42,7 +42,7 @@ export function promptFor(mode: SessionKind, text: string): string {
   const t = text.trim();
   if (mode === "review") return `/review ${t}`;
   if (mode === "address") return `/pr-address ${t}`;
-  if (mode === "plan") return `Plan this with me before any code: ${t}. Write the plan as a working document using the mr doc tools.`;
+  if (mode === "plan") return `Plan this with me before any code: ${t}. Write the plan as a working document using the mr doc tools, with a view on every block.`;
   return t;
 }
 

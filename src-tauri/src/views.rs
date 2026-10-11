@@ -38,6 +38,10 @@ const CATALOG: &[(&str, &[(&str, F)])] = &[
     ("fix_options", &[("options", F::List)]),
     ("thread", &[("author", F::Str), ("body", F::Str)]),
     ("text", &[("markdown", F::Str)]),
+    ("stats", &[("items", F::List)]),
+    ("scope", &[("in", F::List)]),
+    ("steps", &[("items", F::List)]),
+    ("risks", &[("items", F::List)]),
 ];
 
 pub fn tool_spec() -> Value {
@@ -58,6 +62,10 @@ pub fn tool_spec() -> Value {
 - tradeoff {points: [{x, y}], x_unit?, y_unit?, label?, pick?: x}: when the answer is a number, what each value buys; the user drags and can send 'Use <x>'.\n\
 - fix_options {finding?, options: [{label, detail?, recommended?: true}], defer?: false}: concrete fixes for one finding; clicking one sends it as a reply. A defer row is added unless defer is false.\n\
 - thread {author, body, state?: 'unresolved'|'replied'|'resolved', where?, note?}: a reviewer comment with its real state; a reply is not a resolution.\n\
+- stats {items: [{value: '5', label: 'retries', detail?}]}: 2-4 headline numbers, read before anything else.\n\
+- scope {in: [string], out: [string]}: what's in and out, side by side.\n\
+- steps {items: [{text, actor?: 'Owner', detail?}]}: a numbered sequence (a flow, a protocol, a rollout); actor says who does it.\n\
+- risks {items: [{risk, mitigation, level?: 'high'|'medium'|'low'}]}: each risk beside what contains it, worst first.\n\
 - text {markdown}: a short paragraph, only when no other block fits.\n\
 Every block except next and text carries Deeper / Discover actions. Use AskUserQuestion, not render_view, for any other choice the user must make.",
         "params": { "title": "string", "blocks": "array" },
@@ -195,6 +203,19 @@ mod tests {
         assert!(text.contains("unknown type 'chart'"));
         assert!(text.contains("'n' must be a number") && text.contains("'total' must be a number") && text.contains("'label' must be a non-empty string"));
         assert!(handle_tool(TOOL, &json!({ "blocks": [] })).2);
+    }
+
+    #[test]
+    fn plan_doc_blocks_are_in_the_catalog() {
+        let ok = json!({ "blocks": [
+            { "type": "stats", "items": [{ "value": "44", "label": "bits" }] },
+            { "type": "scope", "in": ["Docs"], "out": ["Billing"] },
+            { "type": "steps", "items": [{ "actor": "Owner", "text": "Click Invite" }] },
+            { "type": "risks", "items": [{ "risk": "Leaks", "mitigation": "Local by default", "level": "high" }] },
+        ] });
+        assert!(validate(&ok).is_ok());
+        let err = validate(&json!({ "blocks": [{ "type": "scope", "out": ["x"] }, { "type": "risks", "items": [] }] })).unwrap_err();
+        assert!(err.contains("'in' must be a non-empty array") && err.contains("(risks): 'items'"), "{err}");
     }
 
     #[test]
