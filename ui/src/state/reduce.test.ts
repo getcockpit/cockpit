@@ -397,7 +397,23 @@ test("your own start-picker kinds are saved, edited and removed through the log 
   expect(replay([]).presets).toEqual([]);
 });
 
-describe("compaction window (I62)", () => {
+test("commands you run from a reply are tracked to their end, and an app restart loses the running ones (MR-85)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = "s"): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: Number(id.slice(1)) });
+  const st = replay([
+    ev("R1", "ui.session_requested", { prompt: "p", cwd: "/w" }),
+    ev("R2", "ui.run_started", { run_id: "a", command: "bun test", cwd: "/w" }),
+    ev("R3", "ui.run_started", { run_id: "b", command: "false", cwd: "/w" }),
+    ev("R4", "ui.run_started", { run_id: "c", command: "sleep 99", cwd: "/w" }),
+    ev("R5", "run.finished", { run_id: "a", code: 0, status: "completed" }),
+    ev("R6", "run.finished", { run_id: "b", code: 1, status: "failed" }),
+  ]);
+  expect(st.sessions.s.runs.map((r) => [r.command, r.status, r.code])).toEqual([["bun test", "completed", 0], ["false", "failed", 1], ["sleep 99", "running", null]]);
+  expect(st.sessions.s.status).toBe("starting"); // a run is yours, not Claude's work
+  const restarted = replay([ev("R7", "app.started", {}, null)], st);
+  expect(restarted.sessions.s.runs.map((r) => r.status)).toEqual(["completed", "failed", "lost"]);
+});
+
+describe("compaction window (I63)", () => {
   const ev = (id: string, tokens: number | null): MrEvent => ({ id, session_id: null, kind: "ui.compact_window_set", payload: { tokens }, anchor: null, created_at: 1 });
   test("defaults to 200k; the last choice wins and null means the model's limit", () => {
     expect(replay([]).compactWindow).toBe(200_000);
