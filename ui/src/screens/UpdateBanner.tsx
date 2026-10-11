@@ -30,7 +30,20 @@ export function useUpdateStatus(phase: AppState["update"]["phase"]): Status | nu
 
 export const startUpdate = () => invoke("update_start");
 
-export function UpdateBanner({ all, onOpenSession }: { all: AppState; onOpenSession: (id: string) => void }) {
+// Pending app commits. Started with dev.sh, Update builds the other slot; otherwise the button
+// opens Builds on the app repo, which builds and relaunches without dev.sh.
+export function PendingUpdates({ status, onUpdate, onBuild }: { status: Status; onUpdate: () => void; onBuild: () => void }) {
+  const n = status.pending.length;
+  return <>
+    <strong>{n === 1 ? "1 app update" : `${n} app updates`} on main</strong>
+    <span className="mr-ellipsis mr-grow mr-ink2">{list(status.pending.map((p) => p.subject))}</span>
+    {status.mode === "ready"
+      ? <Key k="⌘⇧B" tone="primary" onClick={onUpdate}>Update</Key>
+      : <Key tone="primary" onClick={onBuild}>Build and relaunch</Key>}
+  </>;
+}
+
+export function UpdateBanner({ all, onOpenSession, onBuild }: { all: AppState; onOpenSession: (id: string) => void; onBuild: () => void }) {
   const u = all.update;
   const status = useUpdateStatus(u.phase);
   const [error, setError] = useState("");
@@ -84,14 +97,7 @@ export function UpdateBanner({ all, onOpenSession }: { all: AppState; onOpenSess
     </>;
   } else if (status && status.pending.length > 0 && status.mode !== "unavailable") {
     tone = "needs";
-    const n = status.pending.length;
-    body = <>
-      <strong>{n === 1 ? "1 app update" : `${n} app updates`} on main</strong>
-      <span className="mr-ellipsis mr-grow mr-ink2">{list(status.pending.map((p) => p.subject))}</span>
-      {status.mode === "ready"
-        ? <Key k="⌘⇧B" tone="primary" onClick={() => run(startUpdate)}>Update</Key>
-        : <span className="mr-dim">start the app with ./scripts/dev.sh to update in one click</span>}
-    </>;
+    body = <PendingUpdates status={status} onUpdate={() => run(startUpdate)} onBuild={onBuild} />;
   }
   if (!body) return null;
   return (
