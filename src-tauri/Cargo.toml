@@ -44,7 +44,4 @@ panic = "abort"
 strip = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSObject", "NSBundle", "NSDictionary", "NSSet", "NSString", "NSError", "NSArray", "NSValue"] }
-objc2-user-notifications = { version = "0.3", features = ["block2"] }
-block2 = "0.6"
+mac-notification-sys = "0.6"

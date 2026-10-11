@@ -50,7 +50,6 @@ pub fn run() {
             app.manage(usage::Usage::open(&dir.join("events.sqlite"))?);
             app.manage(log);
             app.manage(docs);
-            notify::init(app.handle());
             update::on_start(app.handle());
             sidecar::start(app.handle())?;
             if selftest::enabled() {

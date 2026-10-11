@@ -17,6 +17,8 @@ export type Note = { key: string; session: string | null; title: string; subtitl
 export type Target = { workspace: string; session: string | null; doc: string | null };
 type Response = { kind: "open" } | { kind: "action"; value: string } | { kind: "reply"; value: string };
 
+/** macOS gets the dropdown as one comma-joined string, so the core drops commas; match the same way. */
+export const cleanAction = (a: string) => a.replace(/,/g, " ").split(/\s+/).filter(Boolean).join(" ");
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const project = (s: SessionState) => (s.repo ?? s.cwd).split("/").filter(Boolean).pop() ?? s.cwd;
 const base = (p: string) => p.split("/").pop() ?? p;
@@ -56,7 +58,7 @@ export function targetFor(item: QueueItem, sessions: Record<string, SessionState
 /** Answers the item with a notification action or reply. False when it can't (then it opens instead). */
 export async function answerFrom(item: QueueItem, r: Response, sessions: Record<string, SessionState>): Promise<boolean> {
   if (r.kind === "open") return false;
-  const pick = (options: string[]) => options.find((o) => o === r.value) ?? null;
+  const pick = (options: string[]) => options.find((o) => cleanAction(o) === r.value) ?? null;
   switch (item.kind) {
     case "ask": {
       if (item.a.kind === "permission") {
