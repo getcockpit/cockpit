@@ -66,7 +66,18 @@ SFSpeechRecognizer.requestAuthorization { status in
     DispatchQueue.main.async {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in request.append(buffer) }
+        // Built-in MacBook mics arrive as a 3-channel array; the recognizer hears silence in that,
+        // so hand it channel 0 as mono.
+        let mono = AVAudioFormat(standardFormatWithSampleRate: format.sampleRate, channels: 1)!
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            guard buffer.format.channelCount > 1, let src = buffer.floatChannelData,
+                  let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength) else {
+                request.append(buffer); return
+            }
+            out.frameLength = buffer.frameLength
+            out.floatChannelData![0].update(from: src[0], count: Int(buffer.frameLength))
+            request.append(out)
+        }
         engine.prepare()
         do { try engine.start() } catch {
             emit(["type": "error", "error": "microphone: \(error.localizedDescription)"])
@@ -80,9 +91,10 @@ SFSpeechRecognizer.requestAuthorization { status in
             } else if let e = error {
                 if !lastText.isEmpty { finish(lastText) } else {
                     // Apple's recognizer refuses to run while system Dictation is off; say where to turn it on.
-                    let msg = e.localizedDescription.contains("Siri and Dictation are disabled")
+                    let d = e.localizedDescription
+                    let msg = d.contains("Siri and Dictation are disabled")
                         ? "Dictation is off. Turn it on in System Settings → Keyboard → Dictation, then try again."
-                        : e.localizedDescription
+                        : d.contains("No speech detected") ? "Didn't hear anything. Hold ⌥ Space while you speak." : d
                     emit(["type": "error", "error": msg]); exit(4)
                 }
             }

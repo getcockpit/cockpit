@@ -82,10 +82,17 @@ export function VoiceController({ resolve, send, onFallback }: { resolve: Resolv
     return () => { un.then((f) => f()); };
   }, [resolve, send, onFallback]);
 
+  // An error hides itself after a few seconds, or on click, so it never sits over the UI.
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(""), 6000);
+    return () => clearTimeout(t);
+  }, [error]);
+
   if (!live && !error) return null;
   return (
     <div role="status" aria-live="polite" style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", minWidth: 420, maxWidth: 760, padding: "12px 16px", background: "var(--mr-ink)", color: "var(--mr-tile)", zIndex: 40, display: "flex", flexDirection: "column", gap: 4, animation: "mr-toast-in .18s ease-out both" }}>
-      {error ? <span style={{ color: "var(--mr-needs)" }}>Voice: {error}</span> : (
+      {error ? <span onClick={() => setError("")} title="Dismiss" style={{ color: "var(--mr-needs)", cursor: "pointer" }}>Voice: {error}</span> : (
         <>
           <span style={{ opacity: 0.7, fontSize: 12 }}>● Listening {target} · release ⌥ Space to send</span>
           <span style={{ fontSize: 16 }}>{text || "…"}</span>
