@@ -42,3 +42,6 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+mac-notification-sys = "0.6"

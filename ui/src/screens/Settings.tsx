@@ -155,6 +155,15 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
           </div>
         </section>}
 
+        {tab === "sessions" && <section data-mr="NotificationSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <h2 className="mr-h">Notifications</h2>
+          <div className="mr-row" style={{ gap: 12 }}>
+            <Segmented label="Notifications" value={state.notifications ? "on" : "off"} options={[["on", "On"], ["off", "Off"]]} onPick={(v) => void api.log("ui.notifications_set", { on: v === "on" })} />
+            <span className="mr-dim" style={{ fontSize: 12 }}>When Cockpit is in the background, a macOS notification for each new thing that needs you. Click it to open that decision, or answer from the notification.</span>
+            <Key onClick={() => void act(() => invoke("notify", { note: { key: "test", session: null, title: "Allow a command?", subtitle: "Cockpit / Test notification", body: "This is what a decision looks like.\n$ echo hello", actions: ["Allow", "Deny"], reply: false } }), "Sent. If nothing shows, allow Cockpit in System Settings → Notifications.")}>Send a test</Key>
+          </div>
+        </section>}
+
         {tab === "sessions" && state.workspaces.length > 1 && (
           <section data-mr="WorkspacesSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
             <h2 className="mr-h">Workspaces <span className="mr-dim" style={{ fontWeight: 400 }}>double-click a tab to rename it · right-click it to delete</span></h2>
