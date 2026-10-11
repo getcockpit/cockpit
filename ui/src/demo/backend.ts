@@ -176,6 +176,18 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       later(300, () => record(String(a.session), "sidecar.model_set", { ...c, ok: true }));
       return null;
     }
+    // Slash commands and /mcp (MR-87), like the sidecar answers them.
+    case "session_commands": later(200, () => record(String(a.session), "sidecar.commands", { commands: DEMO_COMMANDS })); return null;
+    case "session_mcp_status": later(300, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp })); return null;
+    case "session_mcp_action": {
+      const server = String(a.server), action = String(a.action);
+      record(String(a.session), "ui.mcp_action", { server, action });
+      const x = demoMcp.find((m) => m.name === server);
+      if (x && action !== "reconnect") x.status = action === "enable" ? "connected" : "disabled";
+      const ok = !(x?.status === "failed" && action === "reconnect");
+      later(900, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp, done: { server, action, ok, ...(ok ? {} : { error: "connection refused (localhost:4100)" }) } }));
+      return null;
+    }
     case "models_refresh": record(null, "sidecar.models", { models: DEMO_MODELS }); return null;
     case "session_stop": record(String(a.session), "sidecar.session_ended", { ok: true }); return null;
     case "session_changes": return [
@@ -271,6 +283,25 @@ export function install(name: string) {
 }
 
 // What Claude Code offers a Max login, for the model picker (MR-73).
+const DEMO_COMMANDS = [
+  { name: "mcp", description: "Manage MCP servers", hint: "", aliases: [], builtin: true, skill: false, terminal: false },
+  { name: "model", description: "Set the AI model for Claude Code", hint: "[model]", aliases: [], builtin: true, skill: false, terminal: false },
+  { name: "compact", description: "Clear conversation history but keep a summary in context", hint: "<instructions>", aliases: [], builtin: true, skill: false, terminal: false },
+  { name: "context", description: "Show current context usage", hint: "", aliases: [], builtin: true, skill: false, terminal: false },
+  { name: "doctor", description: "Diagnose and verify your Claude Code installation", hint: "", aliases: [], builtin: true, skill: false, terminal: true },
+  { name: "usage", description: "Show plan usage limits", hint: "", aliases: ["cost"], builtin: true, skill: false, terminal: false },
+  { name: "review", description: "Review a PR or branch: accepts a branch name or GitHub PR URL", hint: "<pr>", aliases: [], builtin: false, skill: true, terminal: false },
+  { name: "mr-task", description: "Run one Cockpit task end to end", hint: "<task>", aliases: [], builtin: false, skill: true, terminal: false },
+  { name: "agent-skills:test", description: "Run TDD workflow: write failing tests, implement, verify", hint: "", aliases: [], builtin: false, skill: true, terminal: false },
+  { name: "pinchtab", description: "Browser automation through PinchTab", hint: "", aliases: [], builtin: false, skill: true, terminal: false },
+];
+const demoMcp = [
+  { name: "claude.ai Slack", status: "connected", source: "claudeai", scope: "claudeai", error: null, version: "1.4.0", url: null, tools: ["slack_send_message", "slack_read_channel", "slack_search_public", "slack_read_thread"] },
+  { name: "claude.ai Gmail", status: "needs-auth", source: "claudeai", scope: "claudeai", error: null, version: null, url: null, tools: [] },
+  { name: "linear", status: "failed", source: "user", scope: "user", error: "connection refused (localhost:4100)", version: null, url: "http://localhost:4100/mcp", tools: [] },
+  { name: "figma", status: "disabled", source: "plugin", scope: "user", error: null, version: null, url: null, tools: [] },
+  { name: "mr", status: "connected", source: "sdk", scope: null, error: null, version: null, url: null, tools: ["plan_set"] },
+];
 const DEMO_MODELS = [
   { value: "default", resolved: "claude-opus-5-5", displayName: "Default (recommended)", description: "Opus 5.5 with 1M context · most capable", efforts: ["low", "medium", "high", "xhigh", "max"] },
   { value: "sonnet", resolved: "claude-sonnet-5-5", displayName: "Sonnet", description: "Sonnet 5.5 · everyday tasks", efforts: ["low", "medium", "high"] },

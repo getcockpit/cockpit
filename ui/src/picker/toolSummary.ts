@@ -50,6 +50,7 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
   if (n === "Glob") return `Find ${input.pattern}`;
   if (n === "TodoWrite" || n === "plan_set") return "Update plan";
   if (n === "render_view") return `Show ${String(input.title ?? "a view")}`;
+  if (n === "Skill") return `Skill · ${String(input.skill ?? input.command ?? "")}${input.args ? ` ${String(input.args)}` : ""}`;
   if (n === "WebFetch") return `Fetch ${String(input.url ?? "").replace(/^https?:\/\//, "").split("/")[0]}`;
   if (n === "WebSearch") return `Search web: ${input.query}`;
   const d = input.description ?? input.file_path ?? input.pattern ?? input.url ?? input.query ?? "";
