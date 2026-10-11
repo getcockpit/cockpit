@@ -43,11 +43,14 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
   const [clefOn, setClefOn] = useState<boolean | null>(null);
   const [acct, setAcct] = useState("");
   const [token, setToken] = useState("");
+  const [cockpitOn, setCockpitOn] = useState<boolean | null>(null);
+  const [cockpitKey, setCockpitKey] = useState("");
 
   const load = () => {
     invoke<History>("personal_history").then(setHist).catch((e) => setMsg(`Couldn't read your changes: ${shortError(e)}`));
     invoke<Build[]>("selfbuild_list").then(setBuilds).catch(() => {});
     api.layer2Status().then((r) => setClefOn(r.configured)).catch(() => setClefOn(false));
+    api.cockpitStatus().then((r) => setCockpitOn(r.configured)).catch(() => setCockpitOn(false));
   };
   useEffect(() => {
     load();
@@ -99,6 +102,28 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
           <div className="mr-row" style={{ gap: 12 }}>
             <Segmented label="Compact at" value={String(state.compactWindow ?? "off")} options={[["120000", "120k"], ["200000", "200k"], ["400000", "400k"], ["off", "Model limit"]]} onPick={(v) => void api.log("ui.compact_window_set", { tokens: v === "off" ? null : Number(v) })} />
             <span className="mr-dim" style={{ fontSize: 12 }}>Sessions summarise their history once it reaches this many tokens. Every reply re-reads the whole history, so sooner uses less of your plan; later keeps more exact detail. Applies to sessions started or resumed after the change.</span>
+          </div>
+        </section>
+
+        <section data-mr="CockpitLayerSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <h2 className="mr-h">Cockpit layer <span className="mr-dim" style={{ fontWeight: 400 }}>who draws the cards, plans and titles</span></h2>
+          <div className="mr-row" style={{ gap: 12 }}>
+            <Segmented label="Cards by" value={state.cockpitLayer ? "layer" : "session"} options={[["session", "Claude, in the session"], ["layer", "Cockpit layer"]]} onPick={(v) => void api.log("ui.cockpit_layer_set", { on: v === "layer" })} />
+            <span className="mr-dim" style={{ fontSize: 12 }}>{state.cockpitLayer ? "Sessions run as plain Claude Code. After each turn a small model on the Cockpit key draws the cards, so none of it uses your Claude plan." : "Claude draws the cards itself, which adds about 6% to what sessions use of your plan."} Applies to sessions started or resumed after the change.</span>
+          </div>
+          {(() => {
+            const m = state.cockpit.month === new Date().toISOString().slice(0, 7) ? state.cockpit : { calls: 0, tokens: 0, usd: 0, errors: 0 };
+            return (
+              <div className="mr-row" style={{ gap: 16 }}>
+                <span style={{ color: cockpitOn ? "var(--mr-done)" : state.cockpitLayer ? "var(--mr-needs-ink)" : "var(--mr-ink-2)" }}>{cockpitOn === null ? "…" : cockpitOn ? "● Key saved" : state.cockpitLayer ? "○ Needs a key" : "○ No key"}</span>
+                <span className="mr-mono" data-mr="CockpitMeter">This month: {m.calls} calls · {m.tokens.toLocaleString()} tokens · ${m.usd.toFixed(2)}</span>
+                {m.errors > 0 && <span style={{ color: "var(--mr-error)" }}>{m.errors} failed</span>}
+              </div>
+            );
+          })()}
+          <div className="mr-row" style={{ gap: 8 }}>
+            <input aria-label="Cockpit API key" placeholder="Anthropic API key (sk-ant-…)" type="password" value={cockpitKey} onChange={(e) => setCockpitKey(e.target.value)} style={{ flex: 1, font: "inherit", padding: "6px 8px", background: "var(--mr-well)", border: 0, color: "var(--mr-ink)" }} />
+            <Key onClick={() => { if (cockpitKey.trim()) void act(() => api.cockpitSaveKey(cockpitKey).then(() => { setCockpitKey(""); setCockpitOn(true); }), "Saved to the Keychain."); }}>Save</Key>
           </div>
         </section>
 

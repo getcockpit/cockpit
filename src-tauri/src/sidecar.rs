@@ -65,6 +65,12 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         if payload["type"] == "tool_call" {
                             answer_tool_call(&handle, &payload);
                         }
+                        // The Cockpit layer draws the cards once a turn ends (decision 34).
+                        if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
+                            if let Some(id) = session.as_deref() {
+                                crate::cockpit_layer::after_turn(handle.clone(), id.to_owned());
+                            }
+                        }
                         if crate::selftest::enabled() {
                             crate::selftest::on_message(&handle, &payload);
                         }
@@ -264,6 +270,12 @@ pub fn session_start(
     // What the session compacts at, so usage reports can tell sessions apart (I63).
     let compact = compact_window(&app);
     payload["compact_window"] = compact.into();
+    // With the Cockpit layer on, the session runs as plain Claude Code and the layer draws the
+    // cards on its own key after each turn (decision 34).
+    let layer = crate::cockpit_layer::on(&app);
+    if layer {
+        payload["cockpit_layer"] = true.into();
+    }
     crate::eventlog::record(&app, Some(&session), "ui.session_requested", &payload, None);
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
     if let Some(r) = resume {
@@ -279,9 +291,11 @@ pub fn session_start(
     msg["tools"] = tools.unwrap_or_else(|| {
         let mut specs = crate::docs::tool_specs().as_array().cloned().unwrap_or_default();
         specs.extend(crate::flows::tool_specs(&kind));
-        specs.push(crate::views::tool_spec());
-        specs.push(crate::views::plan_spec());
-        specs.push(crate::views::title_spec());
+        if !layer {
+            specs.push(crate::views::tool_spec());
+            specs.push(crate::views::plan_spec());
+            specs.push(crate::views::title_spec());
+        }
         serde_json::Value::Array(specs)
     });
     let mut env = serde_json::Map::new();
@@ -295,11 +309,15 @@ pub fn session_start(
         msg["env"] = env.into();
     }
     // Every session gets the visual-app guidance (MR-56); Review/Address add their flow steps.
-    let append = match crate::flows::system_prompt(&kind) {
-        Some(p) => format!("{VISUAL_GUIDANCE}\n\n{p}"),
-        None => VISUAL_GUIDANCE.to_owned(),
+    let append = match (crate::flows::system_prompt(&kind), layer) {
+        (Some(p), true) => Some(p.to_string()),
+        (Some(p), false) => Some(format!("{VISUAL_GUIDANCE}\n\n{p}")),
+        (None, true) => None,
+        (None, false) => Some(VISUAL_GUIDANCE.to_owned()),
     };
-    msg["append_system_prompt"] = append.into();
+    if let Some(a) = append {
+        msg["append_system_prompt"] = a.into();
+    }
     state.live.lock().unwrap().insert(session.clone());
     sidecar_send(state, msg)?;
     Ok(session)
