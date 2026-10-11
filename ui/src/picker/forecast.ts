@@ -48,7 +48,7 @@ export function forecast(s: SessionState, all: SessionState[], now: number, medi
   if (s.status === "ended") return { kind: "none", label: "Done" };
   if (s.status === "error") return { kind: "none", label: "Stopped with an error" };
   if (s.status === "interrupted") return { kind: "none", label: "Interrupted" };
-  if (s.status === "idle") return { kind: "none", label: "Turn finished" };
+  if (s.status === "idle") return { kind: "none", label: s.backgroundTasks.length ? "Running in background" : "Turn finished" };
   const left = s.todos.filter((t) => t.status !== "completed");
   if (!s.todos.length || !left.length) return { kind: "none", label: s.todos.length ? "Wrapping up" : "No plan" };
   // The current step gets what's left of a typical step, but never less than a quarter of one:

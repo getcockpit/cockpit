@@ -34,7 +34,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [],
   };
 }
 
@@ -360,6 +360,11 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     // Skills found mid-session: the list is replaced; what we knew about each name is kept.
     const was = new Map(s.commands.map((c) => [c.name, c]));
     s.commands = (m.commands as { name: string; description?: string; argumentHint?: string; aliases?: string[]; builtin?: boolean }[]).map((c) => ({ name: c.name, description: c.description ?? "", hint: c.argumentHint ?? "", aliases: c.aliases ?? [], builtin: !!c.builtin, skill: was.get(c.name)?.skill ?? !c.builtin, terminal: was.get(c.name)?.terminal ?? false }));
+    return;
+  }
+  if (type === "system" && m.subtype === "background_tasks_changed" && Array.isArray(m.tasks)) {
+    // The full list each time: what is still running in the background after the turn.
+    s.backgroundTasks = (m.tasks as { task_id?: string; description?: string }[]).map((t) => ({ id: String(t.task_id ?? ""), description: String(t.description ?? "") }));
     return;
   }
   if (type === "system" && (m.subtype === "task_started" || m.subtype === "task_notification")) {
