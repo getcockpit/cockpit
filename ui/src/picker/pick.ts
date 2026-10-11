@@ -98,6 +98,7 @@ export function pickTile(s: SessionState): TileSpec {
   const modelSaysWaiting = !!kind && kind.layer === "model" && kind.p >= 0.6 && ["question", "plan", "blocked"].includes(kind.label);
   const askedInProse = s.status === "idle" && lastItem?.kind === "text" && (asksUser(lastItem.text) || modelSaysWaiting);
   const flowStep = flowWaiting(s);
+  const running = s.status === "idle" && s.backgroundTasks.length > 0 && !askedInProse && !flowStep ? s.backgroundTasks : null;
   const state: TileSpec["state"] =
     s.status === "needs_you" || askedInProse || flowStep ? "needs_you"
     : s.status === "error" ? "error"
@@ -105,6 +106,8 @@ export function pickTile(s: SessionState): TileSpec {
     : s.status === "starting" ? "starting"
     : s.status === "interrupted" ? "interrupted"
     // A finished turn whose plan is all ticked off is done work waiting for review (F10), not "waiting".
+    // Scripts or agents still running after the turn: the session is busy, not waiting on you.
+    : running ? "working"
     : s.status === "idle" && total > 0 && done === total ? "done"
     : s.status === "idle" ? "idle"
     : total && (done >= total - 1 || done / total >= 0.8) ? "almost"
@@ -113,12 +116,13 @@ export function pickTile(s: SessionState): TileSpec {
   const doing = s.status === "interrupted" ? "Stopped when the app closed. Resume continues the same conversation."
     : flowStep ? flowStep
     : askedInProse && lastItem?.kind === "text" ? `Asks: ${proseQuestion(lastItem.text).slice(0, 120)}`
+    : running ? `Running: ${running[0].description || "a background task"}${running.length > 1 ? ` (+${running.length - 1} more)` : ""}`
     : ask
     ? ask.kind === "question" ? `Asks: ${ask.questions[0]?.question ?? "a question"}` : `Wants to use ${ask.tool}`
     : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${String(lastTool.input.file_path).split("/").pop()}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");
   return {
     state,
-    step: s.status === "idle" && total > 0 && done === total ? "Ready to review" : total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Your turn" : "Working",
+    step: running ? "Running in background" : s.status === "idle" && total > 0 && done === total ? "Ready to review" : total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Your turn" : "Working",
     progress,
     progressLabel: progress === null ? "" : `${Math.round(progress * 100)}%`,
     doing,
