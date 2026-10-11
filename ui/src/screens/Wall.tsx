@@ -6,7 +6,7 @@ import { pointer } from "../components/pointer";
 import { suggest, type Suggestion } from "../picker/suggest";
 import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
-import { Bar, Key, ProgressTrack, StateMark } from "../components";
+import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
 import { isOpenQuestion, type Doc } from "../state/docs";
 import { api } from "../state/store";
@@ -84,6 +84,8 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
       else if (k === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
       else if (cur.kind === "ask" && k === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
       else if (cur.kind === "ask" && k === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
+      else if (cur.kind === "ask" && k === "s" && cur.a.kind === "question") { e.preventDefault(); void answerAsk(cur.s, cur.a, wayOut(cur.a.questions, { kind: "skip" })); }
+      else if (cur.kind === "doc" && k === "s") { e.preventDefault(); (document.querySelector(`[data-mr-source="${cur.d.id}:${cur.b.id}"] [data-mr="WayOut"] button:last-child`) as HTMLButtonElement | null)?.click(); }
       else if (cur.kind === "prose" && /^[1-9]$/.test(k) && cur.options[Number(k) - 1]) { e.preventDefault(); void api.send(cur.s.id, cur.options[Number(k) - 1]); }
       else if (cur.kind === "prose" && k === "r") { e.preventDefault(); (document.querySelector(`[data-reply="${cur.s.id}"]`) as HTMLInputElement | null)?.focus(); }
       else if (cur.kind === "doc" && /^[1-9]$/.test(k)) { const o = (cur.b.data?.options ?? [])[Number(k) - 1]; if (o) { e.preventDefault(); (document.querySelector(`[data-mr-source="${cur.d.id}:${cur.b.id}"] [data-option="${Number(k) - 1}"]`) as HTMLButtonElement | null)?.click(); } }
@@ -128,7 +130,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
       <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
         {queue.length > 0 && (
           <section id="mr-needs" aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 12 }}>
-            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you<span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · R reply · ↵ open</span></h2>
+            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you<span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · S skip · R reply · ↵ open</span></h2>
             <div className="mr-queue">
               {queue.map((q, i) =>
                 q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
