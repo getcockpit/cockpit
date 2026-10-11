@@ -1,5 +1,5 @@
 import { needsQueue } from "../picker/queue";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keyOf } from "../components/keys";
 import { shortError } from "../components/ErrorLine";
 import { invoke } from "@tauri-apps/api/core";
@@ -21,6 +21,35 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
   const [renaming, setRenaming] = useState<string | null>(null);
   const [folderFor, setFolderFor] = useState<{ id: string; name: string } | null>(null);
   const needs = (ws: string) => needsIn(state, docs, ws);
+  // Drag a tab to reorder (MR-84). Pointer events, not HTML5 drag: the webview's file drop takes those.
+  // Midpoints are measured once at press, so the preview doesn't flicker as tabs shift under the pointer.
+  const [drag, setDrag] = useState<{ id: string; x0: number; mids: { id: string; mid: number }[]; to: number; moved: boolean } | null>(null);
+  const [held, setHeld] = useState<string[] | null>(null);
+  const tabs = useRef(new Map<string, HTMLElement>());
+  const dragged = useRef(false);
+  const ids = state.workspaces.map((w) => w.id).join(" ");
+  useEffect(() => setHeld(null), [ids]);
+  const base = held ?? state.workspaces.map((w) => w.id);
+  const order = drag?.moved ? (() => { const rest = base.filter((x) => x !== drag.id); rest.splice(drag.to, 0, drag.id); return rest; })() : base;
+  const byId = new Map(state.workspaces.map((w) => [w.id, w]));
+  const press = (e: React.PointerEvent, id: string) => {
+    if (e.button !== 0) return;
+    const mids = base.filter((x) => x !== id).map((x) => { const r = tabs.current.get(x)?.getBoundingClientRect(); return { id: x, mid: r ? r.left + r.width / 2 : 0 }; });
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({ id, x0: e.clientX, mids, to: base.indexOf(id), moved: false });
+  };
+  const move = (e: React.PointerEvent) => {
+    if (!drag) return;
+    if (!drag.moved && Math.abs(e.clientX - drag.x0) < 5) return;
+    setDrag({ ...drag, moved: true, to: drag.mids.filter((m) => m.mid < e.clientX).length });
+  };
+  const drop = () => {
+    if (!drag) return;
+    setDrag(null);
+    if (!drag.moved) return;
+    dragged.current = true;
+    if (order.join(" ") !== base.join(" ")) { setHeld(order); void invoke("workspace_reorder", { order }); }
+  };
   const loggedOut = (ws: string) => Object.values(state.sessions).some((s) => s.workspace === ws && /not logged in|\/login/i.test(s.error ?? "") );
   const create = async () => {
     if (!name.trim()) return;
@@ -35,7 +64,9 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
   };
   return (
     <nav aria-label="Workspaces" className="mr-row mr-tabs-bar" style={{ gap: 2, padding: "0 12px", background: "var(--mr-ink)", minHeight: 36 }}>
-      {state.workspaces.map((w, i) => {
+      {order.map((wid, i) => {
+        const w = byId.get(wid);
+        if (!w) return null;
         const n = needs(w.id);
         const on = w.id === active;
         return renaming === w.id ? (
@@ -43,9 +74,11 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
             <input autoFocus className="mr-input" style={{ minHeight: 28, width: 160, fontSize: 13 }} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setRenaming(null)} aria-label="Workspace name" />
           </form>
         ) : (
-          <button key={w.id} type="button" data-mr="WorkspaceTab" data-mr-source={w.id} onClick={() => onSwitch(w.id)} onDoubleClick={() => { if (w.id !== "personal") { setRenaming(w.id); setName(w.name); } }}
-            className="mr-row" style={{ gap: 8, padding: "8px 14px", border: 0, font: "inherit", cursor: "pointer", background: on ? "var(--mr-band)" : "transparent", color: on ? "var(--mr-ink)" : "var(--mr-well)", fontWeight: on ? 700 : 400 }}
-            title={`${w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}${w.folder ? `\nStarts in ${w.folder}` : ""}`}>
+          <button key={w.id} type="button" data-mr="WorkspaceTab" data-mr-source={w.id} ref={(el) => { if (el) tabs.current.set(w.id, el); else tabs.current.delete(w.id); }}
+            onClick={() => { if (dragged.current) { dragged.current = false; return; } onSwitch(w.id); }} onDoubleClick={() => { if (w.id !== "personal") { setRenaming(w.id); setName(w.name); } }}
+            onPointerDown={(e) => press(e, w.id)} onPointerMove={move} onPointerUp={drop} onPointerCancel={() => setDrag(null)}
+            className="mr-row" style={{ gap: 8, padding: "8px 14px", border: 0, font: "inherit", cursor: drag?.moved ? "grabbing" : "pointer", touchAction: "none", background: on ? "var(--mr-band)" : "transparent", color: on ? "var(--mr-ink)" : "var(--mr-well)", fontWeight: on ? 700 : 400, boxShadow: drag?.moved && drag.id === w.id ? "inset 0 -3px 0 var(--mr-selected)" : undefined }}
+            title={`${w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}${w.folder ? `\nStarts in ${w.folder}` : ""}\nDrag to reorder`}>
             {w.name}
             {i < 9 && <kbd className="mr-mono" style={{ fontSize: 11, opacity: 0.55 }}>⌘{i + 1}</kbd>}
             {n > 0 && <span className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-needs)", color: "var(--mr-ink)", fontWeight: 700 }}>{n}</span>}
