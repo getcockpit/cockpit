@@ -52,7 +52,13 @@ pub fn layer3_diagram(app: AppHandle, session: String, item_id: String, text: St
     std::thread::spawn(move || {
         let t0 = Instant::now();
         let prompt: String = text.chars().take(8000).collect();
-        let (diagram, error) = match crate::sidecar::oneshot(&app, &prompt, SYSTEM, "haiku", Duration::from_secs(90)) {
+        // With the Cockpit layer on, the diagram is billed to its key, not the user's plan (decision 34).
+        let reply = if crate::cockpit_layer::on(&app) {
+            crate::cockpit_layer::complete(&app, "diagram", Some(&session), SYSTEM, &prompt)
+        } else {
+            crate::sidecar::oneshot(&app, &prompt, SYSTEM, "haiku", Duration::from_secs(90))
+        };
+        let (diagram, error) = match reply {
             Ok(reply) => (parse_diagram(&reply), None),
             Err(e) => (None, Some(e)),
         };
