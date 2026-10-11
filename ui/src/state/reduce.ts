@@ -12,6 +12,7 @@ export const initialState: AppState = {
   theme: "control-room",
   look: { scale: 1, density: "default" },
   autoReview: true,
+  compactWindow: 200_000,
   presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
@@ -92,6 +93,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     return { ...next, workspaces: [...next.workspaces].sort((a, b) => rank(a.id) - rank(b.id)) };
   }
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
+  if (ev.kind === "ui.compact_window_set") return { ...next, compactWindow: typeof p.tokens === "number" ? p.tokens : null };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
   if (ev.kind === "ui.preset_saved") {

@@ -412,3 +412,12 @@ test("commands you run from a reply are tracked to their end, and an app restart
   const restarted = replay([ev("R7", "app.started", {}, null)], st);
   expect(restarted.sessions.s.runs.map((r) => r.status)).toEqual(["completed", "failed", "lost"]);
 });
+
+describe("compaction window (I63)", () => {
+  const ev = (id: string, tokens: number | null): MrEvent => ({ id, session_id: null, kind: "ui.compact_window_set", payload: { tokens }, anchor: null, created_at: 1 });
+  test("defaults to 200k; the last choice wins and null means the model's limit", () => {
+    expect(replay([]).compactWindow).toBe(200_000);
+    expect(replay([ev("A", 400_000), ev("B", 120_000)]).compactWindow).toBe(120_000);
+    expect(replay([ev("A", 400_000), ev("B", null)]).compactWindow).toBeNull();
+  });
+});
