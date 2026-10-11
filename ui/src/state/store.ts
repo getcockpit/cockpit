@@ -69,6 +69,10 @@ export const api = {
   setModel: (session: string, change: { model?: string | null; effort?: string | null }) => invoke("session_set_model", { session, change }),
   modelsRefresh: () => invoke("models_refresh"),
   interrupt: (session: string) => invoke("session_interrupt", { session }),
+  // Slash commands and /mcp (MR-87): answers arrive as sidecar.commands / sidecar.mcp_status.
+  commands: (session: string) => invoke("session_commands", { session }),
+  mcpStatus: (session: string) => invoke("session_mcp_status", { session }),
+  mcpAction: (session: string, server: string, action: "reconnect" | "enable" | "disable") => invoke("session_mcp_action", { session, server, action }),
   // A command from a reply's Run button (MR-85): runs in the session's folder, listed in its side panel.
   run: (session: string, cwd: string, command: string) => {
     window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Running: ${command.length > 60 ? `${command.slice(0, 57)}…` : command}` }));

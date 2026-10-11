@@ -345,6 +345,38 @@ fn resume_info(app: &AppHandle, session: &str) -> Option<(String, String, String
     Some((p["worktree"].as_str().or(p["cwd"].as_str())?.to_owned(), p["kind"].as_str().unwrap_or("blank").to_owned(), p["workspace"].as_str().unwrap_or(crate::workspaces::PERSONAL).to_owned(), sdk))
 }
 
+/// Asks a running session for its slash commands and skills (the / menu); the answer arrives as `sidecar.commands`.
+#[tauri::command]
+pub fn session_commands(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    if !state.live.lock().unwrap().contains(&session) {
+        return Err("this session isn't running".into());
+    }
+    sidecar_send(state, serde_json::json!({ "type": "commands", "session": session }))
+}
+
+/// What /mcp shows, for a running session; the answer arrives as `sidecar.mcp_status`.
+#[tauri::command]
+pub fn session_mcp_status(state: State<'_, Sidecar>, session: String) -> Result<(), String> {
+    if !state.live.lock().unwrap().contains(&session) {
+        return Err("this session isn't running: resume it to see its MCP servers".into());
+    }
+    sidecar_send(state, serde_json::json!({ "type": "mcp_status", "session": session }))
+}
+
+/// Reconnects, enables or disables one MCP server of a running session. Logged before it's sent;
+/// the fresh list (with how the action went) arrives as `sidecar.mcp_status`.
+#[tauri::command]
+pub fn session_mcp_action(app: AppHandle, state: State<'_, Sidecar>, session: String, server: String, action: String) -> Result<(), String> {
+    if !["reconnect", "enable", "disable"].contains(&action.as_str()) {
+        return Err(format!("unknown MCP action: {action}"));
+    }
+    if !state.live.lock().unwrap().contains(&session) {
+        return Err("this session isn't running: resume it to manage its MCP servers".into());
+    }
+    crate::eventlog::record(&app, Some(&session), "ui.mcp_action", &serde_json::json!({ "server": server, "action": action }), None);
+    sidecar_send(state, serde_json::json!({ "type": "mcp_action", "session": session, "server": server, "action": action }))
+}
+
 #[tauri::command]
 pub fn session_interrupt(app: AppHandle, state: State<'_, Sidecar>, session: String) -> Result<(), String> {
     if !state.live.lock().unwrap().contains(&session) {
