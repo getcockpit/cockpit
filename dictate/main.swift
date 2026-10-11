@@ -78,7 +78,13 @@ SFSpeechRecognizer.requestAuthorization { status in
                 lastText = r.bestTranscription.formattedString
                 if r.isFinal { finish(lastText) } else { emit(["type": "partial", "text": lastText]) }
             } else if let e = error {
-                if !lastText.isEmpty { finish(lastText) } else { emit(["type": "error", "error": e.localizedDescription]); exit(4) }
+                if !lastText.isEmpty { finish(lastText) } else {
+                    // Apple's recognizer refuses to run while system Dictation is off; say where to turn it on.
+                    let msg = e.localizedDescription.contains("Siri and Dictation are disabled")
+                        ? "Dictation is off. Turn it on in System Settings → Keyboard → Dictation, then try again."
+                        : e.localizedDescription
+                    emit(["type": "error", "error": msg]); exit(4)
+                }
             }
         }
     }
