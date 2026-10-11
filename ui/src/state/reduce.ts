@@ -16,6 +16,7 @@ export const initialState: AppState = {
   theme: "control-room",
   look: { scale: 1, density: "default" },
   autoReview: autoReviewDefault(import.meta.env),
+  notifications: true,
   compactWindow: 200_000,
   presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
@@ -117,6 +118,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if (ev.kind === "ui.compact_window_set") return { ...next, compactWindow: typeof p.tokens === "number" ? p.tokens : null };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
+  if (ev.kind === "ui.notifications_set") return { ...next, notifications: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
   if (ev.kind === "ui.preset_saved") {
     const pr = { id: String(p.id), name: String(p.name ?? ""), template: String(p.template ?? ""), worktree: p.worktree !== false };

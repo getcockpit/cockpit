@@ -8,6 +8,7 @@ mod gh;
 mod folders;
 mod layer3;
 mod layer2;
+mod notify;
 mod personal;
 mod runs;
 mod selfbuild;
@@ -107,6 +108,7 @@ pub fn run() {
             terminal::term_open,
             terminal::term_write,
             terminal::term_resize,
+            notify::notify,
             voice::voice_start,
             voice::voice_stop,
             workspaces::workspace_create,
