@@ -119,35 +119,54 @@ export function DecisionCard({ spec, onAnswer }: { spec: DecisionSpec; onAnswer:
   );
 }
 
+/** One pick on a card with several questions: they're all sent together once each has an answer
+ *  (sending on the first click dropped the rest). Picking again changes an answer. */
+export function pickAnswer(questions: { question: string }[], picks: Record<string, string>, question: string, label: string): { picks: Record<string, string>; done: boolean } {
+  const next = { ...picks, [question]: label };
+  return { picks: next, done: questions.every((q) => q.question in next) };
+}
+
 // A question with its options, plus a way out when none fit: answer in your own words, have Claude
-// ask you first, or skip it.
+// ask you first, or skip it. With several questions, each gets its answer and the card sends them together.
 function QuestionCard({ questions, onAnswer }: { questions: Extract<DecisionSpec, { component: "QuestionCard" }>["questions"]; onAnswer: (a: Answer) => void }) {
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  const many = questions.length > 1;
+  const pick = (question: string, label: string) => {
+    if (!many) return onAnswer({ kind: "answer", answers: { [question]: label } });
+    const r = pickAnswer(questions, picks, question, label);
+    setPicks(r.picks);
+    if (r.done) onAnswer({ kind: "answer", answers: r.picks });
+  };
+  // Own words answer the first question still open.
+  const open = questions.find((q) => !(q.question in picks));
   return (
     <div className="mr-queue" style={{ gap: 12 }}>
+      {many && <span className="mr-dim" data-mr="QuestionProgress" data-mr-source={questions[0].question}>{Object.keys(picks).length} of {questions.length} answered · sent when all are</span>}
       {questions.map((q, qi) => (
         <div key={qi} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span className="mr-ask">{q.question}</span>
+          <span className="mr-ask">{many ? `${qi + 1}. ` : ""}{q.question}</span>
           <div className="mr-row" style={{ flexWrap: "wrap" }}>
             {q.options.map((o, oi) => (
-              <Key key={oi} k={String(oi + 1)} tone={oi === 0 ? "primary" : undefined} onClick={() => onAnswer({ kind: "answer", answers: { [q.question]: o.label } })}>
+              <Key key={oi} k={many ? undefined : String(oi + 1)} tone={(many ? picks[q.question] === o.label : oi === 0) ? "primary" : undefined} onClick={() => pick(q.question, o.label)}>
                 {o.label}
               </Key>
             ))}
+            {many && q.question in picks && !q.options.some((o) => o.label === picks[q.question]) && <Key tone="primary">{picks[q.question]}</Key>}
           </div>
           {q.options.some((o) => o.description) && <span className="mr-dim">{q.options.map((o) => `${o.label}: ${o.description}`).join(" · ")}</span>}
         </div>
       ))}
-      <WayOut source={questions[0]?.question ?? ""} onOut={(x) => onAnswer(wayOut(questions, x))} />
+      <WayOut source={questions[0]?.question ?? ""} placeholder={many && open ? `None fit for ${questions.indexOf(open) + 1}? Answer it in your own words…` : undefined} onOut={(x) => (x.kind === "reply" && many && open ? pick(open.question, x.text) : onAnswer(wayOut(questions, x)))} />
     </div>
   );
 }
 
 /** The row under a question's options (I75): answer in your own words, have Claude ask first, or skip. */
-export function WayOut({ source, onOut }: { source: string; onOut: (x: { kind: "reply"; text: string } | { kind: "ask_first" } | { kind: "skip" }) => void }) {
+export function WayOut({ source, placeholder, onOut }: { source: string; placeholder?: string; onOut: (x: { kind: "reply"; text: string } | { kind: "ask_first" } | { kind: "skip" }) => void }) {
   const [text, setText] = useState("");
   return (
-    <form className="mr-row" data-mr="WayOut" data-mr-source={source} style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); if (text.trim()) onOut({ kind: "reply", text: text.trim() }); }}>
-      <input className="mr-input" value={text} onChange={(e) => setText(e.target.value)} placeholder="None fit? Answer in your own words…" aria-label="Answer in your own words" style={{ flex: "1 1 240px", background: "var(--mr-well)" }} />
+    <form className="mr-row" data-mr="WayOut" data-mr-source={source} style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); if (text.trim()) { onOut({ kind: "reply", text: text.trim() }); setText(""); } }}>
+      <input className="mr-input" value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder ?? "None fit? Answer in your own words…"} aria-label="Answer in your own words" style={{ flex: "1 1 240px", background: "var(--mr-well)" }} />
       {text.trim() && <Key submit>Send</Key>}
       <Key onClick={() => onOut({ kind: "ask_first" })}>Ask me first</Key>
       <Key k="S" onClick={() => onOut({ kind: "skip" })}>Skip</Key>
