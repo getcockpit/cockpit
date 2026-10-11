@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import { Key, ProgressTrack, type Seg } from ".";
 import { pointer } from "./pointer";
 import { Diff } from "./Diff";
@@ -130,6 +130,97 @@ function Snippet({ b }: { b: ViewBlock }) {
       {b.file ? <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{str(b.file)}</span> : null}
       <Diff code={str(b.code)} />
       {b.note ? <span className="mr-ink2">{inline(str(b.note))}</span> : null}
+    </section>
+  );
+}
+
+// Stats: the 2-4 numbers to read first, big (the Doc mockup's hero row).
+function Stats({ b }: { b: ViewBlock }) {
+  return (
+    <section style={{ ...card, display: "flex", flexWrap: "wrap", gap: "12px 32px" }}>
+      {list(b.items).map((x, i) => (
+        <span key={i} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <strong className="mr-mono" style={{ fontSize: 26, lineHeight: 1.1 }}>{str(x.value)}</strong>
+            <span style={{ fontWeight: 700 }}>{inline(str(x.label))}</span>
+          </span>
+          {x.detail ? <span className="mr-dim" style={{ fontSize: 12 }}>{inline(str(x.detail))}</span> : null}
+        </span>
+      ))}
+    </section>
+  );
+}
+
+// Scope: in and out side by side, so the boundary reads in one look.
+function Scope({ b }: { b: ViewBlock }) {
+  const col = (label: string, items: unknown, tone: "done" | "todo") => (
+    <div style={{ flex: "1 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+      <span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>{label}</span>
+      {(Array.isArray(items) ? items : []).map((x, i) => (
+        <span key={i} className="mr-row" style={{ alignItems: "baseline", gap: 8 }}>
+          <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center" }}><Mark tone={tone} /></span>
+          <span className={tone === "todo" ? "mr-ink2" : undefined}>{inline(str(x))}</span>
+        </span>
+      ))}
+    </div>
+  );
+  return (
+    <section style={{ ...card, display: "flex", flexWrap: "wrap", gap: 16 }}>
+      {col("In", b.in, "done")}
+      {Array.isArray(b.out) && b.out.length > 0 && col("Out", b.out, "todo")}
+    </section>
+  );
+}
+
+// Steps: a numbered sequence; the actor column shows who acts, so handoffs stand out.
+function Steps({ b }: { b: ViewBlock }) {
+  const items = list(b.items);
+  const actors = items.some((x) => x.actor);
+  return (
+    <ol style={{ ...card, margin: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 2 }}>
+      {items.map((x, i) => (
+        <li key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "5px 0" }}>
+          <span className="mr-mono mr-dim" style={{ flex: "none", width: 18, textAlign: "right" }}>{i + 1}</span>
+          {actors && <span style={{ flex: "none", width: 72, fontSize: 12, fontWeight: 700, padding: "1px 6px", background: "var(--mr-well)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{str(x.actor)}</span>}
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {inline(str(x.text))}
+            {x.detail ? <span className="mr-dim"> · {inline(str(x.detail))}</span> : null}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// Risks: each risk beside what contains it; level as bar length, like the severity scale.
+const LEVEL: Record<string, { n: number; color: string; name: string }> = {
+  high: { n: 3, color: "var(--mr-error)", name: "High" },
+  medium: { n: 2, color: "var(--mr-needs-ink)", name: "Medium" },
+  low: { n: 1, color: "var(--mr-ink-3)", name: "Low" },
+};
+function Level({ level }: { level: string }) {
+  const l = LEVEL[level.toLowerCase()];
+  if (!l) return null;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{ display: "inline-flex", gap: 2 }} aria-hidden="true">
+        {[1, 2, 3].map((k) => <span key={k} style={{ width: 8, height: 6, borderRadius: 1, background: k <= l.n ? l.color : "var(--mr-lamp-off)" }} />)}
+      </span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: l.color }}>{l.name}</span>
+    </span>
+  );
+}
+function Risks({ b }: { b: ViewBlock }) {
+  return (
+    <section style={{ ...card, display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) minmax(0, 1fr)", gap: "8px 14px", alignItems: "baseline" }}>
+      <span /><span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>Risk</span><span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>Contained by</span>
+      {list(b.items).map((x, i) => (
+        <Fragment key={i}>
+          <span><Level level={str(x.level)} /></span>
+          <strong>{inline(str(x.risk))}</strong>
+          <span className="mr-ink2">→ {inline(str(x.mitigation))}</span>
+        </Fragment>
+      ))}
     </section>
   );
 }
@@ -335,6 +426,10 @@ function Block({ b, onReply, live }: { b: ViewBlock; onReply: (t: string) => voi
     case "fix_options": return <FixOptions b={b} onReply={onReply} live={live} />;
     case "thread": return <Thread b={b} />;
     case "text": return <div style={card}><Markdown text={str(b.markdown)} /></div>;
+    case "stats": return <Stats b={b} />;
+    case "scope": return <Scope b={b} />;
+    case "steps": return <Steps b={b} />;
+    case "risks": return <Risks b={b} />;
     default: return null;
   }
 }
@@ -358,7 +453,7 @@ function Actions({ b, title, onReply, onDiscover, live }: { b: ViewBlock; title:
 }
 
 // Blocks that draw nothing clickable without live replies, so they can sit inside a doc tile's button.
-const GLANCE = new Set(["takeaway", "tally", "checklist", "progress", "compare", "change_graph", "findings", "tier", "novelty", "snippet", "thread"]);
+const GLANCE = new Set(["stats", "scope", "steps", "risks", "takeaway", "tally", "checklist", "progress", "compare", "change_graph", "findings", "tier", "novelty", "snippet", "thread"]);
 
 // A doc tile's glance at its view (MR-100): the first block that reads at a glance, not interactive.
 export function ViewGlance({ blocks, source }: { blocks: ViewBlock[]; source: string }) {
