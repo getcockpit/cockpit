@@ -10,6 +10,7 @@ import { Toast } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { navigate, Presence } from "./components/motion";
 import type { AppState } from "./state/types";
+import { introOpen } from "./state/reduce";
 const SignInPane = lazy(() => import("./screens/Terminal").then((m) => ({ default: m.SignInPane })));
 import { Focus } from "./screens/Focus";
 import { StartPicker } from "./screens/StartPicker";
@@ -94,8 +95,8 @@ export default function App() {
   const [wallView, setWallViewNow] = useState<"wall" | "timeline">(() => { try { return localStorage.getItem("mr.wallView") === "timeline" ? "timeline" : "wall"; } catch { return "wall"; } });
   const setWallView = (v: "wall" | "timeline") => navigate("side", () => { setWallViewNow(v); try { localStorage.setItem("mr.wallView", v); } catch { /* per-viewer convenience */ } });
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
-  const [introClosed, setIntroClosed] = useState(false);
-  const intro = all.lastEventId !== null && !all.onboarded && !introClosed && <Onboarding state={all} onDone={() => setIntroClosed(true)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
+  const [introClosedAt, setIntroClosedAt] = useState<string | null>(null);
+  const intro = introOpen(all, introClosedAt) && <Onboarding state={all} onDone={() => setIntroClosedAt(all.lastEventId)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

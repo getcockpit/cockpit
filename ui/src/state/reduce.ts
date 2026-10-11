@@ -19,6 +19,7 @@ export const initialState: AppState = {
   cockpit: { month: "", calls: 0, tokens: 0, usd: 0, errors: 0 },
   account: { checked: false, signedIn: false, plan: null },
   onboarded: false,
+  onboardingResetAt: null,
   recovered: null,
   lastBuildAt: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
@@ -67,7 +68,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "app.recovered") return { ...next, recovered: { crashedSlot: String(p.crashed_slot ?? ""), log: String(p.log ?? ""), at: ev.created_at } };
   if (ev.kind === "ui.recovery_dismissed") return { ...next, recovered: null };
   if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };
-  if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false };
+  if (ev.kind === "ui.onboarding_reset") return { ...next, onboarded: false, onboardingResetAt: ev.id };
   if (ev.kind === "sidecar.limits") {
     // Limits double as the sign-in check: they're only available to a signed-in subscription.
     const account = { checked: true, signedIn: !!p.available, plan: (p.plan as string) ?? null };
@@ -420,6 +421,13 @@ function addressStep(a: SessionState["address"], kind: string, p: Record<string,
 
 /** Where a new session in this workspace starts (MR-65): its pinned folder, else the folder its
  *  latest session ran in, else null (the picker's own fallback). */
+// The intro is open on first run (after the replay) and again after each Settings → Show the intro,
+// even when it was closed earlier in this run (closedAt = the last event id when it closed).
+export function introOpen(state: AppState, closedAt: string | null): boolean {
+  if (state.lastEventId === null || state.onboarded) return false;
+  return closedAt === null || (state.onboardingResetAt !== null && state.onboardingResetAt > closedAt);
+}
+
 export function workspaceFolder(state: AppState, ws: string): string | null {
   const pinned = state.workspaces.find((w) => w.id === ws)?.folder;
   if (pinned) return pinned;
