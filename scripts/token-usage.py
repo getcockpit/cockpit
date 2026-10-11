@@ -89,6 +89,12 @@ def main():
             tin = sum(ins(v) for v in vs)
             per_call = sum(sum(v["calls"].values()) for v in vs) / max(1, calls)
             print(f"{w:<8}{len(vs):>9}{turns:>7}{k(per_call):>10}{k(tin / max(1, turns)):>12}{sum(v['usd'] for v in vs) / max(1, turns):>13.2f}")
+    # The Cockpit layer's own calls (decision 34): its overhead, on its own key, apart from Claude.
+    rows = db.execute("SELECT json_extract(payload,'$.purpose'), count(*), sum(json_extract(payload,'$.input_tokens')), sum(json_extract(payload,'$.output_tokens')), sum(json_extract(payload,'$.cost_usd')), sum(json_extract(payload,'$.ok') = 0) FROM events WHERE kind = 'cockpit.usage' GROUP BY 1").fetchall()
+    if rows:
+        print(f"\nCockpit layer (own key){'':<4}{'calls':>7}{'in':>9}{'out':>9}{'list $':>9}{'failed':>8}")
+        for purpose, n, i, o, usd, bad in rows:
+            print(f"{purpose or '?':<27}{n:>7}{k(i or 0):>9}{k(o or 0):>9}{usd or 0:>9.2f}{bad or 0:>8}")
 
 
 main()
