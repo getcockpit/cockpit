@@ -91,6 +91,11 @@ fn tail(path: &Path, max: u64) -> Result<String, String> {
     if !task_file {
         return Err("not a background task's output".into());
     }
+    tail_file(path, max)
+}
+
+/// The last `max` bytes of a file, as text.
+pub fn tail_file(path: &Path, max: u64) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
     let mut f = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let len = f.metadata().map_err(|e| e.to_string())?.len();
