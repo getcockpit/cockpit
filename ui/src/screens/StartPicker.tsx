@@ -93,7 +93,11 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
     setPrs(null); setSel(0); setError("");
     if (!prMode || (only && repo === undefined)) return;
     let alive = true;
-    api.prs(cwd, mode, scope).then((r) => alive && setPrs(r)).catch((e) => alive && (setPrs([]), setError(shortError(e))));
+    api.prs(cwd, mode, scope).then((r) => alive && setPrs(r)).catch((e) => {
+      // The raw error goes in the log: the line shown is shortened, so it alone can't be traced.
+      void api.log("ui.error", { where: "start_picker.prs", mode, cwd, scope: scope ?? null, error: String(e) }).catch(() => {});
+      if (alive) { setPrs([]); setError(shortError(e)); }
+    });
     return () => { alive = false; };
   }, [mode, cwd, scope, only && repo === undefined]);
 
