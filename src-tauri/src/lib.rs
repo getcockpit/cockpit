@@ -8,6 +8,7 @@ mod folders;
 mod layer3;
 mod layer2;
 mod personal;
+mod runs;
 mod selfbuild;
 mod selftest;
 mod sidecar;
@@ -30,6 +31,7 @@ pub fn run() {
         .manage(sidecar::Sidecar::default())
         .manage(terminal::Terminals::default())
         .manage(voice::Voice::default())
+        .manage(runs::Runs::default())
         .setup(|app| {
             // MR_DATA_DIR keeps tests and self-builds away from the real event log.
             let dir = match std::env::var("MR_DATA_DIR") {
@@ -73,6 +75,9 @@ pub fn run() {
             changes::session_changes,
             changes::session_diff,
             changes::task_output,
+            runs::run_command,
+            runs::run_stop,
+            runs::run_output,
             changes::app_repo_path,
             changes::godmode_save_mark,
             selfbuild::selfbuild_start,

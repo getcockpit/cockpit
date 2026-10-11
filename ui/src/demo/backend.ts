@@ -185,6 +185,14 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       { path: "migrations/0042_sessions.sql", added: 7, removed: 0, status: "A", risky: "migration" },
     ];
     case "task_output": return `$ bun run build:all\n[billing-core] compiled 212 modules in 4.1s\n[billing-api] compiled 88 modules in 2.3s\n[billing-web] building… ${new Date().toLocaleTimeString()}`;
+    case "run_command": {
+      const id = `run${Date.now().toString(36)}`;
+      record(String(a.session), "ui.run_started", { run_id: id, command: a.command, cwd: a.cwd });
+      later(/sleep|watch|dev/.test(String(a.command)) ? 60_000 : 2500, () => { if (!events.some((e) => e.kind === "run.finished" && e.payload.run_id === id)) record(String(a.session), "run.finished", { run_id: id, code: /lint/.test(String(a.command)) ? 1 : 0, status: /lint/.test(String(a.command)) ? "failed" : "completed" }); });
+      return id;
+    }
+    case "run_stop": record(String(a.session), "ui.run_stopped", { run_id: a.runId }); record(String(a.session), "run.finished", { run_id: a.runId, code: null, status: "stopped" }); return null;
+    case "run_output": return `$ ${events.find((e) => e.kind === "ui.run_started" && e.payload.run_id === a.runId)?.payload.command ?? "…"}\nsrc/invoice.ts:12:1  error  Imports must be sorted  import/order\n\n1 problem (1 error, 0 warnings)`;
     case "session_diff": return `--- a/${a.path}\n+++ b/${a.path}\n@@ -10,6 +10,9 @@\n export function guard(req) {\n-  if (!req.session) return redirect("/login");\n+  if (!req.session?.user) {\n+    return redirect(\`/login?next=\${encodeURIComponent(req.url)}\`);\n+  }\n   return next();\n }`;
     case "recent_folders": return [
       { path: "/Users/me/code/shop", name: "shop", repo: true, at: 0 },
