@@ -69,7 +69,7 @@ export async function answerFrom(item: QueueItem, r: Response, sessions: Record<
         return true;
       }
       const q = item.a.questions[0];
-      // A typed reply when none of the options fit (I74).
+      // A typed reply when none of the options fit (I75).
       if (r.kind === "reply") { if (!r.value.trim()) return false; await answerAsk(item.s, item.a, wayOut(item.a.questions, { kind: "reply", text: r.value.trim() })); return true; }
       const label = q && pick(q.options.map((o) => o.label));
       if (!label) return false;

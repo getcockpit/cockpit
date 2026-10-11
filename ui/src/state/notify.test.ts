@@ -56,7 +56,7 @@ describe("notifications (MR-94)", () => {
     expect(await answerFrom(prose, { kind: "open" }, sessions)).toBe(false);
   });
 
-  test("none of the options fit (I74): a single question takes a typed reply as its answer", async () => {
+  test("none of the options fit (I75): a single question takes a typed reply as its answer", async () => {
     sent.length = 0;
     const q = { question: "Which database?", header: "", options: [{ label: "Postgres", description: "" }] };
     const a: PendingAsk = { kind: "question", requestId: "r4", questions: [q], input: {}, at: 1 };
@@ -67,7 +67,7 @@ describe("notifications (MR-94)", () => {
   });
 });
 
-describe("wayOut: leaving a question when no option fits (I74)", async () => {
+describe("wayOut: leaving a question when no option fits (I75)", async () => {
   const { wayOut, ASK_FIRST, SKIPPED } = await import("../components");
   const q = (question: string) => ({ question });
   test("skip and ask-first decline the question with an instruction for Claude", () => {

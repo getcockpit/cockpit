@@ -2,7 +2,8 @@ import { keyOf } from "../components/keys";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { Markdown } from "../components/Markdown";
-import { decideQuestion, docApi, sendDocFeedback, isOpenQuestion, orderedBlocks, SECTION_LABEL, type Block, type Doc } from "../state/docs";
+import { CatalogView, ViewGlance } from "../components/CatalogView";
+import { blockView, decideQuestion, docApi, sendDocFeedback, isOpenQuestion, orderedBlocks, SECTION_LABEL, type Block, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import type { AppState } from "../state/types";
 
@@ -124,7 +125,8 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
                   <BlockOpen key={focus.id} doc={doc} b={focus} changedIn={changed.includes(focus) ? doc.version : null}
                     deep={!!deep[focus.id]} thread={threads[focus.id]} onDecide={(label) => void decideQuestion(doc, focus.id, label, session)}
                     onDeeper={() => setDeep((d) => ({ ...d, [focus.id]: !d[focus.id] }))} onDiscover={() => void discover(focus)} onOpenThread={onOpenSession}
-                    onAsk={(q) => live && session ? void api.send(session.id, `About block [${focus.section}] "${focus.takeaway}" of doc ${doc.id}: ${q}`) : undefined} />
+                    onAsk={(q) => live && session ? void api.send(session.id, `About block [${focus.section}] "${focus.takeaway}" of doc ${doc.id}: ${q}`) : undefined}
+                    onReply={live && session ? (t) => void api.send(session.id, `About block [${focus.section}] "${focus.takeaway}" of doc ${doc.id}: ${t}. Update the doc with doc_set_block.`) : undefined} />
                 </div>
               </div>
             )}
@@ -194,6 +196,7 @@ function BlockTile({ doc, b, dim, changedIn, thread, onClick }: { doc: Doc; b: B
       <span style={{ fontSize: 12, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{openQ ? "◆ " : b.decision ? "✓ " : ""}{kicker}</span>
       <span style={{ fontSize: 16, lineHeight: 1.3, fontWeight: 700, ...clamp(4) }}>{b.takeaway || "(no takeaway)"}</span>
       {(b.decision || b.key) && <span style={{ fontSize: 13, color: "var(--mr-ink-2)", ...clamp(2) }}>{b.decision ? `→ ${b.decision}` : b.key}</span>}
+      <ViewGlance blocks={blockView(b)} source={`${doc.id}:${b.id}:view`} />
       {changedIn && <span style={{ fontSize: 12, color: "var(--mr-selected)", fontWeight: 700 }}>● Changed in v{changedIn}</span>}
       {thread && <span style={{ fontSize: 12, color: "var(--mr-selected)" }}>⌕ side session running</span>}
     </button>
@@ -204,6 +207,7 @@ function BlockTile({ doc, b, dim, changedIn, thread, onClick }: { doc: Doc; b: B
 function BlockOpen(props: {
   doc: Doc; b: Block; deep: boolean; thread?: string; changedIn: number | null;
   onDecide: (label: string) => void; onDeeper: () => void; onDiscover: () => void; onOpenThread: (id: string) => void; onAsk: (q: string) => void;
+  onReply?: (t: string) => void; // a view's replies (Deeper, Use <x>) go to the plan session while it runs
 }) {
   const { doc, b, deep, thread } = props;
   const [note, setNote] = useState("");
@@ -223,6 +227,11 @@ function BlockOpen(props: {
       <span contentEditable suppressContentEditableWarning aria-label="Edit key detail" className="mr-ink2"
         onBlur={(e) => { const v = e.currentTarget.textContent ?? ""; if (v.trim() && v !== b.key) void docApi.edit(doc, b.id, "key", v.trim()); }}
         style={{ outline: "none", cursor: "text" }}>{b.key}</span>
+
+      {blockView(b).length > 0 && (
+        <CatalogView id={`${doc.id}:${b.id}:view`} title="" blocks={blockView(b)} live={!!props.onReply}
+          onReply={(t) => props.onReply?.(t)} onDiscover={() => props.onDiscover()} />
+      )}
 
       {question && b.data?.options && (
         <fieldset style={{ margin: 0, padding: 0, border: 0, display: "flex", flexDirection: "column", gap: 4 }}>

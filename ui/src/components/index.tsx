@@ -85,7 +85,7 @@ export type Answer =
   | { kind: "deny"; note?: string }
   | { kind: "answer"; answers: Record<string, string> };
 
-// When none of the options fit (I74): what Claude is told for each way out of a question.
+// When none of the options fit (I75): what Claude is told for each way out of a question.
 export const ASK_FIRST = "None of these options fit. Before offering options again, ask me 1-3 short clarifying questions in plain text and wait for my reply; then ask again with better options.";
 export const SKIPPED = "I skipped this question: none of the options fit. Don't ask it again. Carry on with your best judgment and say in one line what you assumed, or stop if you can't go on without it.";
 
@@ -142,7 +142,7 @@ function QuestionCard({ questions, onAnswer }: { questions: Extract<DecisionSpec
   );
 }
 
-/** The row under a question's options (I74): answer in your own words, have Claude ask first, or skip. */
+/** The row under a question's options (I75): answer in your own words, have Claude ask first, or skip. */
 export function WayOut({ source, onOut }: { source: string; onOut: (x: { kind: "reply"; text: string } | { kind: "ask_first" } | { kind: "skip" }) => void }) {
   const [text, setText] = useState("");
   return (
