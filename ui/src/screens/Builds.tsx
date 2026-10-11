@@ -29,7 +29,8 @@ export function Builds({ defaultWorktree, onClose }: { defaultWorktree?: string;
     return () => { un.then((f) => f()); };
   }, [defaultWorktree]);
 
-  const build = async () => { setError(""); try { const id = await invoke<string>("selfbuild_start", { worktree }); setProgress({ id, step: "starting" }); } catch (e) { setError(shortError(e)); } };
+  // Show "starting" the moment Build is pressed, before the core answers.
+  const build = async () => { setError(""); setProgress({ id: "", step: "starting" }); try { const id = await invoke<string>("selfbuild_start", { worktree }); setProgress((p) => p && p.id === "" ? { id, step: "starting" } : p); } catch (e) { setProgress(null); setError(shortError(e)); } };
   const relaunch = (id: string) => invoke("selfbuild_relaunch", { buildId: id }).catch((e) => setError(shortError(e)));
   const running = progress && progress.ok === undefined;
 
@@ -41,7 +42,7 @@ export function Builds({ defaultWorktree, onClose }: { defaultWorktree?: string;
         <div className="mr-row mr-band" style={{ padding: "12px 16px" }}><strong>Build the app from inside the app</strong><span className="mr-grow" /><Key k="esc" onClick={onClose}>Close</Key></div>
         <form className="mr-row" style={{ padding: "12px 16px" }} onSubmit={(e) => { e.preventDefault(); void build(); }}>
           <input className="mr-input mr-mono" style={{ fontSize: 13, background: "var(--mr-well)" }} value={worktree} onChange={(e) => setWorktree(e.target.value)} aria-label="Worktree to build" />
-          <Key k="↵" tone="primary" disabled={!!running || !worktree}>{running ? "Building…" : "Build"}</Key>
+          <Key k="↵" tone="primary" submit disabled={!!running || !worktree}>{running ? "Building…" : "Build"}</Key>
         </form>
         {progress && (
           <div style={{ padding: "0 16px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
