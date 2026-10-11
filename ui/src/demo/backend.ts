@@ -10,6 +10,7 @@ import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
 let seq = 0;
 const events: MrEvent[] = [];
+const usage: { kind: string; name: string; detail: string; at: number }[] = [];
 let docs: Doc[] = [];
 const id = () => `D${String(++seq).padStart(9, "0")}`;
 
@@ -108,6 +109,15 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
   switch (cmd) {
     case "events_list": return events;
     case "event_append": return record((a.sessionId as string) ?? null, String(a.kind), (a.payload as Record<string, unknown>) ?? {}).id;
+    // Feature usage (MR-83): kept in memory, aggregated like the core's usage_report.
+    case "usage_track": usage.push(...((a.items as typeof usage) ?? [])); return null;
+    case "usage_report": {
+      const m = new Map<string, { kind: string; name: string; detail: string; count: number; total: number; last_at: number }>();
+      const add = (kind: string, name: string, detail: string, at: number) => { const k = `${kind}|${name}|${detail}`; const r = m.get(k) ?? { kind, name, detail, count: 0, total: 0, last_at: 0 }; r.total++; if (at >= Number(a.since ?? 0)) r.count++; r.last_at = Math.max(r.last_at, at); m.set(k, r); };
+      for (const u of usage) add(u.kind, u.name, u.detail, u.at);
+      for (const e of events) if (e.kind.startsWith("ui.")) add("action", e.kind.slice(3), "", e.created_at);
+      return [...m.values()];
+    }
     case "docs_list": return structuredClone(docs); // the real core serializes over IPC
     case "doc_archive": {
       const d = docs.find((x) => x.id === a.docId);
