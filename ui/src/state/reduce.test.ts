@@ -421,3 +421,38 @@ describe("compaction window (I63)", () => {
     expect(replay([ev("A", 400_000), ev("B", null)]).compactWindow).toBeNull();
   });
 });
+
+describe("slash commands and MCP servers (MR-87)", () => {
+  let n = 0;
+  const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `C${String(++n).padStart(4, "0")}`, session_id: "c", kind, payload, anchor: null, created_at: 7000 + n });
+  // From a real init: names only, skills and terminal-only commands marked.
+  const init = { type: "system", subtype: "init", slash_commands: ["mr-task", "mcp", "doctor"], skills: ["mr-task"], terminal_slash_commands: ["doctor"], mcp_servers: [{ name: "claude.ai Gmail", source: "claudeai", status: "needs-auth" }, { name: "mr", source: "sdk", status: "connected" }] };
+  const base = [ev("ui.session_requested", { prompt: "x", cwd: "/tmp" }), ev("sidecar.sdk", { message: init })];
+
+  test("init gives the menu its names and the panel its first status", () => {
+    const s = replay(base).sessions.c;
+    expect(s.commands.map((c) => [c.name, c.skill, c.terminal])).toEqual([["mr-task", true, false], ["mcp", false, false], ["doctor", false, true]]);
+    expect(s.mcp?.servers.map((x) => [x.name, x.status])).toEqual([["claude.ai Gmail", "needs-auth"], ["mr", "connected"]]);
+  });
+
+  test("the sidecar's list adds descriptions; an empty failed one keeps what we had", () => {
+    const rows = [{ name: "mr-task", description: "Run one task", hint: "<task>", aliases: [], builtin: false, skill: true, terminal: false }];
+    const s = replay([...base, ev("sidecar.commands", { commands: rows }), ev("sidecar.commands", { commands: [], error: "gone" })]).sessions.c;
+    expect(s.commands).toEqual(rows);
+  });
+
+  test("skills found mid-session replace the list, keeping what each name was", () => {
+    const s = replay([...base, ev("sidecar.sdk", { message: { type: "system", subtype: "commands_changed", commands: [{ name: "doctor", description: "d", argumentHint: "", builtin: true }, { name: "new-skill", description: "n", argumentHint: "" }] } })]).sessions.c;
+    expect(s.commands.map((c) => [c.name, c.skill, c.terminal])).toEqual([["doctor", false, true], ["new-skill", true, false]]);
+  });
+
+  test("an MCP action shows as busy until the fresh status says how it went, without counting as activity", () => {
+    const before = replay(base).sessions.c;
+    const busy = replay([...base, ev("ui.mcp_action", { server: "claude.ai Gmail", action: "reconnect" })]).sessions.c;
+    expect(busy.mcp?.busy).toBe("claude.ai Gmail");
+    expect(busy.activity).toEqual(before.activity);
+    const after = replay([...base, ev("ui.mcp_action", { server: "claude.ai Gmail", action: "reconnect" }), ev("sidecar.mcp_status", { servers: [{ name: "claude.ai Gmail", status: "failed", source: "claudeai", scope: null, error: "401", version: null, url: null, tools: [] }], done: { server: "claude.ai Gmail", action: "reconnect", ok: false, error: "401" } })]).sessions.c;
+    expect(after.mcp).toMatchObject({ busy: null, done: { ok: false, error: "401" }, servers: [{ status: "failed", error: "401" }] });
+    expect(after.status).toBe(before.status);
+  });
+});

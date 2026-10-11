@@ -28,6 +28,9 @@ import { ago } from "../picker/now";
 import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
 import { ModelPicker } from "../components/ModelPicker";
+import { SlashMenu } from "../components/SlashMenu";
+import { McpPanel } from "../components/McpPanel";
+import { matchCommands, routeSlash, typedCommand } from "../picker/slash";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
@@ -47,9 +50,11 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
   }, [s.cwd, s.repo]);
   const tile = useMemo(() => pickTile(s), [s]);
   const [showRaw, setShowRaw] = useState(false);
-  const [term, setTerm] = useState(false);
+  // The terminal takeover; `command`: a slash command it runs first (MR-87: /doctor, /mcp sign-in…).
+  const [term, setTerm] = useState<false | { command?: string }>(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
+  const [unknown, setUnknown] = useState<string | null>(null); // a /command this session doesn't know: ask first
   const [reviewing, setReviewing] = useState<string | null>(null); // a file path: the review panel is open
-  const [text, setText] = useState("");
   const live = s.status !== "ended" && s.status !== "error";
   // A turn is in flight: only then does interrupting mean anything (F9).
   const running = s.status === "working" || s.status === "starting";
@@ -82,12 +87,27 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
       if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
       if (keyOf(e) === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
       if (keyOf(e) === "m" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
-      if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => !x); }
+      if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => (x ? false : {})); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack, s.id, running, replies]);
 
+
+  const openTerminal = (command?: string) => {
+    if (!s.sdkSessionId) { window.dispatchEvent(new CustomEvent("mr:toast", { detail: "The terminal opens once Claude has started this session" })); return; }
+    setMcpOpen(false); setTerm({ command });
+  };
+  // A message starting with / may be a command the app shows itself or one only Claude Code's terminal can run (MR-87).
+  const submit = (msg: string) => {
+    const r = routeSlash(msg, s.commands);
+    setUnknown(null);
+    if (r.to === "native" && r.name === "mcp") { setMcpOpen(true); return; }
+    if (r.to === "native" && r.name === "model") { document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); return; }
+    if (r.to === "terminal") { openTerminal(r.command); return; }
+    if (r.to === "unknown") { setUnknown(msg); return; }
+    void api.send(s.id, msg);
+  };
 
   // The pinned side panel sits just under the sticky header, whatever height it has right now.
   const head = useRef<HTMLElement>(null);
@@ -115,7 +135,7 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
         {running && <LiveTrack s={s} />}
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10 }}>
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
-          {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => !x)}>{term ? "Back to visual" : "Open in terminal"}</Key>}
+          {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => (x ? false : {}))}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
@@ -139,9 +159,20 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
               </div>
             </button>
           ))}
+          {mcpOpen && !term && <McpPanel s={s} onClose={() => setMcpOpen(false)} onSignIn={() => openTerminal("/mcp")} />}
+          {unknown && (
+            <div className="mr-qrow" data-mr="UnknownCommand" data-mr-source={s.id}><div className="mr-flag" style={{ background: "var(--mr-needs)" }} /><div className="mr-qbody">
+              <span><b className="mr-mono">{unknown.split(/\s/)[0]}</b> isn't a command this session knows.</span>
+              <span className="mr-row" style={{ gap: 8 }}>
+                {s.sdkSessionId && <Key tone="primary" onClick={() => { openTerminal(unknown); setUnknown(null); }}>Run it in the terminal</Key>}
+                <Key onClick={() => { void api.send(s.id, unknown); setUnknown(null); }}>Send to Claude anyway</Key>
+                <Key onClick={() => setUnknown(null)}>Cancel</Key>
+              </span>
+            </div></div>
+          )}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
-          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider>}
+          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} command={term.command} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider>}
           {live && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {!running && replies.length > 0 && !repliesInline && (
@@ -150,11 +181,7 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
                   {replies.map((r, i) => <Key key={r} k={i < 3 ? `⌥${i + 1}` : undefined} tone={i === 0 ? "primary" : undefined} onClick={() => void api.send(s.id, r)}>{r}</Key>)}
                 </div>
               )}
-              <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>
-                <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
-                <input className="mr-input" placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next"} value={text} onChange={(e) => setText(e.target.value)} aria-label="Message this session" />
-                <Key k="↵" onClick={() => { if (text.trim()) { void api.send(s.id, text.trim()); setText(""); } }}>Send</Key>
-              </form>
+              <Composer s={s} running={running} onSubmit={submit} />
             </div>
           )}
         </section>
@@ -169,6 +196,42 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
         </aside>
       </main>
     </div>
+  );
+}
+
+// The message box, with the / menu (MR-87): typing / lists this session's commands and skills.
+function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean; onSubmit: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const [active, setActive] = useState(0);
+  const [closed, setClosed] = useState(false); // Esc hides the menu for what's typed now
+  const asked = useRef(false);
+  const typed = typedCommand(text);
+  const rows = useMemo(() => (typed === null || closed ? [] : matchCommands(s.commands, typed)), [typed, closed, s.commands]);
+  // Names come with init; descriptions need one ask of the running session.
+  useEffect(() => {
+    if (typed === null || asked.current || s.commands.some((c) => c.description)) return;
+    asked.current = true;
+    api.commands(s.id).catch(() => {});
+  }, [typed, s.id, s.commands]);
+  useEffect(() => { setActive(0); }, [typed]);
+  const pick = (name: string) => { setText(`/${name} `); setClosed(true); };
+  const send = () => { const t = text.trim(); if (t) { onSubmit(t); setText(""); setClosed(false); } };
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!rows.length) return;
+    const k = keyOf(e.nativeEvent);
+    if (k === "ArrowDown" || k === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (k === "ArrowDown" ? 1 : rows.length - 1)) % rows.length); }
+    else if (k === "Tab") { e.preventDefault(); pick(rows[active].name); }
+    // ↵ on a row: an exact name runs, anything else completes it first (so arguments can follow).
+    else if (k === "Enter" && rows[active].name !== typed) { e.preventDefault(); pick(rows[active].name); }
+    else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); setClosed(true); }
+  };
+  return (
+    <form className="mr-row" style={{ position: "relative" }} onSubmit={(e) => { e.preventDefault(); send(); }}>
+      <SlashMenu rows={rows} active={active} onPick={(r) => pick(r.name)} onHover={setActive} source={s.id} />
+      <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
+      <input className="mr-input" placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next · / for commands and skills"} value={text} onChange={(e) => { setText(e.target.value); setClosed(false); }} onKeyDown={onKey} aria-label="Message this session" aria-autocomplete="list" aria-expanded={rows.length > 0} />
+      <Key k="↵" onClick={send}>Send</Key>
+    </form>
   );
 }
 
