@@ -110,8 +110,15 @@ pub fn app_repo() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("MR_APP_REPO") {
         return Some(PathBuf::from(p));
     }
-    let exe = std::env::current_exe().ok()?;
-    exe.ancestors().find(|d| d.join("src-tauri").is_dir() && d.join(".git").exists()).map(main_checkout)
+    repo_for(&std::env::current_exe().ok()?, Path::new(env!("CARGO_MANIFEST_DIR")))
+}
+
+/// The checkout above the binary; else, for a copy outside any checkout (the installed
+/// /Applications/Cockpit.app, a stored self-build), the checkout it was compiled in, if it's still
+/// on this machine. On anyone else's Mac neither exists, so there's no repo.
+fn repo_for(exe: &Path, manifest: &Path) -> Option<PathBuf> {
+    let is_repo = |d: &Path| d.join("src-tauri").is_dir() && d.join(".git").exists();
+    exe.ancestors().find(|d| is_repo(d)).or_else(|| manifest.parent().filter(|d| is_repo(d))).map(main_checkout)
 }
 
 /// A build made inside a linked worktree still belongs to the main checkout: `mine`, god-mode
@@ -176,6 +183,20 @@ mod tests {
         let plain = root.join("not-a-repo");
         std::fs::create_dir_all(&plain).unwrap();
         assert_eq!(main_checkout(&plain), plain);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_installed_copy_finds_the_checkout_it_was_built_in() {
+        let root = std::env::temp_dir().join(format!("mr-installed-{}", ulid::Ulid::new()));
+        let repo = root.join("app");
+        std::fs::create_dir_all(repo.join("src-tauri")).unwrap();
+        assert!(Command::new("git").arg("-C").arg(&repo).args(["init", "-q", "-b", "main"]).status().unwrap().success());
+        let installed = root.join("Applications/Cockpit.app/Contents/MacOS/Cockpit");
+        let in_repo = repo.join("src-tauri/target/debug/Cockpit");
+        assert_eq!(repo_for(&in_repo, Path::new("/nowhere/src-tauri")), Some(repo.clone()));
+        assert_eq!(repo_for(&installed, &repo.join("src-tauri")), Some(repo.clone()));
+        assert_eq!(repo_for(&installed, Path::new("/nowhere/src-tauri")), None);
         let _ = std::fs::remove_dir_all(&root);
     }
 
