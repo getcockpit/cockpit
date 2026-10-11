@@ -25,6 +25,8 @@ for b in mr-sidecar mr-dictate; do
   lipo -create "$bin/$b-aarch64-apple-darwin" "$bin/$b-x86_64-apple-darwin" -output "$bin/$b-universal-apple-darwin"
 done
 
+# Packaged UI: auto-review starts off (MR-93).
+export VITE_MR_PACKAGED=1
 # Ad-hoc signature ("-"): no Developer ID needed; Gatekeeper asks once on the friend's Mac.
 (cd "$root/src-tauri" && cargo tauri build --target universal-apple-darwin --bundles app \
   --config '{"bundle":{"macOS":{"signingIdentity":"-","minimumSystemVersion":"11.0","entitlements":"Entitlements.plist"}}}')

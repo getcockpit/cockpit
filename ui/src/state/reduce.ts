@@ -1,5 +1,9 @@
 import type { AppState, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
 
+// Packaged builds (scripts/package.sh sets VITE_MR_PACKAGED=1) go to people without the /review
+// command, so auto-review starts off there (MR-93). Settings → Auto-review still turns it on.
+export const autoReviewDefault = (env: { VITE_MR_PACKAGED?: string }) => env.VITE_MR_PACKAGED !== "1";
+
 export const initialState: AppState = {
   sessions: {},
   order: [],
@@ -11,7 +15,7 @@ export const initialState: AppState = {
   workspaces: [{ id: "personal", name: "Personal", configDir: null, folder: null }],
   theme: "control-room",
   look: { scale: 1, density: "default" },
-  autoReview: true,
+  autoReview: autoReviewDefault(import.meta.env),
   compactWindow: 200_000,
   presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
