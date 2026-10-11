@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -58,6 +58,32 @@ fn view_mode() -> bool {
 /// The Cockpit layer (decision 34): a plain session, with the cards drawn afterwards on the layer's key.
 fn layer_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "layer")
+}
+
+/// Skip on a question card (I75): Claude's question is declined with the card's Skip message.
+fn skip_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "skip")
+}
+
+/// What the card's Skip sends; the same text as `SKIPPED` in ui/src/components/index.tsx.
+const SKIPPED: &str = "I skipped this question: none of the options fit. Don't ask it again. Carry on with your best judgment and say in one line what you assumed, or stop if you can't go on without it.";
+
+/// Ask me first on a question card (I75): the first question is declined with the card's message,
+/// every later one answered, so Claude clarifies and then asks again.
+fn ask_first_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "askfirst")
+}
+
+/// What the card's Ask me first sends; the same text as `ASK_FIRST` in ui/src/components/index.tsx.
+const ASK_FIRST: &str = "None of these options fit. Before offering options again, ask me 1-3 short clarifying questions in one AskUserQuestion call (all of them together, each with your best-guess options; I can answer in my own words), then ask again with better options.";
+
+static ASKS: AtomicUsize = AtomicUsize::new(0);
+
+/// Did Claude finish the self-test's task: a selftest-<choice>.txt in the session's folder?
+fn picked(app: &AppHandle, session: &str) -> bool {
+    let events = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 1000).unwrap_or_default();
+    let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
+    std::fs::read_dir(cwd).map(|d| d.flatten().any(|f| f.file_name().to_string_lossy().starts_with("selftest-"))).unwrap_or(false)
 }
 
 fn doc_mode() -> bool {
@@ -146,7 +172,13 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 }
                 input["answers"] = serde_json::Value::Object(answers);
             }
-            let decision = serde_json::json!({ "behavior": "allow", "updatedInput": input });
+            let decision = if skip_mode() && payload["tool"] == "AskUserQuestion" {
+                serde_json::json!({ "behavior": "deny", "message": SKIPPED })
+            } else if ask_first_mode() && payload["tool"] == "AskUserQuestion" && ASKS.fetch_add(1, Ordering::SeqCst) == 0 {
+                serde_json::json!({ "behavior": "deny", "message": ASK_FIRST })
+            } else {
+                serde_json::json!({ "behavior": "allow", "updatedInput": input })
+            };
             let _ = crate::sidecar::permission_respond(
                 app.clone(),
                 app.state::<crate::sidecar::Sidecar>(),
@@ -236,6 +268,12 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             crate::eventlog::record(app, Some(&session), "ui.doc_note", &serde_json::json!({ "doc_id": doc.id, "block_id": "goal", "text": "Mention that the colour is blue in the goal's key detail." }), Some(&anchor));
             let msg = crate::docs::doc_feedback(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), true).unwrap_or_default();
             let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nWhen done, reply with exactly: SELFTEST DONE"));
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && ask_first_mode() && !picked(app, payload["session"].as_str().unwrap_or_default()) && RESULTS.fetch_add(1, Ordering::SeqCst) < 2 => {
+            // Claude asked its clarifying questions in prose and ended the turn: reply like the user would.
+            eprintln!("[selftest] clarifying turn: {}", payload["message"]["result"]);
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Keep it simple: this is a throwaway test folder and either name is fine by me. Now ask me again.".into());
         }
         Some("sdk") if payload["message"]["type"] == "result" => {
             let ok = payload["message"]["is_error"] == false;

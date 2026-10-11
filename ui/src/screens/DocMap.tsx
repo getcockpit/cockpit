@@ -213,6 +213,8 @@ function BlockOpen(props: {
   const [note, setNote] = useState("");
   const [ask, setAsk] = useState("");
   const question = b.section === "question";
+  // A slide leads with its shape: a question's options or a view come first, the prose on ⌘-click (MR-102).
+  const folded = question || blockView(b).length > 0;
   const kicker = kickerOf(b);
   const style: React.CSSProperties = { maxWidth: 820, margin: "0 auto", boxSizing: "border-box", background: "var(--mr-tile)", borderLeft: `6px solid ${edgeOf(b)}` };
   return (
@@ -245,7 +247,7 @@ function BlockOpen(props: {
         </fieldset>
       )}
 
-      {(deep || !question) && b.body && <Markdown text={b.body} />}
+      {(deep || !folded) && b.body && <Markdown text={b.body} />}
 
       {thread && <button type="button" className="mr-row" onClick={() => props.onOpenThread(thread)} style={{ padding: "8px 10px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>⌕ Side session running — open it ↗</button>}
 
@@ -256,7 +258,7 @@ function BlockOpen(props: {
         <input className="mr-input" style={{ minHeight: 32, fontSize: 13, background: "var(--mr-well)" }} placeholder="Ask about this block" value={ask} onChange={(e) => setAsk(e.target.value)} aria-label="Ask about this block" />
       </form>
       <div className="mr-row" style={{ flexWrap: "wrap" }}>
-        {question && b.body && <Key k="⌘-click" onClick={props.onDeeper}>{deep ? "Less detail" : "Show the reasoning"}</Key>}
+        {folded && b.body && <Key k="⌘-click" onClick={props.onDeeper}>{deep ? "Less detail" : "Show the reasoning"}</Key>}
         <Key k="⌥-click" onClick={props.onDiscover} disabled={!!thread}>Discover in a side session</Key>
         <span className="mr-dim" style={{ fontSize: 12 }}>Click text to edit</span>
       </div>

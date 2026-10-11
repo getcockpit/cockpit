@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import { Key, ProgressTrack, type Seg } from ".";
 import { pointer } from "./pointer";
 import { Diff } from "./Diff";
@@ -130,6 +130,223 @@ function Snippet({ b }: { b: ViewBlock }) {
       {b.file ? <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{str(b.file)}</span> : null}
       <Diff code={str(b.code)} />
       {b.note ? <span className="mr-ink2">{inline(str(b.note))}</span> : null}
+    </section>
+  );
+}
+
+// Stats: the 2-4 numbers to read first, big (the Doc mockup's hero row).
+function Stats({ b }: { b: ViewBlock }) {
+  return (
+    <section style={{ ...card, display: "flex", flexWrap: "wrap", gap: "12px 32px" }}>
+      {list(b.items).map((x, i) => (
+        <span key={i} style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <strong className="mr-mono" style={{ fontSize: 26, lineHeight: 1.1 }}>{str(x.value)}</strong>
+            <span style={{ fontWeight: 700 }}>{inline(str(x.label))}</span>
+          </span>
+          {x.detail ? <span className="mr-dim" style={{ fontSize: 12 }}>{inline(str(x.detail))}</span> : null}
+        </span>
+      ))}
+    </section>
+  );
+}
+
+// Scope: in and out side by side, so the boundary reads in one look.
+function Scope({ b }: { b: ViewBlock }) {
+  const col = (label: string, items: unknown, tone: "done" | "todo") => (
+    <div style={{ flex: "1 1 220px", minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+      <span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>{label}</span>
+      {(Array.isArray(items) ? items : []).map((x, i) => (
+        <span key={i} className="mr-row" style={{ alignItems: "baseline", gap: 8 }}>
+          <span style={{ flex: "none", width: 14, display: "inline-flex", justifyContent: "center" }}><Mark tone={tone} /></span>
+          <span className={tone === "todo" ? "mr-ink2" : undefined}>{inline(str(x))}</span>
+        </span>
+      ))}
+    </div>
+  );
+  return (
+    <section style={{ ...card, display: "flex", flexWrap: "wrap", gap: 16 }}>
+      {col("In", b.in, "done")}
+      {Array.isArray(b.out) && b.out.length > 0 && col("Out", b.out, "todo")}
+    </section>
+  );
+}
+
+// Steps: a numbered sequence; the actor column shows who acts, so handoffs stand out.
+function Steps({ b }: { b: ViewBlock }) {
+  const items = list(b.items);
+  const actors = items.some((x) => x.actor);
+  return (
+    <ol style={{ ...card, margin: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 2 }}>
+      {items.map((x, i) => (
+        <li key={i} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "5px 0" }}>
+          <span className="mr-mono mr-dim" style={{ flex: "none", width: 18, textAlign: "right" }}>{i + 1}</span>
+          {actors && <span style={{ flex: "none", width: 72, fontSize: 12, fontWeight: 700, padding: "1px 6px", background: "var(--mr-well)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{str(x.actor)}</span>}
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {inline(str(x.text))}
+            {x.detail ? <span className="mr-dim"> · {inline(str(x.detail))}</span> : null}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// Risks: each risk beside what contains it; level as bar length, like the severity scale.
+const LEVEL: Record<string, { n: number; color: string; name: string }> = {
+  high: { n: 3, color: "var(--mr-error)", name: "High" },
+  medium: { n: 2, color: "var(--mr-needs-ink)", name: "Medium" },
+  low: { n: 1, color: "var(--mr-ink-3)", name: "Low" },
+};
+function Level({ level }: { level: string }) {
+  const l = LEVEL[level.toLowerCase()];
+  if (!l) return null;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{ display: "inline-flex", gap: 2 }} aria-hidden="true">
+        {[1, 2, 3].map((k) => <span key={k} style={{ width: 8, height: 6, borderRadius: 1, background: k <= l.n ? l.color : "var(--mr-lamp-off)" }} />)}
+      </span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: l.color }}>{l.name}</span>
+    </span>
+  );
+}
+function Risks({ b }: { b: ViewBlock }) {
+  return (
+    <section style={{ ...card, display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) minmax(0, 1fr)", gap: "8px 14px", alignItems: "baseline" }}>
+      <span /><span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>Risk</span><span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>Contained by</span>
+      {list(b.items).map((x, i) => (
+        <Fragment key={i}>
+          <span><Level level={str(x.level)} /></span>
+          <strong>{inline(str(x.risk))}</strong>
+          <span className="mr-ink2">→ {inline(str(x.mitigation))}</span>
+        </Fragment>
+      ))}
+    </section>
+  );
+}
+
+// Lanes: an architecture as side-by-side zones; the hop between two zones is labelled.
+function Lanes({ b }: { b: ViewBlock }) {
+  const lanes = list(b.lanes);
+  const links = Array.isArray(b.links) ? b.links.map(str) : [];
+  const node = (n: unknown) => (typeof n === "object" && n ? { label: str((n as Record<string, unknown>).label), mark: str((n as Record<string, unknown>).mark) } : { label: str(n), mark: "" });
+  return (
+    <section style={{ ...card, display: "flex", alignItems: "stretch", gap: 0, overflowX: "auto" }}>
+      {lanes.map((l, i) => (
+        <Fragment key={i}>
+          <div style={{ flex: "1 1 0", minWidth: 110, display: "flex", flexDirection: "column", gap: 6, padding: 10, background: "var(--mr-well)" }}>
+            <strong style={{ fontSize: 13 }}>{str(l.name)}</strong>
+            {(Array.isArray(l.nodes) ? l.nodes : []).map((n, j) => {
+              const x = node(n);
+              return (
+                <span key={j} style={{ padding: "6px 8px", background: "var(--mr-tile)", fontSize: 12 }}>
+                  {x.mark && <b className="mr-mono" style={{ color: x.mark === "+" ? "var(--mr-done)" : x.mark === "-" ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{x.mark} </b>}{inline(x.label)}
+                </span>
+              );
+            })}
+          </div>
+          {i < lanes.length - 1 && (
+            <div style={{ flex: "none", width: 64, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 4px", textAlign: "center" }}>
+              {links[i] ? <span className="mr-dim" style={{ fontSize: 11 }}>{inline(links[i])}</span> : <span aria-hidden="true" style={{ fontSize: 18 }}>⇄</span>}
+            </div>
+          )}
+        </Fragment>
+      ))}
+    </section>
+  );
+}
+
+// Cards: parts or concepts as a scannable grid instead of a bullet list.
+function Cards({ b }: { b: ViewBlock }) {
+  return (
+    <section style={{ ...card, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
+      {list(b.items).map((x, i) => {
+        const mark = str(x.mark);
+        return (
+          <div key={i} style={{ padding: "8px 10px", background: "var(--mr-well)", display: "flex", flexDirection: "column", gap: 2 }}>
+            <strong style={{ fontSize: 13 }}>
+              {mark && <b className="mr-mono" style={{ color: mark === "+" ? "var(--mr-done)" : mark === "-" ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{mark} </b>}{inline(str(x.title))}
+            </strong>
+            {x.detail ? <span className="mr-ink2" style={{ fontSize: 12 }}>{inline(str(x.detail))}</span> : null}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+// Decision: a settled question read as its outcome, and whether it overrode the recommendation.
+function Decision({ b }: { b: ViewBlock }) {
+  const chosen = str(b.chosen), rec = str(b.recommended);
+  const overrode = rec && rec.trim().toLowerCase() !== chosen.trim().toLowerCase();
+  const rejected = Array.isArray(b.rejected) ? b.rejected.map(str).filter(Boolean) : [];
+  return (
+    <section style={{ ...card, boxShadow: "inset 4px 0 0 var(--mr-done)", display: "flex", flexDirection: "column", gap: 6 }}>
+      <span className="mr-row" style={{ alignItems: "baseline", gap: 8 }}>
+        <Mark tone="done" />
+        <strong style={{ fontSize: 17 }}>{inline(chosen)}</strong>
+      </span>
+      {b.why ? <span className="mr-ink2">{inline(str(b.why))}</span> : null}
+      {overrode && <span style={{ fontSize: 12, color: "var(--mr-needs-ink)", fontWeight: 600 }}>Chosen over the recommendation: {inline(rec)}</span>}
+      {rejected.length > 0 && <span className="mr-dim" style={{ fontSize: 12 }}>Not chosen: {rejected.map((r, i) => <Fragment key={i}>{i ? " · " : ""}<s>{inline(r)}</s></Fragment>)}</span>}
+    </section>
+  );
+}
+
+// Phases: sequential phases as bars sized by estimate; the hatched tail is the upper bound.
+function Phases({ b }: { b: ViewBlock }) {
+  const unit = str(b.unit) || "days";
+  const items = list(b.items).map((x) => {
+    const min = Math.max(0, Number(x.min) || 0);
+    return { name: str(x.name), detail: str(x.detail), min, max: Math.max(min, Number(x.max) || min) };
+  });
+  const total = items.reduce((a, x) => a + x.max, 0) || 1;
+  let at = 0;
+  const lo = items.reduce((a, x) => a + x.min, 0), hi = items.reduce((a, x) => a + x.max, 0);
+  return (
+    <section style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }}>
+      {items.map((x, i) => {
+        const left = (at / total) * 100;
+        at += x.max;
+        return (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(140px, 30%) 1fr auto", gap: 10, alignItems: "center" }}>
+            <span style={{ minWidth: 0 }}><strong>{inline(x.name)}</strong>{x.detail ? <span className="mr-dim" style={{ display: "block", fontSize: 12 }}>{inline(x.detail)}</span> : null}</span>
+            <span style={{ position: "relative", height: 12, background: "var(--mr-well)" }} aria-hidden="true">
+              <span style={{ position: "absolute", top: 0, bottom: 0, left: `${left}%`, width: `${(x.min / total) * 100}%`, background: "var(--mr-ink-2)" }} />
+              {x.max > x.min && <span style={{ position: "absolute", top: 0, bottom: 0, left: `${left + (x.min / total) * 100}%`, width: `${((x.max - x.min) / total) * 100}%`, background: "repeating-linear-gradient(135deg, var(--mr-ink-3) 0 2px, transparent 2px 5px)" }} />}
+            </span>
+            <span className="mr-mono" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{x.min === x.max ? x.min : `${x.min}–${x.max}`} {unit}</span>
+          </div>
+        );
+      })}
+      <span className="mr-dim" style={{ fontSize: 12, textAlign: "right" }}>Total <b className="mr-mono">{lo === hi ? lo : `${lo}–${hi}`} {unit}</b></span>
+    </section>
+  );
+}
+
+// Matrix: rules or support as a grid; yes / no / partial read as marks.
+function Cell({ v }: { v: string }) {
+  const k = v.trim().toLowerCase();
+  if (k === "yes") return <Mark tone="done" />;
+  if (k === "no") return <span className="mr-dim" aria-label="No">–</span>;
+  if (k === "partial") return <span style={{ color: "var(--mr-needs-ink)", fontWeight: 700 }} aria-label="Partly">◐</span>;
+  return <span className="mr-ink2">{inline(v)}</span>;
+}
+function Matrix({ b }: { b: ViewBlock }) {
+  const cols = list(b.cols).map(str);
+  return (
+    <section style={{ ...card, overflowX: "auto" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <thead><tr><th />{cols.map((c, i) => <th key={i} className="mr-dim" style={{ textAlign: "center", fontWeight: 600, fontSize: 12, padding: "4px 8px 6px" }}>{c}</th>)}</tr></thead>
+        <tbody>
+          {list(b.rows).map((r, i) => (
+            <tr key={i} style={{ borderTop: "2px solid var(--mr-well)" }}>
+              <td style={{ padding: "6px 10px 6px 0", fontWeight: 700 }}>{inline(str(r.label))}</td>
+              {cols.map((_, j) => <td key={j} style={{ padding: "6px 8px", textAlign: "center" }}><Cell v={str((Array.isArray(r.cells) ? r.cells : [])[j])} /></td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }
@@ -335,6 +552,15 @@ function Block({ b, onReply, live }: { b: ViewBlock; onReply: (t: string) => voi
     case "fix_options": return <FixOptions b={b} onReply={onReply} live={live} />;
     case "thread": return <Thread b={b} />;
     case "text": return <div style={card}><Markdown text={str(b.markdown)} /></div>;
+    case "stats": return <Stats b={b} />;
+    case "scope": return <Scope b={b} />;
+    case "steps": return <Steps b={b} />;
+    case "risks": return <Risks b={b} />;
+    case "lanes": return <Lanes b={b} />;
+    case "cards": return <Cards b={b} />;
+    case "decision": return <Decision b={b} />;
+    case "phases": return <Phases b={b} />;
+    case "matrix": return <Matrix b={b} />;
     default: return null;
   }
 }
@@ -358,7 +584,7 @@ function Actions({ b, title, onReply, onDiscover, live }: { b: ViewBlock; title:
 }
 
 // Blocks that draw nothing clickable without live replies, so they can sit inside a doc tile's button.
-const GLANCE = new Set(["takeaway", "tally", "checklist", "progress", "compare", "change_graph", "findings", "tier", "novelty", "snippet", "thread"]);
+const GLANCE = new Set(["decision", "stats", "scope", "steps", "risks", "lanes", "cards", "phases", "matrix", "takeaway", "tally", "checklist", "progress", "compare", "change_graph", "findings", "tier", "novelty", "snippet", "thread"]);
 
 // A doc tile's glance at its view (MR-100): the first block that reads at a glance, not interactive.
 export function ViewGlance({ blocks, source }: { blocks: ViewBlock[]; source: string }) {
