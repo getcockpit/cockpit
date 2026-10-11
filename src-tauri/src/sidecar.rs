@@ -163,7 +163,7 @@ pub fn fold_model_choice<'a>(payloads: impl IntoIterator<Item = &'a serde_json::
 
 /// Sessions auto-compact once their context reaches this many tokens. Re-reading a long conversation
 /// on every call is most of a session's cost, and on 1M-context models Claude Code otherwise waits
-/// until ~967k (token diet, decision I62).
+/// until ~967k (token diet, decision I63).
 pub const COMPACT_WINDOW: u64 = 200_000;
 
 /// The compaction window folded from `ui.compact_window_set` events in order; `tokens: null` means
@@ -261,7 +261,7 @@ pub fn session_start(
     if let Some(id) = preset {
         payload["preset"] = id.into();
     }
-    // What the session compacts at, so usage reports can tell sessions apart (I62).
+    // What the session compacts at, so usage reports can tell sessions apart (I63).
     let compact = compact_window(&app);
     payload["compact_window"] = compact.into();
     crate::eventlog::record(&app, Some(&session), "ui.session_requested", &payload, None);

@@ -29,6 +29,10 @@ export type TranscriptItem = (
 // Claude Code writes its output to; from/to: when it started and ended.
 export type Background = { status: string; summary?: string; output?: string; from?: number; to?: number };
 
+// A command you ran from a reply's Run button (MR-85). output: the run's id, read with run_output.
+// lost: the app restarted while it ran, so how it ended wasn't seen.
+export type Run = { id: string; command: string; cwd: string; status: "running" | "completed" | "failed" | "stopped" | "lost"; code: number | null; from: number; to: number | null };
+
 // A view Claude composed from the catalog with render_view (decision 26, MR-61). Blocks were
 // validated by the core; fields beyond the required ones may be missing.
 export type ViewBlock = { type: string } & Record<string, unknown>;
@@ -92,6 +96,7 @@ export type SessionState = {
   pending: PendingAsk[];
   transcript: TranscriptItem[];
   todos: Todo[];
+  runs: Run[]; // commands you ran from Run buttons, oldest first (MR-85)
   files: Record<string, FileChange>;
   activity: number[]; // events per minute, last 30 minutes (sparkline)
   spans: Span[]; // status history, newest last (Timeline, MR-32)
@@ -132,7 +137,7 @@ export type AppState = {
   look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
   presets: Preset[]; // your own kinds in the start picker (MR-80)
   autoReview: boolean; // start /review by itself for PRs waiting on you (MR-72)
-  compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I62)
+  compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I63)
   clef: ClefMeter;
   account: { checked: boolean; signedIn: boolean; plan: string | null };
   onboarded: boolean;

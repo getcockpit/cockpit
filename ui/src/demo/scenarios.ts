@@ -46,6 +46,10 @@ const busy: E[] = [
   tool("C", "Bash", { command: "bun run build:all > /tmp/build.log 2>&1", description: "Build every package", run_in_background: true }, 2200, "bgC1"),
   { session: "C", kind: "sidecar.sdk", payload: { message: { type: "system", subtype: "task_started", tool_use_id: "bgC1", task_id: "b1", is_backgrounded: true, task_type: "local_bash" } }, at: 2200 },
   { session: "C", kind: "sidecar.sdk", payload: { message: { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bgC1", content: "Command running in background with ID: b1. Output is being written to: /tmp/claude-501/deps/sdk-C/tasks/b1.output." }] } } }, at: 2200 },
+  // Commands Claude suggests get a Run button; one you already ran sits in the side panel (MR-85).
+  say("C", "Types compile again. While the suite runs, check the lockfile diff yourself:\n```bash\ngit diff --stat bun.lock\n```\nThen run `bun run lint` to catch the import order rule.", 2300),
+  { session: "C", kind: "ui.run_started", payload: { run_id: "runC0", command: "bun outdated", cwd: "/Users/me/code/billing-worktrees/deps" }, at: 2310 },
+  { session: "C", kind: "run.finished", payload: { run_id: "runC0", code: 0, status: "completed" }, at: 2318 },
   tool("C", "Bash", { command: "bun test --coverage" }, 2380),
   // B: plan session with a working doc; asked in prose
   { session: "B", kind: "ui.session_requested", payload: { prompt: "Plan this with me before any code: CSV export for invoices", kind: "plan", cwd: "/Users/me/code/billing", workspace: "personal" }, at: 50 },
