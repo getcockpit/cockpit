@@ -115,6 +115,22 @@ test("a turn that ends with a question in prose shows as needs-you", () => {
   expect(tile.doing).toBe("Asks: Which one do you prefer?");
 });
 
+test("a finished turn with a script still running in the background stays Working, not Waiting", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
+  const tasks = (list: { task_id: string; description: string }[]) => ev(`T${list.length}`, "sidecar.sdk", { message: { type: "system", subtype: "background_tasks_changed", tasks: list } });
+  const base = [
+    ev("D1", "ui.session_requested", { prompt: "p", cwd: "/w" }),
+    ev("D2", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "Tests are running in the background." }] } } }),
+    tasks([{ task_id: "b1", description: "Run the test suite" }]),
+    ev("D3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "x" } }),
+  ];
+  const tile = pickTile(replay(base).sessions.s);
+  expect(tile.state).toBe("working");
+  expect(tile.step).toBe("Running in background");
+  expect(tile.doing).toBe("Running: Run the test suite");
+  expect(pickTile(replay([...base, { ...tasks([]), id: "D4" }]).sessions.s).state).toBe("idle");
+});
+
 test("layer 2 catches a question asked without a question mark, and meters the call", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: Date.UTC(2026, 9, 9) });
   const base = [
