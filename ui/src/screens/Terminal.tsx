@@ -39,9 +39,10 @@ export function XTermView({ termKey, open, onExit, hint }: { termKey: string; op
 }
 
 // "Take over in terminal" (decision 13): the real claude CLI for this same conversation.
-export function TerminalPane({ s, onExit }: { s: SessionState; onExit: () => void }) {
+// `command`: a slash command to run first, one that needs this terminal (MR-87).
+export function TerminalPane({ s, command, onExit }: { s: SessionState; command?: string; onExit: () => void }) {
   return <XTermView termKey={s.id} onExit={onExit}
-    open={(cols, rows) => invoke("term_open", { session: s.id, sdkSessionId: s.sdkSessionId, cwd: s.cwd, cols, rows })}
+    open={(cols, rows) => invoke("term_open", { session: s.id, sdkSessionId: s.sdkSessionId, cwd: s.cwd, cols, rows, command: command ?? null })}
     hint={<>Real claude for this conversation. Type <b className="mr-mono">/exit</b> to hand it back to the app.</>} />;
 }
 

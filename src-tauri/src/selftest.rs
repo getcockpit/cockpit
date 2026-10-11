@@ -191,7 +191,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
             let app2 = app.clone();
             std::thread::spawn(move || {
-                let r = crate::terminal::term_open(app2.clone(), session.clone(), sdk, cwd, 100, 30);
+                let r = crate::terminal::term_open(app2.clone(), session.clone(), sdk, cwd, 100, 30, None);
                 if let Err(e) = r { eprintln!("[selftest] term_open failed: {e}"); std::process::exit(1); }
                 std::thread::sleep(Duration::from_secs(8));
                 let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session.clone(), "/exit".into());

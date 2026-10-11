@@ -1,4 +1,4 @@
-import type { AppState, Delivery, Diagram, FileChange, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
+import type { AppState, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
 
 export const initialState: AppState = {
   sessions: {},
@@ -27,7 +27,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null,
   };
 }
 
@@ -148,6 +148,16 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const s = next.sessions[sid];
     const switched = p.ok && typeof p.model === "string" ? { model: p.model } : {};
     return { ...next, sessions: { ...next.sessions, [sid]: { ...s, ...switched, modelError: p.ok ? null : String(p.error ?? "Claude Code refused the switch") } } };
+  }
+  // Slash commands and MCP servers (MR-87): what the session offers, not activity.
+  if ((ev.kind === "sidecar.commands" || ev.kind === "sidecar.mcp_status" || ev.kind === "ui.mcp_action") && sid && next.sessions[sid]) {
+    const s = next.sessions[sid];
+    const upd = (x: Partial<SessionState>) => ({ ...next, sessions: { ...next.sessions, [sid]: { ...s, ...x } } });
+    if (ev.kind === "sidecar.commands") return Array.isArray(p.commands) && p.commands.length ? upd({ commands: p.commands as CommandRow[] }) : next;
+    const mcp: McpState = s.mcp ?? { servers: [], at: ev.created_at, busy: null, done: null, error: null };
+    if (ev.kind === "ui.mcp_action") return upd({ mcp: { ...mcp, busy: String(p.server ?? ""), done: null } });
+    const fresh = Array.isArray(p.servers) && p.servers.length ? (p.servers as McpServer[]) : mcp.servers;
+    return upd({ mcp: { servers: fresh, at: ev.created_at, busy: null, done: (p.done as McpState["done"]) ?? null, error: typeof p.error === "string" ? p.error : null } });
   }
   if (ev.kind === "picker.layer3" && sid) {
     const s = next.sessions[sid];
@@ -321,6 +331,21 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
         s.transcript = s.transcript.map((t) => (t.kind === "tool" && t.toolUseId === id ? { ...t, result: m.tool_use_result ?? c.content, isError: Boolean(c.is_error), ...(t.background && { background: { ...t.background, output: t.background.output ?? outputFile(c.content) } }) } : t));
       }
     }
+    return;
+  }
+  if (type === "system" && m.subtype === "init") {
+    // Names only; the sidecar follows up with descriptions (sidecar.commands). MCP: status as of start.
+    const names = (k: string) => (Array.isArray(m[k]) ? (m[k] as unknown[]).map(String) : []);
+    const skills = new Set(names("skills")), terminal = new Set(names("terminal_slash_commands"));
+    if (!s.commands.length) s.commands = names("slash_commands").map((name) => ({ name, description: "", hint: "", aliases: [], builtin: false, skill: skills.has(name), terminal: terminal.has(name) }));
+    const servers = Array.isArray(m.mcp_servers) ? (m.mcp_servers as { name?: unknown; status?: unknown; source?: unknown }[]) : [];
+    if (servers.length) s.mcp = { servers: servers.map((x) => ({ name: String(x.name ?? ""), status: String(x.status ?? ""), source: x.source ? String(x.source) : null, scope: null, error: null, version: null, url: null, tools: [] })), at: ev.created_at, busy: null, done: null, error: null };
+    return;
+  }
+  if (type === "system" && m.subtype === "commands_changed" && Array.isArray(m.commands)) {
+    // Skills found mid-session: the list is replaced; what we knew about each name is kept.
+    const was = new Map(s.commands.map((c) => [c.name, c]));
+    s.commands = (m.commands as { name: string; description?: string; argumentHint?: string; aliases?: string[]; builtin?: boolean }[]).map((c) => ({ name: c.name, description: c.description ?? "", hint: c.argumentHint ?? "", aliases: c.aliases ?? [], builtin: !!c.builtin, skill: was.get(c.name)?.skill ?? !c.builtin, terminal: was.get(c.name)?.terminal ?? false }));
     return;
   }
   if (type === "system" && (m.subtype === "task_started" || m.subtype === "task_notification")) {
