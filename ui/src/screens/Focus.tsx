@@ -159,17 +159,6 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
               </div>
             </button>
           ))}
-          {mcpOpen && !term && <McpPanel s={s} onClose={() => setMcpOpen(false)} onSignIn={() => openTerminal("/mcp")} />}
-          {unknown && (
-            <div className="mr-qrow" data-mr="UnknownCommand" data-mr-source={s.id}><div className="mr-flag" style={{ background: "var(--mr-needs)" }} /><div className="mr-qbody">
-              <span><b className="mr-mono">{unknown.split(/\s/)[0]}</b> isn't a command this session knows.</span>
-              <span className="mr-row" style={{ gap: 8 }}>
-                {s.sdkSessionId && <Key tone="primary" onClick={() => { openTerminal(unknown); setUnknown(null); }}>Run it in the terminal</Key>}
-                <Key onClick={() => { void api.send(s.id, unknown); setUnknown(null); }}>Send to Claude anyway</Key>
-                <Key onClick={() => setUnknown(null)}>Cancel</Key>
-              </span>
-            </div></div>
-          )}
           {s.pending.length > 0 && <div className="mr-queue">{s.pending.map((a) => <AskRow key={a.requestId} s={s} a={a} />)}</div>}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
           {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} command={term.command} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider>}
@@ -180,6 +169,18 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone }: {
                   <span className="mr-dim">Next:</span>
                   {replies.map((r, i) => <Key key={r} k={i < 3 ? `⌥${i + 1}` : undefined} tone={i === 0 ? "primary" : undefined} onClick={() => void api.send(s.id, r)}>{r}</Key>)}
                 </div>
+              )}
+              {/* Right above the message box the command was typed in: higher up, a long session has them off-screen. */}
+              {mcpOpen && !term && <McpPanel s={s} onClose={() => setMcpOpen(false)} onSignIn={() => openTerminal("/mcp")} />}
+              {unknown && (
+                <div className="mr-qrow" data-mr="UnknownCommand" data-mr-source={s.id}><div className="mr-flag" style={{ background: "var(--mr-needs)" }} /><div className="mr-qbody">
+                  <span><b className="mr-mono">{unknown.split(/\s/)[0]}</b> isn't a command this session knows.</span>
+                  <span className="mr-row" style={{ gap: 8 }}>
+                    {s.sdkSessionId && <Key tone="primary" onClick={() => { openTerminal(unknown); setUnknown(null); }}>Run it in the terminal</Key>}
+                    <Key onClick={() => { void api.send(s.id, unknown); setUnknown(null); }}>Send to Claude anyway</Key>
+                    <Key onClick={() => setUnknown(null)}>Cancel</Key>
+                  </span>
+                </div></div>
               )}
               <Composer s={s} running={running} onSubmit={submit} />
             </div>
