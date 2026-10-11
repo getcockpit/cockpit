@@ -1,4 +1,4 @@
-import type { Effort, Inbound, ModelRow, Outbound, PermissionDecision, ToolSpec } from "./protocol";
+import type { CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, ToolSpec } from "./protocol";
 
 // The slice of the Agent SDK this module needs, so tests can inject a fake.
 export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
@@ -7,7 +7,12 @@ export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record
   setModel?(model?: string): Promise<void>;
   applyFlagSettings?(settings: { effortLevel?: Effort | null }): Promise<void>;
   supportedModels?(): Promise<{ value: string; resolvedModel?: string; displayName: string; description: string; supportedEffortLevels?: Effort[] }[]>;
+  supportedCommands?(): Promise<{ name: string; description: string; argumentHint: string; aliases?: string[]; builtin?: boolean }[]>;
+  mcpServerStatus?(): Promise<SdkMcpStatus[]>;
+  reconnectMcpServer?(name: string): Promise<void>;
+  toggleMcpServer?(name: string, enabled: boolean): Promise<void>;
 };
+type SdkMcpStatus = { name: string; status: string; source?: string; scope?: string; error?: string; serverInfo?: { version: string }; config?: { url?: string }; tools?: { name: string }[] };
 export type { ModelRow };
 export type McpFactory = (session: string, tools: ToolSpec[], call: (tool: string, args: Record<string, unknown>) => Promise<{ text: string; is_error?: boolean }>) => Record<string, unknown> | undefined;
 type UserMsg = { type: "user"; message: { role: "user"; content: string }; parent_tool_use_id: null };
@@ -31,7 +36,7 @@ class Inbox implements AsyncIterable<UserMsg> {
   }
 }
 
-type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; switching: Promise<void>; pending: Map<string, (d: PermissionDecision) => void>; calls: Map<string, (r: { text: string; is_error?: boolean }) => void> };
+type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; init: { skills: string[]; terminal: string[] }; switching: Promise<void>; pending: Map<string, (d: PermissionDecision) => void>; calls: Map<string, (r: { text: string; is_error?: boolean }) => void> };
 
 export class Sessions {
   private live = new Map<string, Live>();
@@ -50,6 +55,9 @@ export class Sessions {
         if (!r) return this.emit({ type: "error", session: m.session, error: `no pending request ${m.request_id}` });
         s.pending.delete(m.request_id); r(m.decision);
       });
+      case "commands": return void this.with(m.session, (s) => void this.commands(m.session, s));
+      case "mcp_status": return void this.with(m.session, (s) => void this.mcpStatus(m.session, s));
+      case "mcp_action": return void this.with(m.session, (s) => void this.mcpAction(m.session, s, m.server, m.action));
       case "tool_result": return void this.with(m.session, (s) => {
         const r = s.calls.get(m.call_id);
         if (!r) return this.emit({ type: "error", session: m.session, error: `no pending tool call ${m.call_id}` });
@@ -71,6 +79,47 @@ export class Sessions {
     }
   }
 
+  // The / menu's rows: every command and skill this session offers, marked so the menu knows a
+  // skill from a built-in and which ones only work in Claude Code's own terminal.
+  private async commands(session: string, s: Live) {
+    try {
+      if (!s.q?.supportedCommands) throw new Error("this SDK has no command list");
+      const rows = await s.q.supportedCommands();
+      const skills = new Set(s.init.skills), terminal = new Set(s.init.terminal);
+      const commands: CommandRow[] = rows.map((r) => ({ name: r.name, description: r.description ?? "", hint: r.argumentHint ?? "", aliases: r.aliases ?? [], builtin: !!r.builtin, skill: skills.has(r.name), terminal: terminal.has(r.name) }));
+      this.emit({ type: "commands", session, commands });
+    } catch (e) {
+      this.emit({ type: "commands", session, commands: [], error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // What /mcp shows: each server, its state, its tools.
+  private async mcpStatus(session: string, s: Live, done?: { server: string; action: McpAction; ok: boolean; error?: string }) {
+    try {
+      if (!s.q?.mcpServerStatus) throw new Error("this SDK can't report MCP servers");
+      const servers: McpServer[] = (await s.q.mcpServerStatus()).map((x) => ({ name: x.name, status: x.status, source: x.source ?? null, scope: x.scope ?? null, error: x.error ?? null, version: x.serverInfo?.version ?? null, url: x.config?.url ?? null, tools: (x.tools ?? []).map((t) => t.name) }));
+      this.emit({ type: "mcp_status", session, servers, done });
+    } catch (e) {
+      this.emit({ type: "mcp_status", session, servers: [], done, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  private async mcpAction(session: string, s: Live, server: string, action: McpAction) {
+    let done: { server: string; action: McpAction; ok: boolean; error?: string } = { server, action, ok: true };
+    try {
+      if (action === "reconnect") {
+        if (!s.q?.reconnectMcpServer) throw new Error("this SDK can't reconnect MCP servers");
+        await s.q.reconnectMcpServer(server);
+      } else {
+        if (!s.q?.toggleMcpServer) throw new Error("this SDK can't enable or disable MCP servers");
+        await s.q.toggleMcpServer(server, action === "enable");
+      }
+    } catch (e) {
+      done = { ...done, ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    await this.mcpStatus(session, s, done);
+  }
+
   private with(session: string, f: (s: Live) => void) {
     const s = this.live.get(session);
     if (!s) return this.emit({ type: "error", session, error: "unknown session" });
@@ -79,7 +128,7 @@ export class Sessions {
 
   private start(m: Extract<Inbound, { type: "start" }>) {
     if (this.live.has(m.session)) return this.emit({ type: "error", session: m.session, error: "session already running" });
-    const s: Live = { inbox: new Inbox(), q: null, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
+    const s: Live = { inbox: new Inbox(), q: null, init: { skills: [], terminal: [] }, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
     this.live.set(m.session, s);
     s.inbox.push(m.prompt);
 
@@ -114,8 +163,15 @@ export class Sessions {
         s.q = this.query({ prompt: s.inbox, options });
         for await (const msg of s.q) {
           const x = msg as { type?: string; subtype?: string; session_id?: string; model?: string; cwd?: string };
-          if (x.type === "system" && x.subtype === "init") this.emit({ type: "session_started", session: m.session, sdk_session_id: x.session_id ?? "", model: x.model, cwd: x.cwd });
+          const isInit = x.type === "system" && x.subtype === "init";
+          if (isInit) {
+            const i = msg as { skills?: string[]; terminal_slash_commands?: string[] };
+            s.init = { skills: i.skills ?? [], terminal: i.terminal_slash_commands ?? [] };
+            this.emit({ type: "session_started", session: m.session, sdk_session_id: x.session_id ?? "", model: x.model, cwd: x.cwd });
+          }
           this.emit({ type: "sdk", session: m.session, message: msg });
+          // The / menu needs descriptions, which init doesn't carry: ask once the session is up.
+          if (isInit) void this.commands(m.session, s);
           // One prompt per turn: when a turn finishes and nothing more is queued, the session stays open for `send`.
         }
         this.emit({ type: "session_ended", session: m.session, ok: true });

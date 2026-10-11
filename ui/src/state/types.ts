@@ -67,6 +67,13 @@ export type AddressFlow = {
   chosen: Record<string, string>;
 };
 
+// A slash command or skill a session offers (the / menu, MR-87). terminal: it only works in Claude Code's own terminal.
+export type CommandRow = { name: string; description: string; hint: string; aliases: string[]; builtin: boolean; skill: boolean; terminal: boolean };
+// One MCP server as /mcp shows it (MR-87).
+export type McpServer = { name: string; status: string; source: string | null; scope: string | null; error: string | null; version: string | null; url: string | null; tools: string[] };
+// busy: the server an action was just asked for; done: how the last action went.
+export type McpState = { servers: McpServer[]; at: number; busy: string | null; done: { server: string; action: string; ok: boolean; error?: string } | null; error: string | null };
+
 export type SessionKind = "review" | "address" | "plan" | "blank";
 
 // One of your own kinds in the start picker (MR-80): a prompt template, `{text}` is what you type.
@@ -108,6 +115,8 @@ export type SessionState = {
   archivedAt: number | null;
   fixApplied: number | null;
   fromDeleted: string | null; // name of the deleted workspace it came from: read-only history (MR-54) // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
+  commands: CommandRow[]; // its slash commands and skills (MR-87): names from init, descriptions once asked
+  mcp: McpState | null; // its MCP servers (MR-87): from init, fresh from /mcp
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 
