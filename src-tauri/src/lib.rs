@@ -98,6 +98,7 @@ pub fn run() {
             voice::voice_stop,
             workspaces::workspace_create,
             workspaces::workspace_rename,
+            workspaces::workspace_reorder,
             workspaces::workspace_set_folder,
             workspaces::workspace_delete,
             workspaces::workspace_sign_in,

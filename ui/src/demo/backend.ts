@@ -232,6 +232,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "workspace_delete": record(null, "ui.workspace_deleted", { id: a.id, name: a.name, stopped: 0, trashed_to: "~/.Trash/…" }); return null;
     case "workspace_set_folder": record(null, "ui.workspace_folder_set", { id: a.id, folder: a.folder ?? null }); return null;
     case "workspace_rename": record(null, "ui.workspace_renamed", { id: a.id, name: a.name }); return null;
+    case "workspace_reorder": record(null, "ui.workspaces_reordered", { order: a.order }); return null;
     default: return null;
   }
 }
