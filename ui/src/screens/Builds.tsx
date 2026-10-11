@@ -1,7 +1,7 @@
 import { shortError } from "../components/ErrorLine";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../state/listen";
 import { Key } from "../components";
 import type { MrEvent } from "../state/types";
 
