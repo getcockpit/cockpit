@@ -172,7 +172,7 @@ export default function App() {
       {tabs}
       <RecoveryBanner all={all} />
       <BuildReadyBanner all={all} />
-      <UpdateBanner all={all} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />
+      <UpdateBanner all={all} onOpenSession={(id) => { setDocId(null); setFocus(id); }} onBuild={() => setBuilds("")} />
       <div id="mr-view" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{view}</div>
       {overlays}
     </div>
