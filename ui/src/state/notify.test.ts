@@ -55,6 +55,29 @@ describe("notifications (MR-94)", () => {
     expect(sent.at(-1)).toMatchObject({ cmd: "session_send", args: { session: "s1", text: "invoices.csv" } });
     expect(await answerFrom(prose, { kind: "open" }, sessions)).toBe(false);
   });
+
+  test("none of the options fit (I75): a single question takes a typed reply as its answer", async () => {
+    sent.length = 0;
+    const q = { question: "Which database?", header: "", options: [{ label: "Postgres", description: "" }] };
+    const a: PendingAsk = { kind: "question", requestId: "r4", questions: [q], input: {}, at: 1 };
+    expect(noteFor(ask(a), sessions, none)).toMatchObject({ reply: true });
+    expect(noteFor(ask({ ...a, questions: [q, q] }), sessions, none)).toMatchObject({ reply: false });
+    expect(await answerFrom(ask(a), { kind: "reply", value: "MySQL, we already run it" }, sessions)).toBe(true);
+    expect(sent.at(-1)).toMatchObject({ args: { requestId: "r4", decision: { behavior: "allow", updatedInput: { answers: { "Which database?": "MySQL, we already run it" } } } } });
+  });
+});
+
+describe("wayOut: leaving a question when no option fits (I75)", async () => {
+  const { wayOut, ASK_FIRST, SKIPPED } = await import("../components");
+  const q = (question: string) => ({ question });
+  test("skip and ask-first decline the question with an instruction for Claude", () => {
+    expect(wayOut([q("A?")], { kind: "skip" })).toEqual({ kind: "deny", note: SKIPPED });
+    expect(wayOut([q("A?")], { kind: "ask_first" })).toEqual({ kind: "deny", note: ASK_FIRST });
+  });
+  test("a typed reply answers one question, or goes back as a note for several", () => {
+    expect(wayOut([q("A?")], { kind: "reply", text: "neither" })).toEqual({ kind: "answer", answers: { "A?": "neither" } });
+    expect(wayOut([q("A?"), q("B?")], { kind: "reply", text: "neither" })).toEqual({ kind: "deny", note: "None of the options fit. My answer: neither" });
+  });
 });
 
 describe("inView: no banner for what is already in front of you", () => {
