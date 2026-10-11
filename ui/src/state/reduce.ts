@@ -22,6 +22,7 @@ export const initialState: AppState = {
   onboardingResetAt: null,
   recovered: null,
   lastBuildAt: null,
+  selfbuild: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
 };
 
@@ -48,7 +49,13 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     }
     return { ...next, sessions, sidecar: { up: true, claude: (p.claude as string) ?? null } };
   }
-  if (ev.kind === "selfbuild.finished" && p.ok) return { ...next, lastBuildAt: ev.created_at };
+  // A build done in the background offers to relaunch into it, wherever you are, until you do or say later.
+  if (ev.kind === "selfbuild.started") return { ...next, selfbuild: { id: String(p.build_id), branch: String(p.branch ?? ""), sha: String(p.sha ?? ""), phase: "building" } };
+  if (ev.kind === "selfbuild.finished") {
+    const b = next.selfbuild && next.selfbuild.id === String(p.build_id) ? next.selfbuild : null;
+    return { ...next, lastBuildAt: p.ok ? ev.created_at : next.lastBuildAt, selfbuild: p.ok && b ? { ...b, phase: "ready" } : null };
+  }
+  if (ev.kind === "ui.build_dismissed") return { ...next, selfbuild: null };
   if (ev.kind.startsWith("update.") || ev.kind === "app.started" || ev.kind === "ui.update_seen" || ev.kind === "ui.update_dismissed") {
     const u = next.update;
     const strs = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
@@ -59,7 +66,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       case "update.restarting": return { ...next, update: { ...u, restarting: strs(p.subjects) } };
       // A fresh start: whatever was building belonged to the old app; an update we restarted for is now live.
       // Runs still marked running were children of the old app: how they ended wasn't seen (MR-85).
-      case "app.started": return { ...next, sessions: loseRuns(next.sessions, ev.created_at), lastBuildAt: ev.created_at, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
+      case "app.started": return { ...next, sessions: loseRuns(next.sessions, ev.created_at), lastBuildAt: ev.created_at, selfbuild: null, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
       case "ui.update_seen": return { ...next, update: { ...u, whatsNew: null } };
       case "ui.update_dismissed": return { ...next, update: { ...u, phase: "idle", step: null, log: null } };
     }

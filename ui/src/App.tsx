@@ -1,3 +1,4 @@
+import { BuildReadyBanner } from "./components/BuildReadyBanner";
 import { RecoveryBanner } from "./components/RecoveryBanner";
 import { keyOf } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -160,6 +161,7 @@ export default function App() {
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {tabs}
       <RecoveryBanner all={all} />
+      <BuildReadyBanner all={all} />
       <UpdateBanner all={all} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />
       <div id="mr-view" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{view}</div>
       {overlays}
