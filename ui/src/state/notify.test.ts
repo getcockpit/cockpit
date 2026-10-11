@@ -7,7 +7,7 @@ import type { MrEvent, PendingAsk, SessionState } from "./types";
 const sent: { cmd: string; args: unknown }[] = [];
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (cmd: string, args: unknown) => { sent.push({ cmd, args }); return Promise.resolve(); } }));
 vi.stubGlobal("window", { dispatchEvent: () => true, addEventListener: () => {} });
-const { answerFrom, cleanAction, noteFor, targetFor } = await import("./notify");
+const { answerFrom, cleanAction, inView, noteFor, targetFor } = await import("./notify");
 
 let n = 0;
 const ev = (kind: string, payload: Record<string, unknown> = {}, session: string | null = "s1"): MrEvent => ({ id: `E${String(++n).padStart(4, "0")}`, session_id: session, kind, payload, anchor: null, created_at: 1_000_000 + n * 1000 });
@@ -54,5 +54,22 @@ describe("notifications (MR-94)", () => {
     expect(await answerFrom(prose, { kind: "reply", value: "invoices.csv" }, sessions)).toBe(true);
     expect(sent.at(-1)).toMatchObject({ cmd: "session_send", args: { session: "s1", text: "invoices.csv" } });
     expect(await answerFrom(prose, { kind: "open" }, sessions)).toBe(false);
+  });
+});
+
+describe("inView: no banner for what is already in front of you", () => {
+  const session = { workspace: "work", session: "s1", doc: null };
+  const doc = { workspace: "personal", session: null, doc: "d1" };
+  test("the open session or doc, or its workspace's Wall, while the window is focused", () => {
+    expect(inView(session, { workspace: "work", session: "s1", doc: null }, true)).toBe(true);
+    expect(inView(session, { workspace: "work", session: null, doc: null }, true)).toBe(true);
+    expect(inView(doc, { workspace: "personal", session: null, doc: "d1" }, true)).toBe(true);
+  });
+  test("another workspace, session or doc, or Cockpit in the background, gets one", () => {
+    expect(inView(session, { workspace: "personal", session: null, doc: null }, true)).toBe(false);
+    expect(inView(session, { workspace: "work", session: "s2", doc: null }, true)).toBe(false);
+    expect(inView(session, { workspace: "work", session: "s1", doc: "d9" }, true)).toBe(false);
+    expect(inView(doc, { workspace: "personal", session: "s1", doc: null }, true)).toBe(false);
+    expect(inView(session, { workspace: "work", session: "s1", doc: null }, false)).toBe(false);
   });
 });
