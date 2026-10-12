@@ -36,7 +36,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], owner: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], owner: null,
   };
 }
 
@@ -353,6 +353,9 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
         trackFile(s, String(c.name), input, ev.created_at);
       }
     }
+    // Context in use: what this reply read (fresh, cached, newly cached) plus what it wrote. Subagents run their own.
+    const u = (m.message as { usage?: Record<string, number> })?.usage;
+    if (u && !m.parent_tool_use_id) s.context = { ...s.context, used: ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"].reduce((n, k) => n + Number(u[k] ?? 0), 0) };
     // A new turn starts with whatever was waiting for it.
     if (!s.turnOpen) s.transcript = settle(s.transcript, ["sending", "queued"], "taken");
     s.turnOpen = true;
@@ -382,6 +385,11 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     if (servers.length) s.mcp = { servers: servers.map((x) => ({ name: String(x.name ?? ""), status: String(x.status ?? ""), source: x.source ? String(x.source) : null, scope: null, error: null, version: null, url: null, tools: [] })), at: ev.created_at, busy: null, done: null, error: null };
     return;
   }
+  if (type === "system" && m.subtype === "compact_boundary") {
+    const post = (m.compact_metadata as { post_tokens?: number } | undefined)?.post_tokens;
+    s.context = { ...s.context, used: typeof post === "number" ? post : null };
+    return;
+  }
   if (type === "system" && m.subtype === "commands_changed" && Array.isArray(m.commands)) {
     // Skills found mid-session: the list is replaced; what we knew about each name is kept.
     const was = new Map(s.commands.map((c) => [c.name, c]));
@@ -407,6 +415,9 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
   if (type === "result") {
     const ok = !m.is_error;
     s.costUsd += Number(m.total_cost_usd ?? 0);
+    // The session's own model is the one that cost the most this turn; side calls (titles, haiku) cost little.
+    const main = Object.values((m.modelUsage ?? {}) as Record<string, { costUSD?: number; contextWindow?: number }>).sort((a, b) => Number(b.costUSD ?? 0) - Number(a.costUSD ?? 0))[0];
+    if (main?.contextWindow) s.context = { ...s.context, window: main.contextWindow };
     s.turnOpen = false;
     s.transcript = settle(s.transcript, ["taken"], "answered");
     s.transcript = [...s.transcript, { kind: "result", id: ev.id, ok, text: String(m.result ?? ""), costUsd: Number(m.total_cost_usd ?? 0), at: ev.created_at }];
@@ -477,4 +488,11 @@ export function workspaceFolder(state: AppState, ws: string): string | null {
   if (pinned) return pinned;
   const last = [...state.order].reverse().map((id) => state.sessions[id]).find((s) => s.workspace === ws && !s.fromDeleted && (s.kind === "blank" || s.kind === "plan"));
   return last ? last.repo ?? last.cwd : null;
+}
+
+/** How full a session's context is against where it auto-compacts: the Compact-at setting or the model's window, whichever is smaller. */
+export function contextFill(s: SessionState, compactWindow: number | null): { used: number; limit: number; share: number } | null {
+  if (s.context.used === null) return null;
+  const limit = Math.min(compactWindow ?? Infinity, s.context.window ?? Infinity);
+  return Number.isFinite(limit) ? { used: s.context.used, limit, share: s.context.used / limit } : null;
 }
