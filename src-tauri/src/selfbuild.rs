@@ -328,29 +328,7 @@ fn prune(data: &Path, current: &str, keep: usize) -> Vec<String> {
 fn resume_interrupted(app: &AppHandle) {
     let log = app.state::<crate::eventlog::EventLog>();
     let Ok(events) = log.list(None, None, i64::MAX) else { return };
-    // Last state per session: running if it started and never ended.
-    let mut running: std::collections::BTreeMap<String, (Option<String>, String, String)> = Default::default();
-    for e in events {
-        let Some(sid) = e.session_id.clone() else { continue };
-        match e.kind.as_str() {
-            "ui.session_requested" => {
-                let cwd = e.payload["cwd"].as_str().unwrap_or_default().to_owned();
-                let kind = e.payload["kind"].as_str().unwrap_or("blank").to_owned();
-                running.entry(sid).or_insert((None, cwd, kind));
-            }
-            "sidecar.session_started" => {
-                if let Some(r) = running.get_mut(&sid) {
-                    r.0 = e.payload["sdk_session_id"].as_str().map(str::to_owned);
-                }
-            }
-            "sidecar.session_ended" => {
-                running.remove(&sid);
-            }
-            _ => {}
-        }
-    }
-    for (sid, (sdk, cwd, kind)) in running {
-        let Some(sdk) = sdk else { continue };
+    for (sid, sdk, cwd, kind) in interrupted(&events) {
         let _ = crate::sidecar::session_start(
             app.clone(),
             app.state::<crate::sidecar::Sidecar>(),
@@ -365,9 +343,66 @@ fn resume_interrupted(app: &AppHandle) {
     }
 }
 
+/// Sessions the relaunch cut off mid-turn: (session, Claude session id, cwd, kind). A turn starts
+/// with the session's first ask or your message and ends at its `result`; sessions waiting on you
+/// (or ended) get no resume turn (MR-122). Sending them a message later resumes them anyway (MR-52).
+fn interrupted(events: &[crate::eventlog::Event]) -> Vec<(String, String, String, String)> {
+    // Per session: (Claude session id, cwd, kind, mid-turn).
+    let mut sessions: std::collections::BTreeMap<String, (Option<String>, String, String, bool)> = Default::default();
+    for e in events {
+        let Some(sid) = e.session_id.clone() else { continue };
+        match e.kind.as_str() {
+            "ui.session_requested" => {
+                let cwd = e.payload["cwd"].as_str().unwrap_or_default().to_owned();
+                let kind = e.payload["kind"].as_str().unwrap_or("blank").to_owned();
+                sessions.entry(sid).or_insert((None, cwd, kind, false)).3 = true;
+            }
+            "ui.message_sent" => {
+                if let Some(s) = sessions.get_mut(&sid) {
+                    s.3 = true;
+                }
+            }
+            "sidecar.session_started" => {
+                if let Some(s) = sessions.get_mut(&sid) {
+                    s.0 = e.payload["sdk_session_id"].as_str().map(str::to_owned);
+                }
+            }
+            "sidecar.sdk" if e.payload["message"]["type"] == "result" => {
+                if let Some(s) = sessions.get_mut(&sid) {
+                    s.3 = false;
+                }
+            }
+            "sidecar.session_ended" => {
+                sessions.remove(&sid);
+            }
+            _ => {}
+        }
+    }
+    sessions.into_iter().filter_map(|(sid, (sdk, cwd, kind, mid))| Some((sid, sdk.filter(|_| mid)?, cwd, kind))).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_relaunch_resumes_only_sessions_cut_off_mid_turn() {
+        let ev = |n: u32, sid: &str, kind: &str, payload: serde_json::Value| crate::eventlog::Event { id: format!("E{n:04}"), session_id: Some(sid.into()), kind: kind.into(), payload, anchor: None, created_at: n as i64, origin: None };
+        let result = serde_json::json!({ "message": { "type": "result" } });
+        let mut evs = vec![];
+        for (i, sid) in ["idle", "busy", "again", "ended"].iter().enumerate() {
+            let n = i as u32 * 10;
+            evs.push(ev(n, sid, "ui.session_requested", serde_json::json!({ "cwd": "/w", "kind": "blank" })));
+            evs.push(ev(n + 1, sid, "sidecar.session_started", serde_json::json!({ "sdk_session_id": format!("sdk-{sid}") })));
+        }
+        evs.push(ev(50, "idle", "sidecar.sdk", result.clone()));
+        evs.push(ev(51, "again", "sidecar.sdk", result.clone()));
+        evs.push(ev(52, "again", "ui.message_sent", serde_json::json!({ "text": "and now?" })));
+        evs.push(ev(53, "again", "sidecar.sdk", serde_json::json!({ "message": { "type": "assistant" } })));
+        evs.push(ev(54, "ended", "sidecar.session_ended", serde_json::json!({})));
+        let got: Vec<_> = interrupted(&evs).into_iter().map(|(sid, sdk, ..)| (sid, sdk)).collect();
+        assert_eq!(got, vec![("again".to_owned(), "sdk-again".to_owned()), ("busy".to_owned(), "sdk-busy".to_owned())]);
+    }
 
     #[test]
     fn app_update_is_offered_only_on_the_apps_own_repo_and_worktrees() {
