@@ -11,7 +11,7 @@ import { CheckList, EditSnippet, StepSummary } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
 import type { Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
-import { isOpenQuestion, type Doc } from "../state/docs";
+import { docApi, isOpenQuestion, type Doc } from "../state/docs";
 import { AskRow, DocQuestionRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
 import { pointer } from "../components/pointer";
@@ -74,6 +74,8 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone, els
   // A god-mode fix session (MR-47): its last step is applying the fix to your own app.
   const isFix = isApp && !!s.branch?.startsWith("mr/") && isAppChange(s);
   const [applyError, setApplyError] = useState("");
+  // Catch me up (MR-116): a brief of where this session stands opens in the Doc Map as it's written.
+  const catchUp = async () => { try { onOpenDoc((await docApi.brief(s.id)).doc_id); } catch (e) { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Catch me up failed: ${shortError(e)}` })); } };
   const applyFix = async () => { setApplyError(""); try { await api.fixApply(s.id); } catch (e) { setApplyError(shortError(e)); } };
 
   useEffect(() => {
@@ -94,6 +96,7 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone, els
       if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
       if (keyOf(e) === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
       if (keyOf(e) === "m" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
+      if (keyOf(e) === "u" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); void catchUp(); }
       if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => (x ? false : {})); }
     };
     window.addEventListener("keydown", onKey);
@@ -141,6 +144,7 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone, els
         </div>
         {running && <LiveTrack s={s} />}
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10 }}>
+          {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
           {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => (x ? false : {}))}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}

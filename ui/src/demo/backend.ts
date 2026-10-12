@@ -29,7 +29,11 @@ function applyDocEvent(ev: MrEvent) {
   const d = docs.find((x) => x.id === p.doc_id);
   if (!d) return;
   const b = d.blocks[p.block_id];
-  if (ev.kind === "ui.doc_decision" && b) b.decision = p.choice;
+  if (ev.kind === "ui.doc_decision" && b) {
+    b.decision = p.choice;
+    // Like the core: a brief's risk marked fine isn't a correction (MR-116).
+    if (d.kind === "brief" && !(b.section === "risk" && p.choice === "Fine")) d.pending_changes = [...d.pending_changes, b.section === "risk" ? `Confirmed this looks wrong: "${b.takeaway}"` : `Decided "${b.takeaway}": ${p.choice}`];
+  }
   if (ev.kind === "ui.doc_note") d.pending_notes = [...d.pending_notes, [p.block_id, p.text]];
   if (ev.kind === "ui.doc_edit" && b) { (b as Record<string, unknown>)[p.field] = p.value; d.pending_changes = [...new Set([...d.pending_changes, p.block_id])]; }
   docs = [...docs];
@@ -143,6 +147,37 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       });
       // Like the real core: build the message only; the UI delivers it to the session.
       return `Feedback on working doc "${d.title}": ${n} note${n === 1 ? "" : "s"}${a.regenerate ? ", regenerate it" : ""}.`;
+    }
+    // Catch me up (MR-116): a brief doc that fills in block by block, like the session writing it.
+    case "brief_start": {
+      const sid = String(a.session);
+      const did = `doc_brief${Date.now().toString(36)}`;
+      const blk = (bid: string, section: string, takeaway: string, key: string, body: string, order: number, view: unknown[], data: Doc["blocks"][string]["data"] = null) =>
+        ({ id: bid, section, status: "", takeaway, key, body, data, order, decision: null, updated: "", view: view as never });
+      docs = [...docs, { id: did, title: "Catch-up: Fix the login redirect loop", session_id: sid, version: 1, kind: "brief", blocks: {}, pending_notes: [], pending_changes: [] }];
+      record(sid, "doc.created", { doc_id: did, title: "Catch-up", kind: "brief" });
+      const steps: Doc["blocks"][string][] = [
+        blk("where", "goal", "Fixing the login redirect loop: step 3 of 4, running the tests", "Asked: stop /login bouncing after OAuth", "Original ask [D01]: stop the redirect loop. Current step: Run the tests (plan).", 1, [{ type: "progress", n: 3, total: 4, label: "Run the tests" }]),
+        blk("done", "log", "Route guard moved before render; regression test added", "1 file changed: src/app/routes.ts", "- `src/app/routes.ts:10` guard now checks `req.session?.user`\n- No commit yet", 2, [{ type: "takeaway", heading: "Done", items: [{ title: "Guard runs before render", state: "done" }, { title: "Regression test", state: "done" }, { title: "Commit", state: "todo" }] }]),
+        blk("next", "design", "Next: run bun test, then commit", "Waiting on your OK to run the tests", "Claude asked to run `bun test` and is waiting on the permission.", 3, [{ type: "steps", items: [{ text: "Run bun test" }, { text: "Commit the fix" }] }]),
+        blk("q_1", "question", "Keep the duplicate session refresh in the header?", "Claude assumed: remove it", "Never asked; removed in the same edit.", 4, [], { options: [{ label: "Remove it", description: "As Claude did" }, { label: "Keep it", description: "Revert that part" }] }),
+        blk("risk_1", "risk", "\"All tests pass\" with no test run in the log", "Not verified: bun test never ran", "The recap claims 142 tests pass, but the only test command is still waiting on permission.", 5, [{ type: "risks", items: [{ risk: "Unverified done", mitigation: "Run bun test before committing", level: "high" }] }]),
+        blk("risk_2", "risk", "Header change goes beyond the ask", "Drift: the ask was the redirect loop only", "Removing the session refresh in the header wasn't asked for.", 6, [{ type: "risks", items: [{ risk: "Drift from the ask", mitigation: "Confirm or revert", level: "medium" }] }]),
+      ];
+      steps.forEach((b, i) => later(400 + i * 350, () => {
+        const d = docs.find((x) => x.id === did);
+        if (d) { d.blocks[b.id] = b; docs = [...docs]; }
+        void emit("mr-event", { id: id(), session_id: sid, kind: "doc.block_set", payload: { doc_id: did }, anchor: null, created_at: Date.now() });
+      }));
+      return { doc_id: did, via: "session" };
+    }
+    case "brief_continue": {
+      const d = docs.find((x) => x.id === a.docId);
+      if (!d) throw new Error("no such doc");
+      const n = d.pending_notes.length + d.pending_changes.length;
+      d.pending_notes = []; d.pending_changes = []; docs = [...docs];
+      record(d.session_id, "ui.brief_continued", { doc_id: d.id, silent: n === 0 });
+      return n ? `The user caught up on this session with the brief "${d.title}". ${n} correction${n === 1 ? "" : "s"}. Resume from where you stopped.` : null;
     }
     case "session_start": {
       const sid = (a.sessionId as string) ?? `s${Date.now().toString(36)}`;

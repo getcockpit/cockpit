@@ -1,3 +1,4 @@
+mod brief;
 mod changes;
 mod cockpit_layer;
 mod daily;
@@ -131,6 +132,8 @@ pub fn run() {
             workspaces::workspace_delete,
             workspaces::workspace_sign_in,
             docs::doc_feedback,
+            brief::brief_start,
+            brief::brief_continue,
             docs::doc_archive,
             usage::usage_track,
             usage::usage_report,
