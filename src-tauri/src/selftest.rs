@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -91,6 +91,12 @@ fn brief_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brief")
 }
 
+/// Catch me up mid-turn (MR-116): the Cockpit layer writes the brief, not the busy session.
+fn brief_layer_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brieflayer")
+}
+static BRIEFED: AtomicBool = AtomicBool::new(false);
+
 fn doc_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "doc")
 }
@@ -140,6 +146,8 @@ pub fn run(app: AppHandle) {
             } else if view_mode() {
                 // No tool named: the visual guidance alone should make Claude compose a view (MR-61).
                 std::env::var("MR_VIEW_PROMPT").ok().filter(|p| !p.trim().is_empty()).unwrap_or_else(|| "This is a UI test; nothing here is real and you don't need to look at any files. Give me a status report for a pretend settings refactor: 3 of 5 steps done, 211 tests passing, 1 test failing in the migration, and one open risk (old desktop builds can't read the new format). Then on a final line reply with exactly: SELFTEST DONE".into())
+            } else if brief_layer_mode() {
+                "This is a UI test. Run the shell command `sleep 40` with the Bash tool, then reply with exactly: SELFTEST DONE".into()
             } else if brief_mode() {
                 "This is a UI test. Create a file retry.txt in the current directory containing the word retry. Don't run any tests. Then reply with exactly: Done, retries are in and all tests pass.".into()
             } else if doc_mode() {
@@ -265,6 +273,30 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 sdk, None, Some("blank".into()), Some(false), Some(session), None, None,
             );
             if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
+        }
+        Some("sdk") if brief_layer_mode() && payload["message"]["type"] == "assistant" && !BRIEFED.load(Ordering::SeqCst) => {
+            // Mid-turn: Catch me up must go to the Cockpit layer and leave the session alone.
+            BRIEFED.store(true, Ordering::SeqCst);
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            match crate::brief::brief_start(app.clone(), session) {
+                Ok(r) if r["via"] == "cockpit" => eprintln!("[selftest] brief requested mid-turn: {r}"),
+                r => { eprintln!("[selftest] mid-turn brief didn't go to the layer: {r:?}"); std::process::exit(1); }
+            }
+            let app = app.clone();
+            std::thread::spawn(move || {
+                for _ in 0..240 {
+                    std::thread::sleep(Duration::from_millis(500));
+                    let log = app.state::<crate::eventlog::EventLog>();
+                    let done = ["brief.written", "brief.failed"].iter().any(|k| !log.list_kind(k).unwrap_or_default().is_empty());
+                    if done {
+                        std::thread::sleep(Duration::from_millis(500));
+                        app.exit(0);
+                        return;
+                    }
+                }
+                eprintln!("[selftest] the layer never finished the brief");
+                app.exit(1);
+            });
         }
         Some("sdk") if payload["message"]["type"] == "result" && brief_mode() && RESULTS.load(Ordering::SeqCst) < 2 => {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
