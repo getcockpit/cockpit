@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LiveTrack, planSegs } from "../components/Now";
 import { pointer } from "../components/pointer";
-import { suggest, type Suggestion } from "../picker/suggest";
+import { suggest, USAGE_REVIEW, type Suggestion } from "../picker/suggest";
 import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
@@ -55,12 +55,16 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
     return () => { alive = false; clearInterval(t); };
   }, [cwd]);
 
-  const suggestions = useMemo(() => suggest(state, docs, prs, new Set(state.dismissed)), [state, docs, prs]);
+  // Only the owner's Mac has the app repo; that gates the weekly usage review (MR-106).
+  const [appRepo, setAppRepo] = useState<string | null>(null);
+  useEffect(() => { invoke<string>("app_repo_path").then(setAppRepo).catch(() => setAppRepo(null)); }, []);
+  const suggestions = useMemo(() => suggest(state, docs, prs, new Set(state.dismissed), appRepo), [state, docs, prs, appRepo]);
   const act = async (g: Suggestion) => {
     const a = g.action;
     if (a.kind === "open_session") onOpen(a.id);
     else if (a.kind === "open_doc") onOpenDoc(a.id);
     else if (a.kind === "build_mine") onBuild(await api.mineWorktree());
+    else if (a.kind === "usage_review") { onOpen(await api.start(a.repo, USAGE_REVIEW, "blank", false)); void api.log("ui.suggestion_dismissed", { id: g.id }); }
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
     else {
       const slug = prSlug(a.value) ?? a.repo ?? null;
