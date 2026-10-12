@@ -116,6 +116,21 @@ test("a turn that ends with a question in prose shows as needs-you", () => {
   expect(tile.doing).toBe("Asks: Which one do you prefer?");
 });
 
+test("a turn that ends with plan steps still open says the plan was left open (MR-121)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
+  const steps = (last: string) => [{ step: "Build", status: "done" }, { step: "Verify", status: "done" }, { step: "Merge", status: last }];
+  const base = [
+    ev("E1", "ui.session_requested", { prompt: "Do it", cwd: "/w", kind: "blank" }),
+    ev("E2", "plan.updated", { steps: steps("doing") }),
+    ev("E3", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "Merged. All done." }] } } }),
+    ev("E4", "sidecar.sdk", { message: { type: "result", is_error: false, result: "x" } }),
+  ];
+  const open = pickTile(replay(base).sessions.s);
+  expect(open).toMatchObject({ state: "idle", planOpen: true, step: "Plan left open · 2 of 3" });
+  const closed = pickTile(replay([...base.slice(0, 3), ev("E3b", "plan.updated", { steps: steps("done") }), base[3]]).sessions.s);
+  expect(closed).toMatchObject({ state: "done", planOpen: false, step: "Ready to review" });
+});
+
 test("a finished turn with a script still running in the background stays Working, not Waiting", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
   const tasks = (list: { task_id: string; description: string }[]) => ev(`T${list.length}`, "sidecar.sdk", { message: { type: "system", subtype: "background_tasks_changed", tasks: list } });
