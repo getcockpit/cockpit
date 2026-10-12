@@ -18,3 +18,24 @@ export function SlashMenu({ rows, active, onPick, onHover, source }: { rows: Com
     </div>
   );
 }
+
+// The @ menu (MR-108): files and folders in the session's folder, filtered as you type. Same keys as the / menu.
+export function MentionMenu({ paths, active, onPick, onHover, source }: { paths: string[]; active: number; onPick: (p: string) => void; onHover: (i: number) => void; source: string }) {
+  if (!paths.length) return null;
+  return (
+    <div role="listbox" aria-label="Files and folders" data-mr="MentionMenu" data-mr-source={source} data-mr-menu
+      style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 4px)", zIndex: 6, background: "var(--mr-band)", display: "flex", flexDirection: "column", maxHeight: 320, overflowY: "auto" }}>
+      {paths.map((p, i) => {
+        const dir = p.endsWith("/"), cut = p.replace(/\/$/, "").lastIndexOf("/") + 1;
+        return (
+          <button key={p} type="button" role="option" aria-selected={i === active} data-mr="MentionRow" data-mr-source={p}
+            onMouseDown={(e) => { e.preventDefault(); onPick(p); }} onMouseEnter={() => onHover(i)}
+            style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "6px 10px", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", color: "var(--mr-ink)", background: i === active ? "var(--mr-well)" : "transparent", boxShadow: i === active ? "inset 3px 0 0 var(--mr-selected)" : "none" }}>
+            <span className="mr-mono mr-ellipsis" style={{ flex: 1, minWidth: 0 }}><span className="mr-dim">@{p.slice(0, cut)}</span>{p.slice(cut)}</span>
+            <span className="mr-mono mr-dim" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{dir ? "folder" : "file"}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
