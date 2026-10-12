@@ -66,8 +66,9 @@ export function ReportView({ r, onReply, live }: { r: Report; onReply: (text: st
             <strong style={{ fontSize: 15 }}>{s.heading}</strong>
             {s.items.length > 1 && <span className="mr-mono mr-dim" style={{ fontSize: 11 }}>{s.items.length}</span>}
           </div>
-          {s.intro.map((p, j) => <p key={j} className="mr-ink2" style={{ margin: "2px 0 6px" }}>{inline(p)}</p>)}
+          {s.intro.length > 0 && <div className="mr-ink2" style={{ margin: "2px 0 6px" }}><Markdown text={s.intro.join("\n")} /></div>}
           {s.items.map((it, j) => <ItemRow key={j} it={it} tone={s.tone} n={s.ordered ? j + 1 : null} />)}
+          {s.outro.length > 0 && <div className="mr-ink2" style={{ margin: "6px 0 2px" }}><Markdown text={s.outro.join("\n")} /></div>}
         </section>
       ))}
       {r.next && (nextText || (live && chips.length > 0)) && (
