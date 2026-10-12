@@ -1,5 +1,5 @@
 import { keyOf } from "../components/keys";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Key, ProgressTrack } from "../components";
 import { Diff } from "../components/Diff";
 import { CatalogView, Checklist, FixOptions, SevBars, Tally, Thread } from "../components/CatalogView";
@@ -19,7 +19,15 @@ export function ReviewView({ s }: { s: SessionState }) {
   // Any snippet can be opened at any point (MR-113): reached ones show from the log, unreached ones
   // ask Claude to jump there. `viewing` is a local look-back; Claude stays on r.current.
   const [viewing, setViewing] = useState<number | null>(null);
-  useEffect(() => setViewing(null), [r.current]);
+  // The snippet asked for and not yet drawn: feedback until Claude reports it (or the turn fails).
+  const [asked, setAsked] = useState<number | null>(null);
+  useEffect(() => { setViewing(null); setAsked(null); }, [r.current]);
+  // A turn that ends without a new snippet (finish, a question back, a failure) clears it too.
+  const worked = useRef(false);
+  useEffect(() => {
+    if (s.status === "working" || s.status === "starting") worked.current = asked !== null;
+    else if (worked.current || s.status === "error" || s.status === "interrupted" || s.status === "ended") { worked.current = false; setAsked(null); }
+  }, [s.status, asked]);
   const shownN = viewing ?? r.current;
   const snip = shownN !== null ? r.snippets[shownN] ?? null : null;
   const live = !!snip && snip.n === r.current;
@@ -33,15 +41,16 @@ export function ReviewView({ s }: { s: SessionState }) {
     if (n < 1 || n > total) return;
     if (n === r.current) setViewing(null);
     else if (r.snippets[n]) setViewing(n);
-    else reply(`snippet ${n}`);
+    else if (asked === null) { setAsked(n); reply(`snippet ${n}`); }
   };
+  const next = () => { if (asked !== null || !snip) return; setAsked(snip.n + 1); reply("next"); };
   const back = () => setViewing(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (keyOf(e) === "Enter" && e.metaKey && r.publish && !r.published) { e.preventDefault(); reply("publish"); return; }
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey) return;
-      if (keyOf(e) === " " && snip) { e.preventDefault(); if (live) reply("next"); else back(); }
+      if (keyOf(e) === " " && snip) { e.preventDefault(); if (live) next(); else back(); }
       if (keyOf(e) === "ArrowLeft" && shownN !== null) { e.preventDefault(); go(shownN - 1); }
       if (keyOf(e) === "ArrowRight" && shownN !== null) { e.preventDefault(); go(shownN + 1); }
       if (/^[1-9]$/.test(keyOf(e)) && snip?.findings?.[Number(keyOf(e)) - 1]) { e.preventDefault(); note(snip.findings[Number(keyOf(e)) - 1].id); }
@@ -56,7 +65,7 @@ export function ReviewView({ s }: { s: SessionState }) {
         onRaise={(id, text) => { if (r.noted.includes(id)) return; void api.log("ui.review_noted", { finding_id: id }, s.id, `review:${id}`); reply(`Add this to the review as a comment: ${text}`); }} />}
 
       {total > 0 && Object.keys(r.snippets).length > 0 && (
-        <SnippetPager total={total} reached={Object.keys(r.snippets).map(Number)} shown={snip?.n ?? null} current={r.current} source={s.id} onGo={go} />
+        <SnippetPager total={total} reached={Object.keys(r.snippets).map(Number)} shown={snip?.n ?? null} current={r.current} asked={asked} source={s.id} onGo={go} />
       )}
 
       {snip && (
@@ -82,7 +91,7 @@ export function ReviewView({ s }: { s: SessionState }) {
           </article>
           <div className="mr-row">
             {live
-              ? <Key k="space" tone="primary" onClick={() => reply("next")}>{snip.n >= total ? "Finish walkthrough" : "Next snippet"}</Key>
+              ? <Key k="space" tone="primary" onClick={next} disabled={asked !== null}>{asked !== null ? (asked > total ? "Finishing…" : `Opening snippet ${asked}…`) : snip.n >= total ? "Finish walkthrough" : "Next snippet"}</Key>
               : <Key k="space" tone="primary" onClick={back}>{r.current !== null ? `Back to snippet ${r.current}` : "Back to your review"}</Key>}
             <span className="mr-dim">← → switch snippets · only findings you note get published · ask anything below</span>
           </div>
@@ -107,16 +116,16 @@ export function ReviewView({ s }: { s: SessionState }) {
 }
 
 // Every snippet as a numbered stop: reached ones open from the log, unreached ones ask Claude to jump.
-export function SnippetPager({ total, reached, shown, current, source, onGo }: { total: number; reached: number[]; shown: number | null; current: number | null; source: string; onGo: (n: number) => void }) {
+export function SnippetPager({ total, reached, shown, current, asked = null, source, onGo }: { total: number; reached: number[]; shown: number | null; current: number | null; asked?: number | null; source: string; onGo: (n: number) => void }) {
   return (
     <nav className="mr-row" data-mr="SnippetPager" data-mr-source={source} aria-label="Snippets" style={{ gap: "var(--mr-gap)", flexWrap: "wrap" }}>
       {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
         const seen = reached.includes(n);
         return (
           <button key={n} type="button" onClick={() => onGo(n)} aria-current={n === shown || undefined}
-            title={n === current ? "Claude is here" : seen ? "Look back at this snippet" : "Ask Claude to jump here"}
+            title={n === current ? "Claude is here" : n === asked ? "Claude is opening this one" : seen ? "Look back at this snippet" : "Ask Claude to jump here"}
             className="mr-mono" style={{ minWidth: 32, padding: "4px 8px", border: 0, font: "inherit", cursor: "pointer", color: seen ? "var(--mr-ink)" : "var(--mr-ink-3)", background: n === shown ? "var(--mr-tile)" : "var(--mr-well)", outline: n === shown ? "2px solid var(--mr-selected)" : undefined, outlineOffset: -2 }}>
-            {n}{n === current ? " ·" : ""}
+            {n}{n === current ? " ·" : n === asked ? " …" : ""}
           </button>
         );
       })}
