@@ -135,6 +135,7 @@ pub fn run() {
             brief::brief_start,
             brief::brief_continue,
             docs::doc_archive,
+            docs::doc_build_started,
             usage::usage_track,
             usage::usage_report,
             instances::instance_id
