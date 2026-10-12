@@ -2,11 +2,13 @@ import { keyOf } from "../components/keys";
 import { useEffect, useState } from "react";
 import { Key, ProgressTrack } from "../components";
 import { Diff } from "../components/Diff";
-import { Checklist, FixOptions, SevBars, Tally, Thread } from "../components/CatalogView";
+import { CatalogView, Checklist, FixOptions, SevBars, Tally, Thread } from "../components/CatalogView";
+import { DeliveryMark } from "../components";
+import { TurnText } from "../components/Turn";
 import { api } from "../state/store";
 import { ReviewOverview } from "./ReviewOverview";
 import { plural } from "../picker/title";
-import type { SessionState } from "../state/types";
+import type { SessionState, TranscriptItem } from "../state/types";
 
 // Review (mirrors /review) and Address (mirrors pr-address), drawn from the flow.* steps Claude
 // reports. User actions go back as the replies those commands already expect.
@@ -99,6 +101,7 @@ export function ReviewView({ s }: { s: SessionState }) {
         </section>
       )}
       {!o && !snip && <span className="mr-dim">The review is starting. The overview appears here when it's ready.</span>}
+      <FlowChat s={s} />
     </div>
   );
 }
@@ -201,6 +204,48 @@ export function AddressView({ s }: { s: SessionState }) {
           </aside>
         )}
       </div>
+      <FlowChat s={s} />
     </div>
+  );
+}
+
+// The flow's own button replies (next, note f1, Option 2: …) drive the visuals above; anything else
+// you type is a question, so it and Claude's answer show here instead of vanishing.
+const CONTROL = /^(ok|next|publish|note \S+|snippet \d+|Option [^:]+: .*|Add this to the review as a comment: [\s\S]*)$/i;
+
+export type Exchange = { ask: Extract<TranscriptItem, { kind: "user" }>; answer: Extract<TranscriptItem, { kind: "text" | "view" }>[] };
+
+export function flowChat(items: TranscriptItem[]): Exchange[] {
+  const out: Exchange[] = [];
+  let cur: Exchange | null = null;
+  let first = true; // the session's opening prompt (/review <pr>) is the flow itself
+  for (const t of items) {
+    if (t.kind === "user") {
+      cur = !first && !CONTROL.test(t.text.trim()) ? { ask: t, answer: [] } : null;
+      if (cur) out.push(cur);
+      first = false;
+    } else if (cur && (t.kind === "text" || t.kind === "view")) cur.answer.push(t);
+  }
+  return out;
+}
+
+function FlowChat({ s }: { s: SessionState }) {
+  const chat = flowChat(s.transcript);
+  if (!chat.length) return null;
+  const reply = (text: string) => void api.send(s.id, text);
+  const last = chat.at(-1)!;
+  return (
+    <section data-mr="FlowChat" data-mr-source={s.id} style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
+      <strong style={{ padding: "8px 0 2px" }}>Conversation</strong>
+      {chat.map((x) => (
+        <div key={x.ask.id} style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
+          <div className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)" }}><span className="mr-mono mr-dim">you →</span><span className="mr-grow">{x.ask.text}</span>{x.ask.delivery && <DeliveryMark d={x.ask.delivery} source={x.ask.id} />}</div>
+          {x.answer.map((t) => t.kind === "text"
+            ? <TurnText key={t.id} text={t.text} onReply={reply} live={false} />
+            : <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={reply} live={false} />)}
+          {x === last && !x.answer.length && x.ask.delivery !== "answered" && x.ask.delivery !== "lost" && <span className="mr-dim" style={{ padding: "0 14px" }}>Claude is answering…</span>}
+        </div>
+      ))}
+    </section>
   );
 }
