@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 pub fn tool_specs(kind: &str) -> Vec<Value> {
     match kind {
         "review" => vec![
-            json!({ "name": "review_overview", "description": "Show the review overview (Step 5 of /review) visually instead of writing it out. tier: 1-3; tier_label: one clause; summary: 2-3 sentences; nodes: [{label, mark: '+'|'~'|'-', finding?: 'critical'|'important'|null}] for the change graph; novelty: [{label: 'net-new'|'adjacent'|'overlapping'|'duplicate', what, where?}]; questions: [string]; prior_threads: number of earlier review threads you checked; total_snippets: number.", "params": { "pr": "string", "title": "string", "tier": "number", "tier_label": "string", "summary": "string", "nodes": "array", "novelty": "array", "questions": "array", "prior_threads": "number", "total_snippets": "number" } }),
+            json!({ "name": "review_overview", "description": "Show the review overview (Step 5 of /review) visually instead of writing it out. tier: 1-3; tier_label: one clause; summary: 2-3 sentences; nodes and edges are the Step 5 architecture/flow DAG as data, not ASCII: nodes: [{id: 'n1', label: 1-4 words, mark: '+'|'~'|'-', finding?: 'critical'|'important'|null}], one per box; edges: [{from: node id, to: node id, label?: 1-2 words like 'calls' or 'writes'}], one per arrow, so every node is connected to the flow; novelty: [{label: 'net-new'|'adjacent'|'overlapping'|'duplicate', what, where?}]; questions: [string]; prior_threads: number of earlier review threads you checked; total_snippets: number.", "params": { "pr": "string", "title": "string", "tier": "number", "tier_label": "string", "summary": "string", "nodes": "array", "edges": "array", "novelty": "array", "questions": "array", "prior_threads": "number", "total_snippets": "number" } }),
             json!({ "name": "review_snippet", "description": "Show one snippet of the walkthrough (Step 6 of /review). n and total: progress; area: concern group; title; file: 'path · start–end'; code: the trimmed diff with lines prefixed '+', '-' or ' '; explain: plain-language what and why; good: what's good; findings: [{id: 'f1', severity: 'Critical'|'Important'|'Suggestion'|'Nitpick', at: 'file:line', text}]. Then wait: the user replies 'note <id>', 'next', 'snippet <n>' (jump to snippet n, in either direction), or asks a question.", "params": { "n": "number", "total": "number", "area": "string", "title": "string", "file": "string", "code": "string", "explain": "string", "good": "string", "findings": "array" } }),
             json!({ "name": "review_publish_ready", "description": "Show the consolidated review (Step 8 of /review): only the findings the user noted. comments: [{severity, at, text, suggestion?}]; verdict: 'Ship it'|'Needs changes'|'Needs discussion'|'Possibly redundant'; dropped: findings removed as duplicates of earlier threads. Then wait for the user to say 'publish'.", "params": { "comments": "array", "verdict": "string", "dropped": "number", "note": "string" } }),
         ],
@@ -61,6 +61,9 @@ mod tests {
         assert_eq!(events[0].0, "flow.review_snippet");
         assert!(text.contains("wait") && !err);
         assert!(!handle_tool("review_overview", &json!({})).1.contains("wait"));
+        // The overview's change graph is a DAG: the tool takes its arrows, not just its boxes.
+        let ov = &tool_specs("review")[0];
+        assert!(ov["params"]["edges"] == "array" && ov["description"].as_str().unwrap().contains("one per arrow"));
         assert!(is_flow_tool("address_proof") && !is_flow_tool("doc_read"));
     }
 }

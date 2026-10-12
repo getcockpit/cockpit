@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChangeList, NoveltyTag, TierBadge } from "../components/CatalogView";
+import { ChangeDiagram } from "../components/ChangeDiagram";
 import { Key } from "../components";
 import { keyOf } from "../components/keys";
 import { plural } from "../picker/title";
@@ -47,6 +48,7 @@ const TAG: Record<Point["tag"], { bg: string; fg: string }> = {
 
 export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Overview; started: boolean; onReply: (t: string) => void; onRaise: (id: string, text: string) => void; raised: string[] }) {
   const pts = keyPoints(o);
+  const graph = (o.edges ?? []).length > 0;
   const [sel, setSel] = useState(0);
   const [open, setOpen] = useState<number | null>(null);
   const [skipped, setSkipped] = useState<number[]>([]);
@@ -117,7 +119,7 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
       <details style={{ background: "var(--mr-tile)", padding: "10px 14px" }}>
         <summary style={{ cursor: "pointer", fontWeight: 600 }}>What the PR changes <span className="mr-dim" style={{ fontWeight: 400 }}>{(o.nodes ?? []).length ? `· ${plural((o.nodes ?? []).length, "change")}` : ""}</span></summary>
         <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>{summary.map((x, i) => <li key={i} className="mr-ink2">{x}</li>)}</ul>
-        {(o.nodes ?? []).length > 0 && <div style={{ marginTop: 12 }}><ChangeList nodes={o.nodes ?? []} grouped /></div>}
+        {(o.nodes ?? []).length > 0 && <div style={{ marginTop: 12 }}>{graph ? <ChangeDiagram nodes={o.nodes ?? []} edges={o.edges ?? []} /> : <ChangeList nodes={o.nodes ?? []} grouped />}</div>}
       </details>
       {(o.novelty ?? []).length > 0 && (
         <details style={{ background: "var(--mr-tile)", padding: "10px 14px" }}>
