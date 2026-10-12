@@ -12,6 +12,12 @@ test("the pager offers every snippet, marks where Claude is and which one is sho
   expect(html).toMatch(/title="Ask Claude to jump here"[^>]*>4</);
 });
 
+// Asking for the next snippet shows at once which one is on its way, before Claude draws it.
+test("the pager marks the snippet Claude was asked to open", () => {
+  const html = renderToStaticMarkup(<SnippetPager total={4} reached={[1, 2]} shown={2} current={2} asked={3} source="R" onGo={() => {}} />);
+  expect(html).toMatch(/title="Claude is opening this one"[^>]*>3 …</);
+});
+
 // Questions typed during a review used to vanish: the flow view replaced the transcript.
 test("flow chat keeps typed questions and their answers, not the opening prompt or button replies", () => {
   const u = (id: string, text: string): TranscriptItem => ({ kind: "user", id, text, at: 0 });
