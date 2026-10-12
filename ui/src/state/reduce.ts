@@ -19,6 +19,7 @@ export const initialState: AppState = {
   autoReview: autoReviewDefault(import.meta.env),
   notifications: true,
   compactWindow: 200_000,
+  sessionCap: 10,
   presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   cockpitLayer: false,
@@ -122,6 +123,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     return { ...next, cockpit: p.ok ? { ...m, calls: m.calls + 1, tokens: m.tokens + tokens, usd: m.usd + Number(p.cost_usd ?? 0) } : { ...m, errors: m.errors + 1 } };
   }
   if (ev.kind === "ui.compact_window_set") return { ...next, compactWindow: typeof p.tokens === "number" ? p.tokens : null };
+  if (ev.kind === "ui.session_cap_set") return { ...next, sessionCap: typeof p.cap === "number" ? Math.max(1, p.cap) : next.sessionCap };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.notifications_set") return { ...next, notifications: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };

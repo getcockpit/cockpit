@@ -239,6 +239,10 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
         Some("sdk") if payload["message"]["type"] == "result" && resume_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 1 done: stop the session; session_ended triggers the resume below.
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            // Its turn is over, so it no longer counts toward the cap (MR-105).
+            let busy = crate::sidecar::busy(&app.state::<crate::sidecar::Sidecar>());
+            crate::eventlog::record(app, Some(&session), "selftest.cap", &serde_json::json!({ "busy_after_turn": busy }), None);
+            if busy != 0 { eprintln!("[selftest] an idle session still counts toward the cap ({busy} busy)"); std::process::exit(1); }
             let _ = crate::sidecar::session_stop(app.state::<crate::sidecar::Sidecar>(), session);
         }
         Some("session_ended") if resume_mode() && RESULTS.load(Ordering::SeqCst) == 1 => {

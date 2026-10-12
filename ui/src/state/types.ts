@@ -154,6 +154,7 @@ export type AppState = {
   autoReview: boolean; // start /review by itself for PRs waiting on you (MR-72)
   notifications: boolean; // macOS notifications for new needs-you items while the app is in the background (MR-94)
   compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I63)
+  sessionCap: number; // how many sessions may be mid-turn at once; idle ones don't count (MR-105)
   clef: ClefMeter;
   cockpitLayer: boolean; // cards drawn by the Cockpit layer on its own key, sessions run plain (decision 34)
   cockpit: CockpitMeter;
