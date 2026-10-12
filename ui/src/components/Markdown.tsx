@@ -30,17 +30,11 @@ export function Markdown({ text }: { text: string }) {
       for (; i < lines.length && /^\s*\d+[.)] /.test(lines[i]); i++) items.push(lines[i].replace(/^\s*\d+[.)] /, ""));
       i--;
       out.push(<ol key={i} style={{ margin: 0, paddingLeft: 22 }}>{items.map((t, j) => <li key={j}>{inline(t)}</li>)}</ol>);
-    } else if (/^\|.*\|\s*$/.test(l)) {
-      const rows: string[][] = [];
-      for (; i < lines.length && /^\|.*\|\s*$/.test(lines[i]); i++) if (!/^\|[\s:-|]+\|\s*$/.test(lines[i])) rows.push(lines[i].trim().slice(1, -1).split("|").map((c) => c.trim()));
+    } else if (isRow(l)) {
+      const block: string[] = [];
+      for (; i < lines.length && isRow(lines[i]); i++) block.push(lines[i]);
       i--;
-      out.push(
-        <div key={i} style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
-            <tbody>{rows.map((r, j) => <tr key={j} style={{ background: j === 0 ? "var(--mr-well)" : "transparent" }}>{r.map((c, k) => <td key={k} style={{ padding: "4px 8px", fontWeight: j === 0 ? 700 : 400 }}>{inline(c)}</td>)}</tr>)}</tbody>
-          </table>
-        </div>,
-      );
+      out.push(<Table key={i} t={parseTable(block)} />);
     } else if (/^#{1,4} /.test(l)) {
       out.push(<strong key={i} style={{ display: "block", marginTop: 4 }}>{inline(l.replace(/^#+ /, ""))}</strong>);
     } else if (l.trim()) {
@@ -48,6 +42,58 @@ export function Markdown({ text }: { text: string }) {
     }
   }
   return <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{out}</div>;
+}
+
+// Tables (GFM): a header row when the second line is the |---|:--:| separator, its alignments,
+// and cells split on unescaped pipes outside inline code.
+const isRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+const SEPARATOR = /^\s*\|(\s*:?-+:?\s*\|)+\s*$/;
+type Align = "left" | "center" | "right";
+export type ParsedTable = { head: string[] | null; align: Align[]; rows: string[][] };
+
+export function splitRow(l: string): string[] {
+  const cells: string[] = [];
+  let cur = "", code = false;
+  const s = l.trim().slice(1, -1);
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "\\" && s[i + 1] === "|") { cur += "|"; i++; }
+    else if (c === "`") { code = !code; cur += c; }
+    else if (c === "|" && !code) { cells.push(cur.trim()); cur = ""; }
+    else cur += c;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+export function parseTable(block: string[]): ParsedTable {
+  const header = block.length > 1 && SEPARATOR.test(block[1]);
+  const align: Align[] = header
+    ? splitRow(block[1]).map((c) => (c.startsWith(":") && c.endsWith(":") ? "center" : c.endsWith(":") ? "right" : "left"))
+    : [];
+  const rows = block.filter((l) => !SEPARATOR.test(l)).map(splitRow);
+  return { head: header ? rows[0] : null, align, rows: header ? rows.slice(1) : rows };
+}
+
+function Table({ t }: { t: ParsedTable }) {
+  const cols = Math.max(t.head?.length ?? 0, ...t.rows.map((r) => r.length));
+  const cell = (r: string[], k: number) => r[k] ?? "";
+  return (
+    <div data-mr="MarkdownTable" style={{ overflowX: "auto" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+        {t.head && (
+          <thead><tr>{Array.from({ length: cols }, (_, k) => <th key={k} className="mr-dim" style={{ textAlign: t.align[k] ?? "left", fontWeight: 600, fontSize: 12, padding: "4px 10px 6px 0", verticalAlign: "bottom" }}>{inline(cell(t.head!, k))}</th>)}</tr></thead>
+        )}
+        <tbody>
+          {t.rows.map((r, j) => (
+            <tr key={j} style={{ borderTop: t.head || j > 0 ? "2px solid var(--mr-well)" : undefined }}>
+              {Array.from({ length: cols }, (_, k) => <td key={k} style={{ textAlign: t.align[k] ?? "left", padding: "6px 10px 6px 0", verticalAlign: "top" }}>{inline(cell(r, k))}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function inline(t: string): ReactNode[] {
