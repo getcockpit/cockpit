@@ -133,6 +133,15 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       record(d.session_id, "ui.doc_archived", { doc_id: d.id, title: d.title });
       return null;
     }
+    case "doc_build_started": {
+      const d = docs.find((x) => x.id === a.docId);
+      if (!d) throw new Error("no such doc");
+      const sid = String(a.sessionId);
+      if (!d.build_sessions?.includes(sid)) d.build_sessions = [...(d.build_sessions ?? []), sid];
+      docs = [...docs];
+      record(sid, "ui.doc_build_started", { doc_id: d.id, title: d.title });
+      return null;
+    }
     case "doc_feedback": {
       const d = docs.find((x) => x.id === a.docId);
       if (!d) throw new Error("no such doc");
