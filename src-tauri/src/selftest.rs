@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -91,6 +91,12 @@ fn brief_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brief")
 }
 
+/// Catch me up mid-turn (MR-116): the Cockpit layer writes the brief, not the busy session.
+fn brief_layer_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brieflayer")
+}
+static BRIEFED: AtomicBool = AtomicBool::new(false);
+
 fn doc_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "doc")
 }
@@ -140,6 +146,8 @@ pub fn run(app: AppHandle) {
             } else if view_mode() {
                 // No tool named: the visual guidance alone should make Claude compose a view (MR-61).
                 std::env::var("MR_VIEW_PROMPT").ok().filter(|p| !p.trim().is_empty()).unwrap_or_else(|| "This is a UI test; nothing here is real and you don't need to look at any files. Give me a status report for a pretend settings refactor: 3 of 5 steps done, 211 tests passing, 1 test failing in the migration, and one open risk (old desktop builds can't read the new format). Then on a final line reply with exactly: SELFTEST DONE".into())
+            } else if brief_layer_mode() {
+                "This is a UI test. Run the shell command `sleep 40` with the Bash tool, then reply with exactly: SELFTEST DONE".into()
             } else if brief_mode() {
                 "This is a UI test. Create a file retry.txt in the current directory containing the word retry. Don't run any tests. Then reply with exactly: Done, retries are in and all tests pass.".into()
             } else if doc_mode() {
@@ -159,7 +167,7 @@ pub fn run(app: AppHandle) {
             eprintln!("[selftest] start failed: {e}");
             std::process::exit(1);
         }
-        tokio_sleep(Duration::from_secs(if bench_mode() { 900 } else { 150 })).await;
+        tokio_sleep(Duration::from_secs(if bench_mode() { 900 } else if doc_mode() { 300 } else { 150 })).await;
         eprintln!("[selftest] timed out");
         std::process::exit(1);
     });
@@ -266,6 +274,30 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             );
             if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
         }
+        Some("sdk") if brief_layer_mode() && payload["message"]["type"] == "assistant" && !BRIEFED.load(Ordering::SeqCst) => {
+            // Mid-turn: Catch me up must go to the Cockpit layer and leave the session alone.
+            BRIEFED.store(true, Ordering::SeqCst);
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            match crate::brief::brief_start(app.clone(), session) {
+                Ok(r) if r["via"] == "cockpit" => eprintln!("[selftest] brief requested mid-turn: {r}"),
+                r => { eprintln!("[selftest] mid-turn brief didn't go to the layer: {r:?}"); std::process::exit(1); }
+            }
+            let app = app.clone();
+            std::thread::spawn(move || {
+                for _ in 0..240 {
+                    std::thread::sleep(Duration::from_millis(500));
+                    let log = app.state::<crate::eventlog::EventLog>();
+                    let done = ["brief.written", "brief.failed"].iter().any(|k| !log.list_kind(k).unwrap_or_default().is_empty());
+                    if done {
+                        std::thread::sleep(Duration::from_millis(500));
+                        app.exit(0);
+                        return;
+                    }
+                }
+                eprintln!("[selftest] the layer never finished the brief");
+                app.exit(1);
+            });
+        }
         Some("sdk") if payload["message"]["type"] == "result" && brief_mode() && RESULTS.load(Ordering::SeqCst) < 2 => {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             if RESULTS.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -308,6 +340,26 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             crate::eventlog::record(app, Some(&session), "ui.doc_note", &serde_json::json!({ "doc_id": doc.id, "block_id": "goal", "text": "Mention that the colour is blue in the goal's key detail." }), Some(&anchor));
             let msg = crate::docs::doc_feedback(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), true).unwrap_or_default();
             let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nWhen done, reply with exactly: SELFTEST DONE"));
+        }
+        // The round-2 guard above counts every result, so the second result finds RESULTS at 2.
+        Some("sdk") if payload["message"]["type"] == "result" && doc_mode() && RESULTS.load(Ordering::SeqCst) == 2 => {
+            // Round 3: Build from this doc (MR-118) — a new session in the plan's folder, linked to the doc.
+            let Some(doc) = app.state::<crate::docs::Docs>().list().into_iter().find(|d| d.title == "Selftest plan") else {
+                eprintln!("[selftest] the doc is gone before Build");
+                std::process::exit(1);
+            };
+            let plan = payload["session"].as_str().unwrap_or_default().to_owned();
+            let events = app.state::<crate::eventlog::EventLog>().list(Some(&plan), None, 1000).unwrap_or_default();
+            let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
+            let prompt = format!("Implement the plan in working doc \"{}\" (doc_id {}). First read it with the mr doc_read tool and follow its decisions. This is a UI test: don't write code. After reading it, add a log block with doc_set_block (section log, block_id build_log, takeaway 'Build read the plan') that names the decided colour, then reply with exactly: SELFTEST DONE", doc.title, doc.id);
+            let build = crate::sidecar::session_start(app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd, prompt, None, None, Some("blank".into()), Some(false), None, None, None);
+            let Ok(build) = build else { eprintln!("[selftest] build session failed: {build:?}"); std::process::exit(1); };
+            if let Err(e) = crate::docs::doc_build_started(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), build.clone()) {
+                eprintln!("[selftest] doc_build_started: {e}");
+                std::process::exit(1);
+            }
+            let linked = app.state::<crate::docs::Docs>().get(&doc.id).map(|d| d.build_sessions.contains(&build)).unwrap_or(false);
+            if !linked { eprintln!("[selftest] the doc doesn't list its build session"); std::process::exit(1); }
         }
         Some("sdk") if payload["message"]["type"] == "result" && ask_first_mode() && !picked(app, payload["session"].as_str().unwrap_or_default()) && RESULTS.fetch_add(1, Ordering::SeqCst) < 2 => {
             // Claude asked its clarifying questions in prose and ended the turn: reply like the user would.
