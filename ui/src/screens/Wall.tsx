@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LiveTrack, planSegs } from "../components/Now";
 import { pointer } from "../components/pointer";
-import { suggest, type Suggestion } from "../picker/suggest";
+import { suggest, USAGE_REVIEW, type Suggestion } from "../picker/suggest";
 import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
@@ -55,12 +55,16 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
     return () => { alive = false; clearInterval(t); };
   }, [cwd]);
 
-  const suggestions = useMemo(() => suggest(state, docs, prs, new Set(state.dismissed)), [state, docs, prs]);
+  // Only the owner's Mac has the app repo; that gates the weekly usage review (MR-106).
+  const [appRepo, setAppRepo] = useState<string | null>(null);
+  useEffect(() => { invoke<string>("app_repo_path").then(setAppRepo).catch(() => setAppRepo(null)); }, []);
+  const suggestions = useMemo(() => suggest(state, docs, prs, new Set(state.dismissed), appRepo), [state, docs, prs, appRepo]);
   const act = async (g: Suggestion) => {
     const a = g.action;
     if (a.kind === "open_session") onOpen(a.id);
     else if (a.kind === "open_doc") onOpenDoc(a.id);
     else if (a.kind === "build_mine") onBuild(await api.mineWorktree());
+    else if (a.kind === "usage_review") { onOpen(await api.start(a.repo, USAGE_REVIEW, "blank", false)); void api.log("ui.suggestion_dismissed", { id: g.id }); }
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
     else {
       const slug = prSlug(a.value) ?? a.repo ?? null;
@@ -72,17 +76,26 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const discover = async (s: SessionState) => onOpen(await sideThread(s));
 
-  useEffect(() => { if (sel >= queue.length) setSel(Math.max(0, queue.length - 1)); }, [queue.length, sel]);
+  // J/K move over both tiers (MR-107): Blocking first, then Your call.
+  const rows = queue.length + suggestions.length;
+  useEffect(() => { if (sel >= rows) setSel(Math.max(0, rows - 1)); }, [rows, sel]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
       // An overlay (intro, picker, settings) owns the keyboard while it's open.
-      if (typing || e.metaKey || e.ctrlKey || !queue.length || document.querySelector('[role="dialog"]')) return;
-      const cur = queue[sel];
+      if (typing || e.metaKey || e.ctrlKey || !rows || document.querySelector('[role="dialog"]')) return;
       const k = keyOf(e);
-      if (k === "j") { e.preventDefault(); setSel((x) => Math.min(queue.length - 1, x + 1)); }
-      else if (k === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
-      else if (cur.kind === "ask" && k === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
+      if (k === "j") { e.preventDefault(); setSel((x) => Math.min(rows - 1, x + 1)); return; }
+      if (k === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); return; }
+      const call = suggestions[sel - queue.length];
+      if (call) {
+        if (k === "Enter") { e.preventDefault(); void act(call); }
+        else if (k === "x") { e.preventDefault(); void api.log("ui.suggestion_dismissed", { id: call.id }); }
+        return;
+      }
+      const cur = queue[sel];
+      if (!cur) return;
+      if (cur.kind === "ask" && k === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
       else if (cur.kind === "ask" && k === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
       else if (cur.kind === "ask" && k === "s" && cur.a.kind === "question") { e.preventDefault(); void answerAsk(cur.s, cur.a, wayOut(cur.a.questions, { kind: "skip" })); }
       else if (cur.kind === "doc" && k === "s") { e.preventDefault(); (document.querySelector(`[data-mr-source="${cur.d.id}:${cur.b.id}"] [data-mr="WayOut"] button:last-child`) as HTMLButtonElement | null)?.click(); }
@@ -93,7 +106,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [queue, sel, onOpen, onOpenDoc]);
+  }, [queue, suggestions, rows, sel, onOpen, onOpenDoc]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
@@ -113,36 +126,30 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
         <span className="mr-mono" title={state.sidecar.up ? `Claude Code: ${state.sidecar.claude ?? ""}` : "Claude Code isn't connected"} style={{ color: state.sidecar.up ? "var(--mr-done)" : "var(--mr-error)" }}>●</span>
       </header>
 
-      {suggestions.length > 0 && (
-        <section aria-label="Suggested next" className="mr-row" style={{ flexWrap: "wrap", gap: 8, padding: "12px 24px 0" }}>
-          <span className="mr-dim">Suggested</span>
-          {suggestions.map((g) => (
-            <span key={g.id} data-mr="Suggestion" data-mr-source={g.id} className="mr-row" style={{ gap: 0, background: "var(--mr-tile)" }}>
-              <button type="button" onClick={() => void act(g)} className="mr-row" style={{ gap: 8, padding: "6px 10px", border: 0, background: "transparent", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }} title={g.what}>
-                <span className="mr-dim">{g.why} ·</span><strong>{g.label}</strong>
-              </button>
-              <button type="button" aria-label="Dismiss suggestion" onClick={() => void api.log("ui.suggestion_dismissed", { id: g.id })} style={{ padding: "6px 8px", border: 0, background: "transparent", color: "var(--mr-ink-3)", cursor: "pointer" }}>×</button>
-            </span>
-          ))}
-        </section>
-      )}
 
       <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
-        {queue.length > 0 && (
+        {rows > 0 && (
           <section id="mr-needs" aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 12 }}>
-            <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Needs you<span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · S skip · R reply · ↵ open</span></h2>
-            <div className="mr-queue">
+            <h2 className="mr-h"><span style={{ color: queue.length ? "var(--mr-needs-ink)" : "var(--mr-ink-3)" }}>◆</span>Needs you<span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · S skip · R reply · X dismiss · ↵ open</span></h2>
+            {queue.length > 0 && <div className="mr-queue">
               {queue.map((q, i) =>
                 q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "fix" ? <FixRow key={q.key} s={q.s} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "flow" ? <FlowRow key={q.key} s={q.s} what={q.what} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "prose" ? <ProseRow key={q.key} s={q.s} question={q.question} options={q.options} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : <DocQuestionRow key={q.key} d={q.d} b={q.b} session={q.d.session_id ? state.sessions[q.d.session_id] : null} selected={i === sel} onOpen={() => onOpenDoc(q.d.id)} />)}
-            </div>
+            </div>}
+            {/* Your call (MR-107): worth doing, but nothing is blocked on it, so no amber, no count, no notification. */}
+            {suggestions.length > 0 && <>
+              <h3 className="mr-dim" style={{ margin: queue.length ? "6px 0 0" : 0, fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>Your call <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>· nothing waits on these</span></h3>
+              <div className="mr-queue">
+                {suggestions.map((g, i) => <CallRow key={g.id} g={g} selected={queue.length + i === sel} onAct={() => void act(g)} />)}
+              </div>
+            </>}
           </section>
         )}
 
-        {sessions.length === 0 && queue.length === 0 && <QuickStart state={state} workspace={workspace} onStarted={onOpen} onMore={(mode) => onStart({ mode, text: "" })} />}
+        {sessions.length === 0 && rows === 0 && <QuickStart state={state} workspace={workspace} onStarted={onOpen} onMore={(mode) => onStart({ mode, text: "" })} />}
 
         {sessions.length > 0 && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
@@ -202,6 +209,20 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
         <button type="button" className="mr-link" onClick={onArchive}>Archive{archived ? ` (${archived})` : ""} <kbd className="mr-mono">⌘⇧A</kbd></button>
         <Key k="⌘K" tone="primary" onClick={() => onStart()}>Start</Key>
       </footer>
+    </div>
+  );
+}
+
+// A "Your call" row (MR-107): the move, why, and dismiss. Quiet: a well, not an amber flag.
+function CallRow({ g, selected, onAct }: { g: Suggestion; selected: boolean; onAct: () => void }) {
+  return (
+    <div className="mr-row" data-mr="Suggestion" data-mr-source={g.id} aria-current={selected || undefined} style={{ gap: 14, padding: "10px 12px 10px 18px", background: "var(--mr-well)", ...(selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : {}) }}>
+      <span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>
+        <span className="mr-dim mr-ellipsis">{g.why}</span>
+        <span className="mr-ink2 mr-ellipsis">{g.what}</span>
+      </span>
+      <Key k={selected ? "↵" : undefined} onClick={onAct}>{g.label}</Key>
+      <button type="button" aria-label="Dismiss" title="Dismiss (X)" onClick={() => void api.log("ui.suggestion_dismissed", { id: g.id })} style={{ padding: "6px 8px", border: 0, background: "transparent", color: "var(--mr-ink-3)", cursor: "pointer" }}>×</button>
     </div>
   );
 }

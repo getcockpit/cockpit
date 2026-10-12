@@ -11,14 +11,42 @@ use tauri_plugin_shell::ShellExt;
 #[derive(Default)]
 pub struct Sidecar {
     child: Mutex<Option<CommandChild>>,
-    /// App session ids currently running in the sidecar (for the cap).
+    /// App session ids currently running in the sidecar.
     live: Mutex<std::collections::HashSet<String>>,
+    /// Live sessions whose turn has ended: they wait for your next message and don't count toward the cap (MR-105).
+    idle: Mutex<std::collections::HashSet<String>>,
     /// Waiters for one-shot replies, by request id.
     oneshots: Mutex<std::collections::HashMap<String, std::sync::mpsc::Sender<serde_json::Value>>>,
 }
 
-fn session_cap() -> usize {
-    std::env::var("MR_SESSION_CAP").ok().and_then(|v| v.parse().ok()).unwrap_or(6)
+/// How many sessions may be mid-turn at once when nothing else says (MR-105; was 6, decision 14).
+pub const SESSION_CAP: usize = 10;
+
+/// The cap: your last `ui.session_cap_set` in Settings, else `MR_SESSION_CAP`, else `SESSION_CAP`.
+pub fn fold_session_cap<'a>(payloads: impl IntoIterator<Item = &'a serde_json::Value>, env: Option<&str>) -> usize {
+    let base = env.and_then(|v| v.parse().ok()).unwrap_or(SESSION_CAP);
+    payloads.into_iter().fold(base, |cap, p| p["cap"].as_u64().map_or(cap, |n| n.max(1) as usize))
+}
+
+fn session_cap(app: &AppHandle) -> usize {
+    let evs = app.state::<crate::eventlog::EventLog>().list_kind("ui.session_cap_set").unwrap_or_default();
+    fold_session_cap(evs.iter().map(|e| &e.payload), std::env::var("MR_SESSION_CAP").ok().as_deref())
+}
+
+/// Whether an SDK message shows the session working (`Some(true)`) or its turn over (`Some(false)`).
+/// Anything else (rate limits, hooks, background task notices) says nothing about it.
+pub fn turn_signal(message: &serde_json::Value) -> Option<bool> {
+    match (message["type"].as_str()?, message["subtype"].as_str()) {
+        ("result", _) => Some(false),
+        ("assistant" | "user" | "stream_event" | "tool_progress", _) | ("system", Some("init")) => Some(true),
+        _ => None,
+    }
+}
+
+/// Live sessions that count toward the cap: the ones mid-turn.
+pub fn busy(state: &Sidecar) -> usize {
+    let idle = state.idle.lock().unwrap();
+    state.live.lock().unwrap().iter().filter(|s| !idle.contains(*s)).count()
 }
 
 pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -60,7 +88,13 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         if payload["type"] == "session_ended" {
                             if let Some(id) = payload["session"].as_str() {
                                 handle.state::<Sidecar>().live.lock().unwrap().remove(id);
+                                handle.state::<Sidecar>().idle.lock().unwrap().remove(id);
                             }
+                        }
+                        if let (Some(id), Some(working)) = (session.as_deref(), (payload["type"] == "sdk").then(|| turn_signal(&payload["message"])).flatten()) {
+                            let state = handle.state::<Sidecar>();
+                            let mut idle = state.idle.lock().unwrap();
+                            if working { idle.remove(id); } else { idle.insert(id.to_owned()); }
                         }
                         if payload["type"] == "tool_call" {
                             answer_tool_call(&handle, &payload);
@@ -82,6 +116,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 CommandEvent::Terminated(status) => {
                     handle.state::<Sidecar>().live.lock().unwrap().clear();
+                    handle.state::<Sidecar>().idle.lock().unwrap().clear();
                     let payload = serde_json::json!({ "type": "terminated", "code": status.code });
                     crate::eventlog::record(&handle, None, "sidecar.terminated", &payload, None);
                     let _ = handle.emit("sidecar", payload);
@@ -266,11 +301,10 @@ pub fn session_start(
     if !std::path::Path::new(&cwd).is_dir() {
         return Err(format!("not a folder: {cwd}"));
     }
-    {
-        let live = state.live.lock().unwrap();
-        if live.len() >= session_cap() {
-            return Err(format!("{} sessions are already running (the cap). Finish or stop one first.", live.len()));
-        }
+    // Only sessions mid-turn count: ones waiting for your next message don't (MR-105).
+    let (working, cap) = (busy(&state), session_cap(&app));
+    if working >= cap {
+        return Err(format!("{working} sessions are working (the cap is {cap}). Wait for one to finish its turn, stop one, or raise the cap in Settings → Sessions."));
     }
     if let (Some(_), Some(id)) = (&resume, &session_id) && crate::instances::owned_elsewhere(&app, id).is_some() {
         return Err(ELSEWHERE.into());
@@ -344,6 +378,7 @@ pub fn session_start(
         msg["append_system_prompt"] = a.into();
     }
     state.live.lock().unwrap().insert(session.clone());
+    state.idle.lock().unwrap().remove(&session);
     sidecar_send(state, msg)?;
     Ok(session)
 }
@@ -356,6 +391,7 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     }
     crate::eventlog::record(&app, Some(&session), "ui.message_sent", &serde_json::json!({ "text": text }), None);
     if live {
+        state.idle.lock().unwrap().remove(&session); // a message starts (or joins) a turn
         return sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }));
     }
     // Not running any more (app restarted, or it ended): resume the same conversation with this
@@ -489,7 +525,7 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prompt, fold_compact_window, fold_model_choice, COMPACT_WINDOW, PLAN_NUDGE, VISUAL_GUIDANCE};
+    use super::{append_prompt, fold_compact_window, fold_model_choice, fold_session_cap, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
     use serde_json::json;
 
     #[test]
@@ -518,5 +554,29 @@ mod tests {
         let evs = [json!({ "tokens": 400_000 }), json!({ "tokens": null }), json!({ "tokens": 120_000 })];
         assert_eq!(fold_compact_window(&evs), Some(120_000));
         assert_eq!(fold_compact_window(&evs[..2]), None);
+    }
+
+    #[test]
+    fn session_cap_setting_beats_the_env_var_and_the_default_is_ten() {
+        assert_eq!(SESSION_CAP, 10);
+        assert_eq!(fold_session_cap(&[], None), 10);
+        assert_eq!(fold_session_cap(&[], Some("4")), 4);
+        assert_eq!(fold_session_cap(&[], Some("nonsense")), 10);
+        let evs = [json!({ "cap": 15 }), json!({ "cap": 6 })];
+        assert_eq!(fold_session_cap(&evs, Some("4")), 6);
+        assert_eq!(fold_session_cap(&[json!({ "cap": 0 })], None), 1);
+    }
+
+    #[test]
+    fn a_turn_starts_on_work_and_ends_on_its_result() {
+        for working in [json!({ "type": "assistant" }), json!({ "type": "user" }), json!({ "type": "system", "subtype": "init" }), json!({ "type": "tool_progress" })] {
+            assert_eq!(turn_signal(&working), Some(true), "{working}");
+        }
+        assert_eq!(turn_signal(&json!({ "type": "result", "subtype": "success" })), Some(false));
+        assert_eq!(turn_signal(&json!({ "type": "result", "subtype": "error_during_execution" })), Some(false));
+        // Rate limits, hooks and background-task notices arrive between turns too: they don't wake a session.
+        for quiet in [json!({ "type": "rate_limit_event" }), json!({ "type": "system", "subtype": "task_notification" }), json!({ "type": "system", "subtype": "hook_started" })] {
+            assert_eq!(turn_signal(&quiet), None, "{quiet}");
+        }
     }
 }

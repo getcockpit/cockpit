@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addressNote, suggest } from "./suggest";
+import { addressNote, isoWeek, suggest } from "./suggest";
 import { replay } from "../state/reduce";
 import type { MrEvent } from "../state/types";
 import type { Doc } from "../state/docs";
@@ -32,4 +32,22 @@ test("suggests Address for threads waiting on you, not for PRs already being add
   expect(out.map((x) => x.why)).toEqual(["2 threads waiting on you in PR #7"]);
   expect(addressNote(mine[0])).toBe("2 threads waiting on you");
   expect(addressNote({ ...mine[1], reviewDecision: "CHANGES_REQUESTED", isDraft: true })).toBe("changes requested · draft");
+});
+
+test("weekly usage review: owner only, once per ISO week, gone once run or dismissed", () => {
+  const mon = new Date(2026, 9, 12, 9).getTime(); // Monday 2026-10-12
+  const none = { review: [], mine: [] };
+  expect(isoWeek(mon)).toBe("2026-W42");
+  expect(isoWeek(new Date(2026, 9, 18, 23).getTime())).toBe("2026-W42"); // Sunday, same week
+  expect(isoWeek(new Date(2027, 0, 1).getTime())).toBe("2026-W53");
+  const empty = replay([]);
+  // A shared install has no app repo: never offered.
+  expect(suggest(empty, [], none, new Set(), null, mon)).toEqual([]);
+  const [g] = suggest(empty, [], none, new Set(), "/repo", mon);
+  expect([g.id, g.label, g.action]).toEqual(["usage-review:2026-W42", "Usage review", { kind: "usage_review", repo: "/repo" }]);
+  expect(suggest(empty, [], none, new Set([g.id]), "/repo", mon)).toEqual([]);
+  // Back next week.
+  expect(suggest(empty, [], none, new Set([g.id]), "/repo", mon + 7 * 86_400_000)[0].id).toBe("usage-review:2026-W43");
+  const ran = replay([{ id: "A1", session_id: "s", kind: "ui.session_requested", payload: { prompt: "/mr-usage-review", cwd: "/repo" }, anchor: null, created_at: mon }]);
+  expect(suggest(ran, [], none, new Set(), "/repo", mon)).toEqual([]);
 });
