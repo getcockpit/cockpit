@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -86,6 +86,11 @@ fn picked(app: &AppHandle, session: &str) -> bool {
     std::fs::read_dir(cwd).map(|d| d.flatten().any(|f| f.file_name().to_string_lossy().starts_with("selftest-"))).unwrap_or(false)
 }
 
+/// Catch me up (MR-116): a turn that claims more than it did, a brief of it, then Continue with a correction.
+fn brief_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brief")
+}
+
 fn doc_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "doc")
 }
@@ -104,7 +109,7 @@ pub fn run(app: AppHandle) {
             _ => std::env::temp_dir().join(format!("mr-selftest-{}", ulid::Ulid::new())),
         };
         let _ = std::fs::create_dir_all(&dir);
-        if resume_mode() {
+        if resume_mode() || brief_mode() {
             for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
                 let _ = std::process::Command::new("git").arg("-C").arg(&dir).args(&args).status();
             }
@@ -135,6 +140,8 @@ pub fn run(app: AppHandle) {
             } else if view_mode() {
                 // No tool named: the visual guidance alone should make Claude compose a view (MR-61).
                 std::env::var("MR_VIEW_PROMPT").ok().filter(|p| !p.trim().is_empty()).unwrap_or_else(|| "This is a UI test; nothing here is real and you don't need to look at any files. Give me a status report for a pretend settings refactor: 3 of 5 steps done, 211 tests passing, 1 test failing in the migration, and one open risk (old desktop builds can't read the new format). Then on a final line reply with exactly: SELFTEST DONE".into())
+            } else if brief_mode() {
+                "This is a UI test. Create a file retry.txt in the current directory containing the word retry. Don't run any tests. Then reply with exactly: Done, retries are in and all tests pass.".into()
             } else if doc_mode() {
                 "Create a working document titled 'Selftest plan' with the mr doc_create tool. Add a goal block (block_id goal) whose takeaway is 'Prove the doc loop works', and an open question block (section question, block_id q1, takeaway 'Pick a colour') with data options red and blue. Don't decide it. Then reply with exactly: SELFTEST DONE".into()
             } else {
@@ -258,6 +265,35 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 sdk, None, Some("blank".into()), Some(false), Some(session), None, None,
             );
             if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && brief_mode() && RESULTS.load(Ordering::SeqCst) < 2 => {
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            if RESULTS.fetch_add(1, Ordering::SeqCst) == 0 {
+                // The turn is over: Catch me up, written by the session's own Claude.
+                match crate::brief::brief_start(app.clone(), session) {
+                    Ok(r) if r["via"] == "session" => eprintln!("[selftest] brief requested: {r}"),
+                    r => { eprintln!("[selftest] brief_start didn't go to the session: {r:?}"); std::process::exit(1); }
+                }
+                return;
+            }
+            // The brief is written: mark its first risk wrong with a note, the rest fine, then Continue.
+            let docs = app.state::<crate::docs::Docs>();
+            let Some(doc) = docs.list().into_iter().find(|d| d.kind == "brief" && d.session_id.as_deref() == Some(&session)) else {
+                eprintln!("[selftest] no brief doc");
+                std::process::exit(1);
+            };
+            let anchor = format!("doc:{}", doc.id);
+            let mut risks: Vec<_> = doc.blocks.values().filter(|b| b.section == "risk").collect();
+            risks.sort_by_key(|b| b.order);
+            for (i, b) in risks.iter().enumerate() {
+                crate::eventlog::record(app, Some(&session), "ui.doc_decision", &serde_json::json!({ "doc_id": doc.id, "block_id": b.id, "choice": if i == 0 { "Wrong" } else { "Fine" } }), Some(&anchor));
+            }
+            if let Some(b) = risks.first() {
+                crate::eventlog::record(app, Some(&session), "ui.doc_note", &serde_json::json!({ "doc_id": doc.id, "block_id": b.id, "text": "Right, run nothing; just say so honestly." }), Some(&anchor));
+            }
+            let msg = crate::brief::brief_continue(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone()).ok().flatten();
+            let Some(msg) = msg else { eprintln!("[selftest] Continue sent nothing despite a correction"); std::process::exit(1); };
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nThis is a UI test: don't change files. Reply with exactly: SELFTEST DONE"));
         }
         Some("sdk") if payload["message"]["type"] == "result" && doc_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 2: act like the user on the doc map — decide, note, Regenerate.
