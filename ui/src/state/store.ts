@@ -108,6 +108,8 @@ export const api = {
   // Slash commands and /mcp (MR-87): answers arrive as sidecar.commands / sidecar.mcp_status.
   commands: (session: string) => invoke("session_commands", { session }),
   mcpStatus: (session: string) => invoke("session_mcp_status", { session }),
+  // @ mentions (MR-108): the files and folders in a session's folder, folders ending in /.
+  paths: (cwd: string) => invoke<string[]>("session_paths", { cwd }),
   mcpAction: (session: string, server: string, action: "reconnect" | "enable" | "disable") => invoke("session_mcp_action", { session, server, action }),
   // A command from a reply's Run button (MR-85): runs in the session's folder, listed in its side panel.
   run: (session: string, cwd: string, command: string) => {
