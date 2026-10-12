@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { autoReviewDefault, elsewhere, initialState, introOpen, replay, workspaceFolder } from "./reduce";
+import { autoReviewDefault, contextFill, elsewhere, initialState, introOpen, replay, workspaceFolder } from "./reduce";
 import { dedupe } from "./store";
 import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
@@ -114,6 +114,21 @@ test("a turn that ends with a question in prose shows as needs-you", () => {
   const tile = pickTile(st.sessions.s);
   expect(tile.state).toBe("needs_you");
   expect(tile.doing).toBe("Asks: Which one do you prefer?");
+});
+
+test("a turn that ends with plan steps still open says the plan was left open (MR-121)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
+  const steps = (last: string) => [{ step: "Build", status: "done" }, { step: "Verify", status: "done" }, { step: "Merge", status: last }];
+  const base = [
+    ev("E1", "ui.session_requested", { prompt: "Do it", cwd: "/w", kind: "blank" }),
+    ev("E2", "plan.updated", { steps: steps("doing") }),
+    ev("E3", "sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "Merged. All done." }] } } }),
+    ev("E4", "sidecar.sdk", { message: { type: "result", is_error: false, result: "x" } }),
+  ];
+  const open = pickTile(replay(base).sessions.s);
+  expect(open).toMatchObject({ state: "idle", planOpen: true, step: "Plan left open · 2 of 3" });
+  const closed = pickTile(replay([...base.slice(0, 3), ev("E3b", "plan.updated", { steps: steps("done") }), base[3]]).sessions.s);
+  expect(closed).toMatchObject({ state: "done", planOpen: false, step: "Ready to review" });
 });
 
 test("a finished turn with a script still running in the background stays Working, not Waiting", () => {
@@ -567,5 +582,24 @@ describe("live events from two copies", () => {
     expect(d.fresh(e("E4", 4))).toBe(true);
     expect(d.fresh(e("E3", 3))).toBe(true);
     expect(d.fresh(e("E3", 3))).toBe(false);
+  });
+});
+
+describe("context meter", () => {
+  const sdk = (id: string, message: Record<string, unknown>): MrEvent => ({ id, session_id: "S", kind: "sidecar.sdk", payload: { message }, anchor: null, created_at: 2 });
+  const start: MrEvent = { id: "0", session_id: "S", kind: "ui.session_requested", payload: { prompt: "hi", cwd: "/x", kind: "blank" }, anchor: null, created_at: 1 };
+  const reply = (id: string, read: number, extra: Record<string, unknown> = {}) => sdk(id, { type: "assistant", message: { content: [], usage: { input_tokens: 2, cache_read_input_tokens: read, cache_creation_input_tokens: 100, output_tokens: 8 } }, ...extra });
+
+  it("tracks the latest main-thread reply, skips subagents, takes the window from the result", () => {
+    const s = replay([start, reply("1", 50_000), reply("2", 900_000, { parent_tool_use_id: "toolu_x" }),
+      sdk("3", { type: "result", modelUsage: { "claude-haiku-5-5": { costUSD: 0.001, contextWindow: 200_000 }, "claude-opus-5-5[1m]": { costUSD: 2, contextWindow: 1_000_000 } } })]).sessions.S;
+    expect(s.context).toEqual({ used: 50_110, window: 1_000_000 });
+    expect(contextFill(s, 200_000)).toEqual({ used: 50_110, limit: 200_000, share: 50_110 / 200_000 });
+    expect(contextFill(s, null)?.limit).toBe(1_000_000);
+  });
+
+  it("a compact resets it to what was kept", () => {
+    const s = replay([start, reply("1", 150_000), sdk("2", { type: "system", subtype: "compact_boundary", compact_metadata: { pre_tokens: 150_110, post_tokens: 15_000 } })]).sessions.S;
+    expect(s.context.used).toBe(15_000);
   });
 });

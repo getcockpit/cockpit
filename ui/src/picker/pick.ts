@@ -18,6 +18,7 @@ export type TileSpec = {
   progress: number | null; // 0..1 from todos, null when unknown
   progressLabel: string;
   doing: string;
+  planOpen?: boolean; // the turn ended with plan steps still open and nothing asked of you (MR-121)
 };
 
 export type RenderRecord = { component: string; layer: "code"; source: string; ms: number };
@@ -112,6 +113,8 @@ export function pickTile(s: SessionState): TileSpec {
     : s.status === "idle" ? "idle"
     : total && (done >= total - 1 || done / total >= 0.8) ? "almost"
     : "working";
+  // Claude said it was finished but never ticked the last steps off: say so instead of a stuck 80%.
+  const planOpen = state === "idle" && total > 0 && done < total;
   const ask = s.pending[0];
   const doing = s.status === "interrupted" ? "Stopped when the app closed. Resume continues the same conversation."
     : flowStep ? flowStep
@@ -122,9 +125,10 @@ export function pickTile(s: SessionState): TileSpec {
     : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${String(lastTool.input.file_path).split("/").pop()}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");
   return {
     state,
-    step: running ? "Running in background" : s.status === "idle" && total > 0 && done === total ? "Ready to review" : total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Your turn" : "Working",
+    step: running ? "Running in background" : s.status === "idle" && total > 0 && done === total ? "Ready to review" : planOpen ? `Plan left open · ${done} of ${total}` : total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Your turn" : "Working",
     progress,
     progressLabel: progress === null ? "" : `${Math.round(progress * 100)}%`,
     doing,
+    planOpen,
   };
 }
