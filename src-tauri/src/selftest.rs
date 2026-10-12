@@ -167,7 +167,7 @@ pub fn run(app: AppHandle) {
             eprintln!("[selftest] start failed: {e}");
             std::process::exit(1);
         }
-        tokio_sleep(Duration::from_secs(if bench_mode() { 900 } else { 150 })).await;
+        tokio_sleep(Duration::from_secs(if bench_mode() { 900 } else if doc_mode() { 300 } else { 150 })).await;
         eprintln!("[selftest] timed out");
         std::process::exit(1);
     });
@@ -340,6 +340,26 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             crate::eventlog::record(app, Some(&session), "ui.doc_note", &serde_json::json!({ "doc_id": doc.id, "block_id": "goal", "text": "Mention that the colour is blue in the goal's key detail." }), Some(&anchor));
             let msg = crate::docs::doc_feedback(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), true).unwrap_or_default();
             let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nWhen done, reply with exactly: SELFTEST DONE"));
+        }
+        // The round-2 guard above counts every result, so the second result finds RESULTS at 2.
+        Some("sdk") if payload["message"]["type"] == "result" && doc_mode() && RESULTS.load(Ordering::SeqCst) == 2 => {
+            // Round 3: Build from this doc (MR-118) — a new session in the plan's folder, linked to the doc.
+            let Some(doc) = app.state::<crate::docs::Docs>().list().into_iter().find(|d| d.title == "Selftest plan") else {
+                eprintln!("[selftest] the doc is gone before Build");
+                std::process::exit(1);
+            };
+            let plan = payload["session"].as_str().unwrap_or_default().to_owned();
+            let events = app.state::<crate::eventlog::EventLog>().list(Some(&plan), None, 1000).unwrap_or_default();
+            let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
+            let prompt = format!("Implement the plan in working doc \"{}\" (doc_id {}). First read it with the mr doc_read tool and follow its decisions. This is a UI test: don't write code. After reading it, add a log block with doc_set_block (section log, block_id build_log, takeaway 'Build read the plan') that names the decided colour, then reply with exactly: SELFTEST DONE", doc.title, doc.id);
+            let build = crate::sidecar::session_start(app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd, prompt, None, None, Some("blank".into()), Some(false), None, None, None);
+            let Ok(build) = build else { eprintln!("[selftest] build session failed: {build:?}"); std::process::exit(1); };
+            if let Err(e) = crate::docs::doc_build_started(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), build.clone()) {
+                eprintln!("[selftest] doc_build_started: {e}");
+                std::process::exit(1);
+            }
+            let linked = app.state::<crate::docs::Docs>().get(&doc.id).map(|d| d.build_sessions.contains(&build)).unwrap_or(false);
+            if !linked { eprintln!("[selftest] the doc doesn't list its build session"); std::process::exit(1); }
         }
         Some("sdk") if payload["message"]["type"] == "result" && ask_first_mode() && !picked(app, payload["session"].as_str().unwrap_or_default()) && RESULTS.fetch_add(1, Ordering::SeqCst) < 2 => {
             // Claude asked its clarifying questions in prose and ended the turn: reply like the user would.
