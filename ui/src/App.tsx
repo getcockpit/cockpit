@@ -23,7 +23,7 @@ import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
 import { Builds } from "./screens/Builds";
 import { VoiceController, type PointTarget } from "./screens/Voice";
 import { api } from "./state/store";
-import { useDocs } from "./state/docs";
+import { docApi, useDocs } from "./state/docs";
 import { useAppState } from "./state/store";
 import { useAutoReview } from "./state/useAutoReview";
 import { useNotify } from "./state/notify";
@@ -160,7 +160,9 @@ export default function App() {
       </div>
     </div>
   );
-  const voice = <VoiceController resolve={resolve} send={(sid, text) => void api.send(sid, text)} onFallback={(text) => { setPickerText(text); setPicker(true); }} />;
+  // Voice "catch me up" (MR-116): a brief of the session pointed at, else the one open in Focus.
+  const catchUp = (sid: string | null) => { const target = sid ?? focus; if (target) void docApi.brief(target).then((r) => setDocId(r.doc_id)).catch(() => {}); };
+  const voice = <VoiceController resolve={resolve} send={(sid, text) => void api.send(sid, text)} onCatchUp={catchUp} onFallback={(text) => { setPickerText(text); setPicker(true); }} />;
   const buildsPanel = builds !== null && <Builds defaultWorktree={builds || undefined} onClose={() => setBuilds(null)} />;
   const archived = Object.values(state.sessions).filter((x) => x.archivedAt);
   const archivePanel = archive && <Archive sessions={archived} onClose={() => setArchive(false)} onOpen={(id) => { setArchive(false); setDocId(null); setFocus(id); }} />;
