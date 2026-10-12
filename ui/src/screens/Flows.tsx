@@ -14,19 +14,34 @@ import type { SessionState } from "../state/types";
 export function ReviewView({ s }: { s: SessionState }) {
   const r = s.review!;
   const o = r.overview;
-  const snip = r.current !== null ? r.snippets[r.current] : null;
+  // Any snippet can be opened at any point (MR-113): reached ones show from the log, unreached ones
+  // ask Claude to jump there. `viewing` is a local look-back; Claude stays on r.current.
+  const [viewing, setViewing] = useState<number | null>(null);
+  useEffect(() => setViewing(null), [r.current]);
+  const shownN = viewing ?? r.current;
+  const snip = shownN !== null ? r.snippets[shownN] ?? null : null;
+  const live = !!snip && snip.n === r.current;
   // The overview's count is an estimate: never show "Snippet 3 of 2".
-  const total = Math.max(o?.total_snippets ?? snip?.total ?? 0, snip?.n ?? 0, Object.keys(r.snippets).length);
+  const total = Math.max(o?.total_snippets ?? snip?.total ?? 0, ...Object.keys(r.snippets).map(Number), 0);
   const findings = Object.values(r.snippets).flatMap((x) => x.findings ?? []);
   const noted = findings.filter((f) => r.noted.includes(f.id));
   const reply = (text: string) => void api.send(s.id, text);
   const note = (id: string) => { void api.log("ui.review_noted", { finding_id: id }, s.id, `review:${id}`); reply(`note ${id}`); };
+  const go = (n: number) => {
+    if (n < 1 || n > total) return;
+    if (n === r.current) setViewing(null);
+    else if (r.snippets[n]) setViewing(n);
+    else reply(`snippet ${n}`);
+  };
+  const back = () => setViewing(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (keyOf(e) === "Enter" && e.metaKey && r.publish && !r.published) { e.preventDefault(); reply("publish"); return; }
-      if (e.target instanceof HTMLInputElement || e.metaKey) return;
-      if (keyOf(e) === " " && snip) { e.preventDefault(); reply("next"); }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey) return;
+      if (keyOf(e) === " " && snip) { e.preventDefault(); if (live) reply("next"); else back(); }
+      if (keyOf(e) === "ArrowLeft" && shownN !== null) { e.preventDefault(); go(shownN - 1); }
+      if (keyOf(e) === "ArrowRight" && shownN !== null) { e.preventDefault(); go(shownN + 1); }
       if (/^[1-9]$/.test(keyOf(e)) && snip?.findings?.[Number(keyOf(e)) - 1]) { e.preventDefault(); note(snip.findings[Number(keyOf(e)) - 1].id); }
     };
     window.addEventListener("keydown", onKey);
@@ -38,9 +53,13 @@ export function ReviewView({ s }: { s: SessionState }) {
       {o && <ReviewOverview o={o} started={r.current !== null || !!r.publish} onReply={reply} raised={r.noted}
         onRaise={(id, text) => { if (r.noted.includes(id)) return; void api.log("ui.review_noted", { finding_id: id }, s.id, `review:${id}`); reply(`Add this to the review as a comment: ${text}`); }} />}
 
+      {total > 0 && Object.keys(r.snippets).length > 0 && (
+        <SnippetPager total={total} reached={Object.keys(r.snippets).map(Number)} shown={snip?.n ?? null} current={r.current} source={s.id} onGo={go} />
+      )}
+
       {snip && (
         <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <ProgressTrack segs={Array.from({ length: Math.max(total, snip.n) }, (_, i) => (i + 1 < snip.n ? "done" : i + 1 === snip.n ? "current" : "todo"))} left={`Snippet ${snip.n} of ${total || "?"}${snip.area ? ` · ${snip.area}` : ""}`} right={`${noted.length} noted`} source={s.id} />
+          <ProgressTrack segs={Array.from({ length: total }, (_, i) => (i + 1 === snip.n ? "current" : r.snippets[i + 1] ? "done" : "todo"))} left={`Snippet ${snip.n} of ${total || "?"}${snip.area ? ` · ${snip.area}` : ""}${live ? "" : " · looking back"}`} right={`${noted.length} noted`} source={s.id} />
           <article style={{ display: "flex", flexDirection: "column", gap: 12, padding: "16px 18px", background: "var(--mr-tile)" }}>
             <strong style={{ fontSize: 18 }}>{snip.title}</strong>
             {/* Answer first (MR-58): what's wrong, then why, then the code. */}
@@ -59,7 +78,12 @@ export function ReviewView({ s }: { s: SessionState }) {
             {snip.file && <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{snip.file}</span>}
             {snip.code && <Diff code={snip.code} />}
           </article>
-          <div className="mr-row"><Key k="space" tone="primary" onClick={() => reply("next")}>{snip.n >= total ? "Finish walkthrough" : "Next snippet"}</Key><span className="mr-dim">Only findings you note get published · ask anything below</span></div>
+          <div className="mr-row">
+            {live
+              ? <Key k="space" tone="primary" onClick={() => reply("next")}>{snip.n >= total ? "Finish walkthrough" : "Next snippet"}</Key>
+              : <Key k="space" tone="primary" onClick={back}>{r.current !== null ? `Back to snippet ${r.current}` : "Back to your review"}</Key>}
+            <span className="mr-dim">← → switch snippets · only findings you note get published · ask anything below</span>
+          </div>
         </section>
       )}
 
@@ -76,6 +100,24 @@ export function ReviewView({ s }: { s: SessionState }) {
       )}
       {!o && !snip && <span className="mr-dim">The review is starting. The overview appears here when it's ready.</span>}
     </div>
+  );
+}
+
+// Every snippet as a numbered stop: reached ones open from the log, unreached ones ask Claude to jump.
+export function SnippetPager({ total, reached, shown, current, source, onGo }: { total: number; reached: number[]; shown: number | null; current: number | null; source: string; onGo: (n: number) => void }) {
+  return (
+    <nav className="mr-row" data-mr="SnippetPager" data-mr-source={source} aria-label="Snippets" style={{ gap: "var(--mr-gap)", flexWrap: "wrap" }}>
+      {Array.from({ length: total }, (_, i) => i + 1).map((n) => {
+        const seen = reached.includes(n);
+        return (
+          <button key={n} type="button" onClick={() => onGo(n)} aria-current={n === shown || undefined}
+            title={n === current ? "Claude is here" : seen ? "Look back at this snippet" : "Ask Claude to jump here"}
+            className="mr-mono" style={{ minWidth: 32, padding: "4px 8px", border: 0, font: "inherit", cursor: "pointer", color: seen ? "var(--mr-ink)" : "var(--mr-ink-3)", background: n === shown ? "var(--mr-tile)" : "var(--mr-well)", outline: n === shown ? "2px solid var(--mr-selected)" : undefined, outlineOffset: -2 }}>
+            {n}{n === current ? " ·" : ""}
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 

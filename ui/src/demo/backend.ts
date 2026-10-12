@@ -67,7 +67,8 @@ function diagramFor(text: string) {
 function scripted(sid: string, text: string): boolean {
   const done = (r: string) => later(700, () => sdk(sid, { type: "result", is_error: false, result: r, total_cost_usd: 0.04 }));
   if (sid === "R") {
-    const shown = events.filter((e) => e.session_id === "R" && e.kind === "flow.review_snippet").length;
+    // Claude carries on from the snippet it showed last, so a jump moves "next" too.
+    const shown = Number([...events].reverse().find((e) => e.session_id === "R" && e.kind === "flow.review_snippet")?.payload.n ?? 0);
     if (text === "next" && shown < REVIEW_SNIPPETS.length) { later(500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[shown])); done("snippet"); return true; }
     if (text === "next") {
       const noted = events.filter((e) => e.session_id === "R" && e.kind === "ui.review_noted").map((e) => String(e.payload.finding_id));
@@ -75,6 +76,8 @@ function scripted(sid: string, text: string): boolean {
       later(500, () => record("R", "flow.review_publish_ready", { comments: all.filter((f) => noted.includes(f.id)).map((f) => ({ severity: f.severity, at: f.at, text: f.text })), verdict: noted.length ? "Request changes" : "Approve", dropped: 0 }));
       done("ready"); return true;
     }
+    const jump = /^snippet (\d+)$/.exec(text);
+    if (jump && REVIEW_SNIPPETS[Number(jump[1]) - 1]) { later(500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[Number(jump[1]) - 1])); done("snippet"); return true; }
     if (text === "publish") { later(500, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Published the review on PR #482." }] } })); done("published"); return true; }
     if (text.startsWith("note ")) { done("noted"); return true; }
     if (text === "ok") { later(1500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[0])); later(1700, () => sdk(sid, { type: "result", is_error: false, result: "snippet", total_cost_usd: 0.04 })); return true; }
