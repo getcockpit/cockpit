@@ -9,6 +9,7 @@ mod instances;
 mod folders;
 mod layer3;
 mod mentions;
+mod files;
 mod layer2;
 mod notify;
 mod personal;
@@ -111,6 +112,8 @@ pub fn run() {
             gh::pr_repo,
             folders::recent_folders,
             mentions::session_paths,
+            files::files_exist,
+            files::file_reveal,
             layer2::layer2_status,
             layer2::layer2_save_credentials,
             personal::personal_apply,
