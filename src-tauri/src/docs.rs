@@ -43,6 +43,9 @@ pub struct Doc {
     pub id: String,
     pub title: String,
     pub session_id: Option<String>,
+    /// "brief" for a catch-up brief (MR-116); empty for a plan doc.
+    #[serde(default)]
+    pub kind: String,
     pub version: i64,
     pub blocks: BTreeMap<String, Block>,
     /// Notes the user left that haven't been sent to Claude yet: (block_id, text).
@@ -81,6 +84,7 @@ fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
                 id: doc_id,
                 title: p["title"].as_str().unwrap_or("Untitled").to_owned(),
                 session_id: ev.session_id.clone(),
+                kind: p["kind"].as_str().unwrap_or_default().to_owned(),
                 version: 1,
                 ..Default::default()
             });
@@ -136,7 +140,12 @@ fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
             if let Some(b) = doc.blocks.get_mut(block_id) {
                 b.decision = Some(choice.clone());
                 b.status = "decided".into();
-                doc.pending_changes.push(format!("Decided \"{}\": {}", b.takeaway, choice));
+                // A risk marked fine isn't a correction; one marked wrong is (catch-up brief, MR-116).
+                match (b.section.as_str(), choice.as_str()) {
+                    ("risk", "Fine") => {}
+                    ("risk", "Wrong") => doc.pending_changes.push(format!("Confirmed this looks wrong: \"{}\" ({})", b.takeaway, b.key)),
+                    _ => doc.pending_changes.push(format!("Decided \"{}\": {}", b.takeaway, choice)),
+                }
             }
         }
         "ui.doc_edit" => {
