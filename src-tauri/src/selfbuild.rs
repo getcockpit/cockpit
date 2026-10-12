@@ -138,13 +138,27 @@ pub fn selfbuild_list(app: AppHandle) -> Vec<Build> {
 }
 
 /// The supervisor: waits for this app to quit, starts the new build, and falls back to the
-/// previous binary if the new one hasn't written its health marker in time.
+/// previous binary if the new one hasn't written its health marker in time. Given an app bundle,
+/// it installs the build into it first (so the installed app is the latest build: Dock, Finder,
+/// Spotlight) and falls back by restoring the bundle it backed up.
 pub fn supervisor_script() -> &'static str {
     r#"#!/bin/bash
-# args: <old-pid> <new-bin> <new-build-id> <fallback-bin> <data-dir> <timeout-s>
-old="$1"; new="$2"; id="$3"; prev="$4"; data="$5"; wait_s="${6:-90}"
+# args: <old-pid> <new-bin> <new-build-id> <fallback-bin> <data-dir> <timeout-s> [<app-bundle>]
+old="$1"; new="$2"; id="$3"; prev="$4"; data="$5"; wait_s="${6:-90}"; app="${7:-}"
 while kill -0 "$old" 2>/dev/null; do sleep 0.2; done
 rm -f "$data/healthy-$id"
+backup="$data/builds/installed-prev.app"
+if [ -n "$app" ] && rm -rf "$backup" && ditto "$app" "$backup"; then
+  # rm before cp: a signed binary rewritten in place gets killed by the kernel's signature cache.
+  for b in Cockpit mr-sidecar mr-dictate; do
+    rm -f "$app/Contents/MacOS/$b" && cp "$(dirname "$new")/$b" "$app/Contents/MacOS/$b"
+  done
+  # Re-seal the bundle (ad hoc, no hardened runtime: the sidecar needs JIT).
+  codesign --force --deep --sign - "$app" >/dev/null 2>&1
+  new="$app/Contents/MacOS/Cockpit"
+else
+  app=""
+fi
 MR_BUILD_ID="$id" MR_AUTO_RESUME=1 MR_DATA_DIR="$data" "$new" >"$data/builds/$id/run.log" 2>&1 &
 pid=$!
 for _ in $(seq 1 $((wait_s * 5))); do
@@ -154,8 +168,24 @@ for _ in $(seq 1 $((wait_s * 5))); do
 done
 kill "$pid" 2>/dev/null
 echo "$(date) build $id failed its health check; falling back" >>"$data/builds/fallbacks.log"
+[ -n "$app" ] && rm -rf "$app" && ditto "$backup" "$app"
 MR_FALLBACK=1 MR_AUTO_RESUME=1 MR_DATA_DIR="$data" "$prev" >/dev/null 2>&1 &
 "#
+}
+
+/// The installed app a relaunch updates in place: the .app the running binary is in or, for a
+/// stand-alone self-build (an earlier relaunch before builds were installed), `/Applications/Cockpit.app`.
+/// None for the dev loop's slots and in self-tests, which run their binaries as they are.
+fn install_target(me: &Path, builds: &Path, installed: &Path) -> Option<PathBuf> {
+    if std::env::var("MR_SELFTEST").is_ok_and(|v| !v.is_empty()) {
+        return None;
+    }
+    let bundle = me.parent().filter(|d| d.ends_with("Contents/MacOS")).and_then(Path::parent).and_then(Path::parent);
+    match bundle {
+        Some(b) if b.extension().is_some_and(|e| e == "app") => Some(b.to_owned()),
+        _ if me.starts_with(builds) && installed.join("Contents/MacOS/Cockpit").exists() => Some(installed.to_owned()),
+        _ => None,
+    }
 }
 
 /// Relaunches into a stored build. The current binary is the fallback.
@@ -169,10 +199,13 @@ pub fn selfbuild_relaunch(app: AppHandle, build_id: String) -> Result<(), String
     let script = data.join("relaunch.sh");
     std::fs::write(&script, supervisor_script()).map_err(|e| e.to_string())?;
     let me = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| e.to_string())?;
-    record(&app, "selfbuild.relaunch", serde_json::json!({ "build_id": build_id, "fallback": me }));
+    let builds = builds_dir(&app).canonicalize().unwrap_or_default();
+    let install = install_target(&me, &builds, Path::new("/Applications/Cockpit.app"));
+    record(&app, "selfbuild.relaunch", serde_json::json!({ "build_id": build_id, "fallback": me, "install": install }));
+    let install = install.map(|p| p.display().to_string()).unwrap_or_default();
     Command::new("bash")
         .arg(&script)
-        .args([std::process::id().to_string(), bin.display().to_string(), build_id, me.display().to_string(), data.display().to_string(), "90".into()])
+        .args([std::process::id().to_string(), bin.display().to_string(), build_id, me.display().to_string(), data.display().to_string(), "90".into(), install])
         .spawn()
         .map_err(|e| e.to_string())?;
     app.exit(0);
@@ -237,6 +270,11 @@ pub fn handle_update(app: &AppHandle, args: &serde_json::Value) -> (Vec<(String,
 pub fn on_ready(app: &AppHandle) {
     if let Ok(id) = std::env::var("MR_BUILD_ID") {
         let _ = std::fs::write(data_dir(app).join(format!("healthy-{id}")), "ok");
+        // This build is proven, so older ones can go (each is ~150 MB).
+        let pruned = prune(&data_dir(app), &id, KEEP_BUILDS);
+        if !pruned.is_empty() {
+            record(app, "selfbuild.pruned", serde_json::json!({ "build_ids": pruned, "kept": KEEP_BUILDS }));
+        }
     }
     // The dev loop's crash guard (MR-70): ready means this slot starts fine and is safe to fall back to.
     if let Ok(f) = std::env::var("MR_HEALTH_FILE") {
@@ -247,6 +285,27 @@ pub fn on_ready(app: &AppHandle) {
     if std::env::var("MR_AUTO_RESUME").is_ok_and(|v| v == "1") {
         resume_interrupted(app);
     }
+}
+
+/// Builds kept for rollback in Builds (the running one is always kept on top).
+const KEEP_BUILDS: usize = 5;
+
+/// Deletes all but the newest `keep` stored builds (ids are ULIDs, so newest sorts last), never
+/// `current`, plus their health markers. Other entries (installed-prev.app, fallbacks.log) stay.
+fn prune(data: &Path, current: &str, keep: usize) -> Vec<String> {
+    let builds = data.join("builds");
+    let mut ids: Vec<String> = std::fs::read_dir(&builds)
+        .map(|rd| rd.flatten().filter(|e| e.path().join("build.json").exists()).map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+        .unwrap_or_default();
+    ids.sort();
+    ids.retain(|id| id != current);
+    let old = ids.len().saturating_sub(keep);
+    ids.truncate(old);
+    ids.retain(|id| std::fs::remove_dir_all(builds.join(id)).is_ok());
+    for id in &ids {
+        let _ = std::fs::remove_file(data.join(format!("healthy-{id}")));
+    }
+    ids
 }
 
 fn resume_interrupted(app: &AppHandle) {
@@ -325,6 +384,79 @@ mod tests {
         }
         assert!(dir.join("fallback-ran").exists(), "fallback build should have been launched");
         assert!(std::fs::read_to_string(dir.join("builds/fallbacks.log")).unwrap().contains("B1"));
+    }
+
+    #[test]
+    fn relaunch_installs_into_the_app_bundle() {
+        let dir = std::env::temp_dir().join(format!("mr-it-{}", ulid::Ulid::new()));
+        let (builds, installed) = (dir.join("builds"), dir.join("Cockpit.app"));
+        let in_bundle = Path::new("/Applications/Cockpit.app/Contents/MacOS/Cockpit");
+        assert_eq!(install_target(in_bundle, &builds, &installed), Some(PathBuf::from("/Applications/Cockpit.app")));
+        // A stand-alone self-build goes into the installed app only if there is one.
+        let standalone = builds.join("B1/Cockpit");
+        assert_eq!(install_target(&standalone, &builds, &installed), None);
+        std::fs::create_dir_all(installed.join("Contents/MacOS")).unwrap();
+        std::fs::write(installed.join("Contents/MacOS/Cockpit"), "").unwrap();
+        assert_eq!(install_target(&standalone, &builds, &installed), Some(installed.clone()));
+        // The dev loop's slots run as they are.
+        assert_eq!(install_target(Path::new("/r/src-tauri/target/slot-a/debug/Cockpit"), &builds, &installed), None);
+    }
+
+    #[test]
+    fn supervisor_installs_the_build_and_restores_the_app_on_fallback() {
+        let dir = std::env::temp_dir().join(format!("mr-sb-{}", ulid::Ulid::new()));
+        let app = dir.join("Cockpit.app");
+        std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
+        std::fs::create_dir_all(dir.join("builds/B3")).unwrap();
+        let script = dir.join("relaunch.sh");
+        std::fs::write(&script, supervisor_script()).unwrap();
+        let sh = |p: PathBuf, body: &str| {
+            std::fs::write(&p, format!("#!/bin/bash\n{body}\n")).unwrap();
+            Command::new("chmod").arg("+x").arg(&p).status().unwrap();
+        };
+        sh(app.join("Contents/MacOS/Cockpit"), "");
+        sh(dir.join("builds/B3/Cockpit"), &format!("touch {}/healthy-$MR_BUILD_ID; sleep 2", dir.display()));
+        for b in ["mr-sidecar", "mr-dictate"] {
+            sh(app.join("Contents/MacOS").join(b), "");
+            sh(dir.join("builds/B3").join(b), "");
+        }
+        let new = dir.join("builds/B3/Cockpit");
+        let prev = app.join("Contents/MacOS/Cockpit");
+        let run = |timeout: &str| {
+            let st = Command::new("bash").arg(&script).args(["999999", new.to_str().unwrap(), "B3", prev.to_str().unwrap(), dir.to_str().unwrap(), timeout, app.to_str().unwrap()]).status().unwrap();
+            assert!(st.success());
+        };
+        run("5");
+        let installed = std::fs::read_to_string(app.join("Contents/MacOS/Cockpit")).unwrap();
+        assert!(installed.contains("healthy-"), "the build should now be the app's binary");
+        assert!(dir.join("builds/installed-prev.app/Contents/MacOS/Cockpit").exists());
+
+        // A build that never gets healthy: the app is restored from its backup.
+        sh(dir.join("builds/B3/Cockpit"), "exit 1");
+        std::fs::remove_file(dir.join("healthy-B3")).ok();
+        run("3");
+        // The backup held the healthy build from the first run, so that's what comes back.
+        assert!(std::fs::read_to_string(app.join("Contents/MacOS/Cockpit")).unwrap().contains("healthy-"));
+    }
+
+    #[test]
+    fn prune_keeps_the_newest_builds_and_the_running_one() {
+        let dir = std::env::temp_dir().join(format!("mr-pr-{}", ulid::Ulid::new()));
+        for id in ["B1", "B2", "B3", "B4", "B5"] {
+            std::fs::create_dir_all(dir.join("builds").join(id)).unwrap();
+            std::fs::write(dir.join("builds").join(id).join("build.json"), "{}").unwrap();
+            std::fs::write(dir.join(format!("healthy-{id}")), "ok").unwrap();
+        }
+        std::fs::create_dir_all(dir.join("builds/installed-prev.app")).unwrap();
+        std::fs::write(dir.join("builds/fallbacks.log"), "").unwrap();
+        // Running B1 (an old build picked in Builds): it stays, with the two newest.
+        assert_eq!(prune(&dir, "B1", 2), vec!["B2", "B3"]);
+        for (id, kept) in [("B1", true), ("B2", false), ("B3", false), ("B4", true), ("B5", true)] {
+            assert_eq!(dir.join("builds").join(id).exists(), kept, "{id}");
+            assert_eq!(dir.join(format!("healthy-{id}")).exists(), kept, "{id}");
+        }
+        assert!(dir.join("builds/installed-prev.app").exists() && dir.join("builds/fallbacks.log").exists());
+        assert!(prune(&dir, "B5", 2).is_empty());
     }
 
     #[test]
