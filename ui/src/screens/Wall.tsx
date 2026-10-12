@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { ContextMeter } from "../components/ContextMeter";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LiveTrack, planSegs } from "../components/Now";
@@ -154,7 +155,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
         {sessions.length > 0 && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
           <div className="mr-grid">
-            {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
+            {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} compactWindow={state.compactWindow} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
             <button type="button" className="mr-tile" onClick={() => onStart()} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
               <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>⌘K</kbd>Start something</span>
             </button>
@@ -232,7 +233,7 @@ export function sideThread(s: SessionState): Promise<string> {
   return api.start(s.cwd, `Side thread about the session "${s.title}" (working in ${s.cwd}). Without changing anything, look at what it has done so far (git diff, files) and report briefly: risks, anything it may have missed, and simpler alternatives.`, "blank", false);
 }
 
-function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; onOpen: (id: string) => void; onDiscover: () => void }) {
+function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; compactWindow: number | null; onOpen: (id: string) => void; onDiscover: () => void }) {
   return (
     <button type="button" className="mr-tile" data-mr="Tile" data-mr-source={s.id} data-mr-layer="code" data-s={tile.state} onClick={pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })} aria-label={`Open ${s.title}`}>
       <div className="mr-flag" />
@@ -241,7 +242,10 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
           <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{sessionTitle(s)}</strong>
           <StateMark s={tile.state} />
         </div>
-        <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
+        <div className="mr-row" style={{ gap: 8 }}>
+          <span className="mr-mono mr-dim mr-ellipsis mr-grow" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
+          <ContextMeter s={s} compactWindow={compactWindow} running={false} slim />
+        </div>
         {s.status === "working" || s.status === "starting"
           ? <LiveTrack s={s} compact />
           : s.todos.length > 0
