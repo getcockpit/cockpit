@@ -109,6 +109,7 @@ export type SessionState = {
   activity: number[]; // events per minute, last 30 minutes (sparkline)
   spans: Span[]; // status history, newest last (Timeline, MR-32)
   costUsd: number;
+  context: { used: number | null; window: number | null }; // tokens in context after the latest main-thread reply (null: unknown since a compact); window: the model's, from Claude Code's result
   error: string | null;
   review: ReviewFlow | null;
   address: AddressFlow | null;
