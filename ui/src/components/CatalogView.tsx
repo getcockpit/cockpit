@@ -128,7 +128,7 @@ function ChangeRow({ n, rail }: { n: ChangeNode; rail?: "top" | "mid" | "bottom"
         {rail && rail !== "only" && <span aria-hidden style={{ position: "absolute", left: 8, width: 2, background: "var(--mr-well)", top: rail === "top" ? "50%" : 0, bottom: rail === "bottom" ? "50%" : 0 }} />}
         <b className="mr-mono" title={m.word} aria-label={m.word} style={{ position: "relative", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, background: "var(--mr-well)", color: m.color }}>{markOf(n) === "-" ? "−" : markOf(n)}</b>
       </span>
-      <span style={{ flex: 1, minWidth: 0, alignSelf: "center", fontSize: 13, lineHeight: 1.35, overflowWrap: "anywhere" }}>{inline(changeLabel(n.label))}</span>
+      <span style={{ flex: "0 1 auto", minWidth: 0, alignSelf: "center", fontSize: 13, lineHeight: 1.35, overflowWrap: "anywhere" }}>{inline(changeLabel(n.label))}</span>
       {n.finding && <span style={{ flex: "none", alignSelf: "center", fontSize: 11, fontWeight: 700, padding: "1px 6px", background: "var(--mr-needs)", color: "var(--mr-ink)" }}>{n.finding}</span>}
     </div>
   );
