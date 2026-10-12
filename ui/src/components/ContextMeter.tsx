@@ -5,12 +5,12 @@ import type { SessionState } from "../state/types";
 const k = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
 
 // How much of the context a session has used, against where it auto-compacts, so you can
-// compact on your own terms before it does. Amber from 80%; then a click sends /compact.
+// compact on your own terms before it does. Amber from 70%; then a click sends /compact.
 // slim: the Wall tile's read-only version (the tile is itself a button).
 export function ContextMeter({ s, compactWindow, running, slim = false }: { s: SessionState; compactWindow: number | null; running: boolean; slim?: boolean }) {
   const fill = contextFill(s, compactWindow);
   if (!fill) return null;
-  const high = fill.share >= 0.8;
+  const high = fill.share >= 0.7;
   const pct = Math.min(100, Math.round(fill.share * 100));
   const canCompact = high && !running && !s.fromDeleted && !slim;
   const title = `Context: ${fill.used.toLocaleString()} of ${fill.limit.toLocaleString()} tokens before auto-compact`;
