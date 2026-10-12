@@ -48,7 +48,8 @@ pub fn open_command_with(
     let mut cmd = CommandBuilder::new(&argv[0]);
     cmd.args(&argv[1..]);
     cmd.cwd(cwd);
-    for (k, v) in std::env::vars() {
+    cmd.env_clear();
+    for (k, v) in crate::selfbuild::child_env() {
         cmd.env(k, v);
     }
     for (k, v) in env {
