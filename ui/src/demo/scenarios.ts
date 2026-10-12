@@ -35,7 +35,7 @@ const busy: E[] = [
   { session: "A", kind: "sidecar.permission_request", payload: { request_id: "pA", tool: "Bash", input: { command: "git push --force origin mr/fix-login", description: "Force-push the rebased branch" }, suggestions: null, decision_reason: null }, at: 2300 },
   // E: asks a structured question
   ...start("E", "Add rate limiting to the public API", { cwd: "/Users/me/code/shop-worktrees/rate-limit", repo: "/Users/me/code/shop", branch: "mr/rate-limit" }, 30),
-  say("E", "I looked at the gateway and the middleware. Two ways to do this.", 200),
+  say("E", "I looked at the gateway and the middleware. Two ways to do this.\n\n| Option | Limits | Needs | Effort |\n|:--|:--|:--|--:|\n| API gateway | per IP | nothing new | about 30 min |\n| App middleware | per user | Redis, `RateLimit` config | about 3 h |", 200),
   { session: "E", kind: "sidecar.permission_request", payload: { request_id: "pE", tool: "AskUserQuestion", input: { questions: [{ question: "Where should the limiter live?", header: "Limiter", multiSelect: false, options: [{ label: "API gateway", description: "One place, no code change, coarse per-IP limits" }, { label: "App middleware", description: "Per-user limits, needs Redis" }] }, { question: "What should a limited client get back?", header: "Response", multiSelect: false, options: [{ label: "429 + Retry-After", description: "" }, { label: "Queue and slow down", description: "" }] }] }, suggestions: null, decision_reason: null }, at: 2320 },
   // C: running, almost done
   ...start("C", "Bump dependencies and fix breakages", { cwd: "/Users/me/code/billing-worktrees/deps", repo: "/Users/me/code/billing", branch: "mr/deps" }, 40),
