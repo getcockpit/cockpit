@@ -17,7 +17,11 @@ export type Doc = {
   id: string; title: string; session_id: string | null; version: number;
   kind?: string; // "brief": a catch-up brief (MR-116)
   blocks: Record<string, Block>; pending_notes: [string, string][]; pending_changes: string[];
+  build_sessions?: string[]; // sessions started from it with Build it, oldest first (MR-118)
 };
+
+/** The docs a session shows in Focus: the ones it wrote and the ones it builds (MR-118). */
+export const docsOf = (docs: Doc[], sessionId: string) => docs.filter((d) => d.session_id === sessionId || d.build_sessions?.includes(sessionId));
 
 export const SECTIONS = ["goal", "scope", "success", "design", "risk", "question", "components", "verification", "log"] as const;
 export const SECTION_LABEL: Record<string, string> = {
@@ -51,6 +55,7 @@ export const docApi = {
   edit: (d: Doc, blockId: string, field: "takeaway" | "key" | "body", value: string) => invoke("event_append", { sessionId: d.session_id, kind: "ui.doc_edit", payload: { doc_id: d.id, block_id: blockId, field, value }, anchor: `doc:${d.id}:${blockId}` }),
   feedback: (d: Doc, regenerate: boolean) => invoke<string>("doc_feedback", { docId: d.id, regenerate }),
   archive: (d: Doc) => invoke("doc_archive", { docId: d.id }),
+  buildStarted: (d: Doc, sessionId: string) => invoke("doc_build_started", { docId: d.id, sessionId }),
   // Catch me up (MR-116): the core creates the brief doc and has it written; Continue builds the corrections.
   brief: (session: string) => invoke<{ doc_id: string; via: "session" | "cockpit" }>("brief_start", { session }),
   briefContinue: (d: Doc) => invoke<string | null>("brief_continue", { docId: d.id }),
@@ -64,6 +69,14 @@ export async function continueBrief(d: Doc, session: SessionState | null | undef
   const msg = await docApi.briefContinue(d);
   if (msg && d.session_id) await api.send(session?.id ?? d.session_id, msg);
   return !!msg;
+}
+
+/** Build it: starts a session that implements the doc, in the plan session's folder, and links it
+ *  to the doc so each can open the other (MR-118). Returns the session id. */
+export async function buildDoc(d: Doc, session: SessionState | null | undefined): Promise<string> {
+  const id = await api.start(session?.cwd ?? "~/", `Implement the plan in working doc "${d.title}" (doc_id ${d.id}). First read it with the mr doc_read tool and follow its decisions. If you learn something that changes the plan, update the doc's blocks with doc_set_block and add a [log] block.`, "blank");
+  await docApi.buildStarted(d, id);
+  return id;
 }
 
 /** Sends the user's notes, edits and decisions on a doc to Claude: to its plan session if it's

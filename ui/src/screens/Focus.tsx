@@ -165,7 +165,7 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone, els
             <button key={d.id} type="button" className="mr-qrow" onClick={() => onOpenDoc(d.id)} style={{ border: 0, padding: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
               <div className="mr-flag" style={{ background: "var(--mr-selected)" }} />
               <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center" }}>
-                <div className="mr-grow" style={{ display: "flex", flexDirection: "column" }}><span className="mr-dim">Working doc · v{d.version} · {Object.keys(d.blocks).length} blocks</span><strong style={{ fontSize: 17 }}>{d.title}</strong></div>
+                <div className="mr-grow" style={{ display: "flex", flexDirection: "column" }}><span className="mr-dim">{d.session_id === s.id ? "Working doc" : "Building from"} · v{d.version} · {Object.keys(d.blocks).length} blocks</span><strong style={{ fontSize: 17 }}>{d.title}</strong></div>
                 <span className="mr-key">Open map ↵</span>
               </div>
             </button>
