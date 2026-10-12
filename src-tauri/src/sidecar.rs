@@ -50,7 +50,7 @@ pub fn busy(state: &Sidecar) -> usize {
 }
 
 pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut rx, child) = app.shell().sidecar("mr-sidecar")?.spawn()?;
+    let (mut rx, child) = app.shell().sidecar("mr-sidecar")?.env_clear().envs(crate::selfbuild::child_env()).spawn()?;
     *app.state::<Sidecar>().child.lock().unwrap() = Some(child);
 
     let handle = app.clone();
