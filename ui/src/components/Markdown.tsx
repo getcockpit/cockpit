@@ -100,7 +100,7 @@ export function inline(t: string): ReactNode[] {
   return t.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g).map((part, i, parts) =>
     part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong>
     : part.length > 2 && part.startsWith("*") && part.endsWith("*") ? <em key={i}>{part.slice(1, -1)}</em>
-    : part.startsWith("`") && part.endsWith("`") ? <Code key={i} code={part.slice(1, -1)} before={parts[i - 1] ?? ""} />
+    : part.startsWith("`") && part.endsWith("`") ? <Code key={i} code={part.slice(1, -1)} before={parts.slice(0, i).join("")} />
     : part,
   );
 }
