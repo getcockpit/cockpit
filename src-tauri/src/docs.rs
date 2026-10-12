@@ -52,6 +52,9 @@ pub struct Doc {
     pub pending_notes: Vec<(String, String)>,
     /// User edits and decisions not yet sent to Claude.
     pub pending_changes: Vec<String>,
+    /// Sessions started from it with Build it, oldest first (MR-118).
+    #[serde(default)]
+    pub build_sessions: Vec<String>,
 }
 
 #[derive(Default)]
@@ -161,6 +164,13 @@ fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
                     _ => return,
                 };
                 doc.pending_changes.push(format!("Edited the {field} of block {block_id} from \"{before}\" to \"{value}\""));
+            }
+        }
+        // Build it started a session from this doc; it's the event's session (MR-118).
+        "ui.doc_build_started" => {
+            let (Some(doc), Some(sid)) = (docs.get_mut(&doc_id), ev.session_id.as_ref()) else { return };
+            if !doc.build_sessions.contains(sid) {
+                doc.build_sessions.push(sid.clone());
             }
         }
         // Deleting a doc hides it: the log keeps its events, the fold drops it.
@@ -392,6 +402,22 @@ mod tests {
         assert!(run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "section": "goal", "takeaway": "A" })).1);
         assert!(docs.get(&id).is_none());
     }
+
+    #[test]
+    fn build_sessions_link_the_doc_to_what_builds_it() {
+        let docs = Docs::default();
+        let mut n = 0;
+        let (text, _) = run(&docs, &mut n, "doc_create", json!({ "title": "T" }));
+        let id = text.split_whitespace().nth(2).unwrap().to_owned();
+        let build = |n: u32, sid: Option<&str>| Event { session_id: sid.map(str::to_owned), ..ev(n, "ui.doc_build_started", json!({ "doc_id": id })) };
+        docs.apply(&build(10, Some("b1")));
+        docs.apply(&build(11, Some("b2")));
+        docs.apply(&build(12, Some("b1")));
+        docs.apply(&build(13, None));
+        let doc = docs.get(&id).unwrap();
+        assert_eq!(doc.build_sessions, vec!["b1", "b2"]);
+        assert_eq!(doc.session_id.as_deref(), Some("s1"));
+    }
 }
 
 #[tauri::command]
@@ -404,6 +430,14 @@ pub fn docs_list(docs: tauri::State<'_, Docs>) -> Vec<Doc> {
 pub fn doc_archive(app: tauri::AppHandle, docs: tauri::State<'_, Docs>, doc_id: String) -> Result<(), String> {
     let doc = docs.get(&doc_id).ok_or("no such doc")?;
     crate::eventlog::record(&app, doc.session_id.as_deref(), "ui.doc_archived", &json!({ "doc_id": doc.id, "title": doc.title }), Some(&format!("doc:{}", doc.id)));
+    Ok(())
+}
+
+/// Links a session the user started with Build it to the doc it builds (MR-118).
+#[tauri::command]
+pub fn doc_build_started(app: tauri::AppHandle, docs: tauri::State<'_, Docs>, doc_id: String, session_id: String) -> Result<(), String> {
+    let doc = docs.get(&doc_id).ok_or("no such doc")?;
+    crate::eventlog::record(&app, Some(&session_id), "ui.doc_build_started", &json!({ "doc_id": doc.id, "title": doc.title }), Some(&format!("doc:{}", doc.id)));
     Ok(())
 }
 
