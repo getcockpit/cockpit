@@ -26,7 +26,7 @@ pub fn instructions(doc_id: &str, can_check: bool) -> String {
 Write it as a pyramid: context, then the problems (worst first), the options for each, the one you recommend, and the details last, so each level can be skipped. Blocks, each with a short takeaway, a key detail and a catalog view:\n\
 - goal (block_id where): the context — the original ask (with later corrections) and the current step, in one line. View: stats or progress.\n\
 - risk (one block each, block_id risk_<n>, worst first): something that looks wrong. Run all five checks, broken or fake-done first, and add a block for each that fires: \"done\" with no diff, no test run, or a failing build or last test run; drift from the original ask, later corrections, the plan steps or linked docs; contradicts a decision (docs/DECISIONS.md, CLAUDE.md rules); the same error in 3+ turns or plan steps marked done with no change; a question the user never answered that was assumed. Name the baseline each one breaks. View: risks.\n\
-- question (one block each, block_id q_<n>): the ways forward for a risk, or anything still waiting on the user. Give data.options (2-3) and mark the one you recommend, with a one-line why. View: compare with recommended, or decision.\n\
+- question (one block each, block_id q_<n>): the ways forward for a risk, or anything still waiting on the user. Give data.options (2-3), each a concrete action you will carry out if the user picks it (picking one is an order, applied on Continue), and mark the one you recommend, with a one-line why. View: compare with recommended, or decision.\n\
 - design (block_id next): the next step you were about to take. View: steps.\n\
 - log (block_id done): the details — what's done: commits, files changed, decisions made. View: takeaway.\n\
 Every block cites its evidence in the body: a commit, file:line, an event id like [01J…] or a short quote. Say plainly what you couldn't verify. If nothing looks wrong, add one risk block saying so. Don't change code and don't carry on with the task: stop once the brief is written."
@@ -219,9 +219,10 @@ pub fn brief_start(app: AppHandle, session: String) -> Result<Value, String> {
     Ok(json!({ "doc_id": doc_id, "via": via }))
 }
 
-/// Continue: your corrections on the brief as one message for the session, or None when you only
-/// marked things fine (decided: close silently, no extra turn). Clears the doc's pending input
-/// either way; the UI delivers the message.
+/// Continue: your decisions and corrections on the brief as one message for the session, or None
+/// when you only marked things fine (decided: close silently, no extra turn). Decisions are orders
+/// the session carries out before it resumes (I90). Clears the doc's pending input either way; the
+/// UI delivers the message.
 #[tauri::command]
 pub fn brief_continue(app: AppHandle, docs: tauri::State<'_, crate::docs::Docs>, doc_id: String) -> Result<Option<String>, String> {
     let doc = docs.get(&doc_id).ok_or("no such doc")?;
@@ -235,19 +236,34 @@ pub fn brief_continue(app: AppHandle, docs: tauri::State<'_, crate::docs::Docs>,
     Ok(msg)
 }
 
+/// A pending change that is a decision on a question (docs.rs writes them as `Decided "…": …`).
+pub fn is_decision(change: &str) -> bool {
+    change.starts_with("Decided ")
+}
+
 pub fn continue_message(doc: &crate::docs::Doc) -> Option<String> {
     if doc.pending_changes.is_empty() && doc.pending_notes.is_empty() {
         return None;
     }
-    let mut msg = format!("The user caught up on this session with the brief \"{}\" ({}). Their corrections:\n", doc.title, doc.id);
-    for c in &doc.pending_changes {
-        msg.push_str(&format!("- {c}\n"));
+    let (decisions, corrections): (Vec<&String>, Vec<&String>) = doc.pending_changes.iter().partition(|c| is_decision(c));
+    let mut msg = format!("The user caught up on this session with the brief \"{}\" ({}).\n", doc.title, doc.id);
+    if !decisions.is_empty() {
+        msg.push_str("\nTheir decisions. Carry out each one now, without asking again (doc_read the brief for what each option means):\n");
+        for c in &decisions {
+            msg.push_str(&format!("- {c}\n"));
+        }
     }
-    for (block, text) in &doc.pending_notes {
-        let what = doc.blocks.get(block).map(|b| b.takeaway.as_str()).unwrap_or(block);
-        msg.push_str(&format!("- on \"{what}\": {text}\n"));
+    if !corrections.is_empty() || !doc.pending_notes.is_empty() {
+        msg.push_str("\nTheir corrections:\n");
+        for c in &corrections {
+            msg.push_str(&format!("- {c}\n"));
+        }
+        for (block, text) in &doc.pending_notes {
+            let what = doc.blocks.get(block).map(|b| b.takeaway.as_str()).unwrap_or(block);
+            msg.push_str(&format!("- on \"{what}\": {text}\n"));
+        }
     }
-    msg.push_str("\nTake these into account and resume from where you stopped.");
+    msg.push_str(if decisions.is_empty() { "\nTake these into account and resume from where you stopped." } else { "\nApply the decisions first, then resume from where you stopped. Say briefly what you did for each." });
     Some(msg)
 }
 
@@ -323,5 +339,20 @@ mod tests {
         assert!(msg.contains("Confirmed this looks wrong: \"Drifted to UI\""), "{msg}");
         assert!(msg.contains("on \"Drifted to UI\": stay on the webhook") && msg.contains("resume from where you stopped"), "{msg}");
         assert!(!msg.contains("No test run"), "{msg}");
+        assert!(!msg.contains("Carry out"), "{msg}");
+    }
+
+    #[test]
+    fn continue_turns_question_decisions_into_orders_applied_before_resuming() {
+        let docs = crate::docs::Docs::default();
+        docs.apply(&ev(1, "doc.created", json!({ "doc_id": "d", "title": "Catch-up: retries", "kind": "brief" })));
+        docs.apply(&ev(2, "doc.block_set", json!({ "doc_id": "d", "block_id": "risk_1", "section": "risk", "takeaway": "Not recorded" })));
+        docs.apply(&ev(3, "doc.block_set", json!({ "doc_id": "d", "block_id": "q_1", "section": "question", "takeaway": "Record it?", "data": { "options": [{ "label": "Record it now" }, { "label": "Skip" }] } })));
+        docs.apply(&ev(4, "ui.doc_decision", json!({ "doc_id": "d", "block_id": "risk_1", "choice": "Wrong" })));
+        docs.apply(&ev(5, "ui.doc_decision", json!({ "doc_id": "d", "block_id": "q_1", "choice": "Record it now" })));
+        let msg = continue_message(&docs.get("d").unwrap()).unwrap();
+        let (orders, fixes) = (msg.find("Carry out each one now").unwrap(), msg.find("Their corrections").unwrap());
+        assert!(orders < msg.find("Decided \"Record it?\": Record it now").unwrap() && msg.find("Decided").unwrap() < fixes, "{msg}");
+        assert!(msg[fixes..].contains("Confirmed this looks wrong: \"Not recorded\"") && msg.ends_with("Say briefly what you did for each."), "{msg}");
     }
 }
