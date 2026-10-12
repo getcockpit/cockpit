@@ -4,7 +4,7 @@ import { Key } from "../components";
 import { Markdown } from "../components/Markdown";
 import { FileContext } from "../components/FileChip";
 import { CatalogView, ViewGlance } from "../components/CatalogView";
-import { blockView, buildDoc, continueBrief, decideQuestion, docApi, sendDocFeedback, isBrief, isOpenQuestion, orderedBlocks, SECTION_LABEL, type Block, type Doc } from "../state/docs";
+import { blockView, buildDoc, continueBrief, continueLabel, decideQuestion, isDecision, docApi, sendDocFeedback, isBrief, isOpenQuestion, orderedBlocks, SECTION_LABEL, type Block, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import type { AppState } from "../state/types";
 
@@ -50,6 +50,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
   const brief = isBrief(doc);
   const risks = brief ? blocks.filter((b) => b.section === "risk") : [];
   const unmarked = risks.filter((b) => !b.decision).length;
+  const decisions = doc.pending_changes.filter(isDecision).length;
   const mark = (b: Block, choice: "Fine" | "Wrong") => void docApi.decide(doc, b.id, choice);
   const resume = async () => {
     const sent = await continueBrief(doc, session);
@@ -160,6 +161,19 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
 
           {/* One "next step" column (MR-44): decide what's open, then send your input or build. */}
           <aside data-mr="DocNext" data-mr-source={doc.id} style={{ flex: "0 0 340px", display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
+            {/* A brief's next step stays on top: what you decided gets applied, then the session carries on (I90). */}
+            {brief && (
+              <div data-mr="BriefNext" data-mr-source={doc.id} style={{ padding: 12, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 8 }}>
+                <h2 className="mr-h">Next step</h2>
+                <Key k="⌘↵" tone="primary" onClick={() => void resume()} disabled={!blocks.length}>{continueLabel(decisions, pending - decisions)}</Key>
+                <span className="mr-dim" style={{ fontSize: 12 }}>
+                  {decisions > 0 ? "Claude carries out what you decided, then picks up where it stopped" : pending > 0 ? "The session takes your corrections and picks up where it stopped" : "Nothing is sent; you go back to the session"}
+                  {pending > 0 && live && session?.status === "working" ? ", once its turn ends." : "."}
+                  {open.length + unmarked > 0 ? ` ${open.length + unmarked} still unanswered; you can continue anyway.` : ""}
+                </span>
+                {sent && <span style={{ color: "var(--mr-done)" }}>{sent}</span>}
+              </div>
+            )}
             {open.length > 0 && (
               <>
                 <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Decide first <span className="mr-dim">{open.length}</span></h2>
@@ -188,8 +202,8 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
               </>
             )}
 
-            <h2 className="mr-h" style={{ marginTop: open.length || risks.length ? 8 : 0 }}>{brief ? "Corrections" : "Your input"} <span className="mr-dim">{pending}</span></h2>
-            {pending === 0 && <span className="mr-dim">{brief ? "Mark a risk wrong, answer a question, or add a note on any block. Continue sends them into the session." : "Click any block to open it, then edit its text or add a note. Your input goes to Claude in one go."}</span>}
+            <h2 className="mr-h" style={{ marginTop: open.length || risks.length ? 8 : 0 }}>{brief ? "Decisions and corrections" : "Your input"} <span className="mr-dim">{pending}</span></h2>
+            {pending === 0 && <span className="mr-dim">{brief ? "Answer a question, mark a risk wrong, or add a note on any block. Continue applies them in the session." : "Click any block to open it, then edit its text or add a note. Your input goes to Claude in one go."}</span>}
             {doc.pending_changes.map((c, i) => <div key={`c${i}`} style={{ padding: "8px 12px", background: "var(--mr-tile)" }}>{doc.blocks[c] ? `Edited “${doc.blocks[c].takeaway}”` : c}</div>)}
             {doc.pending_notes.map(([bid, t], i) => (
               <button key={`n${i}`} type="button" onClick={() => setStep(blocks.findIndex((b) => b.id === bid) + 1)} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "8px 12px", border: 0, background: "var(--mr-tile)", textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer" }}>
@@ -197,13 +211,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
               </button>
             ))}
 
-            {brief ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-                <Key k="⌘↵" tone="primary" onClick={() => void resume()} disabled={!blocks.length}>{pending > 0 ? `Continue with ${pending} ${pending === 1 ? "correction" : "corrections"}` : "Continue, nothing to correct"}</Key>
-                <span className="mr-dim" style={{ fontSize: 12 }}>{pending > 0 ? `The session picks up where it stopped${live && session?.status === "working" ? " once its turn ends" : ""}.` : "Nothing is sent; you go back to the session."}</span>
-                {sent && <span style={{ color: "var(--mr-done)" }}>{sent}</span>}
-              </div>
-            ) : (
+            {brief ? null : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
               {pending > 0 && <Key k="⌘↵" tone="primary" onClick={() => void sendFeedback(true)}>Regenerate with {pending} {pending === 1 ? "change" : "changes"}</Key>}
               {pending > 0 && <Key onClick={() => void sendFeedback(false)}>Just send, don't regenerate</Key>}

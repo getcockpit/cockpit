@@ -63,6 +63,15 @@ export const docApi = {
 
 export const isBrief = (d: Doc) => d.kind === "brief";
 
+/** A pending change that is a decision on a question (the core writes them as `Decided "…": …`). */
+export const isDecision = (change: string) => change.startsWith("Decided ");
+
+const n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
+/** The brief's Continue button says what it will do: apply your decisions, send corrections, or nothing. */
+export const continueLabel = (decisions: number, corrections: number) =>
+  decisions > 0 ? `Apply ${n(decisions, "decision")}${corrections > 0 ? ` + ${n(corrections, "correction")}` : ""} and continue`
+  : corrections > 0 ? `Continue with ${n(corrections, "correction")}` : "Continue, nothing to correct";
+
 /** Continue on a brief: your corrections go into the same session (queued if it's mid-turn); with
  *  none, nothing is sent (decided: close silently). Returns whether anything was sent. */
 export async function continueBrief(d: Doc, session: SessionState | null | undefined): Promise<boolean> {

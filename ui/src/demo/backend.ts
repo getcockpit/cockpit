@@ -186,7 +186,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       const n = d.pending_notes.length + d.pending_changes.length;
       d.pending_notes = []; d.pending_changes = []; docs = [...docs];
       record(d.session_id, "ui.brief_continued", { doc_id: d.id, silent: n === 0 });
-      return n ? `The user caught up on this session with the brief "${d.title}". ${n} correction${n === 1 ? "" : "s"}. Resume from where you stopped.` : null;
+      return n ? `The user caught up on this session with the brief "${d.title}". Carry out their decisions, take their corrections, then resume from where you stopped.` : null;
     }
     case "session_start": {
       const sid = (a.sessionId as string) ?? `s${Date.now().toString(36)}`;
