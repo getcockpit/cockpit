@@ -123,6 +123,10 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
             <Segmented label="Compact at" value={String(state.compactWindow ?? "off")} options={[["120000", "120k"], ["200000", "200k"], ["400000", "400k"], ["off", "Model limit"]]} onPick={(v) => void api.log("ui.compact_window_set", { tokens: v === "off" ? null : Number(v) })} />
             <span className="mr-dim" style={{ fontSize: 12 }}>Sessions summarise their history once it reaches this many tokens. Every reply re-reads the whole history, so sooner uses less of your plan; later keeps more exact detail. Applies to sessions started or resumed after the change.</span>
           </div>
+          <div className="mr-row" data-mr="SessionCap" style={{ gap: 12 }}>
+            <Segmented label="Working at once" value={String(state.sessionCap)} options={[["4", "4"], ["6", "6"], ["10", "10"], ["15", "15"]]} onPick={(v) => void api.log("ui.session_cap_set", { cap: Number(v) })} />
+            <span className="mr-dim" style={{ fontSize: 12 }}>A new session can start while fewer than this many are mid-turn; sessions waiting for your reply don't count. The default went from 6 to 10 once idle sessions stopped counting, since most of a wall is usually waiting on you. Every working session draws on the same 5-hour and weekly plan limits, so a higher number gets you to them sooner, and gives you more to keep an eye on.</span>
+          </div>
         </section>}
 
         {tab === "keys" && <section data-mr="CockpitLayerSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>

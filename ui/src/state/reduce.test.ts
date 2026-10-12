@@ -439,6 +439,15 @@ describe("compaction window (I63)", () => {
   });
 });
 
+describe("session cap (MR-105)", () => {
+  const ev = (id: string, cap: unknown): MrEvent => ({ id, session_id: null, kind: "ui.session_cap_set", payload: { cap }, anchor: null, created_at: 1 });
+  test("defaults to 10; the last choice wins; junk is ignored", () => {
+    expect(replay([]).sessionCap).toBe(10);
+    expect(replay([ev("A", 15), ev("B", 4)]).sessionCap).toBe(4);
+    expect(replay([ev("A", 6), ev("B", "lots")]).sessionCap).toBe(6);
+  });
+});
+
 describe("Cockpit layer (decision 34)", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>, at = "2026-10-11T10:00:00Z"): MrEvent => ({ id, session_id: "S1", kind, payload, anchor: null, created_at: at });
   test("is off until switched on", () => {
