@@ -8,6 +8,7 @@ mod gh;
 mod instances;
 mod folders;
 mod layer3;
+mod mentions;
 mod layer2;
 mod notify;
 mod personal;
@@ -109,6 +110,7 @@ pub fn run() {
             sidecar::limits_refresh,
             gh::pr_repo,
             folders::recent_folders,
+            mentions::session_paths,
             layer2::layer2_status,
             layer2::layer2_save_credentials,
             personal::personal_apply,
