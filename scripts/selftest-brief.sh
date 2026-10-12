@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end check of Catch me up (MR-116) with real Claude (spends a little usage): a turn claims
 # tests pass without running any; Catch me up has the session's own Claude write a brief doc; the
-# test marks the first risk wrong with a note, the rest fine, and Continue resumes the same session.
+# test marks the first risk wrong with a note, the rest fine, picks an option on the first question, and
+# Continue sends the decision as an order plus the correction into the same session, which resumes.
 set -euo pipefail
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 export PATH="$HOME/.bun/bin:$HOME/.local/share/mise/shims:$HOME/.local/share/mise/installs/bun/latest/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -23,7 +24,7 @@ need "SELECT COUNT(*) FROM events WHERE kind='doc.block_set' AND json_extract(pa
 need "SELECT COUNT(*) FROM events WHERE kind='doc.block_set' AND json_extract(payload,'$.section')='risk'" "the brief flagged nothing (the turn claimed tests it never ran)"
 need "SELECT COUNT(*) FROM events WHERE kind='doc.created' AND session_id=(SELECT session_id FROM events WHERE kind='ui.brief_requested')" "the brief isn't linked to the session"
 need "SELECT COUNT(*) FROM events WHERE kind='ui.brief_continued' AND json_extract(payload,'$.silent')=0" "Continue sent no corrections"
-need "SELECT COUNT(*) FROM events WHERE kind='ui.message_sent' AND json_extract(payload,'$.text') LIKE '%caught up%looks wrong%run nothing%'" "the correction didn't reach the session"
+need "SELECT COUNT(*) FROM events WHERE kind='ui.message_sent' AND json_extract(payload,'$.text') LIKE '%caught up%Carry out each one now%Decided%corrections%looks wrong%run nothing%Apply the decisions first%'" "the decision and correction didn't reach the session"
 need "SELECT COUNT(*) FROM events WHERE kind='sidecar.sdk' AND json_extract(payload,'$.message.type')='result' AND id > (SELECT MIN(id) FROM events WHERE kind='ui.brief_continued')" "the session didn't resume after Continue"
 need "SELECT COUNT(*) FROM events WHERE kind='sidecar.session_started' AND session_id=(SELECT session_id FROM events WHERE kind='ui.brief_requested')" "wrong session"
 [ "$(sqlite3 "$db" "SELECT COUNT(DISTINCT session_id) FROM events WHERE kind='ui.session_requested'")" = "1" ] || { echo "FAILED: Continue started another session"; exit 1; }

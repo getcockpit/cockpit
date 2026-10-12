@@ -86,7 +86,8 @@ fn picked(app: &AppHandle, session: &str) -> bool {
     std::fs::read_dir(cwd).map(|d| d.flatten().any(|f| f.file_name().to_string_lossy().starts_with("selftest-"))).unwrap_or(false)
 }
 
-/// Catch me up (MR-116): a turn that claims more than it did, a brief of it, then Continue with a correction.
+/// Catch me up (MR-116): a turn that claims more than it did, a brief of it, then Continue with a
+/// decision to apply and a correction.
 fn brief_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brief")
 }
@@ -323,6 +324,16 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             if let Some(b) = risks.first() {
                 crate::eventlog::record(app, Some(&session), "ui.doc_note", &serde_json::json!({ "doc_id": doc.id, "block_id": b.id, "text": "Right, run nothing; just say so honestly." }), Some(&anchor));
             }
+            // And pick an option on its first question (the recommended one if marked): a decision to apply (I90).
+            let mut questions: Vec<_> = doc.blocks.values().filter(|b| b.section == "question").collect();
+            questions.sort_by_key(|b| b.order);
+            let pick = questions.first().and_then(|b| {
+                let opts = b.data["options"].as_array()?;
+                let o = opts.iter().find(|o| o["recommended"].as_bool() == Some(true)).or(opts.first())?;
+                Some((b.id.clone(), o["label"].as_str()?.to_owned()))
+            });
+            let Some((qid, label)) = pick else { eprintln!("[selftest] the brief has no question with options"); std::process::exit(1); };
+            crate::eventlog::record(app, Some(&session), "ui.doc_decision", &serde_json::json!({ "doc_id": doc.id, "block_id": qid, "choice": label }), Some(&anchor));
             let msg = crate::brief::brief_continue(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone()).ok().flatten();
             let Some(msg) = msg else { eprintln!("[selftest] Continue sent nothing despite a correction"); std::process::exit(1); };
             let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nThis is a UI test: don't change files. Reply with exactly: SELFTEST DONE"));
