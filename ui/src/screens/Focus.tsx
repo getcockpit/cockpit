@@ -28,9 +28,10 @@ import { ago } from "../picker/now";
 import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
 import { ModelPicker } from "../components/ModelPicker";
-import { SlashMenu } from "../components/SlashMenu";
+import { MentionMenu, SlashMenu } from "../components/SlashMenu";
 import { McpPanel } from "../components/McpPanel";
 import { matchCommands, routeSlash, typedCommand } from "../picker/slash";
+import { insertMention, matchPaths, typedMention } from "../picker/mention";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
@@ -205,24 +206,55 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone, els
   );
 }
 
-// The message box, with the / menu (MR-87): typing / lists this session's commands and skills.
+// A folder's files for the @ menu, listed once a minute at most: typing shouldn't re-run git (MR-108).
+const pathsCache = new Map<string, { at: number; paths: Promise<string[]> }>();
+function folderPaths(cwd: string): Promise<string[]> {
+  const hit = pathsCache.get(cwd);
+  if (hit && Date.now() - hit.at < 60_000) return hit.paths;
+  const paths = api.paths(cwd).catch(() => { pathsCache.delete(cwd); return [] as string[]; });
+  pathsCache.set(cwd, { at: Date.now(), paths });
+  return paths;
+}
+
+// The message box, with the / menu (MR-87): typing / lists this session's commands and skills; @ lists files and folders (MR-108).
 function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean; onSubmit: (text: string) => void }) {
   const [text, setText] = useState("");
+  const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   const [closed, setClosed] = useState(false); // Esc hides the menu for what's typed now
+  const [paths, setPaths] = useState<string[] | null>(null);
+  const input = useRef<HTMLInputElement>(null);
   const asked = useRef(false);
   const typed = typedCommand(text);
   const rows = useMemo(() => (typed === null || closed ? [] : matchCommands(s.commands, typed)), [typed, closed, s.commands]);
+  const mention = typed === null && !closed ? typedMention(text, caret) : null;
+  const mentioning = mention !== null;
+  useEffect(() => { if (mentioning) void folderPaths(s.cwd).then(setPaths); }, [mentioning, s.cwd]);
+  const found = useMemo(() => (mention && paths ? matchPaths(paths, mention.query) : []), [mention?.query, mention?.start, paths]); // eslint-disable-line react-hooks/exhaustive-deps
   // Names come with init; descriptions need one ask of the running session.
   useEffect(() => {
     if (typed === null || asked.current || s.commands.some((c) => c.description)) return;
     asked.current = true;
     api.commands(s.id).catch(() => {});
   }, [typed, s.id, s.commands]);
-  useEffect(() => { setActive(0); }, [typed]);
+  useEffect(() => { setActive(0); }, [typed, mention?.query]);
   const pick = (name: string) => { setText(`/${name} `); setClosed(true); };
-  const send = () => { const t = text.trim(); if (t) { onSubmit(t); setText(""); setClosed(false); } };
+  const pickPath = (p: string) => {
+    if (!mention) return;
+    const next = insertMention(text, mention, p);
+    setText(next.text);
+    setCaret(next.caret);
+    requestAnimationFrame(() => input.current?.setSelectionRange(next.caret, next.caret));
+  };
+  const send = () => { const t = text.trim(); if (t) { onSubmit(t); setText(""); setCaret(0); setClosed(false); } };
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!rows.length && found.length) {
+      const k = keyOf(e.nativeEvent);
+      if (k === "ArrowDown" || k === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (k === "ArrowDown" ? 1 : found.length - 1)) % found.length); }
+      else if (k === "Tab" || k === "Enter") { e.preventDefault(); pickPath(found[active] ?? found[0]); }
+      else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); setClosed(true); }
+      return;
+    }
     if (!rows.length) return;
     const k = keyOf(e.nativeEvent);
     if (k === "ArrowDown" || k === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (k === "ArrowDown" ? 1 : rows.length - 1)) % rows.length); }
@@ -234,8 +266,12 @@ function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean;
   return (
     <form className="mr-row" style={{ position: "relative" }} onSubmit={(e) => { e.preventDefault(); send(); }}>
       <SlashMenu rows={rows} active={active} onPick={(r) => pick(r.name)} onHover={setActive} source={s.id} />
+      {!rows.length && <MentionMenu paths={found} active={active} onPick={pickPath} onHover={setActive} source={s.id} />}
       <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
-      <input className="mr-input" placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next · / for commands and skills"} value={text} onChange={(e) => { setText(e.target.value); setClosed(false); }} onKeyDown={onKey} aria-label="Message this session" aria-autocomplete="list" aria-expanded={rows.length > 0} />
+      <input className="mr-input" placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next · / for commands and skills · @ for files"} value={text} ref={input}
+        onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); setClosed(false); }}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+        onKeyDown={onKey} aria-label="Message this session" aria-autocomplete="list" aria-expanded={rows.length > 0 || found.length > 0} />
       <Key k="↵" onClick={send}>Send</Key>
     </form>
   );
