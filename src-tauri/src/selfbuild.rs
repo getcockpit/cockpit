@@ -270,6 +270,11 @@ pub fn handle_update(app: &AppHandle, args: &serde_json::Value) -> (Vec<(String,
 pub fn on_ready(app: &AppHandle) {
     if let Ok(id) = std::env::var("MR_BUILD_ID") {
         let _ = std::fs::write(data_dir(app).join(format!("healthy-{id}")), "ok");
+        // This build is proven, so older ones can go (each is ~150 MB).
+        let pruned = prune(&data_dir(app), &id, KEEP_BUILDS);
+        if !pruned.is_empty() {
+            record(app, "selfbuild.pruned", serde_json::json!({ "build_ids": pruned, "kept": KEEP_BUILDS }));
+        }
     }
     // The dev loop's crash guard (MR-70): ready means this slot starts fine and is safe to fall back to.
     if let Ok(f) = std::env::var("MR_HEALTH_FILE") {
@@ -280,6 +285,27 @@ pub fn on_ready(app: &AppHandle) {
     if std::env::var("MR_AUTO_RESUME").is_ok_and(|v| v == "1") {
         resume_interrupted(app);
     }
+}
+
+/// Builds kept for rollback in Builds (the running one is always kept on top).
+const KEEP_BUILDS: usize = 5;
+
+/// Deletes all but the newest `keep` stored builds (ids are ULIDs, so newest sorts last), never
+/// `current`, plus their health markers. Other entries (installed-prev.app, fallbacks.log) stay.
+fn prune(data: &Path, current: &str, keep: usize) -> Vec<String> {
+    let builds = data.join("builds");
+    let mut ids: Vec<String> = std::fs::read_dir(&builds)
+        .map(|rd| rd.flatten().filter(|e| e.path().join("build.json").exists()).map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+        .unwrap_or_default();
+    ids.sort();
+    ids.retain(|id| id != current);
+    let old = ids.len().saturating_sub(keep);
+    ids.truncate(old);
+    ids.retain(|id| std::fs::remove_dir_all(builds.join(id)).is_ok());
+    for id in &ids {
+        let _ = std::fs::remove_file(data.join(format!("healthy-{id}")));
+    }
+    ids
 }
 
 fn resume_interrupted(app: &AppHandle) {
@@ -411,6 +437,26 @@ mod tests {
         run("3");
         // The backup held the healthy build from the first run, so that's what comes back.
         assert!(std::fs::read_to_string(app.join("Contents/MacOS/Cockpit")).unwrap().contains("healthy-"));
+    }
+
+    #[test]
+    fn prune_keeps_the_newest_builds_and_the_running_one() {
+        let dir = std::env::temp_dir().join(format!("mr-pr-{}", ulid::Ulid::new()));
+        for id in ["B1", "B2", "B3", "B4", "B5"] {
+            std::fs::create_dir_all(dir.join("builds").join(id)).unwrap();
+            std::fs::write(dir.join("builds").join(id).join("build.json"), "{}").unwrap();
+            std::fs::write(dir.join(format!("healthy-{id}")), "ok").unwrap();
+        }
+        std::fs::create_dir_all(dir.join("builds/installed-prev.app")).unwrap();
+        std::fs::write(dir.join("builds/fallbacks.log"), "").unwrap();
+        // Running B1 (an old build picked in Builds): it stays, with the two newest.
+        assert_eq!(prune(&dir, "B1", 2), vec!["B2", "B3"]);
+        for (id, kept) in [("B1", true), ("B2", false), ("B3", false), ("B4", true), ("B5", true)] {
+            assert_eq!(dir.join("builds").join(id).exists(), kept, "{id}");
+            assert_eq!(dir.join(format!("healthy-{id}")).exists(), kept, "{id}");
+        }
+        assert!(dir.join("builds/installed-prev.app").exists() && dir.join("builds/fallbacks.log").exists());
+        assert!(prune(&dir, "B5", 2).is_empty());
     }
 
     #[test]
