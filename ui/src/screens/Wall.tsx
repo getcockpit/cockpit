@@ -245,7 +245,7 @@ function Tile({ s, tile, onOpen, onDiscover }: { s: SessionState; tile: TileSpec
         {s.status === "working" || s.status === "starting"
           ? <LiveTrack s={s} compact />
           : s.todos.length > 0
-            ? <ProgressTrack segs={planSegs(s.todos)} pct={tile.progress === null ? null : Math.round(tile.progress * 100)} left={tileStep(s.todos, tile.step)} source={s.id} fill />
+            ? <ProgressTrack segs={planSegs(s.todos)} pct={tile.progress === null ? null : Math.round(tile.progress * 100)} left={tile.planOpen ? tile.step : tileStep(s.todos, tile.step)} source={s.id} fill />
             : <div className="mr-row"><div className="mr-grow"><Bar value={tile.progress} tone={tile.state === "needs_you" ? "needs" : undefined} /></div><span className="mr-mono mr-ink2" style={{ fontSize: 12 }}>{tile.progressLabel || tile.step}</span></div>}
         {tileNote(tile) && <span className="mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tileNote(tile)}</span>}
       </div>
