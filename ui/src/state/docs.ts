@@ -15,6 +15,7 @@ export type Block = {
 export const blockView = (b: Block): ViewBlock[] => (Array.isArray(b.view) ? b.view : []);
 export type Doc = {
   id: string; title: string; session_id: string | null; version: number;
+  kind?: string; // "brief": a catch-up brief (MR-116)
   blocks: Record<string, Block>; pending_notes: [string, string][]; pending_changes: string[];
 };
 
@@ -50,7 +51,20 @@ export const docApi = {
   edit: (d: Doc, blockId: string, field: "takeaway" | "key" | "body", value: string) => invoke("event_append", { sessionId: d.session_id, kind: "ui.doc_edit", payload: { doc_id: d.id, block_id: blockId, field, value }, anchor: `doc:${d.id}:${blockId}` }),
   feedback: (d: Doc, regenerate: boolean) => invoke<string>("doc_feedback", { docId: d.id, regenerate }),
   archive: (d: Doc) => invoke("doc_archive", { docId: d.id }),
+  // Catch me up (MR-116): the core creates the brief doc and has it written; Continue builds the corrections.
+  brief: (session: string) => invoke<{ doc_id: string; via: "session" | "cockpit" }>("brief_start", { session }),
+  briefContinue: (d: Doc) => invoke<string | null>("brief_continue", { docId: d.id }),
 };
+
+export const isBrief = (d: Doc) => d.kind === "brief";
+
+/** Continue on a brief: your corrections go into the same session (queued if it's mid-turn); with
+ *  none, nothing is sent (decided: close silently). Returns whether anything was sent. */
+export async function continueBrief(d: Doc, session: SessionState | null | undefined): Promise<boolean> {
+  const msg = await docApi.briefContinue(d);
+  if (msg && d.session_id) await api.send(session?.id ?? d.session_id, msg);
+  return !!msg;
+}
 
 /** Sends the user's notes, edits and decisions on a doc to Claude: to its plan session if it's
  *  still open, otherwise to a new plan session in the same folder. Returns the session id. The
@@ -66,5 +80,6 @@ export async function sendDocFeedback(d: Doc, session: SessionState | null | und
 export async function decideQuestion(d: Doc, blockId: string, label: string, session: SessionState | null | undefined): Promise<void> {
   await docApi.decide(d, blockId, label);
   const stillOpen = Object.values(d.blocks).some((x) => isOpenQuestion(x) && x.id !== blockId);
-  if (!stillOpen && session) await sendDocFeedback(d, session, false).catch(() => {});
+  // A brief waits for Continue instead: you may still be marking its risks.
+  if (!stillOpen && session && !isBrief(d)) await sendDocFeedback(d, session, false).catch(() => {});
 }
