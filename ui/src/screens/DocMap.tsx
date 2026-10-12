@@ -2,6 +2,7 @@ import { keyOf } from "../components/keys";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { Markdown } from "../components/Markdown";
+import { FileContext } from "../components/FileChip";
 import { CatalogView, ViewGlance } from "../components/CatalogView";
 import { blockView, decideQuestion, docApi, sendDocFeedback, isOpenQuestion, orderedBlocks, SECTION_LABEL, type Block, type Doc } from "../state/docs";
 import { api } from "../state/store";
@@ -83,103 +84,106 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
     if (e.altKey && !threads[b.id]) void discover(b);
   };
 
+  // File paths in blocks become Finder chips against the plan session's folder (MR-112).
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <header className="mr-band mr-row" style={{ padding: "14px 24px" }}>
-        <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
-        <strong style={{ fontSize: 15 }}>{doc.title}</strong>
-        <span className="mr-mono mr-dim">v{doc.version} · {blocks.length} blocks</span>
-        <span className="mr-grow" />
-        {session && <button type="button" className="mr-key" style={{ minHeight: 30 }} onClick={() => onOpenSession(session.id)}>Open the plan session{live ? "" : " (ended)"}</button>}
-        <button type="button" className="mr-key" data-mr="DocDelete" data-mr-source={doc.id} style={{ minHeight: 30, ...(confirmDelete ? { background: "var(--mr-error)", color: "var(--mr-tile)" } : {}) }}
-          onClick={() => void remove()} onBlur={() => setConfirmDelete(false)}>{confirmDelete ? "Click again to delete this doc" : "Delete doc"}</button>
-      </header>
+    <FileContext.Provider value={session?.cwd ? { session: session.id, cwd: session.cwd } : null}>
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <header className="mr-band mr-row" style={{ padding: "14px 24px" }}>
+          <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
+          <strong style={{ fontSize: 15 }}>{doc.title}</strong>
+          <span className="mr-mono mr-dim">v{doc.version} · {blocks.length} blocks</span>
+          <span className="mr-grow" />
+          {session && <button type="button" className="mr-key" style={{ minHeight: 30 }} onClick={() => onOpenSession(session.id)}>Open the plan session{live ? "" : " (ended)"}</button>}
+          <button type="button" className="mr-key" data-mr="DocDelete" data-mr-source={doc.id} style={{ minHeight: 30, ...(confirmDelete ? { background: "var(--mr-error)", color: "var(--mr-tile)" } : {}) }}
+            onClick={() => void remove()} onBlur={() => setConfirmDelete(false)}>{confirmDelete ? "Click again to delete this doc" : "Delete doc"}</button>
+        </header>
 
-      <main style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, padding: 16 }}>
-        <section style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "var(--mr-well)" }}>
-            {blocks.length === 0 && <div className="mr-dim" style={{ padding: 24 }}>No blocks yet. Claude adds them with the doc tools as it plans.</div>}
-            {!focus ? (
-              <div ref={pane} key="overview" className="mr-zoom-in" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gridAutoRows: "min-content", gap: 12, alignContent: "start" }}>
-                {blocks.map((b, i) => (
-                  <BlockTile key={b.id} doc={doc} b={b} dim={onlyChanged && !changed.includes(b)} changedIn={changed.includes(b) ? doc.version : null} thread={threads[b.id]} onClick={(e) => clickBlock(b, i, e)} />
-                ))}
-              </div>
-            ) : (
-              <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-                {/* The rest of the map stays one click away while you read. */}
-                <nav aria-label="Blocks" data-mr="DocOutline" data-mr-source={doc.id} style={{ flex: "0 0 240px", overflowY: "auto", padding: "16px 0 16px 16px", display: "flex", flexDirection: "column", gap: 2 }}>
-                  <button type="button" onClick={() => setStep(0)} className="mr-dim" style={{ border: 0, background: "transparent", font: "inherit", fontSize: 12, textAlign: "left", padding: "6px 10px", cursor: "zoom-out" }}>↖ Overview <kbd className="mr-mono">o</kbd></button>
-                  {blocks.map((b, i) => {
-                    const here = b.id === focus.id, openQ = isOpenQuestion(b);
-                    return (
-                      <button key={b.id} type="button" aria-current={here || undefined} onClick={(e) => clickBlock(b, i, e)} title={b.takeaway}
-                        style={{ border: 0, padding: "6px 10px", font: "inherit", textAlign: "left", cursor: "pointer", color: "var(--mr-ink)", background: here ? "var(--mr-tile)" : "transparent", boxShadow: here ? "inset 3px 0 0 var(--mr-selected)" : openQ ? "inset 3px 0 0 var(--mr-needs)" : "none", display: "flex", flexDirection: "column", gap: 1 }}>
-                        <span style={{ fontSize: 11, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{kickerOf(b)}</span>
-                        <span className="mr-ellipsis" style={{ fontSize: 13, fontWeight: here ? 700 : 400 }}>{b.takeaway || "(no takeaway)"}</span>
-                      </button>
-                    );
-                  })}
-                </nav>
-                <div ref={pane} style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "16px 16px 80px" }}>
-                  <BlockOpen key={focus.id} doc={doc} b={focus} changedIn={changed.includes(focus) ? doc.version : null}
-                    deep={!!deep[focus.id]} thread={threads[focus.id]} onDecide={(label) => void decideQuestion(doc, focus.id, label, session)}
-                    onDeeper={() => setDeep((d) => ({ ...d, [focus.id]: !d[focus.id] }))} onDiscover={() => void discover(focus)} onOpenThread={onOpenSession}
-                    onAsk={(q) => live && session ? void api.send(session.id, `About block [${focus.section}] "${focus.takeaway}" of doc ${doc.id}: ${q}`) : undefined}
-                    onReply={live && session ? (t) => void api.send(session.id, `About block [${focus.section}] "${focus.takeaway}" of doc ${doc.id}: ${t}. Update the doc with doc_set_block.`) : undefined} />
-                </div>
-              </div>
-            )}
-            <div className="mr-row" style={{ flex: "none", padding: "10px 14px", background: "var(--mr-tile)", borderTop: "2px solid var(--mr-well)" }}>
-              <span className="mr-mono mr-dim" style={{ flex: "none" }}>{focus ? `${step} / ${blocks.length}` : "Overview"}</span>
-              <span className="mr-grow mr-ellipsis" style={{ fontWeight: 700, minWidth: 0 }}>{focus ? SECTION_LABEL[focus.section] ?? focus.section : "At a glance. Space walks through it block by block."}</span>
-              {changed.length > 0 && !focus && <Key tone={onlyChanged ? "primary" : undefined} onClick={() => setOnlyChanged((x) => !x)}>{onlyChanged ? "Show everything" : `What changed in v${doc.version} · ${changed.length}`}</Key>}
-              <Key k="←" onClick={() => setStep((s) => Math.max(0, s - 1))}>Back</Key>
-              <Key k="space" tone="primary" onClick={() => setStep((s) => (s >= blocks.length ? 0 : s + 1))}>{step === 0 ? "Walk through" : step >= blocks.length ? "Zoom out" : "Next"}</Key>
-            </div>
-          </div>
-          <div className="mr-row mr-dim" style={{ flexWrap: "wrap", fontSize: 12 }}>
-            <span><b className="mr-mono">click</b> open</span><span><b className="mr-mono">⌘-click</b> go deeper</span><span><b className="mr-mono">⌥-click</b> discover in a side session</span><span><b className="mr-mono">esc</b> up a level</span><span><b className="mr-mono">o</b> overview</span>
-          </div>
-        </section>
-
-        {/* One "next step" column (MR-44): decide what's open, then send your input or build. */}
-        <aside data-mr="DocNext" data-mr-source={doc.id} style={{ flex: "0 0 340px", display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
-          {open.length > 0 && (
-            <>
-              <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Decide first <span className="mr-dim">{open.length}</span></h2>
-              {open.map((b) => (
-                <div key={b.id} style={{ padding: 12, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-needs)", display: "flex", flexDirection: "column", gap: 8 }}>
-                  <button type="button" onClick={() => setStep(blocks.indexOf(b) + 1)} style={{ border: 0, padding: 0, background: "transparent", font: "inherit", fontWeight: 700, color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>{b.takeaway}</button>
-                  {(b.data?.options ?? []).map((o) => (
-                    <button key={o.label} type="button" onClick={() => void decideQuestion(doc, b.id, o.label, session)} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "8px 10px", border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
-                      <strong>{o.label}</strong><span className="mr-dim" style={{ fontSize: 12 }}>{o.description}</span>
-                    </button>
+        <main style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, padding: 16 }}>
+          <section style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "var(--mr-well)" }}>
+              {blocks.length === 0 && <div className="mr-dim" style={{ padding: 24 }}>No blocks yet. Claude adds them with the doc tools as it plans.</div>}
+              {!focus ? (
+                <div ref={pane} key="overview" className="mr-zoom-in" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gridAutoRows: "min-content", gap: 12, alignContent: "start" }}>
+                  {blocks.map((b, i) => (
+                    <BlockTile key={b.id} doc={doc} b={b} dim={onlyChanged && !changed.includes(b)} changedIn={changed.includes(b) ? doc.version : null} thread={threads[b.id]} onClick={(e) => clickBlock(b, i, e)} />
                   ))}
                 </div>
-              ))}
-            </>
-          )}
+              ) : (
+                <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+                  {/* The rest of the map stays one click away while you read. */}
+                  <nav aria-label="Blocks" data-mr="DocOutline" data-mr-source={doc.id} style={{ flex: "0 0 240px", overflowY: "auto", padding: "16px 0 16px 16px", display: "flex", flexDirection: "column", gap: 2 }}>
+                    <button type="button" onClick={() => setStep(0)} className="mr-dim" style={{ border: 0, background: "transparent", font: "inherit", fontSize: 12, textAlign: "left", padding: "6px 10px", cursor: "zoom-out" }}>↖ Overview <kbd className="mr-mono">o</kbd></button>
+                    {blocks.map((b, i) => {
+                      const here = b.id === focus.id, openQ = isOpenQuestion(b);
+                      return (
+                        <button key={b.id} type="button" aria-current={here || undefined} onClick={(e) => clickBlock(b, i, e)} title={b.takeaway}
+                          style={{ border: 0, padding: "6px 10px", font: "inherit", textAlign: "left", cursor: "pointer", color: "var(--mr-ink)", background: here ? "var(--mr-tile)" : "transparent", boxShadow: here ? "inset 3px 0 0 var(--mr-selected)" : openQ ? "inset 3px 0 0 var(--mr-needs)" : "none", display: "flex", flexDirection: "column", gap: 1 }}>
+                          <span style={{ fontSize: 11, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{kickerOf(b)}</span>
+                          <span className="mr-ellipsis" style={{ fontSize: 13, fontWeight: here ? 700 : 400 }}>{b.takeaway || "(no takeaway)"}</span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                  <div ref={pane} style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "16px 16px 80px" }}>
+                    <BlockOpen key={focus.id} doc={doc} b={focus} changedIn={changed.includes(focus) ? doc.version : null}
+                      deep={!!deep[focus.id]} thread={threads[focus.id]} onDecide={(label) => void decideQuestion(doc, focus.id, label, session)}
+                      onDeeper={() => setDeep((d) => ({ ...d, [focus.id]: !d[focus.id] }))} onDiscover={() => void discover(focus)} onOpenThread={onOpenSession}
+                      onAsk={(q) => live && session ? void api.send(session.id, `About block [${focus.section}] "${focus.takeaway}" of doc ${doc.id}: ${q}`) : undefined}
+                      onReply={live && session ? (t) => void api.send(session.id, `About block [${focus.section}] "${focus.takeaway}" of doc ${doc.id}: ${t}. Update the doc with doc_set_block.`) : undefined} />
+                  </div>
+                </div>
+              )}
+              <div className="mr-row" style={{ flex: "none", padding: "10px 14px", background: "var(--mr-tile)", borderTop: "2px solid var(--mr-well)" }}>
+                <span className="mr-mono mr-dim" style={{ flex: "none" }}>{focus ? `${step} / ${blocks.length}` : "Overview"}</span>
+                <span className="mr-grow mr-ellipsis" style={{ fontWeight: 700, minWidth: 0 }}>{focus ? SECTION_LABEL[focus.section] ?? focus.section : "At a glance. Space walks through it block by block."}</span>
+                {changed.length > 0 && !focus && <Key tone={onlyChanged ? "primary" : undefined} onClick={() => setOnlyChanged((x) => !x)}>{onlyChanged ? "Show everything" : `What changed in v${doc.version} · ${changed.length}`}</Key>}
+                <Key k="←" onClick={() => setStep((s) => Math.max(0, s - 1))}>Back</Key>
+                <Key k="space" tone="primary" onClick={() => setStep((s) => (s >= blocks.length ? 0 : s + 1))}>{step === 0 ? "Walk through" : step >= blocks.length ? "Zoom out" : "Next"}</Key>
+              </div>
+            </div>
+            <div className="mr-row mr-dim" style={{ flexWrap: "wrap", fontSize: 12 }}>
+              <span><b className="mr-mono">click</b> open</span><span><b className="mr-mono">⌘-click</b> go deeper</span><span><b className="mr-mono">⌥-click</b> discover in a side session</span><span><b className="mr-mono">esc</b> up a level</span><span><b className="mr-mono">o</b> overview</span>
+            </div>
+          </section>
 
-          <h2 className="mr-h" style={{ marginTop: open.length ? 8 : 0 }}>Your input <span className="mr-dim">{pending}</span></h2>
-          {pending === 0 && <span className="mr-dim">Click any block to open it, then edit its text or add a note. Your input goes to Claude in one go.</span>}
-          {doc.pending_changes.map((c, i) => <div key={`c${i}`} style={{ padding: "8px 12px", background: "var(--mr-tile)" }}>Edited “{doc.blocks[c]?.takeaway ?? c}”</div>)}
-          {doc.pending_notes.map(([bid, t], i) => (
-            <button key={`n${i}`} type="button" onClick={() => setStep(blocks.findIndex((b) => b.id === bid) + 1)} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "8px 12px", border: 0, background: "var(--mr-tile)", textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer" }}>
-              <span className="mr-dim" style={{ fontSize: 12 }}>on “{doc.blocks[bid]?.takeaway ?? bid}”</span><span>{t}</span>
-            </button>
-          ))}
+          {/* One "next step" column (MR-44): decide what's open, then send your input or build. */}
+          <aside data-mr="DocNext" data-mr-source={doc.id} style={{ flex: "0 0 340px", display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
+            {open.length > 0 && (
+              <>
+                <h2 className="mr-h"><span style={{ color: "var(--mr-needs-ink)" }}>◆</span>Decide first <span className="mr-dim">{open.length}</span></h2>
+                {open.map((b) => (
+                  <div key={b.id} style={{ padding: 12, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-needs)", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button type="button" onClick={() => setStep(blocks.indexOf(b) + 1)} style={{ border: 0, padding: 0, background: "transparent", font: "inherit", fontWeight: 700, color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>{b.takeaway}</button>
+                    {(b.data?.options ?? []).map((o) => (
+                      <button key={o.label} type="button" onClick={() => void decideQuestion(doc, b.id, o.label, session)} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "8px 10px", border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
+                        <strong>{o.label}</strong><span className="mr-dim" style={{ fontSize: 12 }}>{o.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </>
+            )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-            {pending > 0 && <Key k="⌘↵" tone="primary" onClick={() => void sendFeedback(true)}>Regenerate with {pending} {pending === 1 ? "change" : "changes"}</Key>}
-            {pending > 0 && <Key onClick={() => void sendFeedback(false)}>Just send, don't regenerate</Key>}
-            <Key k={pending === 0 ? "⌘↵" : undefined} tone={pending === 0 && open.length === 0 ? "primary" : undefined} onClick={() => void build()} disabled={!blocks.length}>Build from this doc</Key>
-            {open.length > 0 && <span className="mr-dim" style={{ fontSize: 12 }}>You can build now, but {open.length === 1 ? "the open question" : `the ${open.length} open questions`} will be left to Claude.</span>}
-            {sent && <span style={{ color: "var(--mr-done)" }}>{sent}</span>}
-          </div>
-        </aside>
-      </main>
-    </div>
+            <h2 className="mr-h" style={{ marginTop: open.length ? 8 : 0 }}>Your input <span className="mr-dim">{pending}</span></h2>
+            {pending === 0 && <span className="mr-dim">Click any block to open it, then edit its text or add a note. Your input goes to Claude in one go.</span>}
+            {doc.pending_changes.map((c, i) => <div key={`c${i}`} style={{ padding: "8px 12px", background: "var(--mr-tile)" }}>Edited “{doc.blocks[c]?.takeaway ?? c}”</div>)}
+            {doc.pending_notes.map(([bid, t], i) => (
+              <button key={`n${i}`} type="button" onClick={() => setStep(blocks.findIndex((b) => b.id === bid) + 1)} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "8px 12px", border: 0, background: "var(--mr-tile)", textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer" }}>
+                <span className="mr-dim" style={{ fontSize: 12 }}>on “{doc.blocks[bid]?.takeaway ?? bid}”</span><span>{t}</span>
+              </button>
+            ))}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+              {pending > 0 && <Key k="⌘↵" tone="primary" onClick={() => void sendFeedback(true)}>Regenerate with {pending} {pending === 1 ? "change" : "changes"}</Key>}
+              {pending > 0 && <Key onClick={() => void sendFeedback(false)}>Just send, don't regenerate</Key>}
+              <Key k={pending === 0 ? "⌘↵" : undefined} tone={pending === 0 && open.length === 0 ? "primary" : undefined} onClick={() => void build()} disabled={!blocks.length}>Build from this doc</Key>
+              {open.length > 0 && <span className="mr-dim" style={{ fontSize: 12 }}>You can build now, but {open.length === 1 ? "the open question" : `the ${open.length} open questions`} will be left to Claude.</span>}
+              {sent && <span style={{ color: "var(--mr-done)" }}>{sent}</span>}
+            </div>
+          </aside>
+        </main>
+      </div>
+    </FileContext.Provider>
   );
 }
 
