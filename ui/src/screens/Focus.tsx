@@ -29,6 +29,7 @@ import { ago } from "../picker/now";
 import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
 import { ModelPicker } from "../components/ModelPicker";
+import { ContextMeter } from "../components/ContextMeter";
 import { MentionMenu, SlashMenu } from "../components/SlashMenu";
 import { McpPanel } from "../components/McpPanel";
 import { matchCommands, routeSlash, typedCommand } from "../picker/slash";
@@ -41,7 +42,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone, elsewhere = false }: { s: SessionState; models: ModelRow[]; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; elsewhere?: boolean }) {
+export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, elsewhere = false }: { s: SessionState; models: ModelRow[]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; elsewhere?: boolean }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -151,6 +152,7 @@ export function Focus({ s, models, docs, onOpenDoc, onBack, onBuild, onDone, els
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
           <span className="mr-grow" />
+          <ContextMeter s={s} compactWindow={compactWindow} running={running} />
           {!s.fromDeleted && <ModelPicker s={s} models={models} />}
           {running && <Key k="⌘." onClick={() => void api.interrupt(s.id)}>Interrupt</Key>}
           {s.archivedAt
