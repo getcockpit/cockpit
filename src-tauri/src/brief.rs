@@ -23,12 +23,12 @@ pub fn instructions(doc_id: &str, can_check: bool) -> String {
     };
     format!(
         "Write a catch-up brief into working doc {doc_id} with doc_set_block (the doc already exists; don't create another). The user lost track of this session and wants to read where it stands in under a minute. {verify}\n\
-Blocks, each with a short takeaway, a key detail and a catalog view:\n\
-- goal (block_id where): where we are — the original ask (with later corrections) and the current step. View: stats or progress.\n\
-- log (block_id done): what's done — commits, files changed, decisions made. View: takeaway.\n\
+Write it as a pyramid: context, then the problems (worst first), the options for each, the one you recommend, and the details last, so each level can be skipped. Blocks, each with a short takeaway, a key detail and a catalog view:\n\
+- goal (block_id where): the context — the original ask (with later corrections) and the current step, in one line. View: stats or progress.\n\
+- risk (one block each, block_id risk_<n>, worst first): something that looks wrong. Run all five checks, broken or fake-done first, and add a block for each that fires: \"done\" with no diff, no test run, or a failing build or last test run; drift from the original ask, later corrections, the plan steps or linked docs; contradicts a decision (docs/DECISIONS.md, CLAUDE.md rules); the same error in 3+ turns or plan steps marked done with no change; a question the user never answered that was assumed. Name the baseline each one breaks. View: risks.\n\
+- question (one block each, block_id q_<n>): the ways forward for a risk, or anything still waiting on the user. Give data.options (2-3) and mark the one you recommend, with a one-line why. View: compare with recommended, or decision.\n\
 - design (block_id next): the next step you were about to take. View: steps.\n\
-- question (one block each, block_id q_<n>): anything still waiting on the user, or an answer you assumed without asking. Give data.options when there are clear choices. View: compare or decision.\n\
-- risk (one block each, block_id risk_<n>): something that looks wrong. Run all five checks and add a block for each that fires: drift from the original ask and later corrections; contradicts a decision (linked docs, docs/DECISIONS.md); \"done\" with no test run, or a failing last test run; plan steps marked done with no change, or the same error in 3+ turns; a question the user never answered that was assumed. View: risks.\n\
+- log (block_id done): the details — what's done: commits, files changed, decisions made. View: takeaway.\n\
 Every block cites its evidence in the body: a commit, file:line, an event id like [01J…] or a short quote. Say plainly what you couldn't verify. If nothing looks wrong, add one risk block saying so. Don't change code and don't carry on with the task: stop once the brief is written."
     )
 }
