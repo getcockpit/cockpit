@@ -287,6 +287,23 @@ pub fn on_ready(app: &AppHandle) {
     }
 }
 
+/// Variables that describe this one app process (which build or slot it is, where its data lives,
+/// whether it's a self-test). Children must not inherit them: a Cockpit started from a session or a
+/// terminal would otherwise take itself for this build, write its health marker and prune builds.
+const PROCESS_VARS: &[&str] = &[
+    "MR_BUILD_ID", "MR_AUTO_RESUME", "MR_FALLBACK", "MR_DATA_DIR", "MR_SELFTEST",
+    "MR_DEV_LOOP", "MR_DEV_SLOT", "MR_HEALTH_FILE", "MR_RECOVERED", "MR_CRASH_LOG",
+];
+
+/// The environment for processes the app starts: the sidecar (and through it every session) and terminals.
+pub fn child_env() -> Vec<(String, String)> {
+    without_process_vars(std::env::vars())
+}
+
+fn without_process_vars(vars: impl Iterator<Item = (String, String)>) -> Vec<(String, String)> {
+    vars.filter(|(k, _)| !PROCESS_VARS.contains(&k.as_str())).collect()
+}
+
 /// Builds kept for rollback in Builds (the running one is always kept on top).
 const KEEP_BUILDS: usize = 5;
 
@@ -457,6 +474,14 @@ mod tests {
         }
         assert!(dir.join("builds/installed-prev.app").exists() && dir.join("builds/fallbacks.log").exists());
         assert!(prune(&dir, "B5", 2).is_empty());
+    }
+
+    #[test]
+    fn children_dont_inherit_this_processs_identity() {
+        let vars = [("MR_BUILD_ID", "B1"), ("MR_DATA_DIR", "/d"), ("MR_CLAUDE_PATH", "/x/claude"), ("PATH", "/bin")];
+        let env = without_process_vars(vars.into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())));
+        let keys: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, vec!["MR_CLAUDE_PATH", "PATH"]);
     }
 
     #[test]
