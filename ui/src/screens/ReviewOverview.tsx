@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NoveltyTag, TierBadge } from "../components/CatalogView";
+import { ChangeList, NoveltyTag, TierBadge } from "../components/CatalogView";
 import { Key } from "../components";
 import { keyOf } from "../components/keys";
 import { plural } from "../picker/title";
@@ -117,15 +117,7 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
       <details style={{ background: "var(--mr-tile)", padding: "10px 14px" }}>
         <summary style={{ cursor: "pointer", fontWeight: 600 }}>What the PR changes <span className="mr-dim" style={{ fontWeight: 400 }}>{(o.nodes ?? []).length ? `· ${plural((o.nodes ?? []).length, "change")}` : ""}</span></summary>
         <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>{summary.map((x, i) => <li key={i} className="mr-ink2">{x}</li>)}</ul>
-        {(o.nodes ?? []).length > 0 && (
-          <div className="mr-row" style={{ flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-            {(o.nodes ?? []).map((n, i) => (
-              <span key={i} style={{ padding: "5px 9px", fontSize: 12, background: "var(--mr-well)", boxShadow: n.finding ? "inset 0 -3px 0 var(--mr-needs)" : undefined }}>
-                <b className="mr-mono" style={{ color: n.mark === "+" ? "var(--mr-done)" : n.mark === "-" ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{n.mark ?? "~"}</b> {n.label.replace(/^[~+-]\s*/, "")}
-              </span>
-            ))}
-          </div>
-        )}
+        {(o.nodes ?? []).length > 0 && <div style={{ marginTop: 12 }}><ChangeList nodes={o.nodes ?? []} grouped /></div>}
       </details>
       {(o.novelty ?? []).length > 0 && (
         <details style={{ background: "var(--mr-tile)", padding: "10px 14px" }}>

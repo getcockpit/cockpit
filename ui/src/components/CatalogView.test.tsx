@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CatalogView, ViewGlance } from "./CatalogView";
+import { CatalogView, ChangeList, ViewGlance } from "./CatalogView";
 import doc from "../demo/multiplayer-doc.json";
 import type { ViewBlock } from "../state/types";
 
@@ -25,4 +25,18 @@ test("a decision says when it overrode the recommendation, and phases add up", (
   expect(html.match(/Chosen over the recommendation/g)?.length).toBe(1);
   expect(html).toContain("7–8 days");
   expect(html).toContain("redacted");
+});
+
+// The real PR #29 overview: Claude repeats the mark in each label ("+ paging"). Grouped, every change
+// lands under New / Changed / Removed with its mark shown once; in flow order it's one row each.
+test("a change list shows each mark once, grouped or in flow order", () => {
+  const nodes = [{ label: "+ paging (Limit/New/Encode/Decode)", mark: "+" }, { label: "~ apikey.List", mark: "~" }, { label: "~ ipo.List", mark: "~" }, { label: "- CountIPORecords query", mark: "-" }];
+  const grouped = renderToStaticMarkup(<ChangeList nodes={nodes} grouped />);
+  expect(grouped).toContain("New · 1");
+  expect(grouped).toContain("Changed · 2");
+  expect(grouped).toContain("Removed · 1");
+  expect(grouped).not.toMatch(/>[~+-] /);
+  const flow = renderToStaticMarkup(<CatalogView id="x" title="" onReply={() => {}} live={false} blocks={[{ type: "change_graph", nodes }]} />);
+  expect(flow.match(/data-mr="ChangeRow"/g)?.length).toBe(4);
+  expect(flow).not.toContain("→");
 });

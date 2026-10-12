@@ -105,24 +105,59 @@ function Compare({ b }: { b: ViewBlock }) {
   );
 }
 
-// Change graph: what a change touches, + new, ~ changed, − removed.
-function ChangeGraph({ b }: { b: ViewBlock }) {
-  const nodes = list(b.nodes);
+// Change graph: what a change touches, + new, ~ changed, − removed. One change per row, never a
+// wrapped chip pile: a row of chips joined by → broke mid-chain and read as a jumble. In flow order
+// a rail joins the rows top to bottom; grouped (the review overview) it's New / Changed / Removed.
+export type ChangeNode = { label: string; mark?: string; finding?: string | null };
+const MARK = { "+": { word: "New", color: "var(--mr-done)" }, "~": { word: "Changed", color: "var(--mr-ink-2)" }, "-": { word: "Removed", color: "var(--mr-error)" } } as const;
+type MarkKey = keyof typeof MARK;
+const markOf = (n: ChangeNode): MarkKey => {
+  const m = (n.mark ?? "").trim().replace("−", "-");
+  if (m in MARK) return m as MarkKey;
+  const lead = n.label.trim()[0];
+  return lead && lead in MARK ? (lead as MarkKey) : "~";
+};
+// Claude often repeats the mark in the label ("+ paging"); drop it so it shows once.
+export const changeLabel = (label: string) => label.replace(/^\s*[~+\-−]\s+/, "");
+
+function ChangeRow({ n, rail }: { n: ChangeNode; rail?: "top" | "mid" | "bottom" | "only" }) {
+  const m = MARK[markOf(n)];
   return (
-    <section style={{ ...card, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-      {nodes.map((n, i) => {
-        const mark = str(n.mark) || "~";
-        return (
-          <span key={i} className="mr-row" style={{ gap: 6 }}>
-            <span style={{ padding: "6px 10px", background: "var(--mr-well)", fontSize: 12 }}>
-              <b className="mr-mono" style={{ color: mark === "+" ? "var(--mr-done)" : mark === "-" ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{mark}</b> {str(n.label)}
-            </span>
-            {i < nodes.length - 1 && <span className="mr-dim">→</span>}
-          </span>
-        );
-      })}
-    </section>
+    <div data-mr="ChangeRow" style={{ display: "flex", alignItems: "stretch", gap: 10, minHeight: 26 }}>
+      <span style={{ flex: "none", width: 18, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {rail && rail !== "only" && <span aria-hidden style={{ position: "absolute", left: 8, width: 2, background: "var(--mr-well)", top: rail === "top" ? "50%" : 0, bottom: rail === "bottom" ? "50%" : 0 }} />}
+        <b className="mr-mono" title={m.word} aria-label={m.word} style={{ position: "relative", width: 18, height: 18, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, background: "var(--mr-well)", color: m.color }}>{markOf(n) === "-" ? "−" : markOf(n)}</b>
+      </span>
+      <span style={{ flex: 1, minWidth: 0, alignSelf: "center", fontSize: 13, lineHeight: 1.35, overflowWrap: "anywhere" }}>{inline(changeLabel(n.label))}</span>
+      {n.finding && <span style={{ flex: "none", alignSelf: "center", fontSize: 11, fontWeight: 700, padding: "1px 6px", background: "var(--mr-needs)", color: "var(--mr-ink)" }}>{n.finding}</span>}
+    </div>
   );
+}
+
+export function ChangeList({ nodes, grouped }: { nodes: ChangeNode[]; grouped?: boolean }) {
+  if (grouped) {
+    const groups = (["+", "~", "-"] as MarkKey[]).map((k) => ({ k, items: nodes.filter((n) => markOf(n) === k) })).filter((g) => g.items.length);
+    return (
+      <div data-mr="ChangeList" style={{ display: "flex", flexWrap: "wrap", gap: "10px 28px" }}>
+        {groups.map((g) => (
+          <div key={g.k} style={{ flex: "1 1 240px", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+            <span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>{MARK[g.k].word} · {g.items.length}</span>
+            {g.items.map((n, i) => <ChangeRow key={i} n={n} />)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div data-mr="ChangeList" style={{ display: "flex", flexDirection: "column" }}>
+      {nodes.map((n, i) => <ChangeRow key={i} n={n} rail={nodes.length === 1 ? "only" : i === 0 ? "top" : i === nodes.length - 1 ? "bottom" : "mid"} />)}
+    </div>
+  );
+}
+
+function ChangeGraph({ b }: { b: ViewBlock }) {
+  const nodes = list(b.nodes).map((n): ChangeNode => ({ label: str(n.label), mark: str(n.mark), finding: n.finding ? str(n.finding) : null }));
+  return <section style={card}><ChangeList nodes={nodes} /></section>;
 }
 
 function Snippet({ b }: { b: ViewBlock }) {
