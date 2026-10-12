@@ -51,7 +51,7 @@ export type FileChange = { path: string; added: number; removed: number; isNew: 
 
 export type ReviewFinding = { id: string; severity: string; at?: string; text: string };
 export type ReviewFlow = {
-  overview?: { pr?: string; title?: string; tier?: number; tier_label?: string; summary?: string; nodes?: { label: string; mark?: string; finding?: string | null }[]; novelty?: { label: string; what: string; where?: string }[]; questions?: string[]; prior_threads?: number; total_snippets?: number };
+  overview?: { pr?: string; title?: string; tier?: number; tier_label?: string; summary?: string; nodes?: { id?: string; label: string; mark?: string; finding?: string | null }[]; edges?: { from: string; to: string; label?: string | null }[]; novelty?: { label: string; what: string; where?: string }[]; questions?: string[]; prior_threads?: number; total_snippets?: number };
   snippets: Record<number, { n: number; total?: number; area?: string; title?: string; file?: string; code?: string; explain?: string; good?: string; findings?: ReviewFinding[] }>;
   current: number | null;
   noted: string[];
