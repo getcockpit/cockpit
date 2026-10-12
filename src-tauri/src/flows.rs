@@ -8,7 +8,7 @@ pub fn tool_specs(kind: &str) -> Vec<Value> {
     match kind {
         "review" => vec![
             json!({ "name": "review_overview", "description": "Show the review overview (Step 5 of /review) visually instead of writing it out. tier: 1-3; tier_label: one clause; summary: 2-3 sentences; nodes: [{label, mark: '+'|'~'|'-', finding?: 'critical'|'important'|null}] for the change graph; novelty: [{label: 'net-new'|'adjacent'|'overlapping'|'duplicate', what, where?}]; questions: [string]; prior_threads: number of earlier review threads you checked; total_snippets: number.", "params": { "pr": "string", "title": "string", "tier": "number", "tier_label": "string", "summary": "string", "nodes": "array", "novelty": "array", "questions": "array", "prior_threads": "number", "total_snippets": "number" } }),
-            json!({ "name": "review_snippet", "description": "Show one snippet of the walkthrough (Step 6 of /review). n and total: progress; area: concern group; title; file: 'path · start–end'; code: the trimmed diff with lines prefixed '+', '-' or ' '; explain: plain-language what and why; good: what's good; findings: [{id: 'f1', severity: 'Critical'|'Important'|'Suggestion'|'Nitpick', at: 'file:line', text}]. Then wait: the user replies 'note <id>', 'next', or asks a question.", "params": { "n": "number", "total": "number", "area": "string", "title": "string", "file": "string", "code": "string", "explain": "string", "good": "string", "findings": "array" } }),
+            json!({ "name": "review_snippet", "description": "Show one snippet of the walkthrough (Step 6 of /review). n and total: progress; area: concern group; title; file: 'path · start–end'; code: the trimmed diff with lines prefixed '+', '-' or ' '; explain: plain-language what and why; good: what's good; findings: [{id: 'f1', severity: 'Critical'|'Important'|'Suggestion'|'Nitpick', at: 'file:line', text}]. Then wait: the user replies 'note <id>', 'next', 'snippet <n>' (jump to snippet n, in either direction), or asks a question.", "params": { "n": "number", "total": "number", "area": "string", "title": "string", "file": "string", "code": "string", "explain": "string", "good": "string", "findings": "array" } }),
             json!({ "name": "review_publish_ready", "description": "Show the consolidated review (Step 8 of /review): only the findings the user noted. comments: [{severity, at, text, suggestion?}]; verdict: 'Ship it'|'Needs changes'|'Needs discussion'|'Possibly redundant'; dropped: findings removed as duplicates of earlier threads. Then wait for the user to say 'publish'.", "params": { "comments": "array", "verdict": "string", "dropped": "number", "note": "string" } }),
         ],
         "address" => vec![
@@ -24,7 +24,7 @@ pub fn tool_specs(kind: &str) -> Vec<Value> {
 pub fn system_prompt(kind: &str) -> Option<String> {
     let base = "You are running inside Cockpit, a visual front-end for Claude Code. The user reads visuals, not text: keep every text reply to one short line and present each step through the mr tools described below. Never skip the tool calls; never repeat their content as text.";
     match kind {
-        "review" => Some(format!("{base}\nFollow the /review command exactly, but: call review_overview instead of writing the Step 5 overview; call review_snippet for each Step 6 snippet and then wait for the user's reply ('note <finding id>', 'next', or a question); call review_publish_ready instead of writing the Step 8 consolidated list, and only publish to GitHub after the user says 'publish'.")),
+        "review" => Some(format!("{base}\nFollow the /review command exactly, but: call review_overview instead of writing the Step 5 overview; call review_snippet for each Step 6 snippet and then wait for the user's reply ('note <finding id>', 'next', 'snippet <n>' to jump straight to snippet n, forward or back, then carry on from there, or a question); call review_publish_ready instead of writing the Step 8 consolidated list, and only publish to GitHub after the user says 'publish'.")),
         "address" => Some(format!("{base}\nFollow the pr-address skill exactly, but: call address_threads once you know the unresolved threads (and again whenever one changes state); for each thread call address_thread (with options and a recommendation when it isn't addressed) and wait for the user's choice; call address_proof with the verification results; call address_reply with each reply you post.")),
         _ => None,
     }
@@ -51,6 +51,7 @@ mod tests {
         assert_eq!(tool_specs("address").len(), 4);
         assert!(tool_specs("blank").is_empty());
         assert!(system_prompt("review").unwrap().contains("review_snippet"));
+        assert!(system_prompt("review").unwrap().contains("'snippet <n>'"));
         assert!(system_prompt("plan").is_none());
     }
 
