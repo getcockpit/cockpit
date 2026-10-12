@@ -19,7 +19,7 @@ function pointed(el: Element | null): PointTarget | null {
   return { component: t.dataset.mr ?? "", source: t.dataset.mrSource ?? "", text: (t.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 400) };
 }
 
-export function VoiceController({ resolve, send, onFallback }: { resolve: Resolve; send: (session: string, text: string) => void; onFallback: (text: string) => void }) {
+export function VoiceController({ resolve, send, onFallback, onCatchUp }: { resolve: Resolve; send: (session: string, text: string) => void; onFallback: (text: string) => void; onCatchUp?: (session: string | null) => void }) {
   const [live, setLive] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
@@ -66,6 +66,8 @@ export function VoiceController({ resolve, send, onFallback }: { resolve: Resolv
         const said = (v.text ?? "").trim();
         if (!said) return;
         const { input, point } = ctx.current;
+        // "Catch me up" is a command, not a message (MR-116): a brief of the session pointed at, else the open one.
+        if (onCatchUp && /^(please )?catch me up\W*$/i.test(said)) { onCatchUp(point ? resolve(point)?.session ?? null : null); return; }
         if (input) {
           // Type into the field the user was in, keeping React's state in sync.
           const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set;
@@ -80,7 +82,7 @@ export function VoiceController({ resolve, send, onFallback }: { resolve: Resolv
       }
     });
     return () => { un.then((f) => f()); };
-  }, [resolve, send, onFallback]);
+  }, [resolve, send, onFallback, onCatchUp]);
 
   // An error hides itself after a few seconds, or on click, so it never sits over the UI.
   useEffect(() => {
