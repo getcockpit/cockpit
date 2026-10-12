@@ -4,6 +4,7 @@ import { pointer } from "./pointer";
 import { Diff } from "./Diff";
 import { Markdown, inline } from "./Markdown";
 import { Chips, Mark } from "./Turn";
+import { FileRefChip } from "./FileChip";
 import type { ViewBlock } from "../state/types";
 
 // A view Claude composed with render_view (decision 26, MR-61): each block is one catalog
@@ -127,7 +128,7 @@ function ChangeGraph({ b }: { b: ViewBlock }) {
 function Snippet({ b }: { b: ViewBlock }) {
   return (
     <section style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }}>
-      {b.file ? <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{str(b.file)}</span> : null}
+      {b.file ? <span style={{ fontSize: 12 }}><FileRefChip text={str(b.file)} fallback={<span className="mr-mono mr-dim">{str(b.file)}</span>} /></span> : null}
       <Diff code={str(b.code)} />
       {b.note ? <span className="mr-ink2">{inline(str(b.note))}</span> : null}
     </section>
@@ -391,7 +392,7 @@ function Findings({ b }: { b: ViewBlock }) {
         <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <SevBars severity={str(f.severity)} />
           <span className="mr-grow">{inline(str(f.title))}</span>
-          {f.where ? <span className="mr-mono mr-dim" style={{ flex: "none", fontSize: 11 }}>{str(f.where)}</span> : null}
+          {f.where ? <span style={{ flex: "none", fontSize: 11, maxWidth: "45%" }}><FileRefChip text={str(f.where)} fallback={<span className="mr-mono mr-dim">{str(f.where)}</span>} /></span> : null}
         </div>
       ))}
     </section>
@@ -433,7 +434,7 @@ function Novelty({ b }: { b: ViewBlock }) {
         <div key={i} style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <NoveltyTag verdict={str(n.verdict) || "new"} />
           <span className="mr-grow">{inline(str(n.what))}</span>
-          {n.where ? <span className="mr-mono mr-dim" style={{ flex: "none", fontSize: 11 }}>{str(n.where)}</span> : null}
+          {n.where ? <span style={{ flex: "none", fontSize: 11, maxWidth: "45%" }}><FileRefChip text={str(n.where)} fallback={<span className="mr-mono mr-dim">{str(n.where)}</span>} /></span> : null}
         </div>
       ))}
     </section>
