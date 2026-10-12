@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { fenceCommand, inlineCommand } from "../picker/commands";
 import { RunKey } from "./RunCommand";
+import { FileRefChip } from "./FileChip";
 
 // A deliberately small Markdown renderer for doc bodies: headings, lists, code fences, tables,
 // bold and inline code. Text is never injected as HTML.
@@ -105,8 +106,10 @@ export function inline(t: string): ReactNode[] {
   );
 }
 
-// Inline code; a command Claude tells you to run gets a Run button after it (MR-85).
+// Inline code; a command Claude tells you to run gets a Run button after it (MR-85), and a file
+// that exists becomes a chip that shows it in Finder (MR-112).
 function Code({ code, before }: { code: string; before: string }) {
   const cmd = inlineCommand(code, before);
-  return <><code className="mr-mono" style={{ background: "var(--mr-well)", padding: "0 4px" }}>{code}</code>{cmd && <RunKey command={cmd} compact />}</>;
+  const plain = <code className="mr-mono" style={{ background: "var(--mr-well)", padding: "0 4px" }}>{code}</code>;
+  return <>{cmd ? plain : <FileRefChip text={code} fallback={plain} />}{cmd && <RunKey command={cmd} compact />}</>;
 }
