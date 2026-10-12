@@ -4,7 +4,7 @@ import { Key } from "../components";
 import { Markdown } from "../components/Markdown";
 import { FileContext } from "../components/FileChip";
 import { CatalogView, ViewGlance } from "../components/CatalogView";
-import { blockView, continueBrief, decideQuestion, docApi, sendDocFeedback, isBrief, isOpenQuestion, orderedBlocks, SECTION_LABEL, type Block, type Doc } from "../state/docs";
+import { blockView, buildDoc, continueBrief, decideQuestion, docApi, sendDocFeedback, isBrief, isOpenQuestion, orderedBlocks, SECTION_LABEL, type Block, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import type { AppState } from "../state/types";
 
@@ -70,10 +70,10 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
     setSent(regenerate ? "Sent. Claude is writing the next version; it appears here as it lands." : "Sent to the plan session.");
     if (!live) onOpenSession(id);
   };
-  const build = async () => {
-    const id = await api.start(session?.cwd ?? "~/", `Implement the plan in working doc "${doc.title}" (doc_id ${doc.id}). First read it with the mr doc_read tool and follow its decisions. If you learn something that changes the plan, update the doc's blocks with doc_set_block and add a [log] block.`, "blank");
-    onOpenSession(id);
-  };
+  const build = async () => onOpenSession(await buildDoc(doc, session));
+  // The latest session building this doc, if any (MR-118).
+  const builder = doc.build_sessions?.length ? state.sessions[doc.build_sessions[doc.build_sessions.length - 1]] ?? null : null;
+  const building = !!builder && builder.status !== "ended" && builder.status !== "error";
   // ⌘↵ does what the primary button says: regenerate with your input, or build when there's none.
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -105,6 +105,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
           <span className="mr-mono mr-dim">v{doc.version} · {blocks.length} blocks</span>
           <span className="mr-grow" />
           {session && <button type="button" className="mr-key" style={{ minHeight: 30 }} onClick={() => onOpenSession(session.id)}>{brief ? "Open the session" : "Open the plan session"}{live ? "" : " (ended)"}</button>}
+          {builder && <button type="button" className="mr-key" data-mr="DocBuildSession" data-mr-source={builder.id} style={{ minHeight: 30 }} onClick={() => onOpenSession(builder.id)}>Open the build session{building ? "" : " (ended)"}</button>}
           <button type="button" className="mr-key" data-mr="DocDelete" data-mr-source={doc.id} style={{ minHeight: 30, ...(confirmDelete ? { background: "var(--mr-error)", color: "var(--mr-tile)" } : {}) }}
             onClick={() => void remove()} onBlur={() => setConfirmDelete(false)}>{confirmDelete ? "Click again to delete this doc" : "Delete doc"}</button>
         </header>
