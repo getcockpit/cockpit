@@ -3,7 +3,7 @@
 // used by the needs-you queue to ask the real decision instead of echoing the Next line.
 
 export type Item = { title: string | null; detail: string; time: string | null; sub: string[] };
-export type Section = { heading: string; tone: "done" | "todo" | "you" | "info"; intro: string[]; items: Item[]; ordered: boolean };
+export type Section = { heading: string; tone: "done" | "todo" | "you" | "info"; intro: string[]; items: Item[]; outro: string[]; ordered: boolean };
 export type Report = { lead: string[]; decision: string | null; sections: Section[]; next: string | null };
 
 const TIME = /\b(?:about|~|around|roughly)\s*(\d+(?:[.,]\d+)?(?:\s*[–-]\s*\d+(?:[.,]\d+)?)?\s*(?:min(?:ute)?s?|h(?:ours?|rs?)?|days?|weeks?))\b/i;
@@ -35,7 +35,7 @@ export function parseReport(text: string): Report | null {
   let cur: Section | null = null;
   for (const l of lines) {
     const h = l.match(/^#{1,4}\s+(.*)$/);
-    if (h) { cur = { heading: h[1].replace(/\*\*/g, "").trim(), tone: toneOf(h[1]), intro: [], items: [], ordered: false }; r.sections.push(cur); continue; }
+    if (h) { cur = { heading: h[1].replace(/\*\*/g, "").trim(), tone: toneOf(h[1]), intro: [], items: [], outro: [], ordered: false }; r.sections.push(cur); continue; }
     if (/^\s*Next:/i.test(l)) { r.next = l.replace(/^\s*Next:\s*/i, "").trim(); continue; }
     const li = l.match(/^(\s*)(\d+[.)]|[-*])\s+(.*)$/);
     if (li && cur) {
@@ -45,7 +45,8 @@ export function parseReport(text: string): Report | null {
     }
     if (!l.trim()) continue;
     if (cur && cur.items.length && /^\s{2,}\S/.test(l)) { cur.items[cur.items.length - 1].detail += " " + l.trim(); continue; }
-    if (cur) cur.intro.push(l.trim()); else r.lead.push(l.trim());
+    // Text after a section's items (a table, a closing note) stays after them.
+    if (cur) (cur.items.length ? cur.outro : cur.intro).push(l.trim()); else r.lead.push(l.trim());
   }
   // A lead that opens with a bold question is the decision this turn is waiting on.
   const q = r.lead.find((p) => /^\*\*[^*]+\?\*\*/.test(p) || /^\*\*[^*]*decision[^*]*\*\*/i.test(p));
