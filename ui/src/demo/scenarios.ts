@@ -15,10 +15,12 @@ const ready: E[] = [
 ];
 const onboarded: E = { kind: "ui.onboarded", at: 2 };
 
-const say = (session: string, text: string, at: number): E => ({ session, kind: "sidecar.sdk", payload: { message: { type: "assistant", message: { content: [{ type: "text", text }] } } }, at });
-const tool = (session: string, name: string, input: Record<string, unknown>, at: number, id = `${name}-${at}`): E => ({ session, kind: "sidecar.sdk", payload: { message: { type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } } }, at });
+// What each reply had in context, for the context meter: grows with the session, up to ~190k.
+const usage = (at: number) => ({ input_tokens: 2, cache_read_input_tokens: 12_000 + (at % 400) * 450, cache_creation_input_tokens: 400, output_tokens: 60 });
+const say = (session: string, text: string, at: number): E => ({ session, kind: "sidecar.sdk", payload: { message: { type: "assistant", message: { content: [{ type: "text", text }], usage: usage(at) } } }, at });
+const tool = (session: string, name: string, input: Record<string, unknown>, at: number, id = `${name}-${at}`): E => ({ session, kind: "sidecar.sdk", payload: { message: { type: "assistant", message: { content: [{ type: "tool_use", id, name, input }], usage: usage(at) } } }, at });
 const todos = (session: string, done: number, items: [string, string][], at: number): E => tool(session, "TodoWrite", { todos: items.map(([content, activeForm], i) => ({ content, activeForm, status: i < done ? "completed" : i === done ? "in_progress" : "pending" })) }, at);
-const result = (session: string, text: string, at: number, cost = 0.3): E => ({ session, kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: text, total_cost_usd: cost } }, at });
+const result = (session: string, text: string, at: number, cost = 0.3): E => ({ session, kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: text, total_cost_usd: cost, modelUsage: { "claude-opus-5-5": { costUSD: cost, contextWindow: 200_000 } } } }, at });
 const start = (session: string, prompt: string, extra: Record<string, unknown>, at: number): E[] => [
   { session, kind: "ui.session_requested", payload: { prompt, kind: "blank", workspace: "personal", ...extra }, at },
   { session, kind: "sidecar.session_started", payload: { sdk_session_id: `sdk-${session}`, model: "claude-opus-5-5" }, at: at + 1 },

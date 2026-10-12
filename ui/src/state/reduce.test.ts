@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { autoReviewDefault, elsewhere, initialState, introOpen, replay, workspaceFolder } from "./reduce";
+import { autoReviewDefault, contextFill, elsewhere, initialState, introOpen, replay, workspaceFolder } from "./reduce";
 import { dedupe } from "./store";
 import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
@@ -567,5 +567,24 @@ describe("live events from two copies", () => {
     expect(d.fresh(e("E4", 4))).toBe(true);
     expect(d.fresh(e("E3", 3))).toBe(true);
     expect(d.fresh(e("E3", 3))).toBe(false);
+  });
+});
+
+describe("context meter", () => {
+  const sdk = (id: string, message: Record<string, unknown>): MrEvent => ({ id, session_id: "S", kind: "sidecar.sdk", payload: { message }, anchor: null, created_at: 2 });
+  const start: MrEvent = { id: "0", session_id: "S", kind: "ui.session_requested", payload: { prompt: "hi", cwd: "/x", kind: "blank" }, anchor: null, created_at: 1 };
+  const reply = (id: string, read: number, extra: Record<string, unknown> = {}) => sdk(id, { type: "assistant", message: { content: [], usage: { input_tokens: 2, cache_read_input_tokens: read, cache_creation_input_tokens: 100, output_tokens: 8 } }, ...extra });
+
+  it("tracks the latest main-thread reply, skips subagents, takes the window from the result", () => {
+    const s = replay([start, reply("1", 50_000), reply("2", 900_000, { parent_tool_use_id: "toolu_x" }),
+      sdk("3", { type: "result", modelUsage: { "claude-haiku-5-5": { costUSD: 0.001, contextWindow: 200_000 }, "claude-opus-5-5[1m]": { costUSD: 2, contextWindow: 1_000_000 } } })]).sessions.S;
+    expect(s.context).toEqual({ used: 50_110, window: 1_000_000 });
+    expect(contextFill(s, 200_000)).toEqual({ used: 50_110, limit: 200_000, share: 50_110 / 200_000 });
+    expect(contextFill(s, null)?.limit).toBe(1_000_000);
+  });
+
+  it("a compact resets it to what was kept", () => {
+    const s = replay([start, reply("1", 150_000), sdk("2", { type: "system", subtype: "compact_boundary", compact_metadata: { pre_tokens: 150_110, post_tokens: 15_000 } })]).sessions.S;
+    expect(s.context.used).toBe(15_000);
   });
 });
