@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { keyLabel, modKey } from "../platform";
 import { sendsOnEnter, useAutoGrow } from "../components/autoGrow";
 import { FolderPicker, PinFolder, useWorkFolder } from "../components/FolderPicker";
 import { workspaceFolder } from "../state/reduce";
@@ -159,7 +160,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   const onKey = (e: React.KeyboardEvent) => {
     if (keyOf(e) === "Escape") { e.preventDefault(); if (draft) setDraft(null); else onClose(); }
     else if (draft) return;
-    else if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && tiles[Number(keyOf(e)) - 1]) { e.preventDefault(); setMode(tiles[Number(keyOf(e)) - 1].id); }
+    else if (modKey(e) && /^[1-9]$/.test(keyOf(e)) && tiles[Number(keyOf(e)) - 1]) { e.preventDefault(); setMode(tiles[Number(keyOf(e)) - 1].id); }
     else if (text.includes("\n") && (keyOf(e) === "ArrowDown" || keyOf(e) === "ArrowUp")) return; // several lines: arrows move the caret
     else if (keyOf(e) === "ArrowDown") { e.preventDefault(); setSel((x) => Math.min(items.length - 1, x + 1)); }
     else if (keyOf(e) === "ArrowUp") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
@@ -187,7 +188,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
             return (
               <button key={x.id} type="button" role="radio" aria-checked={on} onClick={() => setMode(x.id)} data-mr="KindTile" data-mr-source={x.id}
                 style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, borderRadius: "var(--mr-radius)", textAlign: "left", cursor: "pointer", minWidth: 0, background: on ? "var(--mr-ink)" : "var(--mr-well)", color: on ? "var(--mr-tile)" : "var(--mr-ink)" }}>
-                <span className="mr-row" style={{ justifyContent: "space-between" }}><strong className="mr-ellipsis" style={{ fontSize: 15 }}>{x.name}</strong>{i < 9 && <kbd className="mr-mono" style={{ opacity: 0.7 }}>⌘{i + 1}</kbd>}</span>
+                <span className="mr-row" style={{ justifyContent: "space-between" }}><strong className="mr-ellipsis" style={{ fontSize: 15 }}>{x.name}</strong>{i < 9 && <kbd className="mr-mono" style={{ opacity: 0.7 }}>{keyLabel(`⌘${i + 1}`)}</kbd>}</span>
                 <span className={x.mono ? "mr-mono mr-ellipsis" : undefined} style={{ opacity: 0.8 }}>{x.what}</span>
               </button>
             );
@@ -237,7 +238,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           {error && <span style={{ color: "var(--mr-error)", padding: "4px 8px" }}>{error}</span>}
         </div>
         <div className="mr-row mr-dim" style={{ padding: "10px 18px", background: "var(--mr-band)" }}>
-          <span>{draft ? "↵ save · esc cancel" : `⌘1–${Math.min(9, tiles.length)} switch · ↑↓ pick · ↵ start · esc close`}</span>
+          <span>{draft ? "↵ save · esc cancel" : keyLabel(`⌘1–${Math.min(9, tiles.length)} switch · ↑↓ pick · ↵ start · esc close`)}</span>
           <span className="mr-grow" />
           <span className="mr-ellipsis">{draft ? "Saved for every workspace" : preset ? `Sends your template${preset.worktree ? ", in its own git worktree" : ", in the folder you pick"}` : HOW[mode]}</span>
         </div>
