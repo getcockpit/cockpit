@@ -10,7 +10,6 @@ See also `AGENTS.md` (architecture, conventions, commands).
 | `ui/` | React UI. Theme tokens are in `ui/src/design/tokens.css` (Control Room) |
 | `sidecar/` | TypeScript process that will host the official Agent SDK. Speaks NDJSON over stdio |
 | `scripts/` | `dev.sh` (run from source), `build-sidecar.sh` |
-| `design/mockups/` | Snapshots of the MR-25 visual-direction canvas |
 
 ## Run
 

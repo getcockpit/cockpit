@@ -197,8 +197,8 @@ mod tests {
 
     #[test]
     fn reads_the_repo_from_any_pr_spec() {
-        assert_eq!(repo_slug("https://github.com/acme/platform/pull/482"), Some("acme/platform".into()));
-        assert_eq!(repo_slug("acme/platform#12"), Some("acme/platform".into()));
+        assert_eq!(repo_slug("https://github.com/acme/shop/pull/482"), Some("acme/shop".into()));
+        assert_eq!(repo_slug("acme/shop#12"), Some("acme/shop".into()));
         assert_eq!(repo_slug("482"), None);
     }
 
@@ -243,8 +243,8 @@ mod tests {
 
     #[test]
     fn scopes_pr_lists_to_one_repo() {
-        assert_eq!(github_slug("git@github.com:acme/platform.git\n"), Some("acme/platform".into()));
-        assert_eq!(github_slug("https://github.com/acme/platform"), Some("acme/platform".into()));
+        assert_eq!(github_slug("git@github.com:acme/shop.git\n"), Some("acme/shop".into()));
+        assert_eq!(github_slug("https://github.com/acme/shop"), Some("acme/shop".into()));
         assert_eq!(github_slug("https://gitlab.com/a/b.git"), None);
         assert_eq!(safe_slug("a/b\" OR x"), None);
         assert_eq!(safe_slug("my-org/my.repo_1"), Some("my-org/my.repo_1"));
@@ -254,8 +254,8 @@ mod tests {
 
     #[test]
     fn reads_owner_name_and_number_from_a_pr_url() {
-        assert_eq!(pr_parts("https://github.com/acme/platform/pull/482"), Some(("acme".into(), "platform".into(), 482)));
-        assert_eq!(pr_parts("https://github.com/acme/platform/pull/482/files"), Some(("acme".into(), "platform".into(), 482)));
+        assert_eq!(pr_parts("https://github.com/acme/shop/pull/482"), Some(("acme".into(), "shop".into(), 482)));
+        assert_eq!(pr_parts("https://github.com/acme/shop/pull/482/files"), Some(("acme".into(), "shop".into(), 482)));
         assert_eq!(pr_parts("acme/platform#12"), None);
     }
 
