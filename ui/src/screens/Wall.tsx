@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { keyLabel } from "../platform";
 import { ContextMeter } from "../components/ContextMeter";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -159,7 +160,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
           <div className="mr-grid">
             {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} compactWindow={state.compactWindow} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
             <button type="button" className="mr-tile" onClick={() => onStart()} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
-              <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>⌘K</kbd>Start something</span>
+              <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>{keyLabel("⌘K")}</kbd>Start something</span>
             </button>
           </div>
         </section>}
@@ -205,11 +206,11 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
       </main>
       <footer className="mr-band mr-row mr-dim" style={{ padding: "8px 24px", fontSize: 12 }}>
         {/* Calm footer (MR-53): one hint, the two places you go from here, and a quiet progress note. */}
-        <span>Right-click anything for actions · ⌘-click to go deeper</span>
+        <span>Right-click anything for actions · {keyLabel("⌘-click")} to go deeper</span>
         <span className="mr-grow" />
         {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-3)" }}>{daily.streak}/{daily.goal} days</span>}
         <button type="button" className="mr-link" onClick={() => api.report()}>Report a bug</button>
-        <button type="button" className="mr-link" onClick={onArchive}>Archive{archived ? ` (${archived})` : ""} <kbd className="mr-mono">⌘⇧A</kbd></button>
+        <button type="button" className="mr-link" onClick={onArchive}>Archive{archived ? ` (${archived})` : ""} <kbd className="mr-mono">{keyLabel("⌘⇧A")}</kbd></button>
         <Key k="⌘K" tone="primary" onClick={() => onStart()}>Start</Key>
       </footer>
     </div>

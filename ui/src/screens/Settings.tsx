@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "../state/listen";
 import { Key } from "../components";
+import { keyLabel } from "../platform";
 import { api } from "../state/store";
 import { sessionTitle } from "../picker/title";
 import { isAppChange } from "../picker/queue";
@@ -66,7 +67,7 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
       if (!e.kind.startsWith("selfbuild.")) return;
       const p = e.payload as Record<string, unknown>;
       if (e.kind === "selfbuild.step") setBuilding(String(p.step));
-      if (e.kind === "selfbuild.finished") { setBuilding(null); setMsg(p.ok ? `Built in ${p.seconds}s.` : `Build failed at the ${p.step} step. Open Builds (⌘⇧B) for the log.`); load(); }
+      if (e.kind === "selfbuild.finished") { setBuilding(null); setMsg(p.ok ? `Built in ${p.seconds}s.` : keyLabel(`Build failed at the ${p.step} step. Open Builds (⌘⇧B) for the log.`)); load(); }
     });
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", key);

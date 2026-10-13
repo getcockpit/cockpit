@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { setMac } from "../platform";
 import { comboOf, summarize, usageLabel, type UsageRow } from "./usage";
+
+// Mac labels; platform.test.ts covers Ctrl.
+beforeAll(() => setMac(true));
 
 const key = (code: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }> = {}) =>
   ({ metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, code, key: code, ...mods });
