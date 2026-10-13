@@ -44,7 +44,7 @@ Permissions, questions and plan approvals from every session land in a single li
 Every session works in its own copy of your repo, so they never trip over each other. Start a new one in a second with **⌘K**.
 
 **🚦 See the risk before it runs.**
-A force-push or a database migration shows up in red, with the exact command, before anything happens. Every change is mapped by folder, so you can see what moved at a glance.
+A production `DROP TABLE` or a force-push stops in red, with the exact command, before anything happens. Every change is mapped by folder, so you can see what moved at a glance.
 
 **🗺 Plans you can actually read.**
 Ask Claude to plan before it codes, and you get a clear one-page map (goal, scope, design, risks, open questions) instead of chat scrollback. Mark it up, send all your notes at once, then hit **Build from doc**.
@@ -64,9 +64,10 @@ The full transcript is one key away, and any session can move to a real terminal
 
 <img src="site/assets/queue.jpg" alt="The Needs-you queue" width="100%">
 
-**The risk, before it runs.** You see the exact command and how much it could hurt.
+**Catch the command that sounds harmless.** "Drop the old invoices table" turns out to be production, with `CASCADE`. Press D, and Claude comes back with a safer plan.
 
-<img src="site/assets/risk.jpg" alt="A high-risk force-push waiting for approval" width="100%">
+<img src="site/assets/risk.jpg" alt="A production DROP TABLE flagged high risk" width="100%">
+<img src="site/assets/done.jpg" alt="After Deny, Claude proposes staging first" width="100%">
 
 **Plans you can read in ten seconds.** Goal, scope, design, risks and open questions on one page.
 
