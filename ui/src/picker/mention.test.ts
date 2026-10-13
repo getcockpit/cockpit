@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { insertMention, matchPaths, typedMention } from "./mention";
+import { droppedMentions, insertDropped, insertMention, matchPaths, typedMention } from "./mention";
 
 const PATHS = ["docs/", "src-tauri/", "src-tauri/src/", "ui/", "ui/src/", "ui/src/screens/", "README.md", "src-tauri/src/mentions.rs", "ui/src/screens/Focus.tsx", "ui/src/screens/Wall.tsx"];
 
@@ -33,5 +33,19 @@ describe("insertMention", () => {
   it("swaps the query for the path and puts the caret after it", () => {
     expect(insertMention("look at @ui/sc please", { start: 8, query: "ui/sc" }, "ui/src/screens/")).toEqual({ text: "look at @ui/src/screens/ please", caret: 25 });
     expect(insertMention("@", { start: 0, query: "" }, "docs/")).toEqual({ text: "@docs/ ", caret: 7 });
+  });
+});
+
+describe("dropped files", () => {
+  it("mentions each path, quoting ones with spaces", () => {
+    expect(droppedMentions(["/a/b.ts", "/x y/shot.png"])).toBe('@/a/b.ts @"/x y/shot.png"');
+  });
+  it("puts them at the caret with a space either side", () => {
+    expect(insertDropped("look at", 7, 7, ["/a.png"])).toEqual({ text: "look at @/a.png ", caret: 16 });
+    expect(insertDropped("look at  please", 8, 8, ["/a.png"])).toEqual({ text: "look at @/a.png please", caret: 15 });
+    expect(insertDropped("", 0, 0, ["/a.png"])).toEqual({ text: "@/a.png ", caret: 8 });
+  });
+  it("replaces a selection", () => {
+    expect(insertDropped("see THIS now", 4, 8, ["/f"])).toEqual({ text: "see @/f now", caret: 7 });
   });
 });
