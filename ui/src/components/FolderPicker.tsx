@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { homeDir } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { keyOf } from "./keys";
+import { resolveTyped } from "./typedPath";
 
 // Work-folder picker (MR-36): one button showing where the session will run. Opens a list of the
 // folders you actually work in (this app's sessions + Claude Code's history), filter by typing,
@@ -45,9 +47,11 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const box = useRef<HTMLDivElement>(null);
-  const home = useMemo(() => found.find((f) => f.path.startsWith("/Users/"))?.path.split("/").slice(0, 3).join("/") ?? "", [found]);
+  const [realHome, setRealHome] = useState("");
+  const home = useMemo(() => realHome || (found.find((f) => f.path.startsWith("/Users/"))?.path.split("/").slice(0, 3).join("/") ?? ""), [realHome, found]);
 
   useEffect(() => { invoke<Folder[]>("recent_folders").then(setFound).catch(() => {}); }, []);
+  useEffect(() => { homeDir().then((h) => setRealHome(h.replace(/\/+$/, ""))).catch(() => {}); }, []);
   useEffect(() => {
     if (!openList) return;
     const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpenList(false); };
@@ -60,10 +64,10 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
     const fromApp = extra.filter(Boolean).map((p) => ({ path: p, name: p.split("/").filter(Boolean).at(-1) ?? p, repo: true, at: 0 }));
     return [...fromApp, ...found].filter((f) => (seen.has(f.path) ? false : (seen.add(f.path), true)));
   }, [found, extra]);
-  const typedPath = /^[~/]/.test(q.trim()) ? q.trim() : null;
+  const typedPath = resolveTyped(q, value, home);
   const list = all.filter((f) => !q.trim() || typedPath || `${f.name} ${f.path}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 9);
   const rows: { label: string; sub: string; run: () => void }[] = [
-    ...(typedPath ? [{ label: `Use ${typedPath}`, sub: "typed path", run: () => pick(typedPath) }] : []),
+    ...(typedPath ? [{ label: `Use ${tilde(typedPath, home)}`, sub: typedPath === q.trim() ? "typed path" : `typed path: ${q.trim()}`, run: () => pick(typedPath) }] : []),
     ...list.map((f) => ({ label: f.name, sub: tilde(f.path, home) + (f.repo ? "" : " · not a git repo"), run: () => pick(f.path) })),
     { label: "Choose a folder…", sub: "macOS folder dialog", run: () => void browse() },
   ];
@@ -97,7 +101,7 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
             if (k === "Enter") rows[sel]?.run();
             if (k === "Escape") setOpenList(false);
           }}>
-          <input autoFocus className="mr-input" placeholder="Filter, or type a path (~/code/app)" value={q} onChange={(e) => setQ(e.target.value)} style={{ margin: 8, background: "var(--mr-well)" }} aria-label="Filter folders" />
+          <input autoFocus className="mr-input" placeholder="Filter, or type a path (~/code/app, ../other)" value={q} onChange={(e) => setQ(e.target.value)} style={{ margin: 8, background: "var(--mr-well)" }} aria-label="Filter folders" />
           {rows.map((r, i) => (
             <button key={r.label + r.sub} type="button" role="option" aria-selected={i === sel} onMouseEnter={() => setSel(i)} onClick={r.run}
               style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, border: 0, padding: "7px 12px", font: "inherit", textAlign: "left", cursor: "pointer", color: "var(--mr-ink)", background: i === sel ? "var(--mr-well)" : "transparent", boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
