@@ -43,3 +43,16 @@ export function insertMention(text: string, at: { start: number; query: string }
   const rest = text.slice(at.start + 1 + at.query.length).replace(/^ /, "");
   return { text: head + rest, caret: head.length };
 }
+
+/** Dropped files as @ mentions, one per path; a path with spaces is quoted: @"/a b/c.png". */
+export function droppedMentions(paths: string[]): string {
+  return paths.map((p) => (/\s/.test(p) ? `@"${p}"` : `@${p}`)).join(" ");
+}
+
+/** The text with dropped files put where the caret is, spaced from what's around them, and the caret after them. */
+export function insertDropped(text: string, start: number, end: number, paths: string[]): { text: string; caret: number } {
+  const head = text.slice(0, start), rest = text.slice(end);
+  const lead = head && !/\s$/.test(head) ? " " : "";
+  const mid = `${lead}${droppedMentions(paths)}${/^\s/.test(rest) ? "" : " "}`;
+  return { text: head + mid + rest, caret: head.length + mid.length };
+}
