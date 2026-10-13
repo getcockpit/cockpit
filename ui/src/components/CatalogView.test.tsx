@@ -42,3 +42,24 @@ test("a change list shows each mark once, grouped or in flow order", () => {
   expect(flow.match(/data-mr="ChangeRow"/g)?.length).toBe(4);
   expect(flow).not.toContain("→");
 });
+
+// God-mode mark: a change overview as cards read as "+ release_update.rs / check, path choice…",
+// glyphs and comma soup. Marks now show as a word on a coloured edge; a list detail is chips.
+test("cards show marks as words and list details as chips", () => {
+  const items = [
+    { title: "release_update.rs", detail: "check, path choice, swap, events", mark: "+" },
+    { title: "personal.rs", detail: "preview_merge, merge tag, set aside", mark: "~" },
+    { title: "selfbuild.rs", detail: "resume marker; failure → choice card", mark: "~" },
+    { title: "release.yml + package.sh", detail: "sign bundles, latest.json", mark: "~" },
+    { title: "~ UpdateBanner + choice card", detail: "release variant, options" },
+  ];
+  const html = renderToStaticMarkup(<CatalogView id="doc_01m4vszzv0:design_1kat0k" title="" onReply={() => {}} live={false} blocks={[{ type: "cards", items }]} />);
+  expect(html).toContain('data-mr="View:cards"');
+  expect(html).not.toMatch(/>[~+-] </);
+  expect(html.match(/>New</g)?.length).toBe(1);
+  expect(html.match(/>Changed</g)?.length).toBe(4);
+  expect(html).toContain(">path choice<");
+  expect(html).toContain(">failure → choice card<");
+  expect(html).toContain(">UpdateBanner + choice card<");
+  expect(html).toContain("inset 4px 0 0 var(--mr-done)");
+});
