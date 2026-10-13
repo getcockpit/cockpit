@@ -30,8 +30,15 @@ export VITE_MR_PACKAGED=1
 # Ad-hoc signature ("-"): no Developer ID needed; Gatekeeper asks once on the friend's Mac.
 # The Tauri CLI: cargo's if installed, else the one in ui/node_modules (CI).
 tauri=(cargo tauri); cargo tauri --version >/dev/null 2>&1 || tauri=(node "$root/ui/node_modules/@tauri-apps/cli/tauri.js")
+# With the updater key (CI releases, MR-136) Tauri also writes Cockpit.app.tar.gz + .sig for in-app updates.
+updater=false; [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && updater=true
 (cd "$root/src-tauri" && "${tauri[@]}" build --target universal-apple-darwin --bundles app \
-  --config '{"bundle":{"macOS":{"signingIdentity":"-","minimumSystemVersion":"11.0","entitlements":"Entitlements.plist"}}}')
+  --config "{\"bundle\":{\"createUpdaterArtifacts\":$updater,\"macOS\":{\"signingIdentity\":\"-\",\"minimumSystemVersion\":\"11.0\",\"entitlements\":\"Entitlements.plist\"}}}")
+if $updater; then
+  b="$root/src-tauri/target/universal-apple-darwin/release/bundle/macos"
+  cp "$b/Cockpit.app.tar.gz" "$root/dist/Cockpit-macos.app.tar.gz"
+  cp "$b/Cockpit.app.tar.gz.sig" "$root/dist/Cockpit-macos.app.tar.gz.sig"
+fi
 
 version="$(sed -n 's/^  "version": "\(.*\)",/\1/p' "$root/src-tauri/tauri.conf.json")"
 # A plain drag-to-Applications DMG. (Tauri's own DMG step scripts Finder and fails intermittently.)

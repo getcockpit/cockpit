@@ -14,6 +14,7 @@ mod files;
 mod layer2;
 mod notify;
 mod personal;
+mod release_update;
 mod runs;
 mod selfbuild;
 mod selftest;
@@ -43,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(sidecar::Sidecar::default())
         .manage(terminal::Terminals::default())
         .manage(voice::Voice::default())
@@ -66,6 +68,7 @@ pub fn run() {
             // Before app.started: copies that died since are reported first (MR-99).
             instances::start(app.handle(), &dir);
             update::on_start(app.handle());
+            release_update::on_start(app.handle());
             sidecar::start(app.handle())?;
             if selftest::enabled() {
                 selftest::run(app.handle().clone());
@@ -106,6 +109,11 @@ pub fn run() {
             update::update_status,
             update::update_start,
             update::update_restart,
+            release_update::release_status,
+            release_update::release_check,
+            release_update::release_install,
+            release_update::release_choose,
+            release_update::release_seen,
             personal::personal_history,
             personal::fix_apply,
             personal::personal_sync,
