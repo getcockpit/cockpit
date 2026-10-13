@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/kostkobv/cockpit/releases/latest"><b>⬇ Download for free</b></a> &nbsp;·&nbsp;
-  <a href="https://kostkobv.github.io/cockpit/#demo">▶ Watch the 40-second demo</a> &nbsp;·&nbsp;
+  <a href="https://kostkobv.github.io/cockpit/#film">▶ Watch the 40-second demo</a> &nbsp;·&nbsp;
   <a href="https://kostkobv.github.io/cockpit/">Website</a>
 </p>
 
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="https://kostkobv.github.io/cockpit/#demo"><img src="site/assets/wall.jpg" alt="Cockpit: every session that needs you, in one queue" width="900"></a>
+  <a href="https://kostkobv.github.io/cockpit/#film"><img src="site/assets/hero.gif" alt="Cockpit in action: eight sessions, one queue, one key" width="100%"></a>
 </p>
 
 ## Claude Code is fast. You're the bottleneck.
@@ -58,12 +58,27 @@ Pull requests are walked snippet by snippet, riskiest first. Note a finding with
 **🔓 Never locked in.**
 The full transcript is one key away, and any session can move to a real terminal whenever you want.
 
-## Screens
+## See it
 
-| | |
-|:--|:--|
-| <img src="site/assets/focus.jpg" alt="One session in focus"> **One session in focus:** its plan, what it changed, and the exact command it's waiting on. | <img src="site/assets/doc.jpg" alt="A plan as a map"> **Plans as a map:** see the whole plan at once, with open questions pinned to the side. |
-| <img src="site/assets/timeline.jpg" alt="Timeline"> **The timeline:** what ran, what's next, and who will need you. | <img src="site/assets/review.jpg" alt="Guided code review"> **Guided review:** the risky parts of a pull request first, one key per finding. |
+**Everything that needs you, in one queue.** Press a number to answer, A to allow, D to deny.
+
+<img src="site/assets/queue.jpg" alt="The Needs-you queue" width="100%">
+
+**The risk, before it runs.** You see the exact command and how much it could hurt.
+
+<img src="site/assets/risk.jpg" alt="A high-risk force-push waiting for approval" width="100%">
+
+**Plans you can read in ten seconds.** Goal, scope, design, risks and open questions on one page.
+
+<img src="site/assets/doc.jpg" alt="A plan as a map" width="100%">
+
+**Which session needs you next.** What ran, what's next, and who's waiting.
+
+<img src="site/assets/timeline.jpg" alt="Timeline of sessions" width="100%">
+
+**Code review, one finding at a time.** Note a finding with one key and it becomes a review comment.
+
+<img src="site/assets/review.jpg" alt="Guided PR review" width="100%">
 
 ## Private by design
 
