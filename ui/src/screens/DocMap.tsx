@@ -1,6 +1,6 @@
 import { keyOf } from "../components/keys";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Key } from "../components";
+import { Key, PickAny } from "../components";
 import { Markdown } from "../components/Markdown";
 import { FileContext } from "../components/FileChip";
 import { CatalogView, ViewGlance } from "../components/CatalogView";
@@ -180,7 +180,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
                 {open.map((b) => (
                   <div key={b.id} style={{ padding: 12, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-needs)", display: "flex", flexDirection: "column", gap: 8 }}>
                     <button type="button" onClick={() => setStep(blocks.indexOf(b) + 1)} style={{ border: 0, padding: 0, background: "transparent", font: "inherit", fontWeight: 700, color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>{b.takeaway}</button>
-                    {(b.data?.options ?? []).map((o) => (
+                    {b.data?.multiSelect ? <PickAny source={`${doc.id}:${b.id}`} options={b.data.options ?? []} decision={b.decision} onDecide={(l) => void decideQuestion(doc, b.id, l, session)} /> : (b.data?.options ?? []).map((o) => (
                       <button key={o.label} type="button" onClick={() => void decideQuestion(doc, b.id, o.label, session)} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "8px 10px", border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
                         <strong>{o.label}</strong><span className="mr-dim" style={{ fontSize: 12 }}>{o.description}</span>
                       </button>
@@ -292,7 +292,8 @@ function BlockOpen(props: {
 
       {props.onMark && <RiskMarks b={b} onMark={props.onMark} />}
 
-      {question && b.data?.options && (
+      {question && b.data?.options && b.data.multiSelect && <PickAny source={`${doc.id}:${b.id}`} options={b.data.options} decision={b.decision} onDecide={props.onDecide} />}
+      {question && b.data?.options && !b.data.multiSelect && (
         <fieldset style={{ margin: 0, padding: 0, border: 0, display: "flex", flexDirection: "column", gap: 4 }}>
           <legend className="mr-dim" style={{ marginBottom: 6 }}>{b.decision ? "Decided. You can change it." : "Pick one to record the decision."}</legend>
           {b.data.options.map((o, i) => (
