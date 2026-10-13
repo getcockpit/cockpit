@@ -84,6 +84,7 @@ fn start(app: AppHandle, dir: PathBuf, relaunch: bool) -> Result<String, String>
                 UPDATING.store(false, Ordering::SeqCst);
                 let tail = out.map(|o| { let e = String::from_utf8_lossy(&o.stderr).into_owned(); e[e.len().saturating_sub(3000)..].to_owned() }).unwrap_or_else(|e| e.to_string());
                 record(&app2, "selfbuild.finished", serde_json::json!({ "build_id": id2, "ok": false, "step": name, "log": tail }));
+                crate::release_update::on_build_failed(&app2, &id2, name, &tail);
                 return;
             }
         }
@@ -240,6 +241,14 @@ fn in_app_repo(cwd: &Path, repo: &Path) -> bool {
     cwd.starts_with(repo) || cwd.starts_with(&worktrees)
 }
 
+/// Builds `dir` and relaunches into it when it passes; one at a time. Used by release merges (MR-136).
+pub fn build_and_relaunch(app: &AppHandle, dir: PathBuf) -> Result<String, String> {
+    if UPDATING.swap(true, Ordering::SeqCst) {
+        return Err("an update is already building; its progress is in Builds".into());
+    }
+    start(app.clone(), dir, true).inspect_err(|_| UPDATING.store(false, Ordering::SeqCst))
+}
+
 pub fn handle_update(app: &AppHandle, args: &serde_json::Value) -> (Vec<(String, serde_json::Value)>, String, bool) {
     let Some(repo) = crate::changes::app_repo() else { return (vec![], "Not updated: this app has no repo to build from.".into(), true) };
     if UPDATING.swap(true, Ordering::SeqCst) {
@@ -282,7 +291,8 @@ pub fn on_ready(app: &AppHandle) {
             let _ = std::fs::write(f, "ok");
         }
     }
-    if std::env::var("MR_AUTO_RESUME").is_ok_and(|v| v == "1") {
+    // After a release swap (MR-136) the updater restarts the app itself, so a marker stands in for MR_AUTO_RESUME.
+    if crate::release_update::take_resume(app) || std::env::var("MR_AUTO_RESUME").is_ok_and(|v| v == "1") {
         resume_interrupted(app);
     }
 }
