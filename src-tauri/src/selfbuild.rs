@@ -406,10 +406,10 @@ mod tests {
 
     #[test]
     fn app_update_is_offered_only_on_the_apps_own_repo_and_worktrees() {
-        let repo = Path::new("/Users/u/minority-report");
-        assert!(in_app_repo(Path::new("/Users/u/minority-report"), repo));
-        assert!(in_app_repo(Path::new("/Users/u/minority-report-worktrees/fix-tile-ab12"), repo));
-        assert!(!in_app_repo(Path::new("/Users/u/minority-report-old"), repo));
+        let repo = Path::new("/Users/u/app");
+        assert!(in_app_repo(Path::new("/Users/u/app"), repo));
+        assert!(in_app_repo(Path::new("/Users/u/app-worktrees/fix-tile-ab12"), repo));
+        assert!(!in_app_repo(Path::new("/Users/u/app-old"), repo));
         assert!(!in_app_repo(Path::new("/Users/u/other-project"), repo));
     }
 
