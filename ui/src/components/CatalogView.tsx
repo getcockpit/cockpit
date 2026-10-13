@@ -1,6 +1,7 @@
 import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import { Key, ProgressTrack, type Seg } from ".";
 import { pointer } from "./pointer";
+import { modKey } from "../platform";
 import { Diff } from "./Diff";
 import { Markdown, inline } from "./Markdown";
 import { Chips, Mark } from "./Turn";
@@ -651,7 +652,7 @@ export function CatalogView({ id, title, blocks, onReply, onDiscover, live }: { 
         const actionable = b.type !== "next" && b.type !== "text";
         const point = actionable ? pointer({ deeper: live ? () => onReply(`Go one level deeper on "${blockGist(b)}"`) : undefined, discover: onDiscover && (() => onDiscover(`the "${title}" view, ${blockGist(b)}`)) }) : undefined;
         return (
-          <div key={i} data-mr={`View:${b.type}`} data-mr-source={`${id}:${i}`} className="mr-view-block" style={{ position: "relative" }} onClickCapture={(e) => { if (point && (e.metaKey || e.altKey)) point(e); }}>
+          <div key={i} data-mr={`View:${b.type}`} data-mr-source={`${id}:${i}`} className="mr-view-block" style={{ position: "relative" }} onClickCapture={(e) => { if (point && (modKey(e) || e.altKey)) point(e); }}>
             <Block b={b} onReply={onReply} live={live} />
             {actionable && <Actions b={b} title={title} onReply={onReply} onDiscover={onDiscover} live={live} />}
           </div>

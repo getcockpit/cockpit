@@ -3,6 +3,7 @@ import { NoClaude } from "../components/NoClaude";
 import { Bar, Key, Lamp, Lamps, RiskMeter, StateMark } from "../components";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { keyOf } from "../components/keys";
+import { keyLabel, modKey } from "../platform";
 import type { TileSpec } from "../picker/pick";
 import { api } from "../state/store";
 import type { AppState, Diagram, SessionKind } from "../state/types";
@@ -259,7 +260,7 @@ function PointStep({ onNext }: { onNext: () => void }) {
     if (!el) return;
     const mark = (k: string) => setTried((t) => new Set(t).add(k));
     const ctx = () => mark("right");
-    const click = (e: MouseEvent) => { if (e.metaKey) mark("deeper"); else if (e.altKey) mark("discover"); };
+    const click = (e: MouseEvent) => { if (modKey(e)) mark("deeper"); else if (e.altKey) mark("discover"); };
     el.addEventListener("contextmenu", ctx);
     el.addEventListener("click", click);
     return () => { el.removeEventListener("contextmenu", ctx); el.removeEventListener("click", click); };
@@ -280,14 +281,14 @@ function PointStep({ onNext }: { onNext: () => void }) {
           {moves.map((m) => (
             <div key={m.k} className="mr-row" style={{ gap: 14, padding: 12, background: tried.has(m.k) ? "var(--mr-tile)" : "var(--mr-well)", transition: "background .3s" }}>
               <span key={String(tried.has(m.k))} className={tried.has(m.k) ? "mr-onb-pop mr-mono" : "mr-mono"} style={{ width: 22, color: tried.has(m.k) ? "var(--mr-done)" : "var(--mr-ink-3)", fontSize: 18 }}>{tried.has(m.k) ? "✓" : "○"}</span>
-              <kbd className="mr-mono" style={{ padding: "3px 8px", background: "var(--mr-ink)", color: "var(--mr-tile)", minWidth: 96, textAlign: "center" }}>{m.key}</kbd>
+              <kbd className="mr-mono" style={{ padding: "3px 8px", background: "var(--mr-ink)", color: "var(--mr-tile)", minWidth: 96, textAlign: "center" }}>{keyLabel(m.key)}</kbd>
               <span>{m.what}</span>
             </div>
           ))}
         </div>
         <div ref={ref} data-mr="DemoTile" data-mr-source="onboarding" className={tried.size === 0 ? "mr-onb-pulse" : undefined}
           style={{ padding: 18, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10, cursor: "context-menu" }}>
-          <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>try me: right-click · ⌘-click · ⌥-click</span>
+          <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>{keyLabel("try me: right-click · ⌘-click · ⌥-click")}</span>
           <StateMark s="almost" />
           <strong style={{ fontSize: 18 }}>Migrate settings to the new schema</strong>
           <span className="mr-dim">Step 4 of 5 · Running the migration test</span>
@@ -331,7 +332,7 @@ function ConnectStep({ state, onNext }: { state: AppState; onNext: () => void })
           </div>
         )}
         <Check ok={null} optional title="Picker model (optional)"
-          detail="Cloudflare's free Clef-flash model helps sort unclear messages. Everything works without it. Add it any time in Settings (⌘,)." />
+          detail={keyLabel("Cloudflare's free Clef-flash model helps sort unclear messages. Everything works without it. Add it any time in Settings (⌘,).")} />
       </div>
       <Next onClick={onNext} ready={acct.signedIn}>Next: go</Next>
     </>
@@ -376,13 +377,13 @@ function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
         {kinds.map((x, i) => (
           <button key={x.t} type="button" onClick={() => onStart(x.id)} className="mr-onb-rise mr-onb-lift"
             style={{ animationDelay: `${i * 80}ms`, border: 0, padding: 18, textAlign: "left", font: "inherit", color: "var(--mr-ink)", background: "var(--mr-tile)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 8, minHeight: 150 }}>
-            <span className="mr-row" style={{ justifyContent: "space-between" }}><strong style={{ fontSize: 18 }}>{x.t}</strong><kbd className="mr-mono mr-dim">{x.k}</kbd></span>
+            <span className="mr-row" style={{ justifyContent: "space-between" }}><strong style={{ fontSize: 18 }}>{x.t}</strong><kbd className="mr-mono mr-dim">{keyLabel(x.k)}</kbd></span>
             <span className="mr-dim">{x.d}</span>
           </button>
         ))}
       </div>
       <div className="mr-row" style={{ gap: 18, marginTop: "auto" }}>
-        <span className="mr-dim">Any time: <span className="mr-mono">⌘K</span> start · <span className="mr-mono">⌘,</span> settings · <span className="mr-mono">⌘⇧G</span> god mode · right-click anything</span>
+        <span className="mr-dim">Any time: <span className="mr-mono">{keyLabel("⌘K")}</span> start · <span className="mr-mono">{keyLabel("⌘,")}</span> settings · <span className="mr-mono">{keyLabel("⌘⇧G")}</span> god mode · right-click anything</span>
         <span className="mr-grow" />
         <span className="mr-onb-nudge"><Key k="↵" tone="primary" onClick={() => onStart("blank")}>Start my first session</Key></span>
       </div>

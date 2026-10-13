@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { DecisionSpec, Risk, TileSpec } from "../picker/pick";
 import type { Delivery } from "../state/types";
+import { keyLabel } from "../platform";
 
 // The component catalog (decision 16). Screens are composed only from these.
 
@@ -19,7 +20,7 @@ export function Lamp({ value, label, on, onClick }: { value: string | number; la
 export function Key({ k, children, tone, onClick, disabled, submit, pressed }: { k?: string; children: ReactNode; tone?: "primary" | "needs"; onClick?: () => void; disabled?: boolean; submit?: boolean; pressed?: boolean }) {
   return (
     <button type={submit ? "submit" : "button"} className="mr-key" data-tone={tone} onClick={onClick} disabled={disabled} aria-pressed={pressed}>
-      {k && <kbd>{k}</kbd>}
+      {k && <kbd>{keyLabel(k)}</kbd>}
       {children}
     </button>
   );
