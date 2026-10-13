@@ -53,8 +53,8 @@ function runAgent(session: string, prompt: string) {
 
 function finishAgent(session: string, allowed: boolean) {
   const recap = allowed
-    ? "Done. Here's what changed:\n1. Moved the redirect check into the route guard so it runs before render.\n2. Added a regression test for the OAuth callback path.\n3. Removed the duplicate session refresh in the header.\n4. All 142 tests pass.\nWant me to open a PR, or keep going on the follow-ups?"
-    : "Okay, I didn't run the tests. The change is in src/app/routes.ts. Should I run a narrower test file instead?";
+    ? "Done. Here's what changed:\n1. Moved the last 3 readers from invoices_v1 to invoices.\n2. Backfilled 1,204 rows that only existed in the old table.\n3. Dropped invoices_v1 and the 2 views that depended on it.\n4. All 142 tests pass.\nWant me to open a PR, or remove the dead code next?"
+    : "Okay, production is untouched. Two safer ways forward:\n1. Run the same drop on staging first and show you the row counts.\n2. List the 2 views that CASCADE would also remove, so you can decide.\nWant me to start with staging?";
   later(300, () => sdk(session, { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t5" }] } }));
   later(1200, () => sdk(session, { type: "assistant", message: { content: [{ type: "text", text: recap }] } }));
   later(1400, () => sdk(session, { type: "result", is_error: false, result: recap, total_cost_usd: 0.42 }));
