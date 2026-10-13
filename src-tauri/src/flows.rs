@@ -13,9 +13,11 @@ pub fn tool_specs(kind: &str) -> Vec<Value> {
         ],
         "address" => vec![
             json!({ "name": "address_threads", "description": "Show the list of review threads for the PR (pr-address steps 3-4). threads: [{id, at: 'file:line' or 'review body', reviewer, short: one line, state: 'already'|'open'|'fixed'|'deferred'}]. Call again whenever a thread's state changes.", "params": { "pr": "string", "round": "string", "moved_commits": "number", "threads": "array" } }),
-            json!({ "name": "address_thread", "description": "Show the thread you are on now (pr-address step 5). verdict: 'addressed'|'not_addressed'; evidence_file: 'path · lines'; evidence_code: the relevant current code; options: [{id: 'A'|'B'|'skip', label, detail, recommended?: true}] when not addressed. Then wait for the user to pick an option.", "params": { "id": "string", "reviewer": "string", "at": "string", "body": "string", "verdict": "string", "evidence_file": "string", "evidence_code": "string", "options": "array" } }),
+            json!({ "name": "address_thread", "description": "Draw one thread's analysis (pr-address step 5a). Draw every thread that isn't already addressed up front, one call after another, before fixing anything: the user reads and decides on all of them at once. verdict: 'addressed'|'not_addressed' plus why; evidence_file: 'path · lines'; evidence_code: the relevant current code; options: [{id: 'A'|'B'|'skip', label, detail, recommended?: true}] when not addressed. Don't wait between threads.", "params": { "id": "string", "reviewer": "string", "at": "string", "body": "string", "verdict": "string", "evidence_file": "string", "evidence_code": "string", "options": "array" } }),
+            json!({ "name": "address_fixing", "description": "Say which thread you are working on now (pr-address step 5c), the moment you start applying the user's choice for it.", "params": { "id": "string" } }),
             json!({ "name": "address_proof", "description": "Show the verification checklist for the current fix (pr-address step 5d): checks: [{label, ok: true|false|null, proof}] e.g. builds, test actually ran, fails without the fix, hermetic scenario.", "params": { "id": "string", "checks": "array" } }),
             json!({ "name": "address_reply", "description": "Show the reply you are about to post (or posted) on a thread (pr-address step 5b/5e). posted: true once it's on GitHub.", "params": { "id": "string", "text": "string", "sha": "string", "posted": "boolean" } }),
+            json!({ "name": "address_done", "description": "Show that every thread is handled (pr-address wrap-up): summary: one line of what changed; pushed: true once the fixes are pushed; next: 1-3 next steps for the user, best first, [{label: short imperative like 'Push and re-request review from @dana', reply: the exact message to send you to do it}]. Then wait for the user.", "params": { "summary": "string", "pushed": "boolean", "next": "array" } }),
         ],
         _ => vec![],
     }
@@ -25,7 +27,7 @@ pub fn system_prompt(kind: &str) -> Option<String> {
     let base = "You are running inside Cockpit, a visual front-end for Claude Code. The user reads visuals, not text: keep every text reply to one short line and present each step through the mr tools described below. Never skip the tool calls; never repeat their content as text.";
     match kind {
         "review" => Some(format!("{base}\nFollow the /review command exactly, but: call review_overview instead of writing the Step 5 overview; call review_snippet for each Step 6 snippet and then wait for the user's reply ('note <finding id>', 'next', 'snippet <n>' to jump straight to snippet n, forward or back, then carry on from there, or a question); call review_publish_ready instead of writing the Step 8 consolidated list, and only publish to GitHub after the user says 'publish'.")),
-        "address" => Some(format!("{base}\nFollow the pr-address skill exactly, but: call address_threads once you know the unresolved threads (and again whenever one changes state); for each thread call address_thread (with options and a recommendation when it isn't addressed) and wait for the user's choice; call address_proof with the verification results; call address_reply with each reply you post.")),
+        "address" => Some(format!("{base}\nFollow the pr-address skill exactly, but: call address_threads once you know the unresolved threads (and again whenever one changes state). Then analyse every thread up front: call address_thread for each one, back to back without waiting (with options and a recommendation when it isn't addressed), and only then stop and wait. The user decides in any order with replies like 'Thread <id> · Option <id>: <label>', several at once if they like. For each choice, in the order they arrive: call address_fixing, apply it, call address_proof with the verification results, call address_reply with the reply you post. When every thread is handled, call address_done with the next steps.")),
         _ => None,
     }
 }
@@ -36,8 +38,14 @@ pub fn is_flow_tool(tool: &str) -> bool {
 
 /// Records the step; the answer tells Claude to wait when the step needs the user.
 pub fn handle_tool(tool: &str, args: &Value) -> (Vec<(String, Value)>, String, bool) {
-    let waits = matches!(tool, "review_snippet" | "review_publish_ready" | "address_thread");
-    let text = if waits { "Shown to the user. Stop here and wait for their reply." } else { "Shown to the user." };
+    let waits = matches!(tool, "review_snippet" | "review_publish_ready" | "address_done");
+    let text = if waits {
+        "Shown to the user. Stop here and wait for their reply."
+    } else if tool == "address_thread" {
+        "Shown to the user. Draw the next thread now if any are left; once every thread is drawn, stop and wait for their choices."
+    } else {
+        "Shown to the user."
+    };
     (vec![(format!("flow.{tool}"), args.clone())], text.into(), false)
 }
 
@@ -48,7 +56,7 @@ mod tests {
     #[test]
     fn flows_have_tools_and_instructions_only_for_their_kind() {
         assert_eq!(tool_specs("review").len(), 3);
-        assert_eq!(tool_specs("address").len(), 4);
+        assert_eq!(tool_specs("address").len(), 6);
         assert!(tool_specs("blank").is_empty());
         assert!(system_prompt("review").unwrap().contains("review_snippet"));
         assert!(system_prompt("review").unwrap().contains("'snippet <n>'"));
@@ -65,5 +73,14 @@ mod tests {
         let ov = &tool_specs("review")[0];
         assert!(ov["params"]["edges"] == "array" && ov["description"].as_str().unwrap().contains("one per arrow"));
         assert!(is_flow_tool("address_proof") && !is_flow_tool("doc_read"));
+    }
+
+    #[test]
+    fn address_draws_every_thread_before_waiting() {
+        // A thread no longer stops the turn: the next one is drawn straight away (MR-126).
+        let (_, text, _) = handle_tool("address_thread", &json!({ "id": "t1" }));
+        assert!(text.contains("next thread") && !text.contains("Stop here"));
+        assert!(handle_tool("address_done", &json!({})).1.contains("wait"));
+        assert!(system_prompt("address").unwrap().contains("back to back"));
     }
 }
