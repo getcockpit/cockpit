@@ -4,6 +4,7 @@
 //! `ui.run_started` is logged here, in the command that performs it; `run.finished` when it exits.
 
 use std::collections::{HashMap, HashSet};
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -83,21 +84,33 @@ fn spawn(cwd: &str, command: &str, output: &Path) -> Result<std::process::Child,
     let file = std::fs::File::create(output).map_err(|e| e.to_string())?;
     let err = file.try_clone().map_err(|e| e.to_string())?;
     // A login shell: the app's GUI PATH is minimal, the user's own commands need their PATH.
-    let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
-    Command::new(&shell)
-        .args(["-lc", command])
-        .current_dir(cwd)
+    #[cfg(unix)]
+    let (shell, mut cmd) = {
+        let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
+        let mut cmd = Command::new(&shell);
+        cmd.args(["-lc", command]).process_group(0); // its own group, so Stop reaches whatever it started
+        (shell, cmd)
+    };
+    #[cfg(windows)]
+    let (shell, mut cmd) = {
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", command]);
+        ("cmd".to_owned(), cmd)
+    };
+    cmd.current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(file)
         .stderr(err)
-        .process_group(0) // its own group, so Stop reaches whatever it started
         .spawn()
         .map_err(|e| format!("couldn't start {shell}: {e}"))
 }
 
 /// Ends the run's whole process group, children included.
 fn stop(pid: u32) -> Result<(), String> {
+    #[cfg(unix)]
     Command::new("/bin/kill").args(["-TERM", &format!("-{pid}")]).status().map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).status().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -141,6 +154,7 @@ mod tests {
         assert_eq!(crate::changes::tail_file(&out, 7).unwrap(), "to-err\n");
     }
 
+    #[cfg(unix)]
     #[test]
     fn stop_ends_the_run_and_what_it_started() {
         let d = temp();
