@@ -90,6 +90,17 @@ describe("wayOut: leaving a question when no option fits (I75)", async () => {
   });
 });
 
+describe("multi-select questions: several options can be picked", async () => {
+  const { toggleOption } = await import("../components");
+  const opts = [{ label: "Lint" }, { label: "Tests" }, { label: "Build" }];
+  test("a click toggles an option, and picks keep the options' order", () => {
+    let c = toggleOption(opts, [], "Build");
+    c = toggleOption(opts, c, "Lint");
+    expect(c).toEqual(["Lint", "Build"]);
+    expect(toggleOption(opts, c, "Build")).toEqual(["Lint"]);
+  });
+});
+
 describe("inView: no banner for what is already in front of you", () => {
   const session = { workspace: "work", session: "s1", doc: null };
   const doc = { workspace: "personal", session: null, doc: "d1" };
