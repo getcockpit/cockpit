@@ -480,7 +480,7 @@ dependencies = [
 
 [[package]]
 name = "cockpit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "mac-notification-sys",
  "portable-pty",
