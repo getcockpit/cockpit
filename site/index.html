@@ -318,8 +318,8 @@
     .then((rel) => {
       document.querySelectorAll(".files").forEach((box) => {
         const re = new RegExp(box.dataset.match, "i");
-        // The fixed-name copies (Cockpit-macos.dmg, Cockpit-linux-x86_64.AppImage) exist for install.sh; list each build once.
-        const assets = rel.assets.filter((a) => re.test(a.name) && !/^Cockpit-(macos|linux-x86_64)\./.test(a.name)).sort((a, b) => /setup\.exe$/.test(b.name) - /setup\.exe$/.test(a.name));
+        // The fixed-name copies (Cockpit-macos.dmg, Cockpit-linux-x86_64.AppImage, Cockpit-windows-x64-setup.exe) exist for install.sh and the in-app updater; list each build once.
+        const assets = rel.assets.filter((a) => re.test(a.name) && !/^Cockpit-(macos|linux-x86_64|windows-x64-setup)\./.test(a.name)).sort((a, b) => /setup\.exe$/.test(b.name) - /setup\.exe$/.test(a.name));
         box.innerHTML = assets.map((a) => `<a class="file" href="${a.browser_download_url}">↓ ${label(a.name)} · ${(a.size / 1e6).toFixed(0)} MB</a>`).join("") || `<a class="file" href="${latest}">See all downloads</a>`;
       });
       const mine = os && document.querySelector(`[data-os="${os}"] a.file`);

@@ -105,6 +105,58 @@ pub fn apply(repo: &Path, branch: &str) -> Result<String, String> {
     })
 }
 
+/// What merging a release tag into `mine` would do, worked out without touching the worktree.
+#[derive(Debug, Serialize, PartialEq, Clone)]
+pub struct Preview {
+    /// Your own commits the release doesn't have.
+    pub yours: usize,
+    /// Commits the release brings.
+    pub brings: usize,
+    /// Files that would conflict; empty means it merges cleanly.
+    pub conflicts: Vec<String>,
+}
+
+/// Previews merging `tag` into `mine`. None when they share no history: this repo is where
+/// releases come from (the public repo is a scrubbed export of it), so there's nothing to merge.
+pub fn preview_merge(repo: &Path, tag: &str) -> Result<Option<Preview>, String> {
+    if git(repo, &["merge-base", BRANCH, tag]).is_err() {
+        return Ok(None);
+    }
+    let count = |range: String| git(repo, &["rev-list", "--count", "--no-merges", &range]).ok().and_then(|n| n.parse().ok()).unwrap_or(0);
+    let (yours, brings) = (count(format!("{tag}..{BRANCH}")), count(format!("{BRANCH}..{tag}")));
+    // Exit 1 with the conflicted files listed after the tree id; exit 0 when clean.
+    let out = Command::new("git").arg("-C").arg(repo).args(["merge-tree", "--write-tree", "--name-only", "--no-messages", BRANCH, tag]).output().map_err(|e| format!("git: {e}"))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let conflicts = match out.status.code() {
+        Some(0) => vec![],
+        Some(1) => text.lines().skip(1).take_while(|l| !l.is_empty()).map(str::to_owned).collect(),
+        _ => return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned()),
+    };
+    Ok(Some(Preview { yours, brings, conflicts }))
+}
+
+/// Merges a release tag into `mine`. Nothing changes on a conflict.
+pub fn merge_release(repo: &Path, tag: &str) -> Result<String, String> {
+    let wt = mine_worktree(repo)?;
+    git(&wt, &["merge", "--no-edit", "-m", &format!("Merge release {tag}"), tag]).map_err(|e| {
+        let _ = git(&wt, &["merge", "--abort"]);
+        format!("merge conflict with {tag}, nothing changed: {e}")
+    })
+}
+
+/// Takes the release as it is: your changes are kept on `mine-before-<tag>`, `mine` moves to the
+/// tag. Refused while `mine` has uncommitted work, so nothing is lost. Returns the set-aside branch.
+pub fn set_aside(repo: &Path, tag: &str) -> Result<String, String> {
+    let wt = mine_worktree(repo)?;
+    if !git(&wt, &["status", "--porcelain"])?.is_empty() {
+        return Err("your changes have uncommitted work; commit or discard it first".into());
+    }
+    let kept = format!("{BRANCH}-before-{tag}");
+    git(repo, &["branch", "-f", &kept, BRANCH])?;
+    git(&wt, &["reset", "-q", "--hard", tag])?;
+    Ok(kept)
+}
+
 pub fn revert(repo: &Path, sha: &str) -> Result<String, String> {
     let wt = mine_worktree(repo)?;
     let parents = git(&wt, &["rev-list", "--parents", "-n", "1", sha])?.split_whitespace().count();
@@ -222,6 +274,52 @@ mod tests {
         revert(&repo, &merge).unwrap();
         assert_eq!(std::fs::read_to_string(wt.join("a.txt")).unwrap(), "v1\n");
         assert!(apply(&repo, "main").is_err());
+    }
+
+    #[test]
+    fn a_release_is_previewed_merged_or_your_changes_set_aside() {
+        let root = std::env::temp_dir().join(format!("mr-rel-{}", ulid::Ulid::new()));
+        let repo = root.join("app");
+        std::fs::create_dir_all(&repo).unwrap();
+        run(&repo, &["init", "-q", "-b", "main"]);
+        run(&repo, &["config", "user.email", "t@t"]);
+        run(&repo, &["config", "user.name", "t"]);
+        std::fs::write(repo.join("a.txt"), "v1\n").unwrap();
+        std::fs::write(repo.join("b.txt"), "v1\n").unwrap();
+        run(&repo, &["add", "."]);
+        run(&repo, &["commit", "-q", "-m", "base"]);
+        let mine = mine_worktree(&repo).unwrap();
+        std::fs::write(mine.join("a.txt"), "mine\n").unwrap();
+        run(&mine, &["commit", "-qam", "My change"]);
+        // A release that touches another file merges cleanly.
+        std::fs::write(repo.join("b.txt"), "v2\n").unwrap();
+        run(&repo, &["commit", "-qam", "Release work"]);
+        run(&repo, &["tag", "v0.2.0"]);
+        let p = preview_merge(&repo, "v0.2.0").unwrap().unwrap();
+        assert_eq!(p, Preview { yours: 1, brings: 1, conflicts: vec![] });
+        // One that touches your file conflicts, and the preview leaves mine as it was.
+        std::fs::write(repo.join("a.txt"), "release\n").unwrap();
+        run(&repo, &["commit", "-qam", "Release clash"]);
+        run(&repo, &["tag", "v0.3.0"]);
+        let head = git(&mine, &["rev-parse", "HEAD"]).unwrap();
+        assert_eq!(preview_merge(&repo, "v0.3.0").unwrap().unwrap().conflicts, vec!["a.txt"]);
+        assert_eq!(git(&mine, &["rev-parse", "HEAD"]).unwrap(), head);
+        assert!(merge_release(&repo, "v0.3.0").is_err());
+        assert_eq!(git(&mine, &["rev-parse", "HEAD"]).unwrap(), head);
+        merge_release(&repo, "v0.2.0").unwrap();
+        assert_eq!(std::fs::read_to_string(mine.join("b.txt")).unwrap(), "v2\n");
+        assert_eq!(std::fs::read_to_string(mine.join("a.txt")).unwrap(), "mine\n");
+        // Take the release: your changes stay on a branch.
+        let merged = git(&mine, &["rev-parse", "HEAD"]).unwrap();
+        assert_eq!(set_aside(&repo, "v0.3.0").unwrap(), "mine-before-v0.3.0");
+        assert_eq!(std::fs::read_to_string(mine.join("a.txt")).unwrap(), "release\n");
+        assert_eq!(git(&repo, &["rev-parse", "mine-before-v0.3.0"]).unwrap(), merged);
+        // History this repo doesn't share (the scrubbed public export) has nothing to merge.
+        run(&repo, &["checkout", "-q", "--orphan", "export"]);
+        run(&repo, &["commit", "-qm", "export"]);
+        run(&repo, &["tag", "v9.0.0"]);
+        assert_eq!(preview_merge(&repo, "v9.0.0").unwrap(), None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
