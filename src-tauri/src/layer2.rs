@@ -9,7 +9,7 @@ use std::time::Instant;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
-const KEYCHAIN_SERVICE: &str = "minority-report.cloudflare";
+pub const KEYCHAIN_SERVICE: &str = "cockpit.cloudflare";
 pub const LABELS: [(&str, &str); 5] = [
     ("question", "Asks the user something and waits for their answer"),
     ("plan", "Proposes a plan or next steps before doing them"),

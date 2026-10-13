@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleIdentifier</key><string>dev.minorityreport.dictate</string>
+  <key>CFBundleIdentifier</key><string>dev.getcockpit.dictate</string>
   <key>CFBundleName</key><string>mr-dictate</string>
   <key>NSMicrophoneUsageDescription</key><string>Cockpit listens while you hold ⌥ Space so you can talk to your sessions.</string>
   <key>NSSpeechRecognitionUsageDescription</key><string>Cockpit turns what you say into text on this Mac.</string>
