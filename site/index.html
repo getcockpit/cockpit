@@ -246,9 +246,10 @@
   <div class="wrap">
     <h2>Up and running in 2 minutes.</h2>
     <p class="sub">You need Claude Code, signed in. Don't have it yet?</p>
-    <div class="term"><span class="c"># macOS / Linux: install Claude Code, then sign in once</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash<br><span class="p">$</span> claude</div>
+    <div class="term"><span class="c"># 1. Claude Code, signed in once (skip if you have it)</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit: macOS or Linux, no security prompts</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
+    <p class="sub" style="margin:-8px 0 28px;font-size:18px">Prefer a normal download? Pick yours below.</p>
     <div class="dl">
-      <div data-os="mac"><h3>macOS</h3><div class="req">macOS 11+ · Apple Silicon and Intel</div><div class="files" data-match="\.dmg$"></div><div class="tip">First open: <code>xattr -dr com.apple.quarantine /Applications/Cockpit.app</code> (not notarized yet)</div></div>
+      <div data-os="mac"><h3>macOS</h3><div class="req">macOS 11+ · Apple Silicon and Intel</div><div class="files" data-match="\.dmg$"></div><div class="tip">The one-line installer above skips the "unidentified developer" prompt. From the .dmg, run <code>xattr -dr com.apple.quarantine /Applications/Cockpit.app</code> once.</div></div>
       <div data-os="win"><h3>Windows</h3><div class="req">Windows 10/11 · x64</div><div class="files" data-match="\.(exe|msi)$"></div><div class="tip">If SmartScreen asks: More info → Run anyway</div></div>
       <div data-os="linux"><h3>Linux</h3><div class="req">x64 · Ubuntu 22.04+, Fedora 38+</div><div class="files" data-match="\.(AppImage|deb|rpm)$"></div><div class="tip">Windows and Linux are new, so please <a href="https://github.com/getcockpit/cockpit/issues">report anything odd</a></div></div>
     </div>
