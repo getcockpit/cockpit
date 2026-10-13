@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { DecisionCard, Key, WayOut, type Answer } from "../components";
+import { DecisionCard, Key, PickAny, WayOut, type Answer } from "../components";
 import { decideQuestion, type Block, type Doc } from "../state/docs";
 import { plural, sessionTitle } from "../picker/title";
 import { shortError } from "../components/ErrorLine";
@@ -78,7 +78,7 @@ export function DocQuestionRow({ d, b, session, selected, onOpen }: { d: Doc; b:
           <span className="mr-grow" /><button type="button" className="mr-key" onClick={onOpen}>Open map ↵</button>
         </span>
         <span className="mr-ask">{b.takeaway}</span>
-        {options.length > 0 ? (
+        {options.length > 0 && b.data?.multiSelect ? <PickAny source={`${d.id}:${b.id}`} options={options} decision={b.decision} onDecide={(l) => void decide(l)} /> : options.length > 0 ? (
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))`, gap: "var(--mr-gap)" }}>
             {options.map((o, i) => (
               <button key={o.label} type="button" data-option={i} onClick={() => void decide(o.label)} style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>

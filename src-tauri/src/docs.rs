@@ -198,6 +198,9 @@ pub fn to_markdown(doc: &Doc) -> String {
             out.push_str(&format!("{}\n", b.body));
         }
         if let Some(opts) = b.data["options"].as_array() {
+            if b.data["multiSelect"].as_bool() == Some(true) {
+                out.push_str("- (several options may be picked)\n");
+            }
             for o in opts {
                 out.push_str(&format!("- option: {} — {}\n", o["label"].as_str().unwrap_or_default(), o["description"].as_str().unwrap_or_default()));
             }
@@ -219,7 +222,7 @@ pub fn to_markdown(doc: &Doc) -> String {
 pub fn tool_specs() -> Value {
     json!([
         { "name": "doc_create", "description": "Create a working document (a plan/spec the user reviews visually). Returns its doc_id. Use for any plan, spec or design before writing code.", "params": { "title": "string" } },
-        { "name": "doc_set_block", "description": "Create or update one block of a working document. section is one of goal, scope, success, design, risk, question, components, verification, log. takeaway is one short line readable at a glance; key is one key detail; body is Markdown with the full content. For an open question the user must decide, use section=question and data={\"options\":[{\"label\":..,\"description\":..}]}, and never decide it yourself. view is an array of catalog blocks, the same blocks and fields as render_view; give every block one, since the user reads the view first and opens the body only for the reasoning: stats for the goal's headline numbers, scope for in/out, checklist for success criteria and verification, lanes for an architecture across machines or services, change_graph for a linear flow, cards for a design's parts or the modules it touches, steps for a sequence or protocol, matrix for rules per case or phase, risks for risk + mitigation, compare for a question's options against criteria, decision on a settled question (its outcome, and the recommendation if it was overridden), phases for a rollout with estimates, tradeoff when a number must be picked, takeaway for a log, novelty for what already exists, snippet for the lines that matter. Keep takeaway, key and view short; the body holds the reasoning. Send view: [] to remove it. Reuse block_id to update a block.", "params": { "doc_id": "string", "block_id": "string", "section": "string", "takeaway": "string", "key": "string", "body": "string", "status": "string", "data": "object", "view": "array" } },
+        { "name": "doc_set_block", "description": "Create or update one block of a working document. section is one of goal, scope, success, design, risk, question, components, verification, log. takeaway is one short line readable at a glance; key is one key detail; body is Markdown with the full content. For an open question the user must decide, use section=question and data={\"options\":[{\"label\":..,\"description\":..}]}, adding \"multiSelect\":true when several options may apply (the decision is then the picked labels joined with \", \"), and never decide it yourself. view is an array of catalog blocks, the same blocks and fields as render_view; give every block one, since the user reads the view first and opens the body only for the reasoning: stats for the goal's headline numbers, scope for in/out, checklist for success criteria and verification, lanes for an architecture across machines or services, change_graph for a linear flow, cards for a design's parts or the modules it touches, steps for a sequence or protocol, matrix for rules per case or phase, risks for risk + mitigation, compare for a question's options against criteria, decision on a settled question (its outcome, and the recommendation if it was overridden), phases for a rollout with estimates, tradeoff when a number must be picked, takeaway for a log, novelty for what already exists, snippet for the lines that matter. Keep takeaway, key and view short; the body holds the reasoning. Send view: [] to remove it. Reuse block_id to update a block.", "params": { "doc_id": "string", "block_id": "string", "section": "string", "takeaway": "string", "key": "string", "body": "string", "status": "string", "data": "object", "view": "array" } },
         { "name": "doc_read", "description": "Read a working document as Markdown, including the user's decisions and notes. Read it before updating or implementing a doc.", "params": { "doc_id": "string" } },
         { "name": "doc_list", "description": "List the working documents with their ids and titles.", "params": {} }
     ])
@@ -318,6 +321,13 @@ mod tests {
         let doc = docs.get(&id).unwrap();
         assert_eq!(doc.pending_changes.len(), 1);
         assert_eq!(doc.blocks["q1"].status, "decided");
+        // A pick-any question says so, and its decision is the picks joined.
+        run(&docs, &mut n, "doc_set_block", json!({ "doc_id": id, "block_id": "q2", "section": "question", "takeaway": "Where?", "key": "", "data": { "multiSelect": true, "options": [{ "label": "Slack", "description": "" }, { "label": "Email", "description": "" }] } }));
+        n += 1;
+        docs.apply(&ev(n, "ui.doc_decision", json!({ "doc_id": id, "block_id": "q2", "choice": "Slack, Email" })));
+        let (md, _) = run(&docs, &mut n, "doc_read", json!({ "doc_id": id }));
+        assert!(md.contains("- (several options may be picked)"), "{md}");
+        assert!(md.contains("**Decided by the user: Slack, Email**"), "{md}");
         // Goal comes before the question in /prd order.
         assert!(md.find("[goal]").unwrap() < md.find("[question]").unwrap());
     }
