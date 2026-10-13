@@ -1,6 +1,6 @@
 # Developing Cockpit
 
-See also `CLAUDE.md` (architecture, conventions, commands) and `docs/` (PRD, design plan, decision log).
+See also `AGENTS.md` (architecture, conventions, commands).
 
 ## Layout
 
