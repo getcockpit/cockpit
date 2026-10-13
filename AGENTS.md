@@ -104,6 +104,5 @@ React UI (ui/) ──Tauri IPC──▶ Rust core (src-tauri/) ──NDJSON stdi
   | `MR_DEV_LOOP`, `MR_DEV_SLOT` | Set by `dev.sh`: Update is available, and which build slot is running |
 
 - **Scripts and PATH:** scripts and self-builds must work with a minimal GUI PATH. They add cargo, bun and mise paths themselves, and the UI build runs on bun's runtime (`bun --bun`).
-- **Visual direction:** `design/mockups/` holds snapshots of the design canvas. Match it when building UI.
 - **Platforms:** macOS is primary; Linux and Windows build in CI. Keep unix-only calls behind `#[cfg(unix)]` / `#[cfg(target_os = "macos")]` with a Windows path, and gate macOS-only tests the same way.
 - **Releases:** bump `version` in `src-tauri/tauri.conf.json`, push a `vX.Y.Z` tag; `.github/workflows/release.yml` builds and attaches every installer.
