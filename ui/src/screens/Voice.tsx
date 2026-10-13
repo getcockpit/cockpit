@@ -2,6 +2,7 @@ import { shortError } from "../components/ErrorLine";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "../state/listen";
+import { keyLabel } from "../platform";
 
 // Push-to-talk (MR-18) and point + talk (MR-19). Hold ⌥ Space and speak; release to stop.
 // Where the words go:
@@ -96,7 +97,7 @@ export function VoiceController({ resolve, send, onFallback, onCatchUp }: { reso
     <div role="status" aria-live="polite" style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", minWidth: 420, maxWidth: 760, padding: "12px 16px", background: "var(--mr-ink)", color: "var(--mr-tile)", zIndex: 40, display: "flex", flexDirection: "column", gap: 4, animation: "mr-toast-in .18s ease-out both" }}>
       {error ? <span onClick={() => setError("")} title="Dismiss" style={{ color: "var(--mr-needs)", cursor: "pointer" }}>Voice: {error}</span> : (
         <>
-          <span style={{ opacity: 0.7, fontSize: 12 }}>● Listening {target} · release ⌥ Space to send</span>
+          <span style={{ opacity: 0.7, fontSize: 12 }}>● Listening {target} · release {keyLabel("⌥ Space")} to send</span>
           <span style={{ fontSize: 16 }}>{text || "…"}</span>
         </>
       )}

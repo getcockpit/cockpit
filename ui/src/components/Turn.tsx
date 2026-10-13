@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Markdown, inline } from "./Markdown";
+import { keyLabel } from "../platform";
 import { proposedReplies, replyOptions, withoutReplyLine } from "../picker/queue";
 import { parseReport, type Item, type Report, type Section } from "../picker/report";
 export { parseReport };
@@ -91,7 +92,7 @@ export function Chips({ options, onReply }: { options: string[]; onReply: (t: st
     <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }} data-mr="QuickReplies">
       {options.map((o, i) => (
         <button key={o} type="button" className="mr-key" data-tone={i === 0 ? "primary" : undefined} onClick={() => onReply(o)}>
-          {o} <kbd>⌥{i + 1}</kbd>
+          {o} <kbd>{keyLabel(`⌥${i + 1}`)}</kbd>
         </button>
       ))}
     </div>

@@ -2,6 +2,7 @@ import { shortError } from "../components/ErrorLine";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Key } from "../components";
+import { isMac, keyLabel, modKey } from "../platform";
 import { api } from "../state/store";
 
 // God mode (MR-22, ⌘⇧G): inspect why anything rendered the way it did, mark it wrong, and let a
@@ -75,16 +76,16 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
     return () => { window.removeEventListener("mousemove", move, true); window.removeEventListener("click", click, true); window.removeEventListener("keydown", key, true); };
   }, [on, marked, onClose]);
 
-  const click = (origin: HTMLElement, mods: { metaKey?: boolean; altKey?: boolean }) => origin.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...mods }));
+  const click = (origin: HTMLElement, mods: { metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean }) => origin.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...mods }));
   const menuEl = menu && (
     <div data-mr-menu data-godmode-ui role="menu" className="mr-pop" aria-label={`Actions for ${menu.t.component}`}
       style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 60, width: 232, background: "var(--mr-tile)", boxShadow: "0 0 0 1px var(--mr-ink-3), 0 6px 18px rgba(21,24,27,.18)", display: "flex", flexDirection: "column", padding: 4 }}>
       <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 11, padding: "4px 8px" }}>{menu.t.component} · layer {menu.t.layer}{menu.t.source ? ` · ${menu.t.source.slice(0, 24)}` : ""}</span>
       {[
         { label: "Mark as wrong & fix…", hint: "", run: () => { onOpen(); setHover(null); setMarked({ ...menu.t, rect: menu.t.el.getBoundingClientRect() }); } },
-        { label: "Go deeper", hint: "⌘-click", run: () => click(menu.origin, { metaKey: true }) },
-        { label: "Discover in a side session", hint: "⌥-click", run: () => click(menu.origin, { altKey: true }) },
-        { label: "Inspect everything", hint: "⌘⇧G", run: () => onOpen() },
+        { label: "Go deeper", hint: keyLabel("⌘-click"), run: () => click(menu.origin, isMac() ? { metaKey: true } : { ctrlKey: true }) },
+        { label: "Discover in a side session", hint: keyLabel("⌥-click"), run: () => click(menu.origin, { altKey: true }) },
+        { label: "Inspect everything", hint: keyLabel("⌘⇧G"), run: () => onOpen() },
         ...(() => { const a = menu.t.source ? sessionAction?.(menu.t.source, menu.t.component) : null; return a ? [{ label: a.label, hint: "", run: a.run }] : []; })(),
       ].map((it) => (
         <button key={it.label} type="button" role="menuitem" className="mr-row" onClick={() => { setMenu(null); it.run(); }}
@@ -133,7 +134,7 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
           <strong>What's wrong with “{label(marked)}”?</strong>
           <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{marked.component} · {view}{marked.source ? ` · ${marked.source.slice(0, 24)}` : ""}</span>
           <textarea autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What's wrong, and what should it show instead?" rows={4} className="mr-input" style={{ padding: 10, minHeight: 90, resize: "vertical" }}
-            onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) { e.preventDefault(); void submit(); } }} />
+            onKeyDown={(e) => { if (e.key === "Enter" && modKey(e)) { e.preventDefault(); void submit(); } }} />
           <div className="mr-row">
             <Key k="⌘↵" tone="primary" onClick={() => void submit()} disabled={!note.trim()}>Save mark and fix it</Key>
             <Key k="esc" onClick={() => setMarked(null)}>Cancel</Key>
