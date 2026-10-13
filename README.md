@@ -33,7 +33,9 @@ Run a few Claude Code sessions side by side and your day turns into babysitting:
 - **What did it just change?** The risky edit looks exactly like the harmless one.
 - **Where was I?** Every switch back costs minutes of rereading.
 
-Cockpit takes that work off your plate.
+Cockpit takes that work off your plate. It shows each decision with **only the context it needs**: the question and its trade-offs, the exact command and its risk, what changed. You stop reading and just decide, and you finish the day less drained.
+
+In its author's first four days: **10× more Claude Code sessions a day** (6.9 → 71.5) and **3× more running at once** (3.8 → 11 at peak). It's a small sample, and most of that week went into building Cockpit with Cockpit.
 
 ## What you get
 

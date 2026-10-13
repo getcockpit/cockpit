@@ -37,6 +37,9 @@
     "externalBin": [
       "binaries/mr-sidecar",
       "binaries/mr-dictate"
-    ]
+    ],
+    "publisher": "Cockpit",
+    "shortDescription": "Run ten Claude Code sessions. Read none of them.",
+    "homepage": "https://getcockpit.github.io"
   }
 }
