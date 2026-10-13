@@ -103,7 +103,7 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
                 {/* Only what the headline doesn't already say. */}
                 {p.full.slice(p.line.length).trim() && <span className="mr-ink2">{p.full.slice(p.line.length).trim()}</span>}
                 <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <Key k="N" tone={isRaised ? undefined : "primary"} disabled={isRaised} onClick={() => onRaise(`ov:${i}`, p.full)}>{isRaised ? "Raised ✓" : "Raise it in the review"}</Key>
+                  <Key k="N" tone={isRaised ? undefined : "primary"} onClick={() => onRaise(`ov:${i}`, p.full)}>{isRaised ? "Raised ✓ · undo" : "Raise it in the review"}</Key>
                   <button type="button" className="mr-link" onClick={() => { setSkipped((x) => (isSkipped ? x.filter((y) => y !== i) : [...x, i])); setOpen(null); }}>{isSkipped ? "Unskip" : "Skip"}</button>
                 </div>
                 <form className="mr-row" onSubmit={(e) => { e.preventDefault(); if (ask.trim()) { onReply(`About "${p.line}": ${ask.trim()}`); setAsk(""); } }}>
