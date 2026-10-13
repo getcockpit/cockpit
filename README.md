@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kostkobv/cockpit/releases/latest"><b>⬇ Download for free</b></a> &nbsp;·&nbsp;
-  <a href="https://kostkobv.github.io/cockpit/#film">▶ Watch the 40-second demo</a> &nbsp;·&nbsp;
-  <a href="https://kostkobv.github.io/cockpit/">Website</a>
+  <a href="https://github.com/getcockpit/cockpit/releases/latest"><b>⬇ Download for free</b></a> &nbsp;·&nbsp;
+  <a href="https://getcockpit.github.io/#film">▶ Watch the 40-second demo</a> &nbsp;·&nbsp;
+  <a href="https://getcockpit.github.io/">Website</a>
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="https://kostkobv.github.io/cockpit/#film"><img src="site/assets/hero.gif" alt="Cockpit in action: eight sessions, one queue, one key" width="100%"></a>
+  <a href="https://getcockpit.github.io/#film"><img src="site/assets/hero.gif" alt="Cockpit in action: eight sessions, one queue, one key" width="100%"></a>
 </p>
 
 ## Claude Code is fast. You're the bottleneck.
@@ -90,7 +90,7 @@ The full transcript is one key away, and any session can move to a real terminal
 ## Get started (about 2 minutes)
 
 1. **Install Claude Code** and sign in once, if you haven't yet: [claude.ai/code](https://claude.ai/code).
-2. **Download Cockpit** for your system from [Releases](https://github.com/kostkobv/cockpit/releases/latest):
+2. **Download Cockpit** for your system from [Releases](https://github.com/getcockpit/cockpit/releases/latest):
 
    | System | Download |
    |:--|:--|
@@ -102,7 +102,7 @@ The full transcript is one key away, and any session can move to a real terminal
 
 First time on macOS? The app isn't notarized yet, so run `xattr -dr com.apple.quarantine /Applications/Cockpit.app` once. On Windows, choose **More info → Run anyway** if SmartScreen asks. Step-by-step help: [Install guide](docs/INSTALL.md).
 
-> macOS is the most polished today. Linux and Windows are brand new, and push-to-talk voice is macOS-only for now. Found something odd? [Open an issue](https://github.com/kostkobv/cockpit/issues).
+> macOS is the most polished today. Linux and Windows are brand new, and push-to-talk voice is macOS-only for now. Found something odd? [Open an issue](https://github.com/getcockpit/cockpit/issues).
 
 ## FAQ
 
