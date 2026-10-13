@@ -16,9 +16,25 @@ pub struct Changed {
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output().map_err(|e| format!("git: {e}"))?;
-    if out.status.success() { Ok(String::from_utf8_lossy(&out.stdout).into_owned()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_owned()) }
+    git_with("git", dir, args)
 }
+
+// Never an empty error: the UI reads "" as "still loading" (a missing git once left the change map
+// on "Reading git…" forever). 127 is the shell's "command not found", which some spawns report.
+fn git_with(bin: &str, dir: &Path, args: &[&str]) -> Result<String, String> {
+    let out = Command::new(bin).arg("-C").arg(dir).args(args).output().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { NO_GIT.to_owned() } else { format!("git: {e}") })?;
+    if out.status.success() {
+        return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+    }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+    Err(match (err.is_empty(), out.status.code()) {
+        (false, _) => err,
+        (true, Some(127)) => NO_GIT.to_owned(),
+        (true, _) => format!("git {} failed ({})", args.first().unwrap_or(&""), out.status),
+    })
+}
+
+pub const NO_GIT: &str = "git isn't installed";
 
 /// Paths that deserve a second look, with the reason shown on the map.
 pub fn risk_of(path: &str) -> Option<String> {
@@ -166,6 +182,27 @@ pub fn godmode_save_mark(app: tauri::AppHandle, packet: serde_json::Value) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_errors_are_never_empty() {
+        let dir = std::env::temp_dir();
+        assert_eq!(git_with("/nonexistent/git", &dir, &["status"]), Err(NO_GIT.to_owned()));
+        #[cfg(unix)]
+        {
+            // A git that fails without a word, as a missing one does under some spawns (exit 127).
+            use std::os::unix::fs::PermissionsExt;
+            let silent = |code: u8| {
+                let fake = dir.join(format!("mr-silent-git-{}", ulid::Ulid::new()));
+                std::fs::write(&fake, format!("#!/bin/sh\nexit {code}\n")).unwrap();
+                std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+                let r = git_with(fake.to_str().unwrap(), &dir, &["diff"]);
+                let _ = std::fs::remove_file(fake);
+                r
+            };
+            assert_eq!(silent(127), Err(NO_GIT.to_owned()));
+            assert!(silent(3).unwrap_err().starts_with("git diff failed"));
+        }
+    }
 
     #[test]
     fn a_build_in_a_linked_worktree_belongs_to_the_main_checkout() {
