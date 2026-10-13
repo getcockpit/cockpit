@@ -29,6 +29,7 @@ import { useAutoReview } from "./state/useAutoReview";
 import { useNotify } from "./state/notify";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installUsage, useViews } from "./state/usage";
+import { listenFileDrop } from "./state/fileDrop";
 
 export default function App() {
   const all = useAppState();
@@ -46,6 +47,8 @@ export default function App() {
     r.dataset.density = all.look.density === "default" ? "" : all.look.density;
   }, [all.look]);
   useEffect(() => { try { localStorage.setItem("mr.workspace", workspace); } catch { /* per-viewer convenience */ } }, [workspace]);
+  // Files dragged in from Finder become @ mentions in the message box they're dropped on.
+  useEffect(() => listenFileDrop(), []);
   // Plan limits: the sidecar reads them on start; refresh every 5 minutes after that.
   useEffect(() => { const t = setInterval(() => void api.refreshLimits().catch(() => {}), 5 * 60_000); return () => clearInterval(t); }, []);
   // Picker layer 2: classify a finished turn's prose once; the answer comes back as a picker.layer2 event.
