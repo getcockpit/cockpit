@@ -18,6 +18,7 @@ import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./
 import { needsQueue } from "../picker/queue";
 import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
+import { NoClaude } from "../components/NoClaude";
 import { plural, sessionTitle } from "../picker/title";
 import { ViewTabs } from "../components/ViewTabs";
 
@@ -124,11 +125,12 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
         <span className="mr-grow" />
         <Usage label="5-hour" v={state.usage.fiveHour} resets={state.usage.resetsAt} />
         <Usage label="Week" v={state.usage.weekly} resets={state.usage.weeklyResetsAt} />
-        <span className="mr-mono" title={state.sidecar.up ? `Claude Code: ${state.sidecar.claude ?? ""}` : "Claude Code isn't connected"} style={{ color: state.sidecar.up ? "var(--mr-done)" : "var(--mr-error)" }}>●</span>
+        <span className="mr-mono" title={!state.sidecar.up ? "Claude Code isn't connected" : state.sidecar.claude ? `Claude Code: ${state.sidecar.claude}` : "Claude Code isn't installed"} style={{ color: !state.sidecar.up ? "var(--mr-error)" : state.sidecar.claude ? "var(--mr-done)" : "var(--mr-needs)" }}>●</span>
       </header>
 
 
       <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
+        {state.sidecar.up && !state.sidecar.claude && <NoClaude />}
         {rows > 0 && (
           <section id="mr-needs" aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 12 }}>
             <h2 className="mr-h"><span style={{ color: queue.length ? "var(--mr-needs-ink)" : "var(--mr-ink-3)" }}>◆</span>Needs you<span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · S skip · R reply · X dismiss · ↵ open</span></h2>
