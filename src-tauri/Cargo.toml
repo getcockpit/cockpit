@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Cockpit: a visual front-end for Claude Code"
 authors = ["Bohdan Kostko"]
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/kostkobv/cockpit"
+homepage = "https://kostkobv.github.io/cockpit/"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
