@@ -13,7 +13,15 @@ It uses **your own** Claude Code login: it never sees or stores your tokens.
 - Claude Code installed and signed in. Check in Terminal: `claude --version`, then run `claude` once and log in.
   Not installed? `curl -fsSL https://claude.ai/install.sh | bash`
 
-## Install on macOS (about 2 min)
+## Quickest: one line (macOS and Linux)
+
+```bash
+curl -fsSL https://getcockpit.github.io/install.sh | bash
+```
+
+It installs the latest release (macOS: `/Applications/Cockpit.app`; Linux: `~/.local/bin/cockpit`) and skips the macOS "unidentified developer" prompt, because files fetched with `curl` aren't quarantined.
+
+## Install on macOS by hand (about 2 min)
 
 1. Open `Cockpit-<version>.dmg` and drag **Cockpit** into **Applications**.
 2. The app isn't notarized by Apple, so macOS blocks the first open. In Terminal, run:
