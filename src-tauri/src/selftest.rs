@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -33,6 +33,10 @@ fn selfbuild_mode() -> bool {
 
 fn flow_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "flow")
+}
+
+fn address_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "address")
 }
 
 fn resume_mode() -> bool {
@@ -136,6 +140,9 @@ pub fn run(app: AppHandle) {
                 "Remember the word MANGO. Reply with exactly: OK".into()
             } else if flow_mode() {
                 "This is a UI test of the review tools, not a real review. Pretend you are reviewing a tiny change that adds a retry loop to fetch.ts. Call review_overview (tier 2, one '+' node 'retry loop', one net-new novelty item, total_snippets 1), then call review_snippet for snippet 1 of 1 with a short 3-line diff and exactly one finding with id f1, severity Important. Then stop and wait for my reply as the tool says.".into()
+            } else if address_mode() {
+                // MR-126: every thread is drawn before the turn stops, not one per turn.
+                "/pr-address 9 — this is a UI test of the address tools, not a real PR: don't look at files, git or GitHub. Pretend PR #9 has three unresolved review threads, t1, t2 and t3, on fetch.ts lines 10, 20 and 30, none addressed yet. Make up a one-line comment and a short code snippet for each.".into()
             } else if resume_mode() {
                 "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
             } else if title_mode() {
@@ -158,7 +165,7 @@ pub fn run(app: AppHandle) {
             },
             None,
             None,
-            Some(if flow_mode() { "review".into() } else { "blank".into() }),
+            Some(if flow_mode() { "review".into() } else if address_mode() { "address".into() } else { "blank".into() }),
             Some(resume_mode()),
             None,
             ws,
@@ -251,6 +258,13 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             crate::eventlog::record(app, Some(&session), "ui.review_noted", &serde_json::json!({ "finding_id": "f1" }), Some("review:f1"));
             let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "note f1. That was the last snippet: now call review_publish_ready with the noted finding and a verdict, then reply with exactly: SELFTEST DONE".into());
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && address_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            for id in ["t1", "t2"] {
+                crate::eventlog::record(app, Some(&session), "ui.address_chosen", &serde_json::json!({ "id": id, "option": "A" }), Some(&format!("address:{id}")));
+            }
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Thread t1 · Option A and Thread t2 · Option A, and push back on t3. It's a pretend PR: don't edit files or post anything, just report each step with the tools (one passing check per proof, replies posted: true), call address_done, then reply with exactly: SELFTEST DONE".into());
         }
         Some("sdk") if payload["message"]["type"] == "result" && resume_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 1 done: stop the session; session_ended triggers the resume below.

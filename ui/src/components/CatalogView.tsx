@@ -554,6 +554,8 @@ const THREAD: Record<string, { label: string; color: string }> = {
   already: { label: "Already addressed", color: "var(--mr-done)" },
   fixed: { label: "Fixed in this session", color: "var(--mr-done)" },
   deferred: { label: "Pushed back", color: "var(--mr-ink-3)" },
+  picked: { label: "Picked · queued for Claude", color: "var(--mr-ink-2)" },
+  fixing: { label: "Claude is fixing this", color: "var(--mr-ink-2)" },
 };
 export function Thread({ b }: { b: ViewBlock }) {
   const st = THREAD[str(b.state).toLowerCase()] ?? THREAD.unresolved;
