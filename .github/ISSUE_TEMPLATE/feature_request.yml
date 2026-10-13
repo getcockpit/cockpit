@@ -1,0 +1,19 @@
+name: Feature request
+description: An idea that would make Cockpit better
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: moment
+    attributes:
+      label: What moment felt slow, confusing or missing?
+      description: Describe the situation you were in. That matters more than the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?

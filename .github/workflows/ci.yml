@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: UI + sidecar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: ui
+      - run: bun run test
+        working-directory: ui
+      - run: bun run build
+        working-directory: ui
+      - run: bun install --frozen-lockfile
+        working-directory: sidecar
+      - run: bunx tsc --noEmit -p .
+        working-directory: sidecar
+      - run: bun test
+        working-directory: sidecar
+
+  core:
+    name: Rust core (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Git identity (tests make commits)
+        run: git config --global user.name ci && git config --global user.email ci@example.com
+      - run: ./scripts/build-helpers.sh
+      - name: UI bundle (embedded by the core)
+        run: bun install --frozen-lockfile && bun run build
+        working-directory: ui
+      - name: Test
+        if: runner.os != 'Windows'
+        run: cargo test
+        working-directory: src-tauri
+      - name: Build
+        if: runner.os == 'Windows'
+        run: cargo build
+        working-directory: src-tauri

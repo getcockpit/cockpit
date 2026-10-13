@@ -5,3 +5,7 @@ dist/
 target/
 src-tauri/binaries/
 src-tauri/gen/
+
+# Local agent instructions (my dev cycle; public guidance is AGENTS.md)
+/CLAUDE.md
+CLAUDE.local.md

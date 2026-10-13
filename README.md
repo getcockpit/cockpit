@@ -1,57 +1,107 @@
-# Cockpit
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="96" alt="Cockpit icon">
+</p>
 
-A visual-first desktop front-end for Claude Code. The PRD and design plan live in the docs: **Cockpit**.
+<h1 align="center">Cockpit</h1>
 
-## Layout
+<p align="center">
+  <b>Run ten Claude Code sessions. Read none of them.</b><br>
+  Cockpit turns Claude Code's wall of terminal text into cards you answer with one key, so you can run many sessions at once and stay in control.
+</p>
 
-| Path | What |
-|---|---|
-| `src-tauri/` | Rust core (Tauri v2): window, sidecar supervision, later sessions, event log, picker |
-| `ui/` | React UI. Theme tokens are in `ui/src/design/tokens.css` (Control Room) |
-| `sidecar/` | TypeScript process that will host the official Agent SDK. Speaks NDJSON over stdio |
-| `scripts/` | `dev.sh` (run from source), `build-sidecar.sh` |
-| `design/mockups/` | Snapshots of the MR-25 visual-direction canvas |
+<p align="center">
+  <a href="https://github.com/kostkobv/cockpit/releases/latest"><b>⬇ Download for free</b></a> &nbsp;·&nbsp;
+  <a href="https://kostkobv.github.io/cockpit/#demo">▶ Watch the 40-second demo</a> &nbsp;·&nbsp;
+  <a href="https://kostkobv.github.io/cockpit/">Website</a>
+</p>
 
-## Run
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS_·_Linux_·_Windows-1f2328" alt="macOS, Linux, Windows">
+  <img src="https://img.shields.io/badge/free_&_open_source-MIT-1e7a4c" alt="Free and open source">
+  <img src="https://img.shields.io/badge/runs_on-your_Claude_plan-F5B400" alt="Runs on your Claude plan">
+</p>
 
-Needs: Rust (rustup), the Tauri CLI (`cargo install tauri-cli --version '^2'`), and Bun.
+<p align="center">
+  <a href="https://kostkobv.github.io/cockpit/#demo"><img src="site/assets/wall.jpg" alt="Cockpit: every session that needs you, in one queue" width="900"></a>
+</p>
 
-```bash
-./scripts/dev.sh          # builds the sidecar, installs UI deps, starts the app with hot reload
-```
+## Claude Code is fast. You're the bottleneck.
 
-`scripts/dev.sh` is also how the app will rebuild itself from inside the app (MR-33).
+Run a few Claude Code sessions side by side and your day turns into babysitting:
 
-## Test
+- **Which tab is waiting on me?** A session sits idle for twenty minutes because its "Allow?" scrolled out of view.
+- **What did it just change?** The risky edit looks exactly like the harmless one.
+- **Where was I?** Every switch back costs minutes of rereading.
 
-```bash
-(cd sidecar && bun test)  # sidecar protocol over real stdio
-(cd ui && bun run build)  # type-check + bundle
-(cd src-tauri && cargo build)
-```
+Cockpit takes that work off your plate.
 
-## Sidecar protocol
+## What you get
 
-One JSON object per line. The types are in `sidecar/src/protocol.ts`.
+**⚡ One queue for everything that needs you.**
+Permissions, questions and plan approvals from every session land in a single list. Answer each with one key: **A** to allow, **D** to deny, **1–3** to pick an option. Nothing waits on you without you knowing.
 
-- **Core → sidecar:**
-  - `ping`
-  - `start {session, cwd, prompt, resume?, tools?}`
-  - `send {session, text}`
-  - `interrupt {session}`
-  - `stop {session}`
-  - `permission_response {session, request_id, decision}`
-  - `tool_result {session, call_id, text, is_error?}`
-- **Sidecar → core:**
-  - `ready {claude}`
-  - `pong`
-  - `session_started {session, sdk_session_id}`
-  - `sdk {session, message}` (every Agent SDK message, as is)
-  - `permission_request {session, request_id, tool, input, suggestions}`
-  - `tool_call {session, call_id, tool, args}`
-  - `session_ended {session, ok}`
-  - `error`
+**🧭 Ten sessions, zero collisions.**
+Every session works in its own copy of your repo, so they never trip over each other. Start a new one in a second with **⌘K**.
 
-Tools passed in `start.tools` become the in-process `mr` MCP server; every call is relayed to the core as `tool_call`.
+**🚦 See the risk before it runs.**
+A force-push or a database migration shows up in red, with the exact command, before anything happens. Every change is mapped by folder, so you can see what moved at a glance.
 
-**Live checks** (spend a little subscription usage): `bun run spike/probe.ts` and `bun run spike/live-session.ts`. Set `MR_SIDECAR_BIN=../src-tauri/binaries/mr-sidecar-<triple>` to test the compiled binary.
+**🗺 Plans you can actually read.**
+Ask Claude to plan before it codes, and you get a clear one-page map (goal, scope, design, risks, open questions) instead of chat scrollback. Mark it up, send all your notes at once, then hit **Build from doc**.
+
+**⏱ Know what's coming.**
+The timeline shows what each session did, what's next, and which one will need you in the next 15 minutes, so you always know where to look.
+
+**🔍 Code review without the wall of diff.**
+Pull requests are walked snippet by snippet, riskiest first. Note a finding with one key and it becomes a review comment.
+
+**🔓 Never locked in.**
+The full transcript is one key away, and any session can move to a real terminal whenever you want.
+
+## Screens
+
+| | |
+|:--|:--|
+| <img src="site/assets/focus.jpg" alt="One session in focus"> **One session in focus:** its plan, what it changed, and the exact command it's waiting on. | <img src="site/assets/doc.jpg" alt="A plan as a map"> **Plans as a map:** see the whole plan at once, with open questions pinned to the side. |
+| <img src="site/assets/timeline.jpg" alt="Timeline"> **The timeline:** what ran, what's next, and who will need you. | <img src="site/assets/review.jpg" alt="Guided code review"> **Guided review:** the risky parts of a pull request first, one key per finding. |
+
+## Private by design
+
+- **Your own Claude.** Cockpit drives the Claude Code you already use, on the plan you already pay for. There's no extra subscription.
+- **Your data stays home.** Everything is stored on your computer. There's no Cockpit server and no account to create.
+- **No tokens touched.** Cockpit never sees or stores your Claude login.
+- **Open source.** MIT licensed. Read every line.
+
+## Get started (about 2 minutes)
+
+1. **Install Claude Code** and sign in once, if you haven't yet: [claude.ai/code](https://claude.ai/code).
+2. **Download Cockpit** for your system from [Releases](https://github.com/kostkobv/cockpit/releases/latest):
+
+   | System | Download |
+   |:--|:--|
+   | **macOS 11+** (Apple Silicon and Intel) | `.dmg` |
+   | **Windows 10/11** | `-setup.exe` or `.msi` |
+   | **Linux** | `.AppImage`, `.deb` or `.rpm` |
+
+3. **Open it**, pick a project folder, and start your first session.
+
+First time on macOS? The app isn't notarized yet, so run `xattr -dr com.apple.quarantine /Applications/Cockpit.app` once. On Windows, choose **More info → Run anyway** if SmartScreen asks. Step-by-step help: [Install guide](docs/INSTALL.md).
+
+> macOS is the most polished today. Linux and Windows are brand new, and push-to-talk voice is macOS-only for now. Found something odd? [Open an issue](https://github.com/kostkobv/cockpit/issues).
+
+## FAQ
+
+**Is it free?** Yes, completely. Your sessions use your existing Claude plan, just as they do in the terminal.
+
+**Do my skills, commands, hooks and settings still work?** Yes. It's your real Claude Code with your real setup.
+
+**Is this made by Anthropic?** No. Cockpit is an independent open-source project built on Anthropic's official Agent SDK. "Claude" and "Claude Code" are trademarks of Anthropic.
+
+**Can I contribute?** Please do. Developer docs are in [AGENTS.md](AGENTS.md) and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+---
+
+<p align="center">
+  If Cockpit saves you time, <b>⭐ star the repo</b>. It helps other people find it.<br>
+  <sub>MIT © Bohdan Kostko · built with Claude Code, mostly from inside Cockpit</sub>
+</p>
