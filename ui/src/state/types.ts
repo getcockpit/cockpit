@@ -64,8 +64,9 @@ export type AddressFlow = {
   threads: Record<string, { id: string; reviewer?: string; at?: string; body?: string; verdict?: string; evidence_file?: string; evidence_code?: string; options?: { id: string; label: string; detail?: string; recommended?: boolean }[] }>;
   proofs: Record<string, { label: string; ok: boolean | null; proof?: string }[]>;
   replies: Record<string, { text?: string; sha?: string; posted?: boolean }>;
-  current: string | null;
+  current: string | null; // the thread Claude is fixing now (address_fixing)
   chosen: Record<string, string>;
+  done?: { summary?: string; pushed?: boolean; next?: { label: string; reply?: string }[] };
 };
 
 // A slash command or skill a session offers (the / menu, MR-87). terminal: it only works in Claude Code's own terminal.
