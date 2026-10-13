@@ -135,65 +135,107 @@ export function SnippetPager({ total, reached, shown, current, asked = null, sou
 
 export function AddressView({ s }: { s: SessionState }) {
   const a = s.address!;
+  const working = s.status === "working" || s.status === "starting";
   // A thread's state is what happened to it in this session (J8): a reply means fixed now, a
-  // pushed-back option means deferred; otherwise whatever the PR said at the start.
+  // pushed-back option means deferred, a pick not yet replied to is queued; otherwise whatever
+  // the PR said at the start.
   const stateOf = (t: { id: string; state?: string }) => {
     if (t.state === "already" || t.state === "resolved") return "already";
     const opt = a.threads[t.id]?.options?.find((o) => o.id === a.chosen[t.id]);
-    if (opt && /push back|defer|later/i.test(opt.label)) return "deferred";
-    if (a.replies[t.id] || opt) return "fixed";
+    if (opt && /push back|defer|later|skip/i.test(opt.label)) return "deferred";
+    if (a.replies[t.id]) return "fixed";
+    if (opt) return t.id === a.current ? "fixing" : "picked";
     return t.state ?? "open";
   };
   const threads = (a.list?.threads ?? []).map((t) => ({ ...t, state: stateOf(t) }));
+  // Every thread is drawn up front (MR-126): open the first one still waiting on you, so a pick
+  // moves straight on to the next.
+  const drawn = threads.filter((t) => a.threads[t.id]);
+  const toRead = threads.filter((t) => t.state === "open" && !a.threads[t.id]).length;
+  const undecided = drawn.find((t) => t.state === "open" && (a.threads[t.id]?.options ?? []).length);
   const [viewing, setViewing] = useState<string | null>(null);
-  const shownId = viewing ?? a.current;
+  const shownId = viewing ?? undecided?.id ?? a.current ?? drawn.at(-1)?.id ?? Object.keys(a.threads).at(-1) ?? null;
   const cur = shownId ? a.threads[shownId] : null;
-  const tally = (st: string) => threads.filter((t) => t.state === st).length;
+  const tally = (...st: string[]) => threads.filter((t) => st.includes(t.state)).length;
   const choose = (id: string, opt: { id: string; label: string }) => {
     void api.log("ui.address_chosen", { id, option: opt.id }, s.id, `address:${id}`);
-    void api.send(s.id, `Option ${opt.id}: ${opt.label}`);
+    void api.send(s.id, `Thread ${id} · Option ${opt.id}: ${opt.label}`);
+    setViewing(null);
   };
   const proof = shownId ? a.proofs[shownId] : undefined;
   const replyMsg = shownId ? a.replies[shownId] : undefined;
-  const canChoose = !!cur && cur.id === a.current && !a.chosen[cur.id];
+  const canChoose = !!cur && !a.chosen[cur.id] && !a.done;
+  const fixing = a.current ? threads.find((t) => t.id === a.current) : undefined;
+  const queued = tally("picked");
+  // Every thread handled and Claude idle: say so and offer what comes next, even if Claude never
+  // called address_done.
+  const handled = threads.length > 0 && threads.every((t) => ["already", "fixed", "deferred"].includes(t.state));
+  const done = a.done ?? (handled && !working ? { summary: `${plural(tally("fixed"), "thread")} fixed, ${tally("deferred")} pushed back`, next: [{ label: "Push the fixes and re-request review", reply: "Push the fixes and re-request review from the reviewers." }] } : undefined);
+  const nextSteps = done?.next ?? [];
+  const send = (step: { label: string; reply?: string }) => void api.send(s.id, step.reply || step.label);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.metaKey || !canChoose || !cur) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey) return;
+      if (done && /^[1-3]$/.test(keyOf(e)) && nextSteps[Number(keyOf(e)) - 1]) { e.preventDefault(); send(nextSteps[Number(keyOf(e)) - 1]); return; }
+      if (!canChoose || !cur) return;
       const o = (cur.options ?? []).find((x) => x.id === keyOf(e));
       if (o) { e.preventDefault(); choose(cur.id, o); }
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   });
+  // What Claude is doing right now, so a wait never looks like nothing is happening.
+  const status = !working ? null
+    : toRead > 0 ? `Claude is reading the threads · ${drawn.length} of ${drawn.length + toRead} ready${drawn.length ? " · pick on any that's ready" : ""}`
+    : fixing ? `Claude is fixing ${fixing.at ?? fixing.id}${queued ? ` · ${queued} more queued` : ""}`
+    : queued ? `Claude is starting on your picks · ${queued} queued` : null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {threads.length > 0 && (
         <section style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Tally b={{ type: "tally", items: [{ n: tally("already"), label: "already fixed", tone: "done" }, { n: tally("fixed"), label: "fixed now", tone: "now" }, { n: tally("deferred"), label: "deferred", tone: "deferred" }, { n: tally("open"), label: "to go", tone: "todo" }] }} />
+          <Tally b={{ type: "tally", items: [{ n: tally("already"), label: "already fixed", tone: "done" }, { n: tally("fixed"), label: "fixed now", tone: "done" }, { n: tally("deferred"), label: "deferred", tone: "deferred" }, { n: tally("picked", "fixing"), label: "picked", tone: "now" }, { n: tally("open"), label: "to decide", tone: "todo" }] }} />
           {(a.list?.round || a.list?.moved_commits) && <span className="mr-dim" style={{ alignSelf: "flex-end" }}>{a.list?.round}{a.list?.moved_commits ? ` · branch moved ${a.list.moved_commits} commits` : ""}</span>}
+        </section>
+      )}
+      {status && <span data-mr="AddressStatus" data-mr-source={s.id} className="mr-ink2" style={{ padding: "8px 12px", background: "var(--mr-well)" }}>{status}…</span>}
+      {done && (
+        <section data-mr="AddressDone" data-mr-source={s.id} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "14px 16px", background: "var(--mr-tile)" }}>
+          <strong>✓ All threads handled{done.pushed ? " · pushed" : ""}</strong>
+          {done.summary && <span className="mr-ink2">{done.summary}</span>}
+          {nextSteps.length > 0 && (
+            <div className="mr-row" style={{ flexWrap: "wrap" }}>
+              {nextSteps.slice(0, 3).map((x, i) => <Key key={i} k={String(i + 1)} tone={i === 0 ? "primary" : undefined} disabled={working} onClick={() => send(x)}>{x.label}</Key>)}
+            </div>
+          )}
+          <span className="mr-dim">Or mark this session done (⌘⇧D) to clear it from the wall.</span>
         </section>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
         <nav style={{ flex: "1 1 240px", maxWidth: 320, display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
-          {threads.map((t) => (
-            <button key={t.id} type="button" onClick={() => setViewing(t.id === a.current ? null : t.id)} disabled={!a.threads[t.id]} title={a.threads[t.id] ? "Show this thread" : "Not reached yet"} className="mr-row" style={{ alignItems: "flex-start", padding: "8px 10px", border: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: a.threads[t.id] ? "pointer" : "default", background: t.id === shownId ? "var(--mr-tile)" : "var(--mr-well)", outline: t.id === shownId ? "2px solid var(--mr-selected)" : undefined, outlineOffset: -2 }}>
-              <span aria-hidden="true" style={{ width: 14, color: t.state === "open" ? "var(--mr-needs-ink)" : t.state === "deferred" ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.state === "open" ? "◆" : t.state === "deferred" ? "–" : "✓"}</span>
-              <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span className="mr-mono mr-dim" style={{ fontSize: 11 }}>{t.at}{t.id === a.current ? " · now" : ""}</span><span className="mr-ellipsis">{t.short}</span></span>
-            </button>
-          ))}
+          {threads.map((t) => {
+            const ready = !!a.threads[t.id];
+            const note = t.state === "fixing" ? " · fixing now" : t.state === "picked" ? " · queued" : !ready && t.state === "open" ? (working ? " · reading…" : " · not read yet") : "";
+            return (
+              <button key={t.id} type="button" onClick={() => setViewing(t.id)} disabled={!ready} title={ready ? "Show this thread" : "Claude is still reading this one"} className="mr-row" style={{ alignItems: "flex-start", padding: "8px 10px", border: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: ready ? "pointer" : "default", background: t.id === shownId ? "var(--mr-tile)" : "var(--mr-well)", outline: t.id === shownId ? "2px solid var(--mr-selected)" : undefined, outlineOffset: -2 }}>
+                <span aria-hidden="true" style={{ width: 14, color: t.state === "open" ? (ready ? "var(--mr-needs-ink)" : "var(--mr-ink-3)") : t.state === "deferred" || t.state === "picked" || t.state === "fixing" ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{t.state === "open" ? (ready ? "◆" : "…") : t.state === "deferred" ? "–" : t.state === "picked" || t.state === "fixing" ? "○" : "✓"}</span>
+                <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span className="mr-mono mr-dim" style={{ fontSize: 11 }}>{t.at}{note}</span><span className="mr-ellipsis">{t.short}</span></span>
+              </button>
+            );
+          })}
         </nav>
         <section style={{ flex: "999 1 480px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
           {cur ? (
             <>
-              <Thread b={{ type: "thread", author: cur.reviewer ?? "", where: cur.at, state: stateOf(cur), body: cur.body }} />
+              <Thread b={{ type: "thread", author: cur.reviewer ?? "", where: cur.at, state: stateOf(cur), body: cur.body, note: cur.verdict }} />
               {cur.evidence_code && <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{cur.evidence_file}</span><Diff code={cur.evidence_code} /></div>}
               {(cur.options ?? []).length > 0 && (
                 <FixOptions b={{ type: "fix_options", options: cur.options ?? [] }} live={canChoose} picked={a.chosen[cur.id]} onReply={() => {}}
                   onPick={(o) => { const opt = (cur.options ?? []).find((x) => x.id === o.id); if (opt) choose(cur.id, opt); }} />
               )}
+              {canChoose && undecided && drawn.filter((t) => t.state === "open").length > 1 && <span className="mr-dim">Pick in any order · the next thread opens as you pick · Claude fixes them as your picks arrive</span>}
             </>
-          ) : <span className="mr-dim">{threads.length ? "Waiting for the next thread…" : "Fetching the review threads…"}</span>}
+          ) : <span className="mr-dim">{threads.length ? (working ? "Claude is reading the threads · the first one appears here in a moment…" : "No thread to show yet.") : "Fetching the review threads…"}</span>}
         </section>
         {(proof || replyMsg) && (
           <aside style={{ flex: "1 1 260px", maxWidth: 360, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -220,7 +262,7 @@ export function AddressView({ s }: { s: SessionState }) {
 
 // The flow's own button replies (next, note f1, Option 2: …) drive the visuals above; anything else
 // you type is a question, so it and Claude's answer show here instead of vanishing.
-const CONTROL = /^(ok|next|publish|note \S+|snippet \d+|Option [^:]+: .*|Add this to the review as a comment: [\s\S]*)$/i;
+const CONTROL = /^(ok|next|publish|note \S+|snippet \d+|(Thread \S+ · )?Option [^:]+: .*|Add this to the review as a comment: [\s\S]*)$/i;
 
 export type Exchange = { ask: Extract<TranscriptItem, { kind: "user" }>; answer: Extract<TranscriptItem, { kind: "text" | "view" }>[] };
 

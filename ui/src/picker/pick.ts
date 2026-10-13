@@ -81,7 +81,10 @@ export function flowWaiting(s: SessionState): string | null {
   // Overview shown, walkthrough not started: the review waits on you to start it (MR-58 walk).
   if (r?.overview && r.current === null) return `Overview ready · ${r.overview.total_snippets ? `${r.overview.total_snippets} snippet${r.overview.total_snippets === 1 ? "" : "s"} to walk` : "start the walkthrough"}`;
   const a = s.address;
-  if (a?.current && !a.chosen[a.current]) return `Thread ${a.threads[a.current]?.at ?? ""} · pick how to address it`.replace("  ", " ");
+  if (a?.done) return `All threads handled${a.done.next?.[0] ? ` · next: ${a.done.next[0].label}` : ""}`;
+  // Every thread is drawn up front (MR-126): the user owes a choice on each drawn, undecided one.
+  const undecided = a ? Object.values(a.threads).filter((t) => (t.options ?? []).length && !a.chosen[t.id]).length : 0;
+  if (undecided) return `${undecided} thread${undecided === 1 ? "" : "s"} · pick how to address ${undecided === 1 ? "it" : "them"}`;
   return null;
 }
 

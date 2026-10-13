@@ -100,14 +100,15 @@ const reviewEvents: E[] = [
   { session: "R", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "snippet 1", total_cost_usd: 0.2 } }, at: 41 },
 ];
 
-// Address (J8): /pr-address on your PR, thread by thread.
+// Address (J8): /pr-address on your PR, every thread drawn up front (MR-126).
 const addressEvents: E[] = [
   ...ready, onboarded,
   { session: "X", kind: "ui.session_requested", payload: { prompt: "/pr-address 479", kind: "address", cwd: "/Users/me/code/billing", workspace: "personal" }, at: 10 },
   { session: "X", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-X", model: "claude-opus-5-5" }, at: 11 },
   { session: "X", kind: "flow.address_threads", payload: { pr: "#479", round: "Round 2", moved_commits: 1, threads: [{ id: "t1", at: "export.ts:30", reviewer: "dana", short: "Stream rows instead of loading all", state: "open" }, { id: "t2", at: "export.ts:58", reviewer: "dana", short: "Name the job queue constant", state: "open" }, { id: "t3", at: "README.md:4", reviewer: "lee", short: "Typo", state: "resolved" }] }, at: 30 },
   { session: "X", kind: "flow.address_thread", payload: { id: "t1", reviewer: "dana", at: "export.ts:30", body: "This loads every invoice into memory. Big accounts will OOM the worker. Can we stream?", verdict: "Valid — 2M-row accounts exist (see load test).", evidence_file: "src/export.ts", evidence_code: "const rows = await db.invoices.findMany({ where })", options: [{ id: "a", label: "Stream with a cursor", detail: "Batches of 5k rows, constant memory", recommended: true }, { id: "b", label: "Paginate by month", detail: "Simpler; up to 31 queries" }, { id: "c", label: "Push back", detail: "Reply that v1 caps exports at 100k rows" }] }, at: 40 },
-  { session: "X", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "thread 1", total_cost_usd: 0.2 } }, at: 41 },
+  { session: "X", kind: "flow.address_thread", payload: { id: "t2", reviewer: "dana", at: "export.ts:58", body: "Magic string 'exports' — make it a named constant.", verdict: "Valid, trivial.", evidence_file: "src/export.ts", evidence_code: "queue.add('exports', job)", options: [{ id: "a", label: "Add EXPORT_QUEUE constant", recommended: true }, { id: "b", label: "Push back" }] }, at: 41 },
+  { session: "X", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "2 threads drawn", total_cost_usd: 0.2 } }, at: 42 },
 ];
 
 // Report an internal bug (J14): a finished god-mode fix session on the app's own repo.

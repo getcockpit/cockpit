@@ -87,12 +87,17 @@ function scripted(sid: string, text: string): boolean {
     if (text === "ok") { later(1500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[0])); later(1700, () => sdk(sid, { type: "result", is_error: false, result: "snippet", total_cost_usd: 0.04 })); return true; }
     if (text.startsWith("Add this to the review") || text.startsWith("About ")) { later(900, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Added to your review." }] } })); done("ok"); return true; }
   }
-  if (sid === "X" && text.startsWith("Option ")) {
-    const cur = [...events].reverse().find((e) => e.session_id === "X" && e.kind === "flow.address_thread")?.payload.id as string;
-    later(500, () => record("X", "flow.address_proof", { id: cur, checks: [{ label: "Tests pass", ok: true, proof: "211 passed" }, { label: "Memory stays flat on 2M rows", ok: true, proof: "peak 180 MB" }] }));
-    later(900, () => record("X", "flow.address_reply", { id: cur, text: "Switched to a cursor stream in batches of 5k rows; memory stays flat on the 2M-row fixture.", sha: "a1b2c3d", posted: false }));
-    if (cur === "t1") later(1300, () => record("X", "flow.address_thread", { id: "t2", reviewer: "dana", at: "export.ts:58", body: "Magic string 'exports' — make it a named constant.", verdict: "Valid, trivial.", evidence_file: "src/export.ts", evidence_code: "queue.add('exports', job)", options: [{ id: "a", label: "Add EXPORT_QUEUE constant", recommended: true }, { id: "b", label: "Push back" }] }));
-    done("addressed"); return true;
+  // Every thread is drawn up front (MR-126): a pick names its thread, Claude fixes it, then wraps up.
+  const pick = /^Thread (\S+) · Option /.exec(text);
+  if (sid === "X" && pick) {
+    const id = pick[1];
+    const left = ["t1", "t2"].filter((t) => t !== id && !events.some((e) => e.session_id === "X" && e.kind === "flow.address_reply" && e.payload.id === t));
+    later(300, () => record("X", "flow.address_fixing", { id }));
+    later(1500, () => record("X", "flow.address_proof", { id, checks: [{ label: "Tests pass", ok: true, proof: "211 passed" }, { label: "Memory stays flat on 2M rows", ok: true, proof: "peak 180 MB" }] }));
+    later(2000, () => record("X", "flow.address_reply", { id, text: id === "t1" ? "Switched to a cursor stream in batches of 5k rows; memory stays flat on the 2M-row fixture." : "Named it EXPORT_QUEUE.", sha: "a1b2c3d", posted: true }));
+    if (!left.length) later(2300, () => record("X", "flow.address_done", { summary: "2 threads fixed in 2 commits", pushed: false, next: [{ label: "Push and re-request review from @dana", reply: "Push the fixes and re-request review from @dana." }, { label: "Show me the diff", reply: "Show me the diff of the fixes." }] }));
+    later(2400, () => sdk(sid, { type: "result", is_error: false, result: "addressed", total_cost_usd: 0.04 }));
+    return true;
   }
   return false;
 }
