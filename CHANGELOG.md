@@ -19,5 +19,5 @@ First public release.
 - Raw transcript (`⌘R`) and terminal handoff (`⌘T`).
 - Installers for macOS (universal `.dmg`), Linux (`.AppImage`, `.deb`, `.rpm`) and Windows (`.msi`, `.exe`).
 
-[Unreleased]: https://github.com/kostkobv/cockpit/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/kostkobv/cockpit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/getcockpit/cockpit/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/getcockpit/cockpit/releases/tag/v0.1.0

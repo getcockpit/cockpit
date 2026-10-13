@@ -9,7 +9,7 @@ It uses **your own** Claude Code login: it never sees or stores your tokens.
   - **macOS 11+** (Apple Silicon or Intel): `Cockpit-<version>.dmg`
   - **Linux x64** with WebKitGTK 4.1 (Ubuntu 22.04+, Debian 12+, Fedora 38+): `.AppImage`, `.deb` or `.rpm`
   - **Windows 10/11 x64** (WebView2 is preinstalled on 11): `.msi` or `-setup.exe`
-- Downloads: https://github.com/kostkobv/cockpit/releases/latest
+- Downloads: https://github.com/getcockpit/cockpit/releases/latest
 - Claude Code installed and signed in. Check in Terminal: `claude --version`, then run `claude` once and log in.
   Not installed? `curl -fsSL https://claude.ai/install.sh | bash`
 

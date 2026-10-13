@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Question or idea to discuss
-    url: https://github.com/kostkobv/cockpit/discussions
+    url: https://github.com/getcockpit/cockpit/discussions
     about: Ask a question or share how you use Cockpit
   - name: Security vulnerability
-    url: https://github.com/kostkobv/cockpit/security/advisories/new
+    url: https://github.com/getcockpit/cockpit/security/advisories/new
     about: Please report security issues privately

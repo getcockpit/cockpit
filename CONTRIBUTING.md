@@ -4,8 +4,8 @@ Thanks for helping! Bug reports, ideas and pull requests are all welcome.
 
 ## Report a bug or ask for a feature
 
-- **Bug:** [open a bug report](https://github.com/kostkobv/cockpit/issues/new?template=bug_report.yml). Include your OS, the Cockpit version (Settings → About) and `claude --version`.
-- **Idea:** [open a feature request](https://github.com/kostkobv/cockpit/issues/new?template=feature_request.yml). Describe the moment that felt slow or confusing; that matters more than a proposed solution.
+- **Bug:** [open a bug report](https://github.com/getcockpit/cockpit/issues/new?template=bug_report.yml). Include your OS, the Cockpit version (Settings → About) and `claude --version`.
+- **Idea:** [open a feature request](https://github.com/getcockpit/cockpit/issues/new?template=feature_request.yml). Describe the moment that felt slow or confusing; that matters more than a proposed solution.
 - **Security issue:** please don't open a public issue. See [SECURITY.md](SECURITY.md).
 
 ## Set up a dev build (about 10 min)
@@ -13,7 +13,7 @@ Thanks for helping! Bug reports, ideas and pull requests are all welcome.
 You need [Rust](https://rustup.rs), [Bun](https://bun.sh), Claude Code signed in, and on Linux the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
-git clone https://github.com/kostkobv/cockpit && cd cockpit
+git clone https://github.com/getcockpit/cockpit && cd cockpit
 ./scripts/dev.sh                    # builds everything and starts the app with hot reload
 (cd ui && bunx vite --port 1530)    # or: UI only, no Claude needed → http://localhost:1530/?demo=busy
 ```
