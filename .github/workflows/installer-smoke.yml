@@ -2,8 +2,10 @@ name: Installer smoke test
 
 # Installs the published release on clean machines and checks the app starts.
 on:
-  release:
-    types: [published]
+  # After the Release workflow has attached every installer (not on "published", which fires before any are uploaded).
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -15,10 +17,11 @@ permissions:
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  TAG: ${{ github.event.inputs.tag || github.event.release.tag_name || '' }}
+  TAG: ${{ github.event.inputs.tag || '' }}
 
 jobs:
   windows:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     name: Windows (.exe and .msi)
     runs-on: windows-latest
     steps:
@@ -58,6 +61,7 @@ jobs:
           Write-Host "MSI installed $($app.FullName)"
 
   linux:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     name: Linux (.deb and AppImage)
     runs-on: ubuntu-22.04
     steps:
@@ -78,6 +82,7 @@ jobs:
           [ "$code" = 124 ] && echo "AppImage stayed up for 15 s" || { echo "AppImage exited with $code"; exit 1; }
 
   macos:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     name: macOS (one-line installer)
     runs-on: macos-latest
     steps:
