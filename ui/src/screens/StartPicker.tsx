@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { sendsOnEnter, useAutoGrow } from "../components/autoGrow";
 import { FolderPicker, PinFolder, useWorkFolder } from "../components/FolderPicker";
 import { workspaceFolder } from "../state/reduce";
 import { cleanTitle } from "../picker/title";
@@ -73,7 +74,8 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   const [prs, setPrs] = useState<Pr[] | null>(null);
   const [error, setError] = useState("");
   const [sel, setSel] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(input, text, 360);
   const prMode = mode === "review" || mode === "address";
   // PR lists cover every repo (MR-48) unless "only this repo" is on (MR-79): then the folder picks
   // the repo. `repo` is undefined while the folder's origin is being read, null when it isn't GitHub.
@@ -158,6 +160,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
     if (keyOf(e) === "Escape") { e.preventDefault(); if (draft) setDraft(null); else onClose(); }
     else if (draft) return;
     else if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && tiles[Number(keyOf(e)) - 1]) { e.preventDefault(); setMode(tiles[Number(keyOf(e)) - 1].id); }
+    else if (text.includes("\n") && (keyOf(e) === "ArrowDown" || keyOf(e) === "ArrowUp")) return; // several lines: arrows move the caret
     else if (keyOf(e) === "ArrowDown") { e.preventDefault(); setSel((x) => Math.min(items.length - 1, x + 1)); }
     else if (keyOf(e) === "ArrowUp") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
     else if (keyOf(e) === "Enter" && !text.trim() && items[sel]) { e.preventDefault(); pick(items[sel]); }
@@ -169,12 +172,13 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
       style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)", zIndex: 10 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
-        <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)" }} onSubmit={(e) => { e.preventDefault(); void start(text); }}>
+        <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)", alignItems: "flex-end" }} onSubmit={(e) => { e.preventDefault(); void start(text); }}>
           {prMode && !only
             ? <span className="mr-dim" style={{ flex: "0 1 240px", padding: "0 8px" }} title="Review and Address run in the PR's own clone">Runs in the PR's repo</span>
             : <><FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[...new Set(state.order.map((id) => state.sessions[id]).reverse().map((x) => x.repo ?? x.cwd))].slice(0, 5)} />
               <PinFolder workspace={workspace} folder={cwd} pinned={state.workspaces.find((w) => w.id === workspace)?.folder ?? null} /></>}
-          <input ref={input} className="mr-input" style={{ fontSize: 17, background: "var(--mr-well)" }} placeholder={m.placeholder} value={text} onChange={(e) => setText(e.target.value)} aria-label={m.placeholder} />
+          <textarea ref={input} className="mr-input" rows={1} style={{ fontSize: 17, background: "var(--mr-well)" }} placeholder={m.placeholder} value={text} onChange={(e) => setText(e.target.value)} aria-label={m.placeholder}
+            onKeyDown={(e) => { if (sendsOnEnter(e)) { e.preventDefault(); if (text.trim()) void start(text); } }} />
           <Key k="↵" tone="primary" disabled={!text.trim() && !items[sel]}>Start</Key>
         </form>
         <div role="radiogroup" aria-label="Kind of session" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "var(--mr-gap)", padding: "12px 18px" }}>
