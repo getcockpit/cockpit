@@ -312,7 +312,7 @@
   const names = { mac: "macOS", win: "Windows", linux: "Linux" };
   if (os) document.querySelector(`[data-os="${os}"]`).classList.add("me");
   const latest = "https://github.com/getcockpit/cockpit/releases/latest";
-  const label = (n) => /\.dmg$/.test(n) ? "Disk image (.dmg)" : /setup\.exe$/.test(n) ? "Installer (.exe)" : /\.msi$/.test(n) ? "MSI package" : /\.AppImage$/.test(n) ? "AppImage" : /\.deb$/.test(n) ? "Debian / Ubuntu (.deb)" : /\.rpm$/.test(n) ? "Fedora / RHEL (.rpm)" : n;
+  const label = (n) => /\.dmg$/.test(n) ? "Disk image (.dmg) · Apple Silicon + Intel" : /setup\.exe$/.test(n) ? "Installer (.exe)" : /\.msi$/.test(n) ? "MSI package" : /\.AppImage$/.test(n) ? "AppImage" : /\.deb$/.test(n) ? "Debian / Ubuntu (.deb)" : /\.rpm$/.test(n) ? "Fedora / RHEL (.rpm)" : n;
   fetch("https://api.github.com/repos/getcockpit/cockpit/releases/latest")
     .then((r) => (r.ok ? r.json() : Promise.reject()))
     .then((rel) => {
