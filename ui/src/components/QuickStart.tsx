@@ -1,6 +1,7 @@
 import { shortError } from "./ErrorLine";
 import { useEffect, useRef, useState } from "react";
 import { Key } from ".";
+import { sendsOnEnter, useAutoGrow } from "./autoGrow";
 import { FolderPicker, PinFolder, useWorkFolder } from "./FolderPicker";
 import { promptFor } from "../screens/StartPicker";
 import { api } from "../state/store";
@@ -21,6 +22,7 @@ export function QuickStart({ state, workspace, onStarted, onMore }: { state: App
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(input, text, 420);
   useEffect(() => { input.current?.focus(); }, []);
   useEffect(() => {
     const pick = (e: Event) => { const k = (e as CustomEvent<SessionKind>).detail; if (k === "blank" || k === "plan") { setKind(k); input.current?.focus(); } };
@@ -43,8 +45,8 @@ export function QuickStart({ state, workspace, onStarted, onMore }: { state: App
           <PinFolder workspace={workspace} folder={cwd} pinned={state.workspaces.find((w) => w.id === workspace)?.folder ?? null} />
         </div>
         <textarea ref={input} className="mr-input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Fix the login redirect after OAuth and add a regression test"
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void start(); } }}
-          style={{ fontSize: 17, padding: 12, background: "var(--mr-well)", resize: "vertical" }} aria-label="What should Claude do?" />
+          onKeyDown={(e) => { if (sendsOnEnter(e)) { e.preventDefault(); void start(); } }}
+          style={{ fontSize: 17, padding: 12, background: "var(--mr-well)" }} aria-label="What should Claude do?" />
         <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }}>
           <div role="radiogroup" aria-label="How" className="mr-row" style={{ gap: 0, background: "var(--mr-well)", padding: 3 }}>
             {KINDS.map((k) => (
