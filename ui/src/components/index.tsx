@@ -16,9 +16,9 @@ export function Lamp({ value, label, on, onClick }: { value: string | number; la
     : <div className="mr-lamp" data-mr="Lamp" data-mr-source={label} data-on={on || undefined}>{body}</div>;
 }
 
-export function Key({ k, children, tone, onClick, disabled, submit }: { k?: string; children: ReactNode; tone?: "primary" | "needs"; onClick?: () => void; disabled?: boolean; submit?: boolean }) {
+export function Key({ k, children, tone, onClick, disabled, submit, pressed }: { k?: string; children: ReactNode; tone?: "primary" | "needs"; onClick?: () => void; disabled?: boolean; submit?: boolean; pressed?: boolean }) {
   return (
-    <button type={submit ? "submit" : "button"} className="mr-key" data-tone={tone} onClick={onClick} disabled={disabled}>
+    <button type={submit ? "submit" : "button"} className="mr-key" data-tone={tone} onClick={onClick} disabled={disabled} aria-pressed={pressed}>
       {k && <kbd>{k}</kbd>}
       {children}
     </button>
@@ -126,36 +126,57 @@ export function pickAnswer(questions: { question: string }[], picks: Record<stri
   return { picks: next, done: questions.every((q) => q.question in next) };
 }
 
+/** A click on a multi-select option: it toggles, and the picks keep the options' order. The answer
+ *  Claude gets is the labels joined with ", ", like Claude Code's own multi-select. */
+export function toggleOption(options: { label: string }[], chosen: string[], label: string): string[] {
+  const next = chosen.includes(label) ? chosen.filter((x) => x !== label) : [...chosen, label];
+  return options.map((o) => o.label).filter((l) => next.includes(l));
+}
+
 // A question with its options, plus a way out when none fit: answer in your own words, have Claude
 // ask you first, or skip it. With several questions, each gets its answer and the card sends them together.
 function QuestionCard({ questions, onAnswer }: { questions: Extract<DecisionSpec, { component: "QuestionCard" }>["questions"]; onAnswer: (a: Answer) => void }) {
   const [picks, setPicks] = useState<Record<string, string>>({});
+  const [chosen, setChosen] = useState<Record<string, string[]>>({});
   const many = questions.length > 1;
+  // A multi-select question has no "done" click, so the card waits for Send instead of sending itself.
+  const multi = questions.some((q) => q.multiSelect);
   const pick = (question: string, label: string) => {
-    if (!many) return onAnswer({ kind: "answer", answers: { [question]: label } });
+    if (!many && !multi) return onAnswer({ kind: "answer", answers: { [question]: label } });
     const r = pickAnswer(questions, picks, question, label);
     setPicks(r.picks);
-    if (r.done) onAnswer({ kind: "answer", answers: r.picks });
+    if (r.done && !multi) onAnswer({ kind: "answer", answers: r.picks });
   };
+  const toggle = (q: (typeof questions)[number], label: string) => {
+    const next = toggleOption(q.options, chosen[q.question] ?? [], label);
+    setChosen({ ...chosen, [q.question]: next });
+    const { [q.question]: _, ...rest } = picks;
+    setPicks(next.length ? { ...rest, [q.question]: next.join(", ") } : rest);
+  };
+  const answered = Object.keys(picks).length;
   // Own words answer the first question still open.
   const open = questions.find((q) => !(q.question in picks));
   return (
     <div className="mr-queue" style={{ gap: 12 }}>
-      {many && <span className="mr-dim" data-mr="QuestionProgress" data-mr-source={questions[0].question}>{Object.keys(picks).length} of {questions.length} answered · sent when all are</span>}
+      {(many || multi) && <span className="mr-dim" data-mr="QuestionProgress" data-mr-source={questions[0].question}>{many ? `${answered} of ${questions.length} answered · ` : ""}{multi ? "pick any that apply, then Send" : "sent when all are"}</span>}
       {questions.map((q, qi) => (
         <div key={qi} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span className="mr-ask">{many ? `${qi + 1}. ` : ""}{q.question}</span>
+          <span className="mr-ask">{many ? `${qi + 1}. ` : ""}{q.question}{q.multiSelect ? <span className="mr-dim"> · pick any</span> : null}</span>
           <div className="mr-row" style={{ flexWrap: "wrap" }}>
-            {q.options.map((o, oi) => (
-              <Key key={oi} k={many ? undefined : String(oi + 1)} tone={(many ? picks[q.question] === o.label : oi === 0) ? "primary" : undefined} onClick={() => pick(q.question, o.label)}>
-                {o.label}
-              </Key>
-            ))}
-            {many && q.question in picks && !q.options.some((o) => o.label === picks[q.question]) && <Key tone="primary">{picks[q.question]}</Key>}
+            {q.options.map((o, oi) => {
+              const on = q.multiSelect ? (chosen[q.question] ?? []).includes(o.label) : many || multi ? picks[q.question] === o.label : oi === 0;
+              return (
+                <Key key={oi} k={many || multi ? undefined : String(oi + 1)} tone={on ? "primary" : undefined} pressed={q.multiSelect ? on : undefined} onClick={() => (q.multiSelect ? toggle(q, o.label) : pick(q.question, o.label))}>
+                  {q.multiSelect ? (on ? "☑ " : "☐ ") : ""}{o.label}
+                </Key>
+              );
+            })}
+            {(many || multi) && q.question in picks && !q.multiSelect && !q.options.some((o) => o.label === picks[q.question]) && <Key tone="primary">{picks[q.question]}</Key>}
           </div>
           {q.options.some((o) => o.description) && <span className="mr-dim">{q.options.map((o) => `${o.label}: ${o.description}`).join(" · ")}</span>}
         </div>
       ))}
+      {multi && <div className="mr-row"><Key tone="needs" disabled={!!open} onClick={() => onAnswer({ kind: "answer", answers: picks })}>Send{open && many ? ` · ${questions.length - answered} left` : ""}</Key></div>}
       <WayOut source={questions[0]?.question ?? ""} placeholder={many && open ? `None fit for ${questions.indexOf(open) + 1}? Answer it in your own words…` : undefined} onOut={(x) => (x.kind === "reply" && many && open ? pick(open.question, x.text) : onAnswer(wayOut(questions, x)))} />
     </div>
   );
