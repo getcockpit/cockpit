@@ -16,6 +16,10 @@ const frame = async (t: number, path: string) => { await page.evaluate((t) => (w
 if (mode === "preview") {
   mkdirSync("preview", { recursive: true });
   for (const s of rest) await frame(Number(s), `preview/t${s}.jpg`);
+} else if (mode === "range") {
+  // re-render frames [from, to) seconds into frames/ (keeps the rest)
+  const [from, to, fps = 60] = rest.map(Number);
+  for (let i = Math.round(from * fps); i < Math.round(to * fps); i++) await frame(i / fps, `frames/${String(i).padStart(5, "0")}.jpg`);
 } else {
   const fps = Number(rest[0] ?? 30);
   rmSync("frames", { recursive: true, force: true }); mkdirSync("frames");

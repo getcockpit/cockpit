@@ -7,8 +7,8 @@
 <meta name="description" content="Cockpit puts every question, permission and plan from all your Claude Code sessions into one queue you clear with one key. Free and open source for macOS, Windows and Linux, on the Claude plan you already have.">
 <meta property="og:title" content="Cockpit: run ten Claude Code sessions. Read none of them.">
 <meta property="og:description" content="Every question, permission and plan from all your Claude Code sessions in one queue you clear with one key. Free, open source, no account.">
-<meta property="og:image" content="https://kostkobv.github.io/cockpit/assets/poster.jpg">
-<meta property="og:url" content="https://kostkobv.github.io/cockpit/">
+<meta property="og:image" content="https://getcockpit.github.io/assets/poster.jpg">
+<meta property="og:url" content="https://getcockpit.github.io/">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -130,7 +130,7 @@
       <a href="#how">How it works</a>
       <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
-      <a href="https://github.com/kostkobv/cockpit">GitHub</a>
+      <a href="https://github.com/getcockpit/cockpit">GitHub</a>
       <a class="dl" href="#download">Download</a>
     </div>
   </div>
@@ -248,7 +248,7 @@
     <div class="dl">
       <div data-os="mac"><h3>macOS</h3><div class="req">macOS 11+ · Apple Silicon and Intel</div><div class="files" data-match="\.dmg$"></div><div class="tip">First open: <code>xattr -dr com.apple.quarantine /Applications/Cockpit.app</code> (not notarized yet)</div></div>
       <div data-os="win"><h3>Windows</h3><div class="req">Windows 10/11 · x64</div><div class="files" data-match="\.(exe|msi)$"></div><div class="tip">If SmartScreen asks: More info → Run anyway</div></div>
-      <div data-os="linux"><h3>Linux</h3><div class="req">x64 · Ubuntu 22.04+, Fedora 38+</div><div class="files" data-match="\.(AppImage|deb|rpm)$"></div><div class="tip">Windows and Linux are new, so please <a href="https://github.com/kostkobv/cockpit/issues">report anything odd</a></div></div>
+      <div data-os="linux"><h3>Linux</h3><div class="req">x64 · Ubuntu 22.04+, Fedora 38+</div><div class="files" data-match="\.(AppImage|deb|rpm)$"></div><div class="tip">Windows and Linux are new, so please <a href="https://github.com/getcockpit/cockpit/issues">report anything odd</a></div></div>
     </div>
   </div>
 </section>
@@ -260,7 +260,7 @@
     <details><summary>Do my skills, commands, hooks and settings still work?</summary><p>Yes. Cockpit runs your real Claude Code with your real setup. Workspaces keep memory and history separate per client while sharing your skills and settings.</p></details>
     <details><summary>What if a card gets something wrong?</summary><p>The full transcript is one key away (<span class="key">⌘R</span>), and every approval shows the exact command before it runs.</p></details>
     <details><summary>Is this made by Anthropic?</summary><p>No. Cockpit is an independent open-source project built on Anthropic's public Agent SDK. "Claude" and "Claude Code" are trademarks of Anthropic.</p></details>
-    <details><summary>Can I build it or contribute?</summary><p>Please do: <code>git clone https://github.com/kostkobv/cockpit && ./scripts/dev.sh</code>. See <a href="https://github.com/kostkobv/cockpit/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p></details>
+    <details><summary>Can I build it or contribute?</summary><p>Please do: <code>git clone https://github.com/getcockpit/cockpit && ./scripts/dev.sh</code>. See <a href="https://github.com/getcockpit/cockpit/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p></details>
   </div>
 </section>
 
@@ -270,7 +270,7 @@
     <p>Free, open source, and running in two minutes.</p>
     <div class="cta">
       <a class="btn primary" id="dl-final" href="#download">Download Cockpit, free</a>
-      <a class="btn" href="https://github.com/kostkobv/cockpit">★ Star on GitHub</a>
+      <a class="btn" href="https://github.com/getcockpit/cockpit">★ Star on GitHub</a>
     </div>
   </div>
 </section>
@@ -278,7 +278,7 @@
 <footer>
   <div class="wrap">
     <span>Cockpit · MIT · built with Claude Code, mostly from inside Cockpit</span>
-    <span><a href="https://github.com/kostkobv/cockpit">GitHub</a> · <a href="https://github.com/kostkobv/cockpit/releases">Releases</a> · <a href="https://twitter.com/bohdan_kostko">@bohdan_kostko</a></span>
+    <span><a href="https://github.com/getcockpit/cockpit">GitHub</a> · <a href="https://github.com/getcockpit/cockpit/releases">Releases</a> · <a href="https://twitter.com/bohdan_kostko">@bohdan_kostko</a></span>
   </div>
 </footer>
 
@@ -288,9 +288,9 @@
   const os = /Mac/.test(ua) ? "mac" : /Win/.test(ua) ? "win" : /Linux|X11/.test(ua) ? "linux" : null;
   const names = { mac: "macOS", win: "Windows", linux: "Linux" };
   if (os) document.querySelector(`[data-os="${os}"]`).classList.add("me");
-  const latest = "https://github.com/kostkobv/cockpit/releases/latest";
+  const latest = "https://github.com/getcockpit/cockpit/releases/latest";
   const label = (n) => /\.dmg$/.test(n) ? "Disk image (.dmg)" : /setup\.exe$/.test(n) ? "Installer (.exe)" : /\.msi$/.test(n) ? "MSI package" : /\.AppImage$/.test(n) ? "AppImage" : /\.deb$/.test(n) ? "Debian / Ubuntu (.deb)" : /\.rpm$/.test(n) ? "Fedora / RHEL (.rpm)" : n;
-  fetch("https://api.github.com/repos/kostkobv/cockpit/releases/latest")
+  fetch("https://api.github.com/repos/getcockpit/cockpit/releases/latest")
     .then((r) => (r.ok ? r.json() : Promise.reject()))
     .then((rel) => {
       document.querySelectorAll(".files").forEach((box) => {
