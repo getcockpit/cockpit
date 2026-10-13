@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { NoClaude } from "../components/NoClaude";
 import { Bar, Key, Lamp, Lamps, RiskMeter, StateMark } from "../components";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { keyOf } from "../components/keys";
@@ -312,7 +313,7 @@ function ConnectStep({ state, onNext }: { state: AppState; onNext: () => void })
       </Title>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)", maxWidth: 900 }}>
         <Check ok={claude ? true : state.sidecar.up ? false : null} title="Claude Code is installed"
-          detail={claude ? claude : state.sidecar.up ? <>Not found. In a terminal run <span className="mr-mono">curl -fsSL https://claude.ai/install.sh | bash</span>, then reopen this app.</> : "Looking…"} />
+          detail={claude ? claude : state.sidecar.up ? <NoClaude compact /> : "Looking…"} />
         <Check ok={acct.checked ? acct.signedIn : null} title="Signed in with a Claude plan"
           detail={!acct.checked ? "Checking…" : acct.signedIn ? (
             <span className="mr-row" style={{ gap: 14, flexWrap: "wrap" }}>
