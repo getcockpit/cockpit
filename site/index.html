@@ -171,7 +171,7 @@
         <h3>Claude Code in terminals</h3>
         <ul>
           <li>A session sits idle for 20 minutes because its "Allow?" scrolled away.</li>
-          <li>A force-push looks exactly like a harmless <code>ls</code>.</li>
+          <li>A production <code>DROP TABLE</code> scrolls past like any other command.</li>
           <li>Every switch back means minutes of rereading.</li>
           <li>The plan lives somewhere in the chat history.</li>
         </ul>
@@ -180,7 +180,7 @@
         <h3>Claude Code in Cockpit</h3>
         <ul>
           <li>Everything waiting on you sits in one queue, and you know the moment it arrives.</li>
-          <li>Risky commands show in red, with exactly what will run.</li>
+          <li>Risky commands stop in red, showing exactly what will run and where.</li>
           <li>Each session tells you where it is with a plan and a change map.</li>
           <li>Plans are a one-page map you can mark up and build from.</li>
         </ul>
@@ -200,16 +200,14 @@
     </div>
 
     <div class="step">
-      <div class="head"><div class="n">2</div><div><h3>See the risk before it runs.</h3><p>Each approval shows the exact command and how much it could hurt. Anything that touches shared state, like a force-push or a migration, is flagged red.</p></div></div>
-      <div class="shot"><img src="assets/risk.jpg" alt="A high-risk force-push waiting for approval" loading="lazy"></div>
+      <div class="head"><div class="n">2</div><div><h3>Catch the command that sounds harmless.</h3><p>Claude says "drop the old invoices table." The card shows the rest: it's production, and it's <code>CASCADE</code>. Press <span class="key">D</span>, and Claude comes back with a safer plan instead of a restore from backup.</p></div></div>
+      <div class="shot"><img src="assets/risk.jpg" alt="A production DROP TABLE flagged high risk, waiting for approval" loading="lazy"></div>
+      <div class="shot" style="margin-top:4px"><img src="assets/done.jpg" alt="After Deny, Claude proposes running it on staging first" loading="lazy"></div>
     </div>
 
     <div class="step">
-      <div class="head"><div class="n">3</div><div><h3>Know what it did without reading the transcript.</h3><p>A plan with live progress, a short summary of what changed, and a change map grouped by folder with auth and migrations flagged.</p></div></div>
-      <div class="pair tall">
-        <div class="shot"><img src="assets/done.jpg" alt="Claude's summary of what it changed" loading="lazy"></div>
-        <div class="shot"><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"></div>
-      </div>
+      <div class="head"><div class="n">3</div><div><h3>Know where every session stands without reading the transcript.</h3><p>Each session has a plan with live progress and a change map grouped by folder, with auth and migrations flagged.</p></div></div>
+      <div class="shot" style="max-width:520px"><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"></div>
     </div>
 
     <div class="step">
