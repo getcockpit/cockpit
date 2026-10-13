@@ -293,6 +293,18 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       return null;
     }
     case "update_restart": record(null, "update.restarting", { subjects: ["Live titles, rename, dynamic next steps", "Plan panel with progress"] }); later(1200, () => record(null, "app.started", { sha: "d4e5f6a" })); return null;
+    // Release updates (MR-136): ?demo=busy&release=available|ready|conflicts|failed.
+    case "release_status": {
+      const r = new URLSearchParams(location.search).get("release");
+      const chose = events.some((e) => e.kind === "ui.release_choice" || e.kind === "ui.release_install");
+      const phase = r && !chose ? r : "idle";
+      return { mode: r === "available" ? "swap" : "merge", phase, version: "0.2.0", notes: "Auto-update from GitHub releases", updated: null,
+        preview: phase === "ready" ? { yours: 3, brings: 12, conflicts: [] } : phase === "conflicts" ? { yours: 3, brings: 12, conflicts: ["ui/src/screens/Wall.tsx", "src-tauri/src/sidecar.rs"] } : null,
+        failure: phase === "failed" ? { stage: "build", log: "error[E0308]: mismatched types\n  --> src/sidecar.rs:120:9" } : null };
+    }
+    case "release_install": record(null, "ui.release_install", {}); return null;
+    case "release_choose": record(null, "ui.release_choice", { choice: a.choice }); return a.choice === "plan" ? { cwd: "/Users/me/code/cockpit-worktrees/mine", prompt: "Plan the release merge" } : null;
+    case "release_check": case "release_seen": return null;
     case "layer2_status": return { configured: false };
     case "layer2_classify": {
       const label = /\?\s*$/.test(String(a.text).trim()) ? "question" : "other";

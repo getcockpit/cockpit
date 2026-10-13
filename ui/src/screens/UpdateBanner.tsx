@@ -6,6 +6,7 @@ import { ago } from "../picker/now";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
 import type { AppState } from "../state/types";
+import { ReleaseBanner } from "./ReleaseBanner";
 
 // One-click Update (decision 27, MR-66): one quiet line under the tabs. It appears when main has
 // app changes the running app lacks, builds them in the background while you work, restarts in
@@ -99,7 +100,8 @@ export function UpdateBanner({ all, onOpenSession, onBuild }: { all: AppState; o
     tone = "needs";
     body = <PendingUpdates status={status} onUpdate={() => run(startUpdate)} onBuild={onBuild} />;
   }
-  if (!body) return null;
+  // Nothing from main: a newer GitHub release may still be out (MR-136).
+  if (!body) return <ReleaseBanner onOpenSession={onOpenSession} />;
   return (
     <div data-mr="UpdateBanner" data-mr-source={u.phase} style={{ display: "flex", flexDirection: "column", background: "var(--mr-band)", boxShadow: tone ? `inset 4px 0 0 var(--mr-${tone === "needs" ? "needs" : tone === "error" ? "error" : "done"})` : undefined }}>
       <div className="mr-row" style={{ gap: 12, padding: "6px 16px", minHeight: 38 }}>{body}</div>
