@@ -96,6 +96,7 @@
   .term { background: var(--night); color: #e4e7ea; font: 16px/1.7 var(--mono); padding: 24px 28px; margin-bottom: 28px; overflow-x: auto; }
   .term .c { color: #8b939b; }
   .term .p { color: var(--needs); }
+  .term .copy { position: absolute; top: 14px; right: 14px; font: 600 14px var(--mono); background: var(--needs); color: var(--ink); border: 0; padding: 8px 12px; cursor: pointer; }
   .dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
   .dl > div { background: var(--tile); padding: 26px; }
   .dl > div.me { outline: 3px solid var(--selected); outline-offset: -3px; }
@@ -265,7 +266,7 @@
   <div class="wrap">
     <h2>Up and running in 2 minutes.</h2>
     <p class="sub">You need Claude Code, signed in. Don't have it yet?</p>
-    <div class="term"><span class="c"># 1. Claude Code, signed in once (skip if you have it)</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit: macOS or Linux, no security prompts</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
+    <div class="term" style="position:relative"><button class="copy" data-copy="curl -fsSL https://getcockpit.github.io/install.sh | bash" type="button">Copy</button><span class="c"># 1. Claude Code, signed in once (skip if you have it)</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit: macOS or Linux, no security prompts</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
     <p class="sub" style="margin:-8px 0 28px;font-size:18px">Prefer a normal download? Pick yours below.</p>
     <div class="dl">
       <div data-os="mac"><h3>macOS</h3><div class="req">macOS 11+ · Apple Silicon and Intel</div><div class="files" data-match="\.dmg$"></div><div class="tip">The one-line installer above skips the "unidentified developer" prompt. From the .dmg, run <code>xattr -dr com.apple.quarantine /Applications/Cockpit.app</code> once.</div></div>
@@ -299,7 +300,7 @@
 
 <footer>
   <div class="wrap">
-    <span>Cockpit · MIT · built with Claude Code, mostly from inside Cockpit</span>
+    <span>Cockpit · MIT · built with Claude Code, mostly from inside Cockpit · anonymous, cookie-free visit counts via <a href="https://www.goatcounter.com">GoatCounter</a></span>
     <span><a href="https://github.com/getcockpit/cockpit">GitHub</a> · <a href="https://github.com/getcockpit/cockpit/releases">Releases</a></span>
   </div>
 </footer>
@@ -311,13 +312,14 @@
   const names = { mac: "macOS", win: "Windows", linux: "Linux" };
   if (os) document.querySelector(`[data-os="${os}"]`).classList.add("me");
   const latest = "https://github.com/getcockpit/cockpit/releases/latest";
-  const label = (n) => /\.dmg$/.test(n) ? "Disk image (.dmg)" : /setup\.exe$/.test(n) ? "Installer (.exe)" : /\.msi$/.test(n) ? "MSI package" : /\.AppImage$/.test(n) ? "AppImage" : /\.deb$/.test(n) ? "Debian / Ubuntu (.deb)" : /\.rpm$/.test(n) ? "Fedora / RHEL (.rpm)" : n;
+  const label = (n) => /\.dmg$/.test(n) ? "Disk image (.dmg) · Apple Silicon + Intel" : /setup\.exe$/.test(n) ? "Installer (.exe)" : /\.msi$/.test(n) ? "MSI package" : /\.AppImage$/.test(n) ? "AppImage" : /\.deb$/.test(n) ? "Debian / Ubuntu (.deb)" : /\.rpm$/.test(n) ? "Fedora / RHEL (.rpm)" : n;
   fetch("https://api.github.com/repos/getcockpit/cockpit/releases/latest")
     .then((r) => (r.ok ? r.json() : Promise.reject()))
     .then((rel) => {
       document.querySelectorAll(".files").forEach((box) => {
         const re = new RegExp(box.dataset.match, "i");
-        const assets = rel.assets.filter((a) => re.test(a.name)).sort((a, b) => /setup\.exe$/.test(b.name) - /setup\.exe$/.test(a.name));
+        // The fixed-name copies (Cockpit-macos.dmg, Cockpit-linux-x86_64.AppImage, Cockpit-windows-x64-setup.exe) exist for install.sh and the in-app updater; list each build once.
+        const assets = rel.assets.filter((a) => re.test(a.name) && !/^Cockpit-(macos|linux-x86_64|windows-x64-setup)\./.test(a.name)).sort((a, b) => /setup\.exe$/.test(b.name) - /setup\.exe$/.test(a.name));
         box.innerHTML = assets.map((a) => `<a class="file" href="${a.browser_download_url}">↓ ${label(a.name)} · ${(a.size / 1e6).toFixed(0)} MB</a>`).join("") || `<a class="file" href="${latest}">See all downloads</a>`;
       });
       const mine = os && document.querySelector(`[data-os="${os}"] a.file`);
@@ -328,5 +330,23 @@
     })
     .catch(() => document.querySelectorAll(".files").forEach((b) => (b.innerHTML = `<a class="file" href="${latest}">Get it from GitHub Releases</a>`)));
 </script>
+<script>
+  // Analytics: GoatCounter, cookie-free and anonymous. Page views are automatic; these are the events.
+  const track = (name) => window.goatcounter?.count?.({ path: name, title: name, event: true });
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a, button");
+    if (!a) return;
+    if (a.classList.contains("file")) track(`download/${(a.textContent || "").replace(/[↓·]|\d+ MB/g, "").trim().toLowerCase().replace(/\W+/g, "-")}`);
+    else if (a.id === "dl-main" || a.id === "dl-final") track(`cta/${a.id}`);
+    else if (a.classList.contains("copy")) { navigator.clipboard?.writeText(a.dataset.copy); a.textContent = "Copied"; track("install/copy"); }
+    else if (/github\.com\/getcockpit/.test(a.href || "")) track(`github/${a.closest("nav, header, section, footer")?.id || a.closest("nav, footer")?.tagName.toLowerCase() || "page"}`);
+  });
+  const film = document.querySelector("#film video");
+  let played = false;
+  film?.addEventListener("play", () => { if (!played) { played = true; track("film/play"); } });
+  film?.addEventListener("volumechange", () => { if (!film.muted) track("film/sound-on"); }, { once: true });
+  film?.addEventListener("ended", () => track("film/ended"), { once: true });
+</script>
+<script data-goatcounter="https://getcockpit.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </body>
 </html>

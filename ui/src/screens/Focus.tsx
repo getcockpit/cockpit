@@ -1,5 +1,6 @@
 import { keyOf } from "../components/keys";
 import { modKey } from "../platform";
+import { sendsOnEnter, useAutoGrow } from "../components/autoGrow";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DeliveryMark, Key, StateMark } from "../components";
@@ -244,7 +245,8 @@ function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean;
   const [active, setActive] = useState(0);
   const [closed, setClosed] = useState(false); // Esc hides the menu for what's typed now
   const [paths, setPaths] = useState<string[] | null>(null);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(input, text);
   const asked = useRef(false);
   const typed = typedCommand(text);
   const rows = useMemo(() => (typed === null || closed ? [] : matchCommands(s.commands, typed)), [typed, closed, s.commands]);
@@ -268,7 +270,7 @@ function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean;
     requestAnimationFrame(() => input.current?.setSelectionRange(next.caret, next.caret));
   };
   const send = () => { const t = text.trim(); if (t) { onSubmit(t); setText(""); setCaret(0); setClosed(false); } };
-  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!rows.length && found.length) {
       const k = keyOf(e.nativeEvent);
       if (k === "ArrowDown" || k === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (k === "ArrowDown" ? 1 : found.length - 1)) % found.length); }
@@ -276,20 +278,21 @@ function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean;
       else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); setClosed(true); }
       return;
     }
-    if (!rows.length) return;
+    if (!rows.length) { if (sendsOnEnter(e)) { e.preventDefault(); send(); } return; }
     const k = keyOf(e.nativeEvent);
     if (k === "ArrowDown" || k === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (k === "ArrowDown" ? 1 : rows.length - 1)) % rows.length); }
     else if (k === "Tab") { e.preventDefault(); pick(rows[active].name); }
     // ↵ on a row: an exact name runs, anything else completes it first (so arguments can follow).
     else if (k === "Enter" && rows[active].name !== typed) { e.preventDefault(); pick(rows[active].name); }
     else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); setClosed(true); }
+    else if (sendsOnEnter(e)) { e.preventDefault(); send(); }
   };
   return (
-    <form className="mr-row" style={{ position: "relative" }} onSubmit={(e) => { e.preventDefault(); send(); }}>
+    <form className="mr-row" style={{ position: "relative", alignItems: "flex-end" }} onSubmit={(e) => { e.preventDefault(); send(); }}>
       <SlashMenu rows={rows} active={active} onPick={(r) => pick(r.name)} onHover={setActive} source={s.id} />
       {!rows.length && <MentionMenu paths={found} active={active} onPick={pickPath} onHover={setActive} source={s.id} />}
-      <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
-      <input className="mr-input" placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next · / for commands and skills · @ for files"} value={text} ref={input}
+      <span className="mr-mono" style={{ padding: "2px 6px", marginBottom: 10, background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
+      <textarea className="mr-input" rows={1} placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next · / for commands and skills · @ for files"} value={text} ref={input}
         onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); setClosed(false); }}
         onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
         onKeyDown={onKey} aria-label="Message this session" aria-autocomplete="list" aria-expanded={rows.length > 0 || found.length > 0} />
