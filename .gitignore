@@ -9,3 +9,8 @@ src-tauri/gen/
 # Local agent instructions (my dev cycle; public guidance is AGENTS.md)
 /CLAUDE.md
 CLAUDE.local.md
+scripts/film/shots/
+scripts/film/frames/
+scripts/film/preview/
+scripts/film/node_modules/
+scripts/film/*.mp4
