@@ -53,12 +53,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Download
-        run: gh release download $TAG -R ${{ github.repository }} -p '*_amd64.deb' -p '*_amd64.AppImage' -D dl && ls -la dl
+        run: gh release download $TAG -R ${{ github.repository }} -p '*_amd64.deb' -p 'Cockpit_*_amd64.AppImage' -D dl && ls -la dl
       - name: Install the .deb and start it
         run: |
           sudo apt-get update
           sudo apt-get install -y ./dl/*_amd64.deb xvfb
-          bin=$(dpkg -L cockpit | grep -E '/bin/' | head -1); echo "binary: $bin"
+          bin=$(dpkg -L cockpit | grep -iE '/bin/cockpit$' | head -1); echo "binary: $bin"; [ -n "$bin" ] || { dpkg -L cockpit | grep /bin/; exit 1; }
           set +e; timeout 15 xvfb-run -a "$bin"; code=$?; set -e
           [ "$code" = 124 ] && echo "Cockpit stayed up for 15 s" || { echo "Cockpit exited with $code"; exit 1; }
       - name: Start the AppImage
