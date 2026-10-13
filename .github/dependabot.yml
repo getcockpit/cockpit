@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule: { interval: weekly }
+    groups:
+      cargo: { patterns: ["*"], update-types: [minor, patch] }
+  - package-ecosystem: npm
+    directory: /ui
+    schedule: { interval: weekly }
+    groups:
+      ui: { patterns: ["*"], update-types: [minor, patch] }
+  - package-ecosystem: npm
+    directory: /sidecar
+    schedule: { interval: weekly }
+    groups:
+      sidecar: { patterns: ["*"], update-types: [minor, patch] }

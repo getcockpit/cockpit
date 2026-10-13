@@ -32,9 +32,13 @@ use tauri::Manager;
 pub fn run() {
     // Opened from Finder, the app inherits launchd's /usr/bin:/bin:/usr/sbin:/sbin, so git hooks
     // (git-lfs) and Claude's own Bash miss Homebrew tools. Fix it once, before any thread spawns.
-    let path = full_path(&std::env::var("PATH").unwrap_or_default(), login_path().as_deref());
-    // SAFETY: single-threaded here; nothing else reads the environment yet.
-    unsafe { std::env::set_var("PATH", path) };
+    // Windows GUI apps already get the user's PATH.
+    #[cfg(unix)]
+    {
+        let path = full_path(&std::env::var("PATH").unwrap_or_default(), login_path().as_deref());
+        // SAFETY: single-threaded here; nothing else reads the environment yet.
+        unsafe { std::env::set_var("PATH", path) };
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -149,6 +153,7 @@ pub fn run() {
         });
 }
 
+#[cfg(unix)]
 /// The login shell's PATH, if it answers within a few seconds (a slow rc file must not block launch).
 fn login_path() -> Option<String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
@@ -172,6 +177,7 @@ fn login_path() -> Option<String> {
     Some(out.trim().to_owned()).filter(|p| !p.is_empty())
 }
 
+#[cfg_attr(not(unix), allow(dead_code))]
 /// Login PATH first, then the inherited one, then the tool dirs scripts rely on; no duplicates.
 fn full_path(current: &str, login: Option<&str>) -> String {
     let base = selfbuild::sh_path();

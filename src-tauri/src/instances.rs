@@ -86,7 +86,13 @@ fn alive_file(path: &Path) -> bool {
 }
 
 fn pid_alive(pid: u32) -> bool {
-    std::process::Command::new("/bin/kill").args(["-0", &pid.to_string()]).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success())
+    #[cfg(unix)]
+    return std::process::Command::new("/bin/kill").args(["-0", &pid.to_string()]).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
+    #[cfg(windows)]
+    return std::process::Command::new("tasklist")
+        .args(["/NH", "/FI", &format!("PID eq {pid}")])
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()));
 }
 
 /// Another running copy that owns `session` and still has it open, if any: driving it from here

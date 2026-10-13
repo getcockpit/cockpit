@@ -1,0 +1,879 @@
+{
+ "id": "doc_team_inbox",
+ "title": "Team inbox for support tickets — plan",
+ "session_id": null,
+ "version": 1,
+ "blocks": {
+  "goal_inbox": {
+   "id": "goal_inbox",
+   "order": 0,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "goal",
+   "takeaway": "Support agents work every ticket from one shared inbox instead of a shared mailbox",
+   "key": "Email, chat and web-form tickets land in one queue; each has exactly one owner",
+   "body": "**Goal:** replace the shared `support@` mailbox with a **team inbox** inside the product. Every incoming message, whatever the channel, becomes a ticket with one owner, a status and a history.\n\n- **Today:** five agents read the same mailbox. Two people answer the same customer, or nobody does, and there is no way to see what is waiting.\n- **After:** a ticket is assigned the moment it arrives, agents see who is working on what, and a lead sees the queue at a glance.\n\n**Why now:** ticket volume doubled after the spring launch (about 400 a week), and the median first reply went from 3 hours to 11. The two seams we need already exist:\n1. The **notifications service** already ingests email for order updates, so inbound mail is a new consumer, not a new pipeline.\n2. The **activity feed** component already renders a per-object history, so a ticket's timeline is a reuse, not a rewrite.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "400",
+       "label": "tickets a week",
+       "detail": "doubled since the spring launch"
+      },
+      {
+       "value": "11 h",
+       "label": "median first reply",
+       "detail": "up from 3 h"
+      },
+      {
+       "value": "2",
+       "label": "seams reused",
+       "detail": "inbound mail + activity feed"
+      }
+     ]
+    },
+    {
+     "type": "novelty",
+     "items": [
+      {
+       "verdict": "overlapping",
+       "what": "Inbound email parsing: the notifications service already reads mail",
+       "where": "services/notify/inbound.ts"
+      },
+      {
+       "verdict": "adjacent",
+       "what": "Per-object history: the activity feed renders order timelines",
+       "where": "ui/ActivityFeed.tsx"
+      },
+      {
+       "verdict": "new",
+       "what": "Assignment rules and a shared queue with ownership"
+      }
+     ]
+    }
+   ]
+  },
+  "scope_inbox": {
+   "id": "scope_inbox",
+   "order": 1,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "scope",
+   "takeaway": "One inbox for email, chat and web forms; no phone, no social channels in v1",
+   "key": "Small enough to ship in a month, big enough to retire the shared mailbox",
+   "body": "**In v1** the inbox covers the three channels that carry 95% of today's volume.\n\n| Channel | Share of tickets | In v1 |\n|---|---|---|\n| Email | 71% | yes |\n| Chat widget | 18% | yes |\n| Web form | 6% | yes |\n| Phone | 3% | no |\n| Social | 2% | no |\n\n**Out** for now: anything that needs a new vendor contract (phone, social), customer-facing ticket portals, and AI-drafted replies. Each is a follow-up with its own plan.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "scope",
+     "in": [
+      "**Email** forwarded from support@",
+      "**Chat widget** conversations after the agent goes offline",
+      "**Web form** submissions",
+      "**Assignment**: round robin, with manual reassign",
+      "**Statuses**: open, waiting on customer, solved",
+      "**Internal notes** on a ticket"
+     ],
+     "out": [
+      "Phone and voicemail",
+      "Social media mentions",
+      "A customer-facing ticket portal",
+      "AI-drafted replies",
+      "SLA reporting beyond first reply time"
+     ]
+    }
+   ]
+  },
+  "success_inbox": {
+   "id": "success_inbox",
+   "order": 2,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "success",
+   "takeaway": "First reply under 4 hours, no ticket answered twice, the mailbox retired",
+   "key": "Measured from the ticket log for two weeks after the switch",
+   "body": "**Success** is measured from the ticket event log, not a survey. We compare the two weeks before the switch with the two weeks after.\n\n- **First reply time:** median under 4 hours during business hours.\n- **Double answers:** zero tickets with replies from two agents within 10 minutes of each other.\n- **Nothing lost:** every message to support@ appears as a ticket within a minute.\n- **Mailbox retired:** nobody on the team opens the shared mailbox in week two.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "< 4 h",
+       "label": "median first reply",
+       "detail": "business hours"
+      },
+      {
+       "value": "0",
+       "label": "double answers",
+       "detail": "in the two weeks after"
+      }
+     ]
+    },
+    {
+     "type": "checklist",
+     "items": [
+      {
+       "label": "Median first reply under 4 h for two weeks",
+       "ok": null,
+       "proof": "ticket log query"
+      },
+      {
+       "label": "No ticket answered by two agents",
+       "ok": null,
+       "proof": "double-reply report"
+      },
+      {
+       "label": "Every inbound email becomes a ticket within a minute",
+       "ok": true,
+       "proof": "staging soak test"
+      },
+      {
+       "label": "Shared mailbox unused in week two",
+       "ok": null,
+       "proof": "mail server login log"
+      }
+     ]
+    }
+   ]
+  },
+  "design_inbox": {
+   "id": "design_inbox",
+   "order": 3,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "design",
+   "takeaway": "Inbound channels write to one ticket store; the inbox UI reads it and assigns on arrival",
+   "key": "Three adapters, one store, one assignment step; nothing talks to the mailbox directly",
+   "body": "**Design:** each channel has a small adapter that turns its message into a `ticket.message` event. The ticket store folds those events into tickets, and the assignment step picks an owner when a ticket opens.\n\n1. **Adapters** (email, chat, form) normalise sender, subject, body and attachments. The email adapter threads replies by the `In-Reply-To` header, then by a ticket id in the subject.\n2. **Ticket store** keeps tickets as events: opened, message, assigned, status changed, note added. Replaying them rebuilds a ticket, which is also how the timeline renders.\n3. **Assignment** runs on `ticket.opened`: round robin over agents who are online, skipping anyone over their open-ticket limit. A lead can reassign at any time.\n4. **Inbox UI** lists tickets by status and owner, with a detail pane that reuses the activity feed.\n\nReplies go out through the existing notifications service, so outbound mail keeps its templates, tracking and bounce handling.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "lanes",
+     "lanes": [
+      {
+       "name": "Channels",
+       "nodes": [
+        "Email (support@)",
+        "Chat widget",
+        {
+         "label": "Web form",
+         "mark": "~"
+        }
+       ]
+      },
+      {
+       "name": "Ticket service",
+       "nodes": [
+        {
+         "label": "Channel adapters",
+         "mark": "+"
+        },
+        {
+         "label": "Ticket store (events)",
+         "mark": "+"
+        },
+        {
+         "label": "Assignment",
+         "mark": "+"
+        }
+       ]
+      },
+      {
+       "name": "Web app",
+       "nodes": [
+        {
+         "label": "Inbox list",
+         "mark": "+"
+        },
+        "Activity feed (reused)",
+        {
+         "label": "Reply box",
+         "mark": "+"
+        }
+       ]
+      }
+     ],
+     "links": [
+      "messages ⇢",
+      "tickets ⇢"
+     ]
+    },
+    {
+     "type": "cards",
+     "items": [
+      {
+       "title": "Adapters",
+       "detail": "one per channel; normalise and thread",
+       "mark": "+"
+      },
+      {
+       "title": "Ticket store",
+       "detail": "events in, tickets by replay",
+       "mark": "+"
+      },
+      {
+       "title": "Assignment",
+       "detail": "round robin over online agents",
+       "mark": "+"
+      },
+      {
+       "title": "Notifications",
+       "detail": "unchanged: still sends every reply"
+      },
+      {
+       "title": "Activity feed",
+       "detail": "gains a ticket event renderer",
+       "mark": "~"
+      },
+      {
+       "title": "Shared mailbox",
+       "detail": "forwards only, then retired",
+       "mark": "-"
+      }
+     ]
+    }
+   ]
+  },
+  "risk_inbox": {
+   "id": "risk_inbox",
+   "order": 4,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "risk",
+   "takeaway": "The biggest risks are lost mail during the switch and agents ignoring the new tool",
+   "key": "Both are contained by running the mailbox and the inbox side by side for a week",
+   "body": "**Risks**, worst first. The switch is the dangerous moment: if forwarding breaks, customers write into a void.\n\n- **Lost mail:** forwarding from support@ fails silently. Mitigated by keeping the mailbox readable for a week and alerting when the inbound rate drops to zero for 30 minutes.\n- **Adoption:** agents keep answering from the mailbox out of habit. Mitigated by making the mailbox read-only on day three.\n- **Threading:** replies from some mail clients drop the headers and open a new ticket. Mitigated by the subject-line fallback and a merge button.\n- **Load:** a spam wave opens thousands of tickets. Mitigated by the existing spam filter and a per-sender rate limit.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "risks",
+     "items": [
+      {
+       "risk": "Lost mail: forwarding from support@ fails silently during the switch",
+       "mitigation": "Mailbox stays readable for a week; alert if inbound drops to zero for 30 min",
+       "level": "high"
+      },
+      {
+       "risk": "Agents keep answering from the old mailbox",
+       "mitigation": "Mailbox goes read-only on day three",
+       "level": "medium"
+      },
+      {
+       "risk": "Replies without threading headers open duplicate tickets",
+       "mitigation": "Ticket id in the subject as a fallback, plus a merge button",
+       "level": "medium"
+      },
+      {
+       "risk": "A spam wave floods the queue",
+       "mitigation": "Existing spam filter and a per-sender rate limit",
+       "level": "low"
+      }
+     ]
+    }
+   ]
+  },
+  "components_inbox": {
+   "id": "components_inbox",
+   "order": 5,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "components",
+   "takeaway": "Four phases over about three weeks; email first because it is 71% of volume",
+   "key": "Each phase ships behind a flag and can run alongside the mailbox",
+   "body": "**Components and phases.** Email goes first because it carries most of the volume and exercises every part of the design. Chat and the web form are adapters on the same store.\n\n1. **Email inbox:** adapter, ticket store, assignment, list and detail views.\n2. **Chat and form:** two more adapters; the UI gains channel badges.\n3. **Notes and statuses:** internal notes, waiting-on-customer, auto-reopen on reply.\n4. **Switch over:** forwarding, the read-only mailbox, alerts, and the first-reply report.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "phases",
+     "unit": "days",
+     "items": [
+      {
+       "name": "1. Email inbox",
+       "detail": "adapter, store, assignment, list + detail",
+       "min": 5,
+       "max": 7
+      },
+      {
+       "name": "2. Chat and form",
+       "detail": "two adapters, channel badges",
+       "min": 2,
+       "max": 3
+      },
+      {
+       "name": "3. Notes and statuses",
+       "detail": "notes, waiting, auto-reopen",
+       "min": 2,
+       "max": 3
+      },
+      {
+       "name": "4. Switch over",
+       "detail": "forwarding, alerts, report",
+       "min": 2,
+       "max": 4
+      }
+     ]
+    },
+    {
+     "type": "matrix",
+     "cols": [
+      "Phase 1",
+      "Phase 2",
+      "Phase 3",
+      "Phase 4"
+     ],
+     "rows": [
+      {
+       "label": "Email tickets",
+       "cells": [
+        "yes",
+        "yes",
+        "yes",
+        "yes"
+       ]
+      },
+      {
+       "label": "Chat and form tickets",
+       "cells": [
+        "no",
+        "yes",
+        "yes",
+        "yes"
+       ]
+      },
+      {
+       "label": "Internal notes",
+       "cells": [
+        "no",
+        "no",
+        "yes",
+        "yes"
+       ]
+      },
+      {
+       "label": "Mailbox retired",
+       "cells": [
+        "no",
+        "no",
+        "partial",
+        "yes"
+       ]
+      }
+     ]
+    },
+    {
+     "type": "cards",
+     "items": [
+      {
+       "title": "inbound-email",
+       "detail": "adapter + threading",
+       "mark": "+"
+      },
+      {
+       "title": "ticket-store",
+       "detail": "events and replay",
+       "mark": "+"
+      },
+      {
+       "title": "InboxScreen",
+       "detail": "list, filters, detail pane",
+       "mark": "+"
+      }
+     ]
+    }
+   ]
+  },
+  "verification_inbox": {
+   "id": "verification_inbox",
+   "order": 6,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "verification",
+   "takeaway": "Each phase is proven by a test that sends real mail through staging",
+   "key": "No phase ships until its row is green on staging",
+   "body": "**Verification** runs on staging with a real mailbox, not mocks. Each phase adds one end-to-end test and keeps the earlier ones.\n\n- Send an email, a chat transcript and a form submission; each becomes a ticket.\n- Reply from three mail clients; each reply lands on the right ticket.\n- Take one agent offline; nothing is assigned to them.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "checklist",
+     "items": [
+      {
+       "label": "Email to staging support@ opens a ticket within a minute",
+       "ok": true,
+       "proof": "e2e inbound-email"
+      },
+      {
+       "label": "Replies from Gmail, Outlook and Apple Mail thread correctly",
+       "ok": false,
+       "proof": "Outlook drops In-Reply-To"
+      },
+      {
+       "label": "Offline agents get no new tickets",
+       "ok": null,
+       "proof": "assignment test"
+      },
+      {
+       "label": "Chat and form submissions open tickets",
+       "ok": null,
+       "proof": "phase 2"
+      }
+     ]
+    }
+   ]
+  },
+  "q1-assignment": {
+   "id": "q1-assignment",
+   "order": 7,
+   "decision": "Round robin over online agents",
+   "updated": "",
+   "status": "decided",
+   "data": {
+    "options": [
+     {
+      "label": "Round robin over online agents (Recommended)",
+      "description": "Each new ticket goes to the next agent who is online and under their limit."
+     },
+     {
+      "label": "Agents claim from a shared queue",
+      "description": "Tickets wait unassigned until someone picks them. Flexible, but slow tickets get skipped."
+     },
+     {
+      "label": "Rules by topic",
+      "description": "Billing to one agent, shipping to another. Precise, but the rules need upkeep."
+     }
+    ]
+   },
+   "section": "question",
+   "takeaway": "Q1: how are new tickets assigned?",
+   "key": "Decides whether agents pick work or are handed it",
+   "body": "Recommendation: **Round robin**. It spreads the load evenly from day one and needs no rules to maintain.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "decision",
+     "chosen": "Round robin over online agents",
+     "why": "even load from day one, nothing to configure",
+     "recommended": "Round robin over online agents"
+    },
+    {
+     "type": "compare",
+     "criteria": [
+      "Speed to first reply",
+      "Upkeep",
+      "Fairness"
+     ],
+     "rows": [
+      {
+       "option": "Round robin ✓ chosen",
+       "values": [
+        "fast",
+        "none",
+        "even"
+       ]
+      },
+      {
+       "option": "Claim from a queue",
+       "values": [
+        "slow for hard tickets",
+        "none",
+        "uneven"
+       ]
+      },
+      {
+       "option": "Rules by topic",
+       "values": [
+        "fast",
+        "rules to maintain",
+        "depends on the rules"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "q2-history": {
+   "id": "q2-history",
+   "order": 8,
+   "decision": "Start clean; keep the mailbox as a read-only archive",
+   "updated": "",
+   "status": "decided",
+   "data": {
+    "options": [
+     {
+      "label": "Import the last 90 days (Recommended)",
+      "description": "Recent threads become solved tickets with full history."
+     },
+     {
+      "label": "Start clean; keep the mailbox as a read-only archive",
+      "description": "Nothing is imported. Agents search the old mailbox when they need context."
+     }
+    ]
+   },
+   "section": "question",
+   "takeaway": "Q2: do we import the old mailbox?",
+   "key": "Decides whether agents need the mailbox for context after the switch",
+   "body": "Recommendation: **import the last 90 days** so recent conversations keep their history. The user chose a clean start instead and keeps the mailbox read-only as an archive.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "decision",
+     "chosen": "Start clean; keep the mailbox as a read-only archive",
+     "why": "importing mangles old threads and delays the switch by a week",
+     "recommended": "Import the last 90 days",
+     "rejected": [
+      "Import the last 90 days"
+     ]
+    },
+    {
+     "type": "compare",
+     "criteria": [
+      "Effort",
+      "Context for agents"
+     ],
+     "rows": [
+      {
+       "option": "Import 90 days",
+       "values": [
+        "about 5 days",
+        "full history in the ticket"
+       ]
+      },
+      {
+       "option": "Start clean ✓ chosen",
+       "values": [
+        "none",
+        "search the archive"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "log_inbox": {
+   "id": "log_inbox",
+   "order": 9,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "log",
+   "takeaway": "Plan drafted, two questions settled, the SLA question is open",
+   "key": "Grill: 2 of 3 questions settled. Next: what counts as a reply for the SLA clock",
+   "body": "- **2026-10-01:** Draft v0 written from the support team's notes and a week of mailbox stats.\n- **2026-10-02:** The user decided:\n  - Q1: round robin over online agents.\n  - Q2: start clean, chosen over importing 90 days.\n\n  The phases were trimmed to match: no import step.\n- **2026-10-03:** Staging soak test passed for email; Outlook threading failed and needs the subject fallback.\n- **2026-10-03, Q3 SLA clock:** open. The options are below.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "progress",
+     "n": 2,
+     "total": 3,
+     "label": "Plan questions",
+     "right": "Q3 SLA clock open"
+    },
+    {
+     "type": "takeaway",
+     "heading": "Settled so far",
+     "status": "info",
+     "items": [
+      {
+       "title": "Q1 assignment",
+       "detail": "round robin over online agents",
+       "state": "done"
+      },
+      {
+       "title": "Q2 history",
+       "detail": "start clean, mailbox as archive",
+       "state": "done"
+      },
+      {
+       "title": "Q3 SLA clock",
+       "detail": "what stops the first-reply timer",
+       "state": "you"
+      },
+      {
+       "title": "Next: Outlook threading fix",
+       "detail": "subject-line fallback",
+       "state": "todo",
+       "time": "about 2 h"
+      }
+     ]
+    }
+   ]
+  },
+  "switch-over": {
+   "id": "switch-over",
+   "order": 10,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "design",
+   "takeaway": "The switch takes one afternoon and can be rolled back by turning forwarding off",
+   "key": "Forward first, watch for a day, then make the mailbox read-only",
+   "body": "**Switch-over runbook.** The order matters: forwarding goes on before anyone changes how they work, so a failure only costs a day of double reading.\n\n1. Turn on forwarding from support@ to the inbound address.\n2. Watch the inbound rate for a day next to the mailbox.\n3. Announce the switch in the support channel.\n4. Make the mailbox read-only on day three.\n5. Turn off the alert's grace period.\n\n**Rollback:** turn forwarding off. The mailbox still has every message, and tickets opened so far stay in the inbox.\n\n| Step | Who | When |\n|---|---|---|\n| Forwarding on | Ops | Monday 14:00 |\n| Side-by-side watch | Support lead | Monday to Tuesday |\n| Read-only mailbox | Ops | Wednesday |",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "1",
+       "label": "afternoon to switch"
+      },
+      {
+       "value": "3",
+       "label": "days side by side"
+      }
+     ]
+    },
+    {
+     "type": "steps",
+     "items": [
+      {
+       "text": "Turn on forwarding from **support@**",
+       "actor": "Ops"
+      },
+      {
+       "text": "Watch the inbound rate next to the mailbox",
+       "actor": "Support lead",
+       "detail": "for a full day"
+      },
+      {
+       "text": "Announce the switch in the support channel",
+       "actor": "Support lead"
+      },
+      {
+       "text": "Make the mailbox **read-only**",
+       "actor": "Ops",
+       "detail": "day three"
+      },
+      {
+       "text": "Remove the alert's grace period",
+       "actor": "Ops"
+      }
+     ]
+    },
+    {
+     "type": "compare",
+     "criteria": [
+      "Downtime",
+      "Rollback"
+     ],
+     "rows": [
+      {
+       "option": "Forward, then read-only ✓",
+       "values": [
+        "none",
+        "turn forwarding off"
+       ]
+      },
+      {
+       "option": "Hard cut-over",
+       "values": [
+        "minutes",
+        "re-point MX records"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "q3-sla-clock": {
+   "id": "q3-sla-clock",
+   "order": 11,
+   "decision": null,
+   "updated": "",
+   "status": "open",
+   "data": {
+    "options": [
+     {
+      "label": "The first public reply by an agent (Recommended)",
+      "description": "Notes and auto-replies don't count. The honest number, and the one customers feel."
+     },
+     {
+      "label": "Any agent action",
+      "description": "A note, an assignment or a status change stops the clock. Easy to hit, easy to game."
+     },
+     {
+      "label": "The auto-acknowledgement",
+      "description": "Every ticket gets an instant reply. Meaningless as a measure."
+     }
+    ]
+   },
+   "section": "question",
+   "takeaway": "Q3: what stops the first-reply clock?",
+   "key": "Decides the number the success criteria are measured against",
+   "body": "The first-reply time in the success criteria needs a definition. Should an internal note count, or an auto-reply? The options differ in how honest the number is and how easy it is to game.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "compare",
+     "criteria": [
+      "Honest",
+      "Easy to game",
+      "What customers feel"
+     ],
+     "rows": [
+      {
+       "option": "First public reply",
+       "values": [
+        "yes",
+        "no",
+        "yes"
+       ]
+      },
+      {
+       "option": "Any agent action",
+       "values": [
+        "partly",
+        "yes",
+        "no"
+       ]
+      },
+      {
+       "option": "Auto-acknowledgement",
+       "values": [
+        "no",
+        "yes",
+        "no"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "q4-limits": {
+   "id": "q4-limits",
+   "order": 12,
+   "decision": "Soft cap of 15, raised by a lead",
+   "updated": "",
+   "status": "decided",
+   "data": {
+    "options": [
+     {
+      "label": "Soft cap of 15, raised by a lead (Recommended)",
+      "description": "Round robin skips agents at 15 open tickets; leads can raise it per agent."
+     },
+     {
+      "label": "No cap",
+      "description": "Everyone gets an equal share, however many they already hold."
+     }
+    ]
+   },
+   "section": "question",
+   "takeaway": "Q4: is there a cap on open tickets per agent?",
+   "key": "Decides when round robin skips someone",
+   "body": "Recommendation: **a soft cap of 15** that a lead can raise. Without one, a slow day for one agent becomes a backlog only they can clear.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "decision",
+     "chosen": "Soft cap of 15, raised by a lead",
+     "why": "keeps one slow day from becoming a private backlog",
+     "recommended": "Soft cap of 15, raised by a lead"
+    },
+    {
+     "type": "compare",
+     "criteria": [
+      "Backlog risk",
+      "Setup"
+     ],
+     "rows": [
+      {
+       "option": "Soft cap of 15 ✓ chosen",
+       "values": [
+        "low",
+        "one setting"
+       ]
+      },
+      {
+       "option": "No cap",
+       "values": [
+        "high",
+        "none"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "success_lead_view": {
+   "id": "success_lead_view",
+   "order": 13,
+   "decision": null,
+   "updated": "",
+   "status": "",
+   "data": null,
+   "section": "success",
+   "takeaway": "A lead sees the whole queue, by owner and by age, without asking anyone",
+   "key": "The lead view is the one screen the support lead opens first every morning",
+   "body": "**Lead view.** The support lead's job today is asking people what they are working on. The inbox replaces that with one screen:\n\n- **By owner:** open tickets per agent, with the oldest highlighted.\n- **By age:** anything past 4 hours without a public reply.\n- **Waiting on customer:** tickets that reopen automatically when the customer replies.\n\nThis view needs no new data: it is a query over the same ticket events the inbox already reads.",
+   "since": 1,
+   "was": null,
+   "view": [
+    {
+     "type": "takeaway",
+     "heading": "What the lead sees",
+     "status": "done",
+     "items": [
+      {
+       "title": "Open tickets per agent",
+       "detail": "oldest highlighted",
+       "state": "done"
+      },
+      {
+       "title": "Tickets past 4 h",
+       "detail": "no public reply yet",
+       "state": "todo",
+       "time": "about 1 h"
+      }
+     ]
+    },
+    {
+     "type": "stats",
+     "items": [
+      {
+       "value": "1",
+       "label": "screen for the lead"
+      },
+      {
+       "value": "0",
+       "label": "new tables"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "pending_notes": [],
+ "pending_changes": []
+}

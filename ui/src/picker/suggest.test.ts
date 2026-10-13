@@ -13,7 +13,7 @@ test("never repeats the needs-you queue; ranks requested changes first, honours 
     ev("A3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } }),
   ]);
   const doc: Doc = { id: "d1", title: "Plan", session_id: null, version: 1, pending_notes: [], pending_changes: [], blocks: { q: { id: "q", section: "question", status: "", takeaway: "How loud?", key: "", body: "", data: null, order: 1, decision: null, updated: "" } } };
-  const prs = { review: [{ number: 482, title: "signup", url: "u", updatedAt: "" }], mine: [{ number: 4507, title: "infra", url: "v", updatedAt: "", reviewDecision: "CHANGES_REQUESTED" }] };
+  const prs = { review: [{ number: 482, title: "checkout retries", url: "u", updatedAt: "" }], mine: [{ number: 4507, title: "infra", url: "v", updatedAt: "", reviewDecision: "CHANGES_REQUESTED" }] };
   const all = suggest(state, [doc], prs, new Set());
   // The doc's open question is in the queue, so it's not suggested again.
   expect(all.map((x) => x.label)).toEqual(["Address", "Review", "Start review"]);

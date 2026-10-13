@@ -1,0 +1,40 @@
+name: Bug report
+description: Something doesn't work or looks wrong
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? Screenshots help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Start a session in …\n2. …"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [macOS, Windows, Linux]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Cockpit version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Output of `claude --version`
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error text or logs
+      description: Please remove anything private before pasting.
+      render: text

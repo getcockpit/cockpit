@@ -413,6 +413,7 @@ mod tests {
         assert!(!in_app_repo(Path::new("/Users/u/other-project"), repo));
     }
 
+    #[cfg(target_os = "macos")] // the supervisor installs .app bundles with ditto
     #[test]
     fn supervisor_falls_back_when_the_new_build_never_gets_healthy() {
         let dir = std::env::temp_dir().join(format!("mr-sb-{}", ulid::Ulid::new()));
@@ -438,6 +439,7 @@ mod tests {
         assert!(std::fs::read_to_string(dir.join("builds/fallbacks.log")).unwrap().contains("B1"));
     }
 
+    #[cfg(target_os = "macos")] // the supervisor installs .app bundles with ditto
     #[test]
     fn relaunch_installs_into_the_app_bundle() {
         let dir = std::env::temp_dir().join(format!("mr-it-{}", ulid::Ulid::new()));
@@ -454,6 +456,7 @@ mod tests {
         assert_eq!(install_target(Path::new("/r/src-tauri/target/slot-a/debug/Cockpit"), &builds, &installed), None);
     }
 
+    #[cfg(target_os = "macos")] // the supervisor installs .app bundles with ditto
     #[test]
     fn supervisor_installs_the_build_and_restores_the_app_on_fallback() {
         let dir = std::env::temp_dir().join(format!("mr-sb-{}", ulid::Ulid::new()));
@@ -519,6 +522,7 @@ mod tests {
         assert_eq!(keys, vec!["MR_CLAUDE_PATH", "PATH"]);
     }
 
+    #[cfg(target_os = "macos")] // the supervisor installs .app bundles with ditto
     #[test]
     fn supervisor_keeps_a_healthy_build() {
         let dir = std::env::temp_dir().join(format!("mr-sb-{}", ulid::Ulid::new()));

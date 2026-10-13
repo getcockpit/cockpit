@@ -36,7 +36,13 @@ pub fn file_reveal(app: AppHandle, session: Option<String>, cwd: String, path: S
     if !full.exists() {
         return Err(format!("not found: {}", full.display()));
     }
+    #[cfg(target_os = "macos")]
     let ok = Command::new("open").arg("-R").arg(&full).status().map_err(|e| e.to_string())?.success();
+    // Explorer's exit code is 1 even when it worked.
+    #[cfg(windows)]
+    let ok = Command::new("explorer").arg(format!("/select,{}", full.display())).status().is_ok();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let ok = Command::new("xdg-open").arg(full.parent().unwrap_or(&full)).status().map_err(|e| e.to_string())?.success();
     if !ok {
         return Err(format!("Finder couldn't show {}", full.display()));
     }

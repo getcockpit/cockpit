@@ -1,8 +1,7 @@
 import type { Doc } from "../state/docs";
-import shop from "./shop.txt?raw";
-import REVIEW482 from "./review482.json";
-import planViewDoc from "./planview-doc.json";
-import multiplayerDoc from "./multiplayer-doc.json";
+import REPORT_REPLY from "./fixtures/report-reply.md?raw";
+import REVIEW_OVERVIEW from "./fixtures/review-overview.json";
+import planDocFixture from "./fixtures/plan-doc.json";
 
 // Demo scenarios (MR-40). Each is an event log the real reducer replays, plus the docs the core
 // would have folded. `at` is seconds after a base 40 minutes ago.
@@ -31,10 +30,11 @@ const RECAP = "Refactor is finished. Summary:\n1. Split settings into a typed sc
 const busy: E[] = [
   ...ready, onboarded,
   // A: needs a permission (risky command)
-  ...start("A", "Fix the login redirect after OAuth", { cwd: "/Users/me/code/shop-worktrees/fix-login", repo: "/Users/me/code/shop", branch: "mr/fix-login" }, 10),
-  todos("A", 2, [["Reproduce the redirect loop", "Reproducing the redirect loop"], ["Find the guard", "Finding the guard"], ["Fix the guard", "Fixing the guard"], ["Add a regression test", "Adding a regression test"], ["Push the branch", "Pushing the branch"]], 20),
-  tool("A", "Edit", { file_path: "src/auth/session.ts", old_string: "a\nb\nc", new_string: "a\nb\nc\nd\ne" }, 60),
-  { session: "A", kind: "sidecar.permission_request", payload: { request_id: "pA", tool: "Bash", input: { command: "git push --force origin mr/fix-login", description: "Force-push the rebased branch" }, suggestions: null, decision_reason: null }, at: 2300 },
+  ...start("A", "Retire the old invoices table", { cwd: "/Users/me/code/shop-worktrees/retire-invoices", repo: "/Users/me/code/shop", branch: "mr/retire-invoices" }, 10),
+  todos("A", 3, [["Find every reader of invoices_v1", "Finding every reader of invoices_v1"], ["Move readers to the new table", "Moving readers to the new table"], ["Backfill missing rows", "Backfilling missing rows"], ["Drop the old table", "Dropping the old table"], ["Remove the dead code", "Removing the dead code"]], 20),
+  tool("A", "Edit", { file_path: "src/billing/invoices.ts", old_string: "a\nb\nc", new_string: "a\nb\nc\nd\ne" }, 60),
+  // The description sounds routine; the command says production, with CASCADE.
+  { session: "A", kind: "sidecar.permission_request", payload: { request_id: "pA", tool: "Bash", input: { command: "psql \"$PROD_DATABASE_URL\" -c 'DROP TABLE invoices_v1 CASCADE;'", description: "Drop the old invoices table" }, suggestions: null, decision_reason: null }, at: 2300 },
   // E: asks a structured question
   ...start("E", "Add rate limiting to the public API", { cwd: "/Users/me/code/shop-worktrees/rate-limit", repo: "/Users/me/code/shop", branch: "mr/rate-limit" }, 30),
   say("E", "I looked at the gateway and the middleware. Two ways to do this.\n\n| Option | Limits | Needs | Effort |\n|:--|:--|:--|--:|\n| API gateway | per IP | nothing new | about 30 min |\n| App middleware | per user | Redis, `RateLimit` config | about 3 h |", 200),
@@ -124,14 +124,14 @@ const bugEvents: E[] = [
   result("G", "done", 201, 0.6),
 ];
 
-// The user's real shop session (MR-56): a report-shaped reply with a buried decision.
-const shopEvents: E[] = [
+// A report-shaped reply with a buried decision (MR-56).
+const reportEvents: E[] = [
   ...ready, onboarded,
-  ...start("P", "let’s revisit what do we have to be done in the project", { cwd: "/Users/me/go/github.com/shop/platform-worktrees/revisit", repo: "/Users/me/go/github.com/shop/platform", branch: "mr/revisit" }, 10),
+  ...start("P", "let’s revisit what is left before the shop launch", { cwd: "/Users/me/code/shop-worktrees/revisit", repo: "/Users/me/code/shop", branch: "mr/revisit" }, 10),
   tool("P", "Bash", { command: "git log --oneline -15 && ls docs && gh issue list --limit 30" }, 20),
-  tool("P", "Read", { file_path: "docs/GO-LIVE-CHECKLIST.md" }, 30),
-  tool("P", "Read", { file_path: "docs/onboarding-polish-2026-10-07.md" }, 40),
-  say("P", shop, 300),
+  tool("P", "Read", { file_path: "docs/LAUNCH-CHECKLIST.md" }, 30),
+  tool("P", "Read", { file_path: "docs/product-review-2026-10-01.md" }, 40),
+  say("P", REPORT_REPLY, 300),
   result("P", "done", 301, 0.9),
 ];
 
@@ -178,12 +178,12 @@ const planEvents: E[] = [
   
 ];
 
-// The user's real /review of PR #482 (MR-58): the overview, waiting for "ok".
-const review482Events: E[] = [
+// A /review of a PR with earlier rounds (MR-58): the overview, waiting for "ok".
+const reviewOverviewEvents: E[] = [
   ...ready, onboarded,
-  { session: "R", kind: "ui.session_requested", payload: { prompt: "/review https://github.com/acme/platform/pull/482", kind: "review", cwd: "/Users/me/go/github.com/acme/platform", workspace: "personal" }, at: 10 },
+  { session: "R", kind: "ui.session_requested", payload: { prompt: "/review https://github.com/acme/shop/pull/482", kind: "review", cwd: "/Users/me/code/shop", workspace: "personal" }, at: 10 },
   { session: "R", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-R", model: "claude-opus-5-5" }, at: 11 },
-  { session: "R", kind: "flow.review_overview", payload: REVIEW482, at: 200 },
+  { session: "R", kind: "flow.review_overview", payload: REVIEW_OVERVIEW, at: 200 },
   say("R", "The overview is up: 2 new findings, everything else was raised in earlier rounds.\n\nNext: reply `ok` to start snippet 1 of 2.", 201),
   result("R", "overview", 202, 0.4),
 ];
@@ -234,20 +234,20 @@ const timelineEvents: E[] = [
 
 export const SCENARIOS: Record<string, Scenario> = {
   timeline: { events: timelineEvents, docs: [] },
-  review482: { events: review482Events, docs: [] },
+  "review-overview": { events: reviewOverviewEvents, docs: [] },
   plan: { events: planEvents, docs: [] },
   view: { events: viewEvents, docs: [] },
-  shop: { events: shopEvents, docs: [] },
+  report: { events: reportEvents, docs: [] },
   bugs: { events: bugEvents, docs: [] },
   review: { events: reviewEvents, docs: [] },
   address: { events: addressEvents, docs: [] },
   fresh: { events: [...ready], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
-  // A real 13-block working doc with long bodies, tables and lists (the doc map must stay usable).
-  bigdoc: { events: [...ready, onboarded], docs: [planViewDoc as Doc] },
-  // A real plan doc with a view on every block (MR-102/103): ?demo=multiplayer
-  multiplayer: { events: [...ready, onboarded], docs: [multiplayerDoc as unknown as Doc] },
+  // A 14-block working doc with long bodies, tables and lists (the doc map must stay usable).
+  bigdoc: { events: [...ready, onboarded], docs: [planDocFixture as unknown as Doc] },
+  // The same plan doc: a view on every block (MR-102/103): ?demo=multiplayer
+  multiplayer: { events: [...ready, onboarded], docs: [planDocFixture as unknown as Doc] },
   broken: { events: [...busy, { session: "C", kind: "sidecar.session_ended", payload: { ok: false, reason: "Claude Code process exited with code 1\nError: ENOENT: no such file or directory, open '/Users/me/.claude/settings.json'\n    at Object.openSync (node:fs:596:3)\n    at readSettings (cli.js:12:9)" }, at: 2395 }], docs: [planDoc] },
   archive: {
     events: [...busy, { session: "D", kind: "ui.session_archived", at: 2400 }, { session: "C", kind: "sidecar.session_ended", payload: { ok: true }, at: 2390 }, { session: "C", kind: "ui.session_archived", at: 2401 }],

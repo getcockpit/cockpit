@@ -1,0 +1,96 @@
+name: Release
+
+# Push a tag like v0.1.0 (or run by hand with a tag) to build installers for every platform
+# and attach them to a GitHub release of that name.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  release:
+    name: Create release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Cockpit $TAG" --generate-notes
+
+  macos:
+    name: macOS (universal .dmg)
+    needs: release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: ./scripts/package.sh
+      - run: |
+          gh release upload "$TAG" dist/*.dmg --clobber
+          cp dist/*.dmg Cockpit-macos.dmg && gh release upload "$TAG" Cockpit-macos.dmg --clobber
+
+  linux:
+    name: Linux (.AppImage, .deb, .rpm)
+    needs: release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+      - run: ./scripts/build-helpers.sh
+      - run: bun install --frozen-lockfile
+        working-directory: ui
+      - run: node ../ui/node_modules/@tauri-apps/cli/tauri.js build --bundles appimage,deb,rpm
+        working-directory: src-tauri
+        env:
+          VITE_MR_PACKAGED: "1"
+      - run: |
+          b=src-tauri/target/release/bundle
+          gh release upload "$TAG" $b/appimage/*.AppImage $b/deb/*.deb $b/rpm/*.rpm --clobber
+          cp $b/appimage/*.AppImage Cockpit-linux-x86_64.AppImage && gh release upload "$TAG" Cockpit-linux-x86_64.AppImage --clobber
+
+  windows:
+    name: Windows (.msi, .exe)
+    needs: release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: ./scripts/build-helpers.sh
+      - run: bun install --frozen-lockfile
+        working-directory: ui
+      - run: node ../ui/node_modules/@tauri-apps/cli/tauri.js build --bundles msi,nsis
+        working-directory: src-tauri
+        env:
+          VITE_MR_PACKAGED: "1"
+      - run: |
+          b=src-tauri/target/release/bundle
+          gh release upload "$TAG" $b/msi/*.msi $b/nsis/*.exe --clobber
