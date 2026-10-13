@@ -1,11 +1,11 @@
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CatalogView, ChangeList, ViewGlance } from "./CatalogView";
-import doc from "../demo/multiplayer-doc.json";
+import doc from "../demo/fixtures/plan-doc.json";
 import type { ViewBlock } from "../state/types";
 
-// Every view on the real Multiplayer plan doc renders, in the pane and as a tile glance (MR-102/103).
-test("every block of a real plan doc renders its view", () => {
+// Every view on the demo plan doc renders, in the pane and as a tile glance (MR-102/103).
+test("every block of a plan doc renders its view", () => {
   for (const b of Object.values(doc.blocks) as { id: string; view?: ViewBlock[] }[]) {
     const view = b.view ?? [];
     expect(view.length, b.id).toBeGreaterThan(0);
@@ -13,6 +13,8 @@ test("every block of a real plan doc renders its view", () => {
     for (const v of view) expect(html, `${b.id}: ${v.type}`).toContain(`data-mr="View:${v.type}"`);
     renderToStaticMarkup(<ViewGlance blocks={view} source={b.id} />);
   }
+  const types = new Set(Object.values(doc.blocks).flatMap((b) => (b.view ?? []).map((v) => v.type)));
+  expect([...types].sort()).toEqual(["cards", "checklist", "compare", "decision", "lanes", "matrix", "novelty", "phases", "progress", "risks", "scope", "stats", "steps", "takeaway"]);
 });
 
 test("a decision says when it overrode the recommendation, and phases add up", () => {
@@ -27,7 +29,7 @@ test("a decision says when it overrode the recommendation, and phases add up", (
   expect(html).toContain("redacted");
 });
 
-// The real PR #29 overview: Claude repeats the mark in each label ("+ paging"). Grouped, every change
+// A PR overview: Claude repeats the mark in each label ("+ paging"). Grouped, every change
 // lands under New / Changed / Removed with its mark shown once; in flow order it's one row each.
 test("a change list shows each mark once, grouped or in flow order", () => {
   const nodes = [{ label: "+ paging (Limit/New/Encode/Decode)", mark: "+" }, { label: "~ apikey.List", mark: "~" }, { label: "~ ipo.List", mark: "~" }, { label: "- CountIPORecords query", mark: "-" }];
