@@ -30,10 +30,11 @@ const RECAP = "Refactor is finished. Summary:\n1. Split settings into a typed sc
 const busy: E[] = [
   ...ready, onboarded,
   // A: needs a permission (risky command)
-  ...start("A", "Fix the login redirect after OAuth", { cwd: "/Users/me/code/shop-worktrees/fix-login", repo: "/Users/me/code/shop", branch: "mr/fix-login" }, 10),
-  todos("A", 2, [["Reproduce the redirect loop", "Reproducing the redirect loop"], ["Find the guard", "Finding the guard"], ["Fix the guard", "Fixing the guard"], ["Add a regression test", "Adding a regression test"], ["Push the branch", "Pushing the branch"]], 20),
-  tool("A", "Edit", { file_path: "src/auth/session.ts", old_string: "a\nb\nc", new_string: "a\nb\nc\nd\ne" }, 60),
-  { session: "A", kind: "sidecar.permission_request", payload: { request_id: "pA", tool: "Bash", input: { command: "git push --force origin mr/fix-login", description: "Force-push the rebased branch" }, suggestions: null, decision_reason: null }, at: 2300 },
+  ...start("A", "Retire the old invoices table", { cwd: "/Users/me/code/shop-worktrees/retire-invoices", repo: "/Users/me/code/shop", branch: "mr/retire-invoices" }, 10),
+  todos("A", 3, [["Find every reader of invoices_v1", "Finding every reader of invoices_v1"], ["Move readers to the new table", "Moving readers to the new table"], ["Backfill missing rows", "Backfilling missing rows"], ["Drop the old table", "Dropping the old table"], ["Remove the dead code", "Removing the dead code"]], 20),
+  tool("A", "Edit", { file_path: "src/billing/invoices.ts", old_string: "a\nb\nc", new_string: "a\nb\nc\nd\ne" }, 60),
+  // The description sounds routine; the command says production, with CASCADE.
+  { session: "A", kind: "sidecar.permission_request", payload: { request_id: "pA", tool: "Bash", input: { command: "psql \"$PROD_DATABASE_URL\" -c 'DROP TABLE invoices_v1 CASCADE;'", description: "Drop the old invoices table" }, suggestions: null, decision_reason: null }, at: 2300 },
   // E: asks a structured question
   ...start("E", "Add rate limiting to the public API", { cwd: "/Users/me/code/shop-worktrees/rate-limit", repo: "/Users/me/code/shop", branch: "mr/rate-limit" }, 30),
   say("E", "I looked at the gateway and the middleware. Two ways to do this.\n\n| Option | Limits | Needs | Effort |\n|:--|:--|:--|--:|\n| API gateway | per IP | nothing new | about 30 min |\n| App middleware | per user | Redis, `RateLimit` config | about 3 h |", 200),

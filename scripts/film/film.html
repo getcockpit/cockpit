@@ -59,7 +59,7 @@ const env = (t, a, b, fi = 0.35, fo = 0.3) => Math.min(spring(win(t, a, a + fi))
 // Scenes: which capture is on screen. Swaps cross-blur over 0.35 s.
 const SCENES = [
   { t: 0, img: "wall" }, { t: 9.0, img: "wall-answered" },
-  { t: 10.6, img: "focus" }, { t: 15.1, img: "focus-allowed" },
+  { t: 10.6, img: "focus" }, { t: 15.1, img: "focus-denied" },
   { t: 20.6, img: "doc" }, { t: 26.6, img: "timeline" },
   { t: 31.6, img: "review" }, { t: 34.3, img: "review-noted" },
 ];
@@ -83,7 +83,7 @@ const CAM = [
 // The cursor, in capture coordinates; clicks draw a ripple and press the arrow.
 const CUR = [
   { t: 6.6, x: 1180, y: 700, d: 0.01 }, { t: 7.0, x: 330, y: 226, d: 1.3 },
-  { t: 11.6, x: 900, y: 760, d: 0.01 }, { t: 12.4, x: 94, y: 610, d: 1.4 },
+  { t: 11.6, x: 900, y: 760, d: 0.01 }, { t: 12.4, x: 394, y: 609, d: 1.4 },
   { t: 32.4, x: 700, y: 820, d: 0.01 }, { t: 32.8, x: 1170, y: 595, d: 1.1 },
 ];
 const CURSOR_ON = [[6.6, 9.4], [11.6, 15.3], [32.4, 35.4]];
@@ -91,8 +91,8 @@ const CLICKS = [8.6, 14.6, 34.1];
 // Lower-third captions name the outcome of each step.
 const CAPS = [
   { a: 6.4, b: 10.4, t: "Answer Claude in one key." },
-  { a: 11.0, b: 15.0, t: "See the risk before it runs." },
-  { a: 15.3, b: 17.8, t: "Then see exactly what it did." },
+  { a: 11.0, b: 15.0, t: "“Drop the old table.” On production." },
+  { a: 15.3, b: 17.8, t: "Deny in one key. Claude finds a safer way." },
   { a: 17.9, b: 20.4, t: "Every edit, mapped by folder." },
   { a: 21.0, b: 26.4, t: "Plans you read in seconds." },
   { a: 27.0, b: 31.4, t: "Know which session needs you next." },
@@ -126,7 +126,7 @@ for (let i = 0; i < 8; i++) {
   terms.appendChild(p); PANES.push(p);
 }
 const grid = document.getElementById("grid");
-const GRID = ["wall", "focus", "doc", "timeline", "review-noted", "focus-allowed"].map((s) => { const i = new Image(); i.src = `shots/${s}.png`; grid.appendChild(i); return i; });
+const GRID = ["wall", "focus", "doc", "timeline", "review-noted", "focus-denied"].map((s) => { const i = new Image(); i.src = `shots/${s}.png`; grid.appendChild(i); return i; });
 const cursor = document.getElementById("cursor");
 const ripples = CLICKS.map(() => { const r = document.createElement("div"); r.className = "ripple"; document.getElementById("stage").appendChild(r); return r; });
 
