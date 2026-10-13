@@ -19,8 +19,33 @@ pub fn prepare_config_dir(config: &Path, home_claude: &Path) -> std::io::Result<
         let src = home_claude.join(name);
         let dst = config.join(name);
         if src.exists() && std::fs::symlink_metadata(&dst).is_err() {
-            std::os::unix::fs::symlink(&src, &dst)?;
+            link(&src, &dst)?;
         }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn link(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(src, dst)
+}
+
+/// Windows symlinks need Developer Mode; without it, copy instead (changes then don't flow back).
+#[cfg(windows)]
+fn link(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let linked = if src.is_dir() { std::os::windows::fs::symlink_dir(src, dst) } else { std::os::windows::fs::symlink_file(src, dst) };
+    linked.or_else(|_| copy_all(src, dst))
+}
+
+#[cfg(windows)]
+fn copy_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if !src.is_dir() {
+        return std::fs::copy(src, dst).map(|_| ());
+    }
+    std::fs::create_dir_all(dst)?;
+    for e in std::fs::read_dir(src)? {
+        let e = e?;
+        copy_all(&e.path(), &dst.join(e.file_name()))?;
     }
     Ok(())
 }

@@ -28,7 +28,9 @@ done
 # Packaged UI: auto-review starts off (MR-93).
 export VITE_MR_PACKAGED=1
 # Ad-hoc signature ("-"): no Developer ID needed; Gatekeeper asks once on the friend's Mac.
-(cd "$root/src-tauri" && cargo tauri build --target universal-apple-darwin --bundles app \
+# The Tauri CLI: cargo's if installed, else the one in ui/node_modules (CI).
+tauri=(cargo tauri); cargo tauri --version >/dev/null 2>&1 || tauri=(node "$root/ui/node_modules/@tauri-apps/cli/tauri.js")
+(cd "$root/src-tauri" && "${tauri[@]}" build --target universal-apple-darwin --bundles app \
   --config '{"bundle":{"macOS":{"signingIdentity":"-","minimumSystemVersion":"11.0","entitlements":"Entitlements.plist"}}}')
 
 version="$(sed -n 's/^  "version": "\(.*\)",/\1/p' "$root/src-tauri/tauri.conf.json")"
