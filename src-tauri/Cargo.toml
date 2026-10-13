@@ -36,6 +36,7 @@ portable-pty = "0.9"
 ureq = { version = "3", features = ["json"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
