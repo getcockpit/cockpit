@@ -36,7 +36,12 @@ export function ReviewView({ s }: { s: SessionState }) {
   const findings = Object.values(r.snippets).flatMap((x) => x.findings ?? []);
   const noted = findings.filter((f) => r.noted.includes(f.id));
   const reply = (text: string) => void api.send(s.id, text);
-  const note = (id: string) => { void api.log("ui.review_noted", { finding_id: id }, s.id, `review:${id}`); reply(`note ${id}`); };
+  // Noting toggles: a second press takes the finding back out of the review.
+  const note = (id: string) => {
+    const on = r.noted.includes(id);
+    void api.log(on ? "ui.review_unnoted" : "ui.review_noted", { finding_id: id }, s.id, `review:${id}`);
+    reply(on ? `unnote ${id}` : `note ${id}`);
+  };
   const go = (n: number) => {
     if (n < 1 || n > total) return;
     if (n === r.current) setViewing(null);
@@ -62,7 +67,11 @@ export function ReviewView({ s }: { s: SessionState }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {o && <ReviewOverview o={o} started={r.current !== null || !!r.publish} onReply={reply} raised={r.noted}
-        onRaise={(id, text) => { if (r.noted.includes(id)) return; void api.log("ui.review_noted", { finding_id: id }, s.id, `review:${id}`); reply(`Add this to the review as a comment: ${text}`); }} />}
+        onRaise={(id, text) => {
+          const on = r.noted.includes(id);
+          void api.log(on ? "ui.review_unnoted" : "ui.review_noted", { finding_id: id }, s.id, `review:${id}`);
+          reply(on ? `Remove this from the review: ${text}` : `Add this to the review as a comment: ${text}`);
+        }} />}
 
       {total > 0 && Object.keys(r.snippets).length > 0 && (
         <SnippetPager total={total} reached={Object.keys(r.snippets).map(Number)} shown={snip?.n ?? null} current={r.current} asked={asked} source={s.id} onGo={go} />
@@ -81,7 +90,7 @@ export function ReviewView({ s }: { s: SessionState }) {
                 <div key={f.id} className="mr-row" style={{ alignItems: "baseline", gap: 10, padding: "10px 12px", background: "var(--mr-well)" }}>
                   <SevBars severity={f.severity} />
                   <span className="mr-grow">{f.text}{f.at && <span className="mr-mono mr-dim"> · {f.at}</span>}</span>
-                  <Key k={String(i + 1)} tone={on ? "primary" : undefined} onClick={() => !on && note(f.id)}>{on ? "Noted ✓" : "Note it"}</Key>
+                  <Key k={String(i + 1)} tone={on ? "primary" : undefined} onClick={() => note(f.id)}>{on ? "Noted ✓ · undo" : "Note it"}</Key>
                 </div>
               );
             })}
@@ -262,7 +271,7 @@ export function AddressView({ s }: { s: SessionState }) {
 
 // The flow's own button replies (next, note f1, Option 2: …) drive the visuals above; anything else
 // you type is a question, so it and Claude's answer show here instead of vanishing.
-const CONTROL = /^(ok|next|publish|note \S+|snippet \d+|(Thread \S+ · )?Option [^:]+: .*|Add this to the review as a comment: [\s\S]*)$/i;
+const CONTROL = /^(ok|next|publish|(un)?note \S+|snippet \d+|(Thread \S+ · )?Option [^:]+: .*|Add this to the review as a comment: [\s\S]*|Remove this from the review: [\s\S]*)$/i;
 
 export type Exchange = { ask: Extract<TranscriptItem, { kind: "user" }>; answer: Extract<TranscriptItem, { kind: "text" | "view" }>[] };
 
