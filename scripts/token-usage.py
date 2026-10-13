@@ -11,7 +11,7 @@ ctx/call = average input per API call, which a smaller window keeps down.
 import argparse, json, os, sqlite3
 from collections import defaultdict
 
-DEFAULT_DB = os.path.expanduser("~/Library/Application Support/dev.minorityreport.app/events.sqlite")
+DEFAULT_DB = os.path.expanduser("~/Library/Application Support/dev.getcockpit.app/events.sqlite")
 
 
 def main():

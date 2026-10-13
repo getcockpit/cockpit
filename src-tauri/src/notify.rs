@@ -98,7 +98,7 @@ fn show(note: &Note) -> Response {
     present_while_frontmost();
     // A dev build is a bare binary with no bundle id; borrow the installed app's so macOS shows it
     // under Cockpit. Errors only mean it was already set (or no Cockpit.app is registered).
-    let _ = set_application("dev.minorityreport.app");
+    let _ = set_application(crate::migrate::ID);
     let actions = clean_actions(&note.actions);
     let refs: Vec<&str> = actions.iter().map(String::as_str).collect();
     let mut n = Notification::new();

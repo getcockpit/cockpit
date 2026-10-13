@@ -2,7 +2,7 @@
 name = "cockpit"
 version = "0.1.0"
 description = "Cockpit: a visual front-end for Claude Code"
-authors = ["Bohdan Kostko"]
+authors = ["Cockpit contributors"]
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/getcockpit/cockpit"
@@ -32,6 +32,7 @@ tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ulid = "1"
+dirs = "7"
 portable-pty = "0.9"
 ureq = { version = "3", features = ["json"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
