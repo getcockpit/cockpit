@@ -90,17 +90,16 @@ The full transcript is one key away, and any session can move to a real terminal
 ## Get started (about 2 minutes)
 
 1. **Install Claude Code** and sign in once, if you haven't yet: [claude.ai/code](https://claude.ai/code).
-2. **Download Cockpit** for your system from [Releases](https://github.com/getcockpit/cockpit/releases/latest):
+2. **Install Cockpit.** On macOS or Linux, one line, with no security prompts:
 
-   | System | Download |
-   |:--|:--|
-   | **macOS 11+** (Apple Silicon and Intel) | `.dmg` |
-   | **Windows 10/11** | `-setup.exe` or `.msi` |
-   | **Linux** | `.AppImage`, `.deb` or `.rpm` |
+   ```bash
+   curl -fsSL https://getcockpit.github.io/install.sh | bash
+   ```
 
+   Or download it from [Releases](https://github.com/getcockpit/cockpit/releases/latest): `.dmg` for macOS 11+, `-setup.exe` or `.msi` for Windows 10/11, `.AppImage`, `.deb` or `.rpm` for Linux.
 3. **Open it**, pick a project folder, and start your first session.
 
-First time on macOS? The app isn't notarized yet, so run `xattr -dr com.apple.quarantine /Applications/Cockpit.app` once. On Windows, choose **More info → Run anyway** if SmartScreen asks. Step-by-step help: [Install guide](docs/INSTALL.md).
+Installing from the `.dmg` by hand? The app isn't notarized yet, so run `xattr -dr com.apple.quarantine /Applications/Cockpit.app` once. On Windows, choose **More info → Run anyway** if SmartScreen asks. Step-by-step help: [Install guide](docs/INSTALL.md).
 
 > macOS is the most polished today. Linux and Windows are brand new, and push-to-talk voice is macOS-only for now. Found something odd? [Open an issue](https://github.com/getcockpit/cockpit/issues).
 
