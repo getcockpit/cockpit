@@ -46,7 +46,7 @@ export function noteFor(item: QueueItem, sessions: Record<string, SessionState>,
     case "prose": return item.options.length ? note("Claude is waiting on you", item.question, item.options) : note("Claude is waiting on you", item.question, [], true);
     case "flow": return note("Ready for you", item.what);
     case "fix": return note("Fix ready", "A god-mode fix is built. Apply it to your app.");
-    case "doc": return note("Decision needed", `${item.d.title}: ${item.b.takeaway}`, (item.b.data?.options ?? []).map((o) => o.label).slice(0, 4));
+    case "doc": return note("Decision needed", `${item.d.title}: ${item.b.takeaway}`, item.b.data?.multiSelect ? [] : (item.b.data?.options ?? []).map((o) => o.label).slice(0, 4));
   }
 }
 

@@ -182,6 +182,29 @@ function QuestionCard({ questions, onAnswer }: { questions: Extract<DecisionSpec
   );
 }
 
+/** A plan-doc question that takes several answers (data.multiSelect, I94): options toggle, and Send
+ *  records the picks as one decision, "A, B". Starts from the current decision so it can be changed. */
+export function PickAny({ source, options, decision, onDecide }: { source: string; options: { label: string; description: string }[]; decision?: string | null; onDecide: (label: string) => void }) {
+  const [chosen, setChosen] = useState<string[]>(() => options.map((o) => o.label).filter((l) => (decision ?? "").split(", ").includes(l)));
+  const joined = chosen.join(", ");
+  return (
+    <div data-mr="PickAny" data-mr-source={source} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span className="mr-dim">Pick any that apply, then Send.</span>
+      {options.map((o, i) => {
+        const on = chosen.includes(o.label);
+        return (
+          <button key={o.label} type="button" data-option={i} aria-pressed={on} onClick={() => setChosen((c) => toggleOption(options, c, o.label))} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "8px 10px", border: 0, background: "var(--mr-well)", boxShadow: on ? "inset 3px 0 0 var(--mr-selected)" : undefined, font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
+            <strong>{on ? "☑" : "☐"} {o.label}</strong>{o.description && <span className="mr-dim" style={{ fontSize: 12 }}>{o.description}</span>}
+          </button>
+        );
+      })}
+      <div className="mr-row" style={{ marginTop: 4 }}>
+        <Key tone="needs" disabled={!chosen.length || joined === decision} onClick={() => onDecide(joined)}>{decision ? "Change decision" : "Send"}{chosen.length ? ` · ${chosen.length} picked` : ""}</Key>
+      </div>
+    </div>
+  );
+}
+
 /** The row under a question's options (I75): answer in your own words, have Claude ask first, or skip. */
 export function WayOut({ source, placeholder, onOut }: { source: string; placeholder?: string; onOut: (x: { kind: "reply"; text: string } | { kind: "ask_first" } | { kind: "skip" }) => void }) {
   const [text, setText] = useState("");
