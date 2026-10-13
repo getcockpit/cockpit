@@ -331,6 +331,13 @@ test("a review waiting on its overview needs you until you start the walkthrough
   expect(pickTile(started.sessions.r).doing).toMatch(/^Snippet 1 of 2/);
 });
 
+test("a noted review finding can be taken back out", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "r", kind, payload, anchor: null, created_at: 1 });
+  const base = [ev("N1", "ui.session_requested", { prompt: "/review 1", kind: "review", cwd: "/w" }), ev("N2", "ui.review_noted", { finding_id: "f1" }), ev("N3", "ui.review_noted", { finding_id: "ov:0" })];
+  expect(replay(base).sessions.r.review?.noted).toEqual(["f1", "ov:0"]);
+  expect(replay([...base, ev("N4", "ui.review_unnoted", { finding_id: "f1" })]).sessions.r.review?.noted).toEqual(["ov:0"]);
+});
+
 describe("timeline data (MR-32)", () => {
   const at = (id: string, kind: string, payload: Record<string, unknown>, t: number): MrEvent => ({ id, session_id: "t1", kind, payload, anchor: null, created_at: t });
   const steps = (...xs: [string, string][]) => ({ steps: xs.map(([step, status]) => ({ step, status })) });
