@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { keyLabel, modKey } from "../platform";
 import { useEffect, useRef, useState } from "react";
 import { Key, ProgressTrack } from "../components";
 import { Diff } from "../components/Diff";
@@ -53,8 +54,8 @@ export function ReviewView({ s }: { s: SessionState }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (keyOf(e) === "Enter" && e.metaKey && r.publish && !r.published) { e.preventDefault(); reply("publish"); return; }
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey) return;
+      if (keyOf(e) === "Enter" && modKey(e) && r.publish && !r.published) { e.preventDefault(); reply("publish"); return; }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || modKey(e)) return;
       if (keyOf(e) === " " && snip) { e.preventDefault(); if (live) next(); else back(); }
       if (keyOf(e) === "ArrowLeft" && shownN !== null) { e.preventDefault(); go(shownN - 1); }
       if (keyOf(e) === "ArrowRight" && shownN !== null) { e.preventDefault(); go(shownN + 1); }
@@ -115,7 +116,7 @@ export function ReviewView({ s }: { s: SessionState }) {
           ))}
           {r.publish?.dropped ? <span className="mr-dim">{r.publish.dropped} dropped as duplicates of earlier threads</span> : null}
           {r.publish && !r.published && <Key k="⌘↵" tone="primary" onClick={() => reply("publish")}>Publish as one review</Key>}
-          {r.published && <span className="mr-dim">Posted to the PR as one review. Mark this session done (⌘⇧D) to clear it from the wall.</span>}
+          {r.published && <span className="mr-dim">Posted to the PR as one review. {keyLabel("Mark this session done (⌘⇧D) to clear it from the wall.")}</span>}
         </section>
       )}
       {!o && !snip && <span className="mr-dim">The review is starting. The overview appears here when it's ready.</span>}
@@ -184,7 +185,7 @@ export function AddressView({ s }: { s: SessionState }) {
   const send = (step: { label: string; reply?: string }) => void api.send(s.id, step.reply || step.label);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || modKey(e)) return;
       if (done && /^[1-3]$/.test(keyOf(e)) && nextSteps[Number(keyOf(e)) - 1]) { e.preventDefault(); send(nextSteps[Number(keyOf(e)) - 1]); return; }
       if (!canChoose || !cur) return;
       const o = (cur.options ?? []).find((x) => x.id === keyOf(e));
@@ -217,7 +218,7 @@ export function AddressView({ s }: { s: SessionState }) {
               {nextSteps.slice(0, 3).map((x, i) => <Key key={i} k={String(i + 1)} tone={i === 0 ? "primary" : undefined} disabled={working} onClick={() => send(x)}>{x.label}</Key>)}
             </div>
           )}
-          <span className="mr-dim">Or mark this session done (⌘⇧D) to clear it from the wall.</span>
+          <span className="mr-dim">{keyLabel("Or mark this session done (⌘⇧D) to clear it from the wall.")}</span>
         </section>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>

@@ -16,7 +16,7 @@ use std::time::Instant;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-const KEYCHAIN_SERVICE: &str = "minority-report.anthropic";
+pub const KEYCHAIN_SERVICE: &str = "cockpit.anthropic";
 const KEYCHAIN_ACCOUNT: &str = "cockpit";
 pub const MODEL: &str = "claude-haiku-5-5";
 /// List prices, $ per million tokens: (input, output). Cache reads 0.1×, writes 1.25× input.

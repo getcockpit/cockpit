@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ago, nowLine } from "../picker/now";
+import { keyLabel } from "../platform";
 import type { SessionState, Todo } from "../state/types";
 import { ProgressTrack, type Seg } from ".";
 
@@ -49,5 +50,5 @@ export function planSegs(todos: Todo[], working = false): Seg[] {
 function quiet(elapsed: number, quietMs: number, compact?: boolean): string {
   const same = Math.abs(elapsed - quietMs) < 2000;
   if (compact) return same ? "· no word since" : `· quiet ${ago(quietMs)}`;
-  return `${same ? "· no word from Claude since" : `· no word from Claude for ${ago(quietMs)}`} · ⌘. interrupts`;
+  return `${same ? "· no word from Claude since" : `· no word from Claude for ${ago(quietMs)}`} · ${keyLabel("⌘.")} interrupts`;
 }

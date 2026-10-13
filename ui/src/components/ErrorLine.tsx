@@ -1,3 +1,5 @@
+import { keyLabel } from "../platform";
+
 // Errors the user sees (MR-52): one short line saying what failed, never a raw dump. Tool output
 // (git usage text, stack traces) is cut to its first meaningful line, known causes get plain words.
 const KNOWN: [RegExp, string | ((m: RegExpMatchArray) => string)][] = [
@@ -21,7 +23,7 @@ export function shortError(e: unknown): string {
   const raw = String(e instanceof Error ? e.message : e ?? "").replace(/^Error:\s*/, "").trim();
   for (const [re, say] of KNOWN) {
     const m = raw.match(re);
-    if (m) return typeof say === "string" ? say : say(m);
+    if (m) return keyLabel(typeof say === "string" ? say : say(m));
   }
   const first = (raw.split("\n").map((l) => l.trim()).find((l) => l && !/^(usage|warning|hint):/i.test(l)) ?? raw.split("\n")[0] ?? "")
     .replace(/^(fatal|error|Error|panic):\s*/i, "").trim();

@@ -491,6 +491,7 @@ dependencies = [
 name = "cockpit"
 version = "0.1.1"
 dependencies = [
+ "dirs",
  "mac-notification-sys",
  "portable-pty",
  "rusqlite",

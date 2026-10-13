@@ -1,6 +1,7 @@
 import { BuildReadyBanner } from "./components/BuildReadyBanner";
 import { RecoveryBanner } from "./components/RecoveryBanner";
 import { keyOf } from "./components/keys";
+import { modKey } from "./platform";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2 } from "./picker/pick";
 import { DeleteWorkspace, WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
@@ -114,13 +115,13 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && keyOf(e) === "k") { e.preventDefault(); setPicker(true); }
-      if (e.metaKey && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
-      if (e.metaKey && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
-      if (e.metaKey && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
+      if (modKey(e) && keyOf(e) === "k") { e.preventDefault(); setPicker(true); }
+      if (modKey(e) && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
+      if (modKey(e) && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
+      if (modKey(e) && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
       // ⌘⇧B updates the app from main (decision 27); ⌘⌥⇧B still opens the build history.
-      if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); if (e.altKey) setBuilds((x) => (x === null ? "" : null)); else void startUpdate().catch(() => {}); }
-      if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
+      if (modKey(e) && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); if (e.altKey) setBuilds((x) => (x === null ? "" : null)); else void startUpdate().catch(() => {}); }
+      if (modKey(e) && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
         const ws = all.workspaces[Number(keyOf(e)) - 1];
         if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); switchTo(ws.id); }
       }
@@ -130,7 +131,7 @@ export default function App() {
         const i = all.workspaces.findIndex((w) => w.id === workspace);
         switchTo(all.workspaces[(i + (e.shiftKey ? -1 : 1) + all.workspaces.length) % all.workspaces.length].id);
       }
-      if (e.metaKey && keyOf(e) === "j") { e.preventDefault(); setSwitcher((x) => !x); }
+      if (modKey(e) && keyOf(e) === "j") { e.preventDefault(); setSwitcher((x) => !x); }
       // T switches Wall ↔ Timeline, only on those screens and never while typing.
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
       if (keyOf(e) === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing && !focus && !docId && !document.querySelector('[role="dialog"]')) { e.preventDefault(); setWallView(wallView === "wall" ? "timeline" : "wall"); }

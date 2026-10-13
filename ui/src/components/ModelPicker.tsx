@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { keyOf } from "./keys";
+import { keyLabel } from "../platform";
 import { api } from "../state/store";
 import { currentRow, modelLabel } from "../picker/model";
 import type { ModelRow, SessionState } from "../state/types";
@@ -30,7 +31,7 @@ export function ModelPicker({ s, models }: { s: SessionState; models: ModelRow[]
   return (
     <div ref={box} style={{ position: "relative" }} data-mr="ModelPicker" data-mr-source={s.id}>
       <button type="button" className="mr-key" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((x) => !x)} title={s.model ?? undefined}>
-        <kbd>⌘⇧M</kbd>
+        <kbd>{keyLabel("⌘⇧M")}</kbd>
         <span>{label.model}</span>
         <span className="mr-dim" style={{ fontWeight: 400 }}>· {label.effort}</span>
         {s.modelError && <span style={{ color: "var(--mr-error)" }} aria-label="Last switch failed">✕</span>}

@@ -36,7 +36,9 @@ export type Inbound =
   | { type: "oneshot"; id: string; prompt: string; system: string; model?: string; env?: Record<string, string> };
 
 export type Outbound =
-  | { type: "ready"; version: string; runtime: string; claude: string }
+  // claude: the binary it drives, null when Claude Code isn't installed. "claude" reports a later change.
+  | { type: "ready"; version: string; runtime: string; claude: string | null }
+  | { type: "claude"; claude: string | null }
   | { type: "pong"; id: string | null; at: number }
   | { type: "session_started"; session: string; sdk_session_id: string; model?: string; cwd?: string }
   | { type: "sdk"; session: string; message: unknown }

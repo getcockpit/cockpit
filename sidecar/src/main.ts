@@ -14,23 +14,30 @@ function emit(message: Outbound): void {
   process.stdout.write(JSON.stringify(message) + "\n");
 }
 
-const claudePath = resolveClaude();
+// Re-resolved before anything that needs claude, so installing it later works without a restart.
+// Nothing found means no Claude Code: the compiled sidecar has no bundled copy to fall back on.
+let claudePath = resolveClaude();
+function findClaude(): string | undefined {
+  const now = resolveClaude();
+  if (now !== claudePath) { claudePath = now; emit({ type: "claude", claude: now ?? null }); }
+  return now;
+}
 // MR_FAKE_QUERY lets tests drive the full process without spending usage.
 const queryFn: QueryFn = process.env.MR_FAKE_QUERY
   ? (await import("./fake-query")).fakeQuery
   : (query as unknown as QueryFn);
-const sessions = new Sessions(emit, queryFn, claudePath, relayMcp);
+const sessions = new Sessions(emit, queryFn, findClaude, relayMcp);
 
 function handle(message: Inbound): void {
   if (message.type === "ping") return emit({ type: "pong", id: message.id ?? null, at: Date.now() });
-  if (message.type === "limits") return void limits(queryFn, claudePath ?? undefined, message.env, emit);
-  if (message.type === "models") return void models(queryFn, claudePath ?? undefined, message.env, emit);
-  if (message.type === "oneshot") return void oneshot(queryFn, claudePath ?? undefined, message, emit);
+  if (message.type === "limits") return void limits(queryFn, findClaude(), message.env, emit);
+  if (message.type === "models") return void models(queryFn, findClaude(), message.env, emit);
+  if (message.type === "oneshot") return void oneshot(queryFn, findClaude(), message, emit);
   if (["start", "send", "interrupt", "set_model", "stop", "permission_response", "tool_result", "commands", "mcp_status", "mcp_action"].includes(message.type)) return sessions.handle(message);
   emit({ type: "error", error: `unknown message type: ${(message as { type: string }).type}` });
 }
 
-emit({ type: "ready", version: VERSION, runtime: `bun ${Bun.version}`, claude: claudePath ?? "bundled" });
+emit({ type: "ready", version: VERSION, runtime: `bun ${Bun.version}`, claude: claudePath ?? null });
 
 let buffer = "";
 process.stdin.setEncoding("utf8");
