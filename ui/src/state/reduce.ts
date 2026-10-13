@@ -262,6 +262,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     case "flow.address_thread":
     case "flow.address_proof":
     case "flow.address_reply":
+    case "flow.address_fixing":
+    case "flow.address_done":
     case "ui.address_chosen":
       s.address = addressStep(s.address, ev.kind, p);
       break;
@@ -467,9 +469,12 @@ function addressStep(a: SessionState["address"], kind: string, p: Record<string,
   const f = a ?? { threads: {}, proofs: {}, replies: {}, current: null, chosen: {} };
   const id = String(p.id ?? "");
   if (kind === "flow.address_threads") return { ...f, list: p as never };
-  if (kind === "flow.address_thread") return { ...f, threads: { ...f.threads, [id]: p as never }, current: id };
+  // Every thread is drawn up front (MR-126): drawing one isn't working on it, address_fixing is.
+  if (kind === "flow.address_thread") return { ...f, threads: { ...f.threads, [id]: p as never } };
+  if (kind === "flow.address_fixing") return { ...f, current: id };
   if (kind === "flow.address_proof") return { ...f, proofs: { ...f.proofs, [id]: (p.checks ?? []) as never } };
-  if (kind === "flow.address_reply") return { ...f, replies: { ...f.replies, [id]: p as never } };
+  if (kind === "flow.address_reply") return { ...f, replies: { ...f.replies, [id]: p as never }, current: f.current === id && p.posted ? null : f.current };
+  if (kind === "flow.address_done") return { ...f, done: p as never, current: null };
   if (kind === "ui.address_chosen") return { ...f, chosen: { ...f.chosen, [id]: String(p.option) } };
   return f;
 }

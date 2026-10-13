@@ -38,7 +38,7 @@ const busy: E[] = [
   // E: asks a structured question
   ...start("E", "Add rate limiting to the public API", { cwd: "/Users/me/code/shop-worktrees/rate-limit", repo: "/Users/me/code/shop", branch: "mr/rate-limit" }, 30),
   say("E", "I looked at the gateway and the middleware. Two ways to do this.\n\n| Option | Limits | Needs | Effort |\n|:--|:--|:--|--:|\n| API gateway | per IP | nothing new | about 30 min |\n| App middleware | per user | Redis, `RateLimit` config | about 3 h |", 200),
-  { session: "E", kind: "sidecar.permission_request", payload: { request_id: "pE", tool: "AskUserQuestion", input: { questions: [{ question: "Where should the limiter live?", header: "Limiter", multiSelect: false, options: [{ label: "API gateway", description: "One place, no code change, coarse per-IP limits" }, { label: "App middleware", description: "Per-user limits, needs Redis" }] }, { question: "What should a limited client get back?", header: "Response", multiSelect: false, options: [{ label: "429 + Retry-After", description: "" }, { label: "Queue and slow down", description: "" }] }] }, suggestions: null, decision_reason: null }, at: 2320 },
+  { session: "E", kind: "sidecar.permission_request", payload: { request_id: "pE", tool: "AskUserQuestion", input: { questions: [{ question: "Where should the limiter live?", header: "Limiter", multiSelect: false, options: [{ label: "API gateway", description: "One place, no code change, coarse per-IP limits" }, { label: "App middleware", description: "Per-user limits, needs Redis" }] }, { question: "What should a limited client get back?", header: "Response", multiSelect: false, options: [{ label: "429 + Retry-After", description: "" }, { label: "Queue and slow down", description: "" }] }, { question: "Which routes need a limit?", header: "Routes", multiSelect: true, options: [{ label: "/login", description: "" }, { label: "/search", description: "" }, { label: "/upload", description: "" }] }] }, suggestions: null, decision_reason: null }, at: 2320 },
   // C: running, almost done
   ...start("C", "Bump dependencies and fix breakages", { cwd: "/Users/me/code/billing-worktrees/deps", repo: "/Users/me/code/billing", branch: "mr/deps" }, 40),
   todos("C", 4, [["Update lockfile", "Updating lockfile"], ["Fix type errors", "Fixing type errors"], ["Fix failing tests", "Fixing failing tests"], ["Update changelog", "Updating changelog"], ["Run the full suite", "Running the full suite"]], 2340),
@@ -100,14 +100,15 @@ const reviewEvents: E[] = [
   { session: "R", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "snippet 1", total_cost_usd: 0.2 } }, at: 41 },
 ];
 
-// Address (J8): /pr-address on your PR, thread by thread.
+// Address (J8): /pr-address on your PR, every thread drawn up front (MR-126).
 const addressEvents: E[] = [
   ...ready, onboarded,
   { session: "X", kind: "ui.session_requested", payload: { prompt: "/pr-address 479", kind: "address", cwd: "/Users/me/code/billing", workspace: "personal" }, at: 10 },
   { session: "X", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-X", model: "claude-opus-5-5" }, at: 11 },
   { session: "X", kind: "flow.address_threads", payload: { pr: "#479", round: "Round 2", moved_commits: 1, threads: [{ id: "t1", at: "export.ts:30", reviewer: "dana", short: "Stream rows instead of loading all", state: "open" }, { id: "t2", at: "export.ts:58", reviewer: "dana", short: "Name the job queue constant", state: "open" }, { id: "t3", at: "README.md:4", reviewer: "lee", short: "Typo", state: "resolved" }] }, at: 30 },
   { session: "X", kind: "flow.address_thread", payload: { id: "t1", reviewer: "dana", at: "export.ts:30", body: "This loads every invoice into memory. Big accounts will OOM the worker. Can we stream?", verdict: "Valid — 2M-row accounts exist (see load test).", evidence_file: "src/export.ts", evidence_code: "const rows = await db.invoices.findMany({ where })", options: [{ id: "a", label: "Stream with a cursor", detail: "Batches of 5k rows, constant memory", recommended: true }, { id: "b", label: "Paginate by month", detail: "Simpler; up to 31 queries" }, { id: "c", label: "Push back", detail: "Reply that v1 caps exports at 100k rows" }] }, at: 40 },
-  { session: "X", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "thread 1", total_cost_usd: 0.2 } }, at: 41 },
+  { session: "X", kind: "flow.address_thread", payload: { id: "t2", reviewer: "dana", at: "export.ts:58", body: "Magic string 'exports' — make it a named constant.", verdict: "Valid, trivial.", evidence_file: "src/export.ts", evidence_code: "queue.add('exports', job)", options: [{ id: "a", label: "Add EXPORT_QUEUE constant", recommended: true }, { id: "b", label: "Push back" }] }, at: 41 },
+  { session: "X", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "2 threads drawn", total_cost_usd: 0.2 } }, at: 42 },
 ];
 
 // Report an internal bug (J14): a finished god-mode fix session on the app's own repo.
