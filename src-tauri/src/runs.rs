@@ -108,7 +108,7 @@ fn spawn(cwd: &str, command: &str, output: &Path) -> Result<std::process::Child,
 /// Ends the run's whole process group, children included.
 fn stop(pid: u32) -> Result<(), String> {
     #[cfg(unix)]
-    Command::new("/bin/kill").args(["-TERM", &format!("-{pid}")]).status().map_err(|e| e.to_string())?;
+    Command::new("/bin/kill").args(["-TERM", "--", &format!("-{pid}")]).status().map_err(|e| e.to_string())?;
     #[cfg(windows)]
     Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).status().map_err(|e| e.to_string())?;
     Ok(())
