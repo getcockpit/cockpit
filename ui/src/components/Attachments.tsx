@@ -3,11 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Attachment } from "../state/types";
 import { fileSize } from "../picker/compose";
 import { Lightbox, previewOf } from "./Lightbox";
-import { getDrafts, setDraft, useDrafts } from "./reviewDraft";
+import { getDrafts, marked, setDraft, useDrafts } from "./reviewDraft";
 
 export { seedPreview } from "./Lightbox";
 
-// Pins on your own image, before you send it (MR-142): the message box's lightbox drops them,
+// Pins and drawings on your own image, before you send it (MR-142, MR-143): the message box's lightbox makes them,
 // and PromptBox appends them to the message as text.
 export const notesKey = (path: string) => `attach:${path}`;
 
@@ -39,7 +39,7 @@ export function AttachmentChip({ a, onRemove, session, big }: { a: Attachment; o
   useDrafts();
   const url = usePreview(a);
   const [open, setOpen] = useState(false);
-  const pins = onRemove ? getDrafts(notesKey(a.path), 1)[0].pins.length : 0;
+  const pins = onRemove ? marked(getDrafts(notesKey(a.path), 1)[0]) : 0;
   const h = big ? 96 : 52;
   const kind = a.mime === "application/pdf" ? "PDF" : isImage(a) ? "image" : (a.name.split(".").pop() ?? "file").slice(0, 5).toUpperCase();
   return (
@@ -57,7 +57,7 @@ export function AttachmentChip({ a, onRemove, session, big }: { a: Attachment; o
               </span>
             </>}
       </button>
-      {pins > 0 && <span className="mr-mono" title="Pinned notes go with the message" style={{ position: "absolute", bottom: 2, left: 2, padding: "0 4px", fontSize: 10, fontWeight: 700, background: "var(--mr-needs)" }}>{pins} pin{pins === 1 ? "" : "s"}</span>}
+      {pins > 0 && <span className="mr-mono" title="Your marks go with the message" style={{ position: "absolute", bottom: 2, left: 2, padding: "0 4px", fontSize: 10, fontWeight: 700, background: "var(--mr-needs)" }}>{pins} mark{pins === 1 ? "" : "s"}</span>}
       {onRemove && (
         <button type="button" onClick={onRemove} aria-label={`Remove ${a.name}`} title="Remove"
           style={{ position: "absolute", top: 2, right: 2, width: 20, height: 20, minHeight: 0, padding: 0, border: 0, borderRadius: "var(--mr-radius)", background: "var(--mr-ink)", color: "var(--mr-tile)", font: "inherit", fontSize: 12, lineHeight: "20px", cursor: "pointer" }}>×</button>

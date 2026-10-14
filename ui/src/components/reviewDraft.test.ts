@@ -34,17 +34,30 @@ describe("image review", () => {
   });
 
   it("describes a before/after review with pins on each side", () => {
-    const text = compareReply("/a.png", "/b.png", { verdict: "approve", pins: [{ x: 10, y: 90, note: "" }] }, [{ x: 50, y: 50, note: "was here" }]);
+    const text = compareReply("/a.png", "/b.png", { verdict: "approve", pins: [{ x: 10, y: 90, note: "" }] }, { pins: [{ x: 50, y: 50, note: "was here" }] });
     expect(text).toContain("Before/after review: ✓ Approved · a.png → b.png");
-    expect(text).toContain("Pins on the before image:\n- Pin 1 at (50% from left, 50% from top): was here");
-    expect(text).toContain("Pins on the after image:\n- Pin 1 at (10% from left, 90% from top)");
+    expect(text).toContain("On the before image:\n- Pin 1 at (50% from left, 50% from top): was here");
+    expect(text).toContain("On the after image:\n- Pin 1 at (10% from left, 90% from top)");
   });
 
   it("appends notes only for attachments that have pins", () => {
     const pins = { "/d/a.png": [{ x: 1, y: 2, note: "here" }] } as Record<string, { x: number; y: number; note: string }[]>;
     const files = [{ path: "/d/a.png", name: "a.png" }, { path: "/d/b.png", name: "b.png" }];
-    expect(attachmentNotes(files, (p) => pins[p] ?? [])).toBe("Notes on a.png (/d/a.png):\n- Pin 1 at (1% from left, 2% from top): here");
-    expect(attachmentNotes(files, () => [])).toBe("");
+    expect(attachmentNotes(files, (p) => ({ pins: pins[p] ?? [] }))).toBe("Notes on a.png (/d/a.png):\n- Pin 1 at (1% from left, 2% from top): here");
+    expect(attachmentNotes(files, () => ({ pins: [] }))).toBe("");
+    expect(attachmentNotes(files, (p) => ({ pins: [], strokes: p === "/d/b.png" ? [[[10, 10], [30, 20]]] : [] }), { "/d/b.png": "/data/b-drawn.png" }))
+      .toBe("Notes on b.png (/d/b.png):\n- Drawing 1 around (10%–30% from left, 10%–20% from top)\n- Drawn-on copy attached: /data/b-drawn.png");
+  });
+
+  it("names each drawing by the box around it and points at the drawn-on copy", () => {
+    const text = reviewReply([{ path: "/r/a.png" }], [{ pins: [], strokes: [[[20.2, 40], [35.6, 41], [50, 60.4]], [[70, 70]]] }], ["/data/a-drawn.png"]);
+    expect(text).toBe([
+      "Image review (1 image):",
+      "1. Comment · a.png (/r/a.png)",
+      "   - Drawing 1 around (20%–50% from left, 40%–60% from top)",
+      "   - Drawing 2 around (70% from left, 70% from top)",
+      "   - Drawn-on copy: /data/a-drawn.png",
+    ].join("\n"));
   });
 
   it("keeps drafts per key until cleared", () => {
