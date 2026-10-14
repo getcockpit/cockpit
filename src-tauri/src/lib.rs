@@ -156,6 +156,8 @@ pub fn run() {
             brief::brief_continue,
             docs::doc_archive,
             docs::doc_build_started,
+            docs::doc_check_shipped,
+            docs::doc_mark_shipped,
             usage::usage_track,
             usage::usage_report,
             instances::instance_id
