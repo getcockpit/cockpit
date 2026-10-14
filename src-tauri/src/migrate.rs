@@ -1,7 +1,7 @@
 //! The app identifier changed (MR-135), which moves every folder the OS keys by it. On the first
 //! launch of a renamed build, move the old folders to the new names before anything opens them,
 //! and leave a link at each old path (unix) so a copy still running from it, or a relaunch script
-//! that names it, keeps working. macOS Keychain entries move to the new service names too.
+//! that names it, keeps working. Keychain entries move to the new service names on first read.
 use std::path::{Path, PathBuf};
 
 pub const ID: &str = "dev.getcockpit.app";
@@ -26,26 +26,16 @@ pub fn run() {
     bases.extend(dirs::home_dir().map(|h| h.join("Library").join("WebKit")));
     bases.dedup();
     let (old_id, data) = (old_id(), dirs::data_dir());
-    let mut moved_data = false;
     for base in bases {
-        match move_dir(&base.join(&old_id), &base.join(ID)) {
-            Ok(moved) => moved_data |= moved && Some(&base) == data.as_ref(),
-            Err(e) => {
-                eprintln!("[migrate] {}: {e}", base.display());
-                // The event log stays where it is rather than starting empty; next launch retries.
-                if Some(&base) == data.as_ref() {
-                    // SAFETY: single-threaded here; nothing else reads the environment yet.
-                    unsafe { std::env::set_var("MR_DATA_DIR", base.join(&old_id)) };
-                }
+        if let Err(e) = move_dir(&base.join(&old_id), &base.join(ID)) {
+            eprintln!("[migrate] {}: {e}", base.display());
+            // The event log stays where it is rather than starting empty; next launch retries.
+            if Some(&base) == data.as_ref() {
+                // SAFETY: single-threaded here; nothing else reads the environment yet.
+                unsafe { std::env::set_var("MR_DATA_DIR", base.join(&old_id)) };
             }
         }
     }
-    #[cfg(target_os = "macos")]
-    if moved_data {
-        keychain();
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = moved_data;
 }
 
 /// Moves `from` to `to` when only `from` exists (and isn't already the link left behind).
@@ -63,30 +53,34 @@ pub fn move_dir(from: &Path, to: &Path) -> std::io::Result<bool> {
     Ok(true)
 }
 
-/// Keychain entries written under the old service names, copied to the new ones, then removed.
-#[cfg(target_os = "macos")]
-fn keychain() {
+/// cockpit.anthropic → the service the same secret was saved under before the rename.
+fn old_service(service: &str) -> Option<String> {
+    Some(old(&["minority", "-report", service.strip_prefix("cockpit")?]))
+}
+
+/// Reads a Keychain secret; one still under the old service name moves to the new one on first
+/// read. Lazy rather than at startup: a self-build relaunched with MR_DATA_DIR skips the folder
+/// move but must still find its keys.
+pub fn keychain_get(service: &str, account: &str) -> Option<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
-    let entries = [
-        (old(&["minority", "-report", ".anthropic"]), crate::cockpit_layer::KEYCHAIN_SERVICE, &["cockpit"][..]),
-        (old(&["minority", "-report", ".cloudflare"]), crate::layer2::KEYCHAIN_SERVICE, &["account_id", "api_token"][..]),
-    ];
-    for (from, to, accounts) in entries {
-        for acct in accounts {
-            let Ok(out) = Command::new("security").args(["find-generic-password", "-s", &from, "-a", acct, "-w"]).output() else { continue };
-            let secret = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-            if !out.status.success() || secret.is_empty() {
-                continue;
-            }
-            // Through `security -i` on stdin, so the secret never shows up in a process list.
-            let Ok(mut child) = Command::new("security").arg("-i").stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() else { continue };
-            let saved = child.stdin.take().is_some_and(|mut i| i.write_all(format!("add-generic-password -U -s {to} -a {acct} -w {secret}\n").as_bytes()).is_ok());
-            if saved && child.wait().is_ok_and(|s| s.success()) {
-                let _ = Command::new("security").args(["delete-generic-password", "-s", &from, "-a", acct]).output();
-            }
+    let find = |s: &str| {
+        let out = Command::new("security").args(["find-generic-password", "-s", s, "-a", account, "-w"]).output().ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned()).filter(|v| !v.is_empty())
+    };
+    if let Some(v) = find(service) {
+        return Some(v);
+    }
+    let from = old_service(service)?;
+    let secret = find(&from)?;
+    // Through `security -i` on stdin, so the secret never shows up in a process list.
+    if let Ok(mut child) = Command::new("security").arg("-i").stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+        let saved = child.stdin.take().is_some_and(|mut i| i.write_all(format!("add-generic-password -U -s {service} -a {account} -w {secret}\n").as_bytes()).is_ok());
+        if saved && child.wait().is_ok_and(|s| s.success()) && find(service).as_deref() == Some(secret.as_str()) {
+            let _ = Command::new("security").args(["delete-generic-password", "-s", &from, "-a", account]).output();
         }
     }
+    Some(secret)
 }
 
 #[cfg(test)]
@@ -115,6 +109,12 @@ mod tests {
         assert_eq!(std::fs::read_to_string(b.join("events.sqlite")).unwrap(), "new");
         assert!(!move_dir(&root.join("missing"), &root.join("c")).unwrap());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn keychain_services_map_to_their_old_names() {
+        assert_eq!(old_service("cockpit.anthropic").unwrap(), old(&["minority", "-report", ".anthropic"]));
+        assert_eq!(old_service("other.service"), None);
     }
 
     #[test]

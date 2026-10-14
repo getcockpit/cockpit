@@ -38,8 +38,7 @@ fn key() -> Option<String> {
     if let Ok(k) = std::env::var("MR_COCKPIT_API_KEY") {
         return Some(k).filter(|k| !k.is_empty());
     }
-    let out = Command::new("security").args(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"]).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned()).filter(|s| !s.is_empty())
+    crate::migrate::keychain_get(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
 }
 
 /// Anthropic keys are `sk-ant-` plus letters, digits, `-` and `_`; anything else is a paste mistake.

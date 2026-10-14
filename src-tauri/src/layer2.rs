@@ -19,8 +19,7 @@ pub const LABELS: [(&str, &str); 5] = [
 ];
 
 fn keychain_get(account: &str) -> Option<String> {
-    let out = Command::new("security").args(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-w"]).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned()).filter(|s| !s.is_empty())
+    crate::migrate::keychain_get(KEYCHAIN_SERVICE, account)
 }
 
 fn creds() -> Option<(String, String)> {
