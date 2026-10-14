@@ -122,9 +122,12 @@ export type SessionState = {
   mcp: McpState | null; // its MCP servers (MR-87): from init, fresh from /mcp
   owner: string | null; // origin of the copy that last started or resumed it (MR-99)
   backgroundTasks: { id: string; description: string }[]; // commands and agents still running after the turn ended
+  goal: Goal | null; // the /goal Claude keeps working toward until an evaluator says it's met
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 
+// Claude Code's /goal (active_goal): the completion condition, how many turns it was checked and found not met, and why.
+export type Goal = { condition: string; iterations: number; setAt: number; lastReason: string | null };
 export type Diagram = { title?: string | null; nodes: { id: string; label: string; kind: "step" | "decision" | "done" | "risk" }[]; edges: { from: string; to: string; label?: string | null }[] };
 export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "other"; p: number; layer: "model" | "code" };
 // Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
