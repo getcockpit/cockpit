@@ -116,6 +116,7 @@ const RAW: Record<string, string> = {
   session_send: "unknown session",
 };
 
+let drawnN = 1;
 function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
   if (FAIL && RAW[cmd]) throw new Error(RAW[cmd]);
   switch (cmd) {
@@ -249,6 +250,8 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       later(900, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp, done: { server, action, ok, ...(ok ? {} : { error: "connection refused (localhost:4100)" }) } }));
       return null;
     }
+    // A drawn-on copy (MR-143): the demo has no disk, so it only names where the core would put it.
+    case "attachment_save": { const n = drawnN++; return { path: `/Users/me/Library/Application Support/Cockpit/attachments/demo${n}-drawn.png`, name: `drawn-${n}.png`, mime: "image/png", size: a instanceof Uint8Array ? a.length : 0 }; }
     case "models_refresh": record(null, "sidecar.models", { models: DEMO_MODELS }); return null;
     case "session_stop": record(String(a.session), "sidecar.session_ended", { ok: true }); return null;
     case "session_changes": return [
