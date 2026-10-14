@@ -7,8 +7,8 @@ import { useSyncExternalStore } from "react";
 export type Pin = { x: number; y: number; note: string }; // x, y: 0-100, % of the image
 /** A point in % of the image, like pins. */
 export type Pt = [number, number];
-/** A drawn mark (MR-143, MR-145): a freehand line, or an arrow or box dragged from a to b. */
-export type Ink = { kind: "line"; pts: Pt[] } | { kind: "arrow" | "box"; a: Pt; b: Pt };
+/** A drawn mark (MR-143, MR-145): a freehand line, or an arrow or box dragged from a to b; a box may carry a label (MR-147). */
+export type Ink = { kind: "line"; pts: Pt[] } | { kind: "arrow"; a: Pt; b: Pt } | { kind: "box"; a: Pt; b: Pt; label?: string };
 export type Verdict = "approve" | "reject";
 export type Draft = { verdict?: Verdict; comment?: string; pins: Pin[]; ink?: Ink[] };
 export type Ask = { verdict: boolean; pins: boolean };
@@ -65,6 +65,18 @@ export function inkGeometry(m: Ink, w: number, h: number): { pts: Pt[]; close?: 
   return [{ pts: [a, b] }, { pts: [b, l, r], close: true, fill: true }];
 }
 
+/**
+ * Where a box's label sits, in pixels of a w×h image: on top of the box's top-left corner, or
+ * just inside it when the box touches the top edge. Null for marks without a label.
+ */
+export function inkLabel(m: Ink, w: number, h: number): { x: number; y: number; size: number; text: string } | null {
+  const text = m.kind === "box" ? m.label?.trim() : "";
+  if (!text || m.kind !== "box") return null;
+  const size = Math.max(12, Math.round(Math.max(w, h) / 40));
+  const x = (Math.min(m.a[0], m.b[0]) / 100) * w, top = (Math.min(m.a[1], m.b[1]) / 100) * h;
+  return { x: x + size * 0.15, y: top - size * 0.35 < size ? top + size * 1.1 : top - size * 0.35, size, text };
+}
+
 /** Each mark in words: a drawing or box by its area, an arrow by where it starts and points. */
 export function inkLines(ink: Ink[] = [], indent = ""): string[] {
   const span = (a: number[]) => (Math.round(Math.max(...a)) - Math.round(Math.min(...a)) < 2 ? pct((Math.min(...a) + Math.max(...a)) / 2) : `${pct(Math.min(...a))}–${pct(Math.max(...a))}`);
@@ -72,7 +84,7 @@ export function inkLines(ink: Ink[] = [], indent = ""): string[] {
   const n = { line: 0, arrow: 0, box: 0 };
   return ink.flatMap((m) => {
     if (m.kind === "line") return m.pts.length ? [`${indent}- Drawing ${++n.line} around ${area(m.pts)}`] : [];
-    if (m.kind === "box") return [`${indent}- Box ${++n.box} around ${area([m.a, m.b])}`];
+    if (m.kind === "box") return [`${indent}- Box ${++n.box}${m.label?.trim() ? ` "${m.label.trim()}"` : ""} around ${area([m.a, m.b])}`];
     return [`${indent}- Arrow ${++n.arrow} from (${pct(m.a[0])}, ${pct(m.a[1])}) pointing at (${pct(m.b[0])} from left, ${pct(m.b[1])} from top)`];
   });
 }
