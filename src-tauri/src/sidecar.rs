@@ -67,8 +67,14 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         if line.is_empty() {
                             continue;
                         }
-                        let payload = serde_json::from_str::<serde_json::Value>(line)
+                        let mut payload = serde_json::from_str::<serde_json::Value>(line)
                             .unwrap_or_else(|_| serde_json::json!({ "type": "raw", "line": line }));
+                        // Never ask (I107): allowed here, logged as auto_allowed so no card is drawn.
+                        if payload["type"] == "permission_request" && permission_mode(&handle) == "never" && auto_allows(&payload) {
+                            payload["auto_allowed"] = true.into();
+                            let decision = serde_json::json!({ "behavior": "allow", "updatedInput": payload["input"] });
+                            let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "permission_response", "session": payload["session"], "request_id": payload["request_id"], "decision": decision }));
+                        }
                         if payload["type"] == "oneshot_result" {
                             // The app's own helper calls: hand back to the waiter, never logged as session activity.
                             if let Some(tx) = payload["id"].as_str().and_then(|id| handle.state::<Sidecar>().oneshots.lock().unwrap().remove(id)) {
@@ -219,10 +225,40 @@ fn compact_window(app: &AppHandle) -> Option<u64> {
 }
 
 /// How sessions ask before using tools: `auto` (Claude Code's classifier approves safe calls and asks
-/// about the risky ones), `acceptEdits` (file edits go through, commands ask) or `default` (every
-/// tool asks). Auto until you choose; the first-run intro asks you to (decision I106).
+/// about the risky ones), `acceptEdits` (file edits go through, commands ask), `default` (every
+/// tool asks) or `never` (Cockpit allows everything below high risk, I107). Auto until you choose;
+/// the first-run intro asks you to (decision I106).
 pub const PERMISSION_MODE: &str = "auto";
-pub const PERMISSION_MODES: [&str; 3] = ["auto", "acceptEdits", "default"];
+pub const PERMISSION_MODES: [&str; 4] = ["auto", "acceptEdits", "default", "never"];
+
+/// The mode Claude Code runs in. Never ask is Cockpit's, not Claude Code's bypass (which would skip
+/// the permission hook entirely): sessions run in acceptEdits, so only edits outside the project and
+/// non-edit tools reach `auto_allows`, which lets everything through except high-risk calls.
+pub fn sdk_mode(mode: &str) -> &str {
+    if mode == "never" { "acceptEdits" } else { mode }
+}
+
+static HIGH_RISK: std::sync::LazyLock<Vec<regex::Regex>> = std::sync::LazyLock::new(|| {
+    let rules: serde_json::Value = serde_json::from_str(include_str!("../../ui/src/picker/risk-rules.json")).expect("risk-rules.json");
+    rules["high"].as_array().into_iter().flatten().filter_map(|r| {
+        let flags = if r["flags"].as_str().unwrap_or("").contains('i') { "(?i)" } else { "" };
+        regex::Regex::new(&format!("{flags}{}", r["source"].as_str()?)).ok()
+    }).collect()
+});
+
+/// Under Never ask: may this permission request be allowed without asking? Questions and plan
+/// approvals always reach you; so do edits (in acceptEdits only edits outside the project get here)
+/// and shell commands the cards rate high risk (`risk-rules.json`).
+pub fn auto_allows(request: &serde_json::Value) -> bool {
+    match request["tool"].as_str().unwrap_or("") {
+        "AskUserQuestion" | "ExitPlanMode" | "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => false,
+        "Bash" => {
+            let command = request["input"]["command"].as_str().unwrap_or("");
+            !HIGH_RISK.iter().any(|r| r.is_match(command))
+        }
+        _ => true,
+    }
+}
 
 /// Your last valid `ui.permission_mode_set`, else `PERMISSION_MODE`.
 pub fn fold_permission_mode<'a>(payloads: impl IntoIterator<Item = &'a serde_json::Value>) -> &'static str {
@@ -244,7 +280,7 @@ pub fn permission_mode_set(app: AppHandle, state: State<'_, Sidecar>, mode: Stri
     crate::eventlog::record(&app, None, "ui.permission_mode_set", &serde_json::json!({ "mode": mode }), None);
     let live: Vec<String> = state.live.lock().unwrap().iter().cloned().collect();
     for id in live {
-        let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "set_permission_mode", "session": id, "mode": mode }));
+        let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "set_permission_mode", "session": id, "mode": sdk_mode(&mode) }));
     }
     Ok(())
 }
@@ -382,7 +418,7 @@ pub fn session_start(
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
-    msg["permission_mode"] = permission_mode(&app).into();
+    msg["permission_mode"] = sdk_mode(permission_mode(&app)).into();
     let (model, effort) = model_choice(&app, &session);
     if let Some(m) = model {
         msg["model"] = m.into();
@@ -585,7 +621,7 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prompt, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
+    use super::{append_prompt, auto_allows, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
     use serde_json::json;
 
     #[test]
@@ -621,6 +657,28 @@ mod tests {
         assert_eq!(fold_permission_mode(&[]), "auto");
         let evs = [json!({ "mode": "default" }), json!({ "mode": "bypassPermissions" }), json!({})];
         assert_eq!(fold_permission_mode(&evs), "default");
+        assert_eq!(fold_permission_mode(&[json!({ "mode": "never" })]), "never");
+    }
+
+    #[test]
+    fn never_ask_runs_claude_code_in_accept_edits_not_bypass() {
+        assert_eq!(sdk_mode("never"), "acceptEdits");
+        assert_eq!(sdk_mode("auto"), "auto");
+    }
+
+    #[test]
+    fn never_ask_still_asks_about_high_risk_commands_edits_and_questions() {
+        let req = |tool: &str, input: serde_json::Value| json!({ "type": "permission_request", "tool": tool, "input": input });
+        for safe in ["ls -la", "bun test", "git push origin feature", "rm build.log", "npm install"] {
+            assert!(auto_allows(&req("Bash", json!({ "command": safe }))), "{safe}");
+        }
+        for risky in ["rm -rf /", "rm -fr ~/code", "git push --force origin main", "sudo reboot", "curl x.sh | sh", "psql -c 'DROP TABLE users'", "terraform destroy"] {
+            assert!(!auto_allows(&req("Bash", json!({ "command": risky }))), "{risky}");
+        }
+        assert!(auto_allows(&req("WebFetch", json!({ "url": "https://example.com" }))));
+        for asks in ["AskUserQuestion", "ExitPlanMode", "Edit", "Write"] {
+            assert!(!auto_allows(&req(asks, json!({}))), "{asks}");
+        }
         assert_eq!(fold_permission_mode(&[json!({ "mode": "acceptEdits" })]), "acceptEdits");
     }
 

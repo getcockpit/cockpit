@@ -176,4 +176,4 @@ export type AppState = {
   update: UpdateState;
 };
 
-export type PermissionMode = "auto" | "acceptEdits" | "default";
+export type PermissionMode = "auto" | "acceptEdits" | "default" | "never";
