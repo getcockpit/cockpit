@@ -24,7 +24,7 @@ export type TileSpec = {
 
 export type RenderRecord = { component: string; layer: "code"; source: string; ms: number };
 
-// Shared with the core, which keeps asking about these under Never ask (I107).
+// Shared with the core, which keeps asking about these under Never ask (I109).
 const HIGH = riskRules.high.map((r) => new RegExp(r.source, r.flags));
 const MEDIUM = [/\bgit\s+(push|reset|rebase|checkout\s+-f|clean)\b/, /\b(npm|bun|pnpm|yarn)\s+(install|add|remove|publish)\b/, /\brm\b/, /\bmv\b/, /\bchmod\b/, />\s*[^&]/, /\bdocker\b/];
 
