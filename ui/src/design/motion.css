@@ -68,6 +68,8 @@ summary:hover { color: var(--mr-ink); }
 button.mr-qrow { transition: transform var(--mr-med) var(--mr-ease); }
 button.mr-qrow:hover { transform: translateX(2px); }
 .mr-input { transition: box-shadow var(--mr-med) var(--mr-ease), background-color var(--mr-med); }
+/* Prompt boxes ease to the height of what's typed or pasted (components/autoGrow.ts). */
+textarea.mr-input { transition: height var(--mr-med) var(--mr-ease), box-shadow var(--mr-med) var(--mr-ease), background-color var(--mr-med); }
 [role="menuitem"], [role="option"], [role="tab"] { transition: background-color var(--mr-fast), color var(--mr-fast); }
 
 /* ---- State changes fade rather than flip. ---- */
