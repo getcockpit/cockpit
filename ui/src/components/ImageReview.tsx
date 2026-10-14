@@ -30,8 +30,8 @@ function Thumb({ im, d, onOpen, pending, h = 120 }: { im: LbImage; d: Draft; onO
   );
 }
 
-// Drawn-on copies for every image with strokes (MR-143), saved before the reply goes.
-const copiesFor = (images: LbImage[], drafts: Draft[]) => Promise.all(images.map((im, i) => (drafts[i]?.strokes?.length ? saveDrawn(im.path, im.name, drafts[i].strokes) : undefined)));
+// Drawn-on copies for every image with marks (MR-143, MR-145), saved before the reply goes.
+const copiesFor = (images: LbImage[], drafts: Draft[]) => Promise.all(images.map((im, i) => (drafts[i]?.ink?.length ? saveDrawn(im.path, im.name, drafts[i].ink) : undefined)));
 
 function SendRow({ live, sent, ready, count, onSend, onClear }: { live: boolean; sent: boolean; ready: boolean; count: string; onSend: () => Promise<void>; onClear: () => void }) {
   const [sending, setSending] = useState(false);
