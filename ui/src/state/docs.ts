@@ -18,6 +18,30 @@ export type Doc = {
   kind?: string; // "brief": a catch-up brief (MR-116)
   blocks: Record<string, Block>; pending_notes: [string, string][]; pending_changes: string[];
   build_sessions?: string[]; // sessions started from it with Build it, oldest first (MR-118)
+  updated_at?: number; // when anything last happened to it, ms (MR-151)
+  shipped_at?: number | null; // when its builds merged or you marked it shipped (MR-151)
+};
+
+// Lifecycle (decision 38, MR-151): drafting → ready → building → shipped, then Done archives it.
+export type DocStage = "drafting" | "ready" | "building" | "shipped";
+export const STAGE_LABEL: Record<DocStage, string> = { drafting: "Drafting", ready: "Ready to build", building: "Building", shipped: "Shipped" };
+/** A doc idle this long before anyone builds it shows on the Wall (decision 38: 3 days). */
+export const STALL_MS = 3 * 24 * 3600_000;
+
+/** The builds that still count: started with Build it and not archived (dropped builds don't). */
+export const liveBuilds = (d: Doc, sessions: Record<string, SessionState>): SessionState[] =>
+  (d.build_sessions ?? []).map((id) => sessions[id]).filter((s): s is SessionState => !!s && !s.archivedAt);
+
+export function docStage(d: Doc, sessions: Record<string, SessionState>): DocStage {
+  if (d.shipped_at) return "shipped";
+  if (liveBuilds(d, sessions).length) return "building";
+  return Object.values(d.blocks).some(isOpenQuestion) ? "drafting" : "ready";
+}
+
+/** Drafting or ready, and untouched for STALL_MS: build it or drop it. Briefs have no lifecycle. */
+export const isStalled = (d: Doc, sessions: Record<string, SessionState>, now: number) => {
+  const st = docStage(d, sessions);
+  return !isBrief(d) && (st === "drafting" || st === "ready") && !!d.updated_at && now - d.updated_at > STALL_MS;
 };
 
 /** The docs a session shows in Focus: the ones it wrote and the ones it builds (MR-118). */
@@ -55,6 +79,11 @@ export const docApi = {
   edit: (d: Doc, blockId: string, field: "takeaway" | "key" | "body", value: string) => invoke("event_append", { sessionId: d.session_id, kind: "ui.doc_edit", payload: { doc_id: d.id, block_id: blockId, field, value }, anchor: `doc:${d.id}:${blockId}` }),
   feedback: (d: Doc, regenerate: boolean) => invoke<string>("doc_feedback", { docId: d.id, regenerate }),
   archive: (d: Doc) => invoke("doc_archive", { docId: d.id }),
+  done: (d: Doc) => invoke("doc_archive", { docId: d.id, outcome: "done" }),
+  drop: (d: Doc, reason?: string) => invoke("doc_archive", { docId: d.id, outcome: "dropped", reason: reason ?? null }),
+  markShipped: (d: Doc) => invoke("doc_mark_shipped", { docId: d.id }),
+  // The core records doc.shipped once every live build's branch is merged into main.
+  checkShipped: (d: Doc, builds: SessionState[]) => invoke<boolean>("doc_check_shipped", { docId: d.id, builds: builds.map((s) => ({ session_id: s.id, repo: s.repo, branch: s.branch })) }),
   buildStarted: (d: Doc, sessionId: string) => invoke("doc_build_started", { docId: d.id, sessionId }),
   // Catch me up (MR-116): the core creates the brief doc and has it written; Continue builds the corrections.
   brief: (session: string) => invoke<{ doc_id: string; via: "session" | "cockpit" }>("brief_start", { session }),
@@ -83,7 +112,7 @@ export async function continueBrief(d: Doc, session: SessionState | null | undef
 /** Build it: starts a session that implements the doc, in the plan session's folder, and links it
  *  to the doc so each can open the other (MR-118). Returns the session id. */
 export async function buildDoc(d: Doc, session: SessionState | null | undefined): Promise<string> {
-  const id = await api.start(session?.cwd ?? "~/", `Implement the plan in working doc "${d.title}" (doc_id ${d.id}). First read it with the mr doc_read tool and follow its decisions. If you learn something that changes the plan, update the doc's blocks with doc_set_block and add a [log] block.`, "blank");
+  const id = await api.start(session?.cwd ?? "~/", `Implement the plan in working doc "${d.title}" (doc_id ${d.id}). First read it with the mr doc_read tool and follow its decisions. If you learn something that changes the plan, update the doc's blocks with doc_set_block and add a [log] block. When the work is done, add a [log] block "What shipped" with doc_set_block: what was built, where it deviated from the plan, and any follow-ups.`, "blank");
   await docApi.buildStarted(d, id);
   return id;
 }
