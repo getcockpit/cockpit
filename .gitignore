@@ -14,3 +14,10 @@ scripts/film/frames/
 scripts/film/preview/
 scripts/film/node_modules/
 scripts/film/*.mp4
+scripts/film/frames-45/
+scripts/film/preview-45/
+scripts/film/score.wav
+scripts/film/*.gif
+scripts/film/poster.jpg
+scripts/film/package.json
+scripts/film/bun.lock

@@ -1,16 +1,19 @@
-"""Original score for the Cockpit film (40 s, 120 BPM), synthesized from scratch: no samples, no licence.
-The bar grid starts at 0.5 s so the drop lands on 4.5 s (terminals collapse into the wall). UI sounds
-sit on the film's own events (clicks, scene changes). Writes score.wav (44.1 kHz stereo)."""
+"""Original score for the Cockpit film (45 s, 120 BPM), synthesized from scratch: no samples, no licence.
+The bar grid starts at 0.2 s so the drop lands on 2.2 s (the first session turns amber). The groove drops
+out at 28.8 s while the wall goes calm, builds back into "Less reading." at 34.2 s, and ends on the end card.
+UI sounds sit on the film's own events (keypresses, scene changes). Writes score.wav (44.1 kHz stereo)."""
 import numpy as np, wave
 
 SR = 44100
-DUR = 40.0
+DUR = 45.0
 BPM = 120
 BEAT = 60 / BPM
-GRID0 = 0.5            # first downbeat
-DROP = 4.5             # the wall arrives
-OUTRO = 34.0           # every screen tiles into one wall
-END = 36.4             # end card
+GRID0 = 0.2            # first downbeat
+DROP = 2.2             # one session needs you
+CALM = 28.8            # the wall goes grey: the groove drops out
+OUTRO = 32.2           # build back in
+HEAD = 34.2            # "Less reading. Less tired."
+END = 39.0             # end card
 N = int(SR * DUR)
 L = np.zeros(N); R = np.zeros(N)
 rng = np.random.default_rng(7)
@@ -34,7 +37,7 @@ def lp(x, a):  # one-pole low-pass, a in (0,1): higher = brighter
     for i, v in enumerate(x): acc += a * (v - acc); y[i] = acc
     return y
 def note(f): return 440.0 * 2 ** ((f - 69) / 12)
-def bars(): return [GRID0 + 2.0 * k for k in range(20)]
+def bars(): return [GRID0 + 2.0 * k for k in range(23)]
 
 # --- drums ---
 def kick():
@@ -74,24 +77,24 @@ def pluck(m, length=0.4):
 # Am – F – C – G (one bar each)
 PROG = [(57, [57, 60, 64, 69]), (53, [53, 57, 60, 65]), (48, [52, 55, 60, 64]), (55, [55, 59, 62, 67])]
 
-# --- intro (0–4.5 s): a held drone, ticking 16ths that speed up, a riser into the drop ---
+# --- intro (0–2.2 s): a held drone, ticking 16ths that speed up, a riser into the drop ---
 place(pad([45, 52, 57, 60], DROP + 0.3, 0.10), 0.0)
 for k in range(int(DROP / (BEAT / 4))):
     tt = k * BEAT / 4
     if tt > 0.4: place(H, tt, 0.35 + 0.65 * tt / DROP, pan=0.3 * np.sin(k))
-n = int(3.2 * SR); t = t_arr(n)
-riser = rng.standard_normal(n); riser = riser - lp(riser, 0.05 + 0.3 * 0)  # bright noise
+n = int(2.0 * SR); t = t_arr(n)
+riser = rng.standard_normal(n); riser = riser - lp(riser, 0.05)  # bright noise
 riser = lp(riser, 0.4) * (t / t[-1]) ** 2.5 * 0.22
-place(riser, DROP - 3.2)
-n = int(3.2 * SR); t = t_arr(n)
-place(np.sin(2 * np.pi * np.cumsum(220 + 660 * (t / t[-1]) ** 2) / SR) * (t / t[-1]) ** 3 * 0.05, DROP - 3.2)
+place(riser, DROP - 2.0)
+n = int(2.0 * SR); t = t_arr(n)
+place(np.sin(2 * np.pi * np.cumsum(220 + 660 * (t / t[-1]) ** 2) / SR) * (t / t[-1]) ** 3 * 0.05, DROP - 2.0)
 
-# --- main groove (4.5–34 s) ---
+# --- main groove (2.2–28.8 s) ---
 for b, bar_t in enumerate(bars()):
-    if bar_t < DROP - 1e-6 or bar_t >= OUTRO: continue
+    if bar_t < DROP - 1e-6 or bar_t >= CALM - 1e-6: continue
     root, chord = PROG[(b - 2) % 4]
     place(pad(chord, 2.05, 0.11), bar_t)
-    breakdown = abs(bar_t - 18.5) < 1e-6   # one bar without kick and bass, re-drop on the plans section
+    breakdown = abs(bar_t - 18.2) < 1e-6   # one bar without kick and bass, re-drop on the plans section
     for beat in range(4):
         bt = bar_t + beat * BEAT
         if breakdown:
@@ -108,17 +111,27 @@ for b, bar_t in enumerate(bars()):
         m = chord[[0, 2, 1, 3, 2, 1, 3, 2][i]] + 12
         place(pluck(m), bar_t + i * BEAT / 2, 1.0 if bar_t < 20 else 1.25, pan=0.4 * np.sin(i * 1.3))
 
-# riser into the re-drop at 20.5 s
+# riser into the re-drop at 20.2 s
 n = int(1.9 * SR); t = t_arr(n)
 r2 = rng.standard_normal(n); r2 = lp(r2 - lp(r2, 0.05), 0.45) * (t / t[-1]) ** 2.2 * 0.18
-place(r2, 20.5 - 1.9)
-place(K, 20.5, 1.0)
+place(r2, 20.2 - 1.9)
+place(K, 20.2, 1.0)
 
-# --- outro build (34–36.4 s): snare roll into the end card ---
-for k in range(int((END - OUTRO) / (BEAT / 4))):
+# --- calm (28.8–32.2 s): only a soft held chord and one bell; no drums ---
+place(pad([45, 57, 60, 64], OUTRO - CALM + 0.4, 0.07), CALM)
+n = int(3.0 * SR); t = t_arr(n)
+place(np.sin(2 * np.pi * note(76) * t) * np.exp(-t * 1.6) * 0.05, CALM + 0.3, pan=-0.2)
+
+# --- build (32.2–34.2 s): snare roll into the headline, then a light groove under it to the end card ---
+for k in range(int((HEAD - OUTRO) / (BEAT / 4))):
     tt = OUTRO + k * BEAT / 4
-    place(C, tt, 0.25 + 0.55 * k / ((END - OUTRO) / (BEAT / 4)))
-place(pad([45, 57, 60, 64, 69], END - OUTRO + 0.2, 0.12), OUTRO)
+    place(C, tt, 0.25 + 0.55 * k / ((HEAD - OUTRO) / (BEAT / 4)))
+place(pad([45, 57, 60, 64, 69], HEAD - OUTRO + 0.2, 0.10), OUTRO)
+place(K, HEAD, 1.0)
+place(pad([41, 53, 57, 60, 65], END - HEAD, 0.14), HEAD)
+for k in range(int((END - HEAD) / BEAT)):
+    place(K, HEAD + k * BEAT, 0.6)
+    place(H, HEAD + k * BEAT + BEAT / 2, 0.6, pan=-0.2)
 # --- end card: one big chord and a long tail ---
 place(K, END, 1.0)
 place(pad([45, 52, 57, 60, 64, 69, 76], DUR - END, 0.2), END)
@@ -133,9 +146,9 @@ def whoosh(length=0.45):
     n = int(length * SR); t = t_arr(n)
     x = rng.standard_normal(n); x = lp(x, 0.12) - lp(x, 0.02)
     return x * np.sin(np.pi * t / t[-1]) ** 2 * 0.5
-for c in (8.6, 14.6, 31.5):
+for c in (4.6, 9.0, 12.3, 15.6):          # the keycaps
     place(click(), c, 1.0)
-for s in (10.6, 15.1, 20.6, 25.2, 29.0, 31.7):
+for s in (6.4, 9.6, 13.2, 15.8, 21.2, 28.8):
     place(whoosh(), s - 0.2, 0.9, pan=0.3)
 place(whoosh(0.8), DROP - 0.5, 1.0)
 
