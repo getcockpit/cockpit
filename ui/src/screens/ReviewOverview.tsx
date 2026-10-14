@@ -91,7 +91,7 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
       {pts.map((p, i) => {
         const isOpen = open === i, isRaised = raised.includes(`ov:${i}`), isSkipped = skipped.includes(i);
         return (
-          <div key={i} data-mr="ReviewPoint" data-mr-source={`${o.pr}:${i}`} style={{ background: "var(--mr-tile)", opacity: isSkipped ? 0.5 : 1, transition: "opacity var(--mr-med), box-shadow var(--mr-med)", boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
+          <div key={i} data-mr="ReviewPoint" data-mr-source={`${o.pr}:${i}`} aria-current={i === sel || undefined} style={{ background: "var(--mr-tile)", opacity: isSkipped ? 0.5 : 1, transition: "opacity var(--mr-med), box-shadow var(--mr-med)", boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
             <button type="button" onClick={() => { setSel(i); setOpen(isOpen ? null : i); }} className="mr-row"
               style={{ width: "100%", gap: 10, padding: "10px 14px", border: 0, background: "transparent", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
               <span style={{ flex: "none", minWidth: 64, padding: "1px 6px", fontSize: 11, fontWeight: 700, textAlign: "center", background: TAG[p.tag].bg, color: TAG[p.tag].fg, boxShadow: p.tag === "Context" ? "inset 0 0 0 1px var(--mr-ink-3)" : undefined }}>{p.tag}</span>
