@@ -53,6 +53,9 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+/* The demo harness with ?motion=off (the UI suite): a headless tab draws no frames, so entry
+   animations would hold elements at their first keyframe, opacity 0. */
+:root[data-motion="off"] * { transition: none !important; animation: none !important; }
 
 /* Alternative light themes (MR-26). Each overrides only tokens; components never change.
    Signal roles stay fixed: needs = amber/yellow, error = red, selected, done. */
