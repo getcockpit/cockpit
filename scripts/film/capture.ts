@@ -59,29 +59,36 @@ async function shot(name: string, targets: Record<string, string>) {
   console.log("shot", name);
 }
 
+// One story (MR-139): calm wall → one needs you → 1 → the risk card → D → staging → Catch me up → the plan map.
+await go("calm");
+await click("Wall");
+await shot("calm", { running: "css:[data-mr=Tile]" });
+await go("timeline");
+await click("Wall");
+await shot("one", { q: "Run the migration on staging now?", opt1: "1Yes" });
+await click("1Yes");
+await new Promise((r) => setTimeout(r, 800));
+await shot("one-answered", {});
 await go("busy");
 await click("Wall");
-await shot("wall", { q1: "Sync for small accounts, or always", opt1: "1Always queue", q2: "Which formats ship in v1?", lamps: "4 need you", running: "4 running", tabs: "Personal" });
-await click("1Always queue");
-await shot("wall-answered", { first: "Which formats ship in v1?" });
 await click("Open Retire the old invoices table");
 await new Promise((r) => setTimeout(r, 800));
-await shot("focus", { risk: "Drop the old invoices table", deny: "DDeny", allow: "AAllow", cmd: "psql", plan: "Plan", changes: "Changes", title: "Retire the old invoices table" });
+await shot("focus", { risk: "Drop the old invoices table", deny: "DDeny", cmd: "css:pre.mr-code", title: "Retire the old invoices table" });
 await click("DDeny");
-await shot("focus-denied", { reply: "Okay, production is untouched" });
+await new Promise((r) => setTimeout(r, 1500));
+await shot("focus-denied", { reply: "Okay, production is untouched", yes: "⌥1Yes, go ahead" });
 await page.keyboard.press("Escape");
 await new Promise((r) => setTimeout(r, 1200));
-await click("CSV export for invoices v2");
-await shot("doc", { goal: "Goal · proposed", design: "Design · proposed", decide: "Decide first", walk: "spaceWalk through", q: "Open question · open" });
-await go("timeline");
-await click("Timeline");
-await shot("timeline", { next: "Next 15 minutes", paused: "Paused · needs you", handle: "Handle Refactor auth", now: "Now ·" });
-await go("review");
+await click("✓ Done Refactor the settings schema");
+await new Promise((r) => setTimeout(r, 800));
+await shot("settings", { recap: "Refactor is finished", catchup: "Catch me up" });
+await click("⌘⇧UCatch me up");
+await new Promise((r) => setTimeout(r, 3500));
+await shot("brief", { risk: "Risk\"All 211 tests pass\"", wrong: "Looks wrong?", q: "Keep reading v1 settings files" });
+await go("busy");
 await click("Wall");
-await click("Open /review");
-await shot("review", { snippet: "Retry loop around the charge call", note1: "1Note it", tier: "Tier 2" });
-await click("1Note it");
-await shot("review-noted", { noted: "1Noted" });
+await click("CSV export for invoices v2");
+await shot("doc", { goal: "Goal · proposed", design: "Design · proposed", decide: "Decide first", q: "Open question · open" });
 
 writeFileSync("shots/boxes.json", JSON.stringify(boxes, null, 1));
 await browser.close();

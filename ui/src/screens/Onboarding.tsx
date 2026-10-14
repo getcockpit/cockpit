@@ -153,8 +153,8 @@ function WallStep({ onNext }: { onNext: () => void }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <span className="mr-dim">Try it:</span>
-              <Key k="A" tone="primary" onClick={() => answer(true)}>Allow</Key>
-              <Key k="D" onClick={() => answer(false)}>Deny</Key>
+              <Key k="D" tone="primary" onClick={() => answer(false)}>Deny</Key>
+              <Key k="A" onClick={() => answer(true)}>Allow</Key>
             </div>
           </div>
         )}
