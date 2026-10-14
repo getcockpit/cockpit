@@ -2,8 +2,8 @@ import { useContext, useState } from "react";
 import { Key } from ".";
 import { FileContext } from "./FileChip";
 import { inline } from "./Markdown";
-import { Lightbox, VerdictTag, useImageSrc, type LbImage } from "./Lightbox";
-import { askOf, clearDrafts, compareReply, getDrafts, hasInput, isSent, markSent, nameOf, resolvePath, reviewReply, setDraft, useDrafts, type Draft } from "./reviewDraft";
+import { Lightbox, VerdictTag, saveDrawn, useImageSrc, type LbImage } from "./Lightbox";
+import { askOf, clearDrafts, compareReply, getDrafts, hasInput, isSent, markSent, marked, nameOf, resolvePath, reviewReply, setDraft, useDrafts, type Draft } from "./reviewDraft";
 import type { ViewBlock } from "../state/types";
 
 // The image blocks of the catalog (MR-142): `images`, a gallery Claude shows for review, and
@@ -22,7 +22,7 @@ function Thumb({ im, d, onOpen, pending, h = 120 }: { im: LbImage; d: Draft; onO
       <span style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: h, background: "var(--mr-well)", overflow: "hidden" }}>
         {src ? <img src={src} alt="" draggable={false} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }} />
           : <span className="mr-dim mr-mono" style={{ fontSize: 11, padding: 8 }}>{src === null ? `Can't load ${im.name}` : "loading…"}</span>}
-        {d.pins.length > 0 && <span className="mr-mono" style={{ position: "absolute", top: 4, right: 4, padding: "0 6px", fontSize: 11, fontWeight: 700, background: "var(--mr-needs)" }}>{d.pins.length} pin{d.pins.length === 1 ? "" : "s"}</span>}
+        {marked(d) > 0 && <span className="mr-mono" style={{ position: "absolute", top: 4, right: 4, padding: "0 6px", fontSize: 11, fontWeight: 700, background: "var(--mr-needs)" }}>{marked(d)} mark{marked(d) === 1 ? "" : "s"}</span>}
       </span>
       <span className="mr-ellipsis" style={{ fontSize: 12, fontWeight: 600 }}>{im.caption ? inline(im.caption) : im.name}</span>
       <VerdictTag d={d} pending={pending} />
@@ -30,14 +30,18 @@ function Thumb({ im, d, onOpen, pending, h = 120 }: { im: LbImage; d: Draft; onO
   );
 }
 
-function SendRow({ live, sent, ready, count, onSend, onClear }: { live: boolean; sent: boolean; ready: boolean; count: string; onSend: () => void; onClear: () => void }) {
+// Drawn-on copies for every image with strokes (MR-143), saved before the reply goes.
+const copiesFor = (images: LbImage[], drafts: Draft[]) => Promise.all(images.map((im, i) => (drafts[i]?.strokes?.length ? saveDrawn(im.path, im.name, drafts[i].strokes) : undefined)));
+
+function SendRow({ live, sent, ready, count, onSend, onClear }: { live: boolean; sent: boolean; ready: boolean; count: string; onSend: () => Promise<void>; onClear: () => void }) {
+  const [sending, setSending] = useState(false);
   if (sent) return <span className="mr-dim" style={{ fontSize: 12 }}>Review sent to Claude.</span>;
   if (!live) return null;
   return (
     <div className="mr-row" style={{ gap: 8 }}>
       <span className="mr-dim mr-grow" style={{ fontSize: 12 }}>{count}</span>
       {ready && <Key onClick={onClear}>Clear</Key>}
-      <Key tone="primary" disabled={!ready} onClick={onSend}>Send review</Key>
+      <Key tone="primary" disabled={!ready || sending} onClick={() => { setSending(true); void onSend().finally(() => setSending(false)); }}>{sending ? "Sending…" : "Send review"}</Key>
     </div>
   );
 }
@@ -55,13 +59,13 @@ export function ImageGallery({ b, src, onReply, live }: { b: ViewBlock; src: str
   const sent = isSent(src);
   const images: LbImage[] = items.map((x) => ({ ...x, name: nameOf(x.path) }));
   const decided = drafts.filter((d) => d.verdict).length;
-  const pins = drafts.reduce((a, d) => a + d.pins.length, 0);
+  const pins = drafts.reduce((a, d) => a + marked(d), 0);
   const draft = (i: number, patch: Partial<Draft>) => {
     setDraft(src, i, patch);
     // One image, verdict only: the verdict is the whole review, so it sends at once.
     if (items.length === 1 && ask.verdict && !ask.pins && patch.verdict) { markSent(src); setOpen(null); onReply(reviewReply(items, getDrafts(src, 1))); }
   };
-  const send = () => { markSent(src); onReply(reviewReply(items, drafts)); };
+  const send = async () => { const copies = await copiesFor(images, drafts); markSent(src); onReply(reviewReply(items, drafts, copies)); };
   const one = items.length === 1;
   return (
     <section data-mr="ImageGallery" data-mr-source={src} style={{ ...card, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -69,7 +73,7 @@ export function ImageGallery({ b, src, onReply, live }: { b: ViewBlock; src: str
         {images.map((im, i) => <Thumb key={i} im={im} d={drafts[i]} pending={asking && !sent && ask.verdict} h={one ? 280 : 120} onOpen={() => setOpen(i)} />)}
       </div>
       {asking && <SendRow live={live} sent={sent} ready={hasInput(drafts)} onSend={send} onClear={() => clearDrafts(src)}
-        count={`${ask.verdict ? `${decided} of ${items.length} decided` : ""}${ask.verdict && ask.pins ? " · " : ""}${ask.pins ? `${pins} pin${pins === 1 ? "" : "s"}` : ""} · open an image to judge it`} />}
+        count={`${ask.verdict ? `${decided} of ${items.length} decided` : ""}${ask.verdict && ask.pins ? " · " : ""}${ask.pins ? `${pins} mark${pins === 1 ? "" : "s"}` : ""} · open an image to judge it`} />}
       {!asking && sent && <span className="mr-dim" style={{ fontSize: 12 }}>Review sent to Claude.</span>}
       {open !== null && <Lightbox images={images} start={open} ask={asking && !sent ? ask : { verdict: false, pins: false }} drafts={drafts} onDraft={draft} onClose={() => setOpen(null)} source={src} />}
     </section>
@@ -96,7 +100,7 @@ export function ImageCompare({ b, src, onReply, live }: { b: ViewBlock; src: str
   const drafts = getDrafts(src, 2); // 0: before (pins only), 1: after (verdict, comment, pins)
   const d = drafts[1];
   const sent = isSent(src);
-  const send = () => { markSent(src); onReply(compareReply(before.path, after.path, d, drafts[0].pins)); };
+  const send = async () => { const copies = await copiesFor([before, after], drafts); markSent(src); onReply(compareReply(before.path, after.path, d, drafts[0], copies)); };
   const label = (x: { label: string }, fallback: string) => <span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>{x.label || fallback}</span>;
   const pane = (u: string | null | undefined, x: LbImage, k: number) => (
     <button type="button" onClick={() => setOpen(k)} aria-label={`Open ${x.name}`} title={x.path}
@@ -138,7 +142,7 @@ export function ImageCompare({ b, src, onReply, live }: { b: ViewBlock; src: str
         </div>
       )}
       {asking && <SendRow live={live} sent={sent} ready={hasInput(drafts)} onSend={send} onClear={() => clearDrafts(src)}
-        count={`${d.verdict ? "Decided" : "Not decided yet"}${drafts[0].pins.length + d.pins.length ? ` · ${drafts[0].pins.length + d.pins.length} pins` : ""} · open an image to pin`} />}
+        count={`${d.verdict ? "Decided" : "Not decided yet"}${marked(drafts[0]) + marked(d) ? ` · ${marked(drafts[0]) + marked(d)} marks` : ""} · open an image to pin or draw`} />}
       {open !== null && <Lightbox images={[before, after]} start={open} ask={asking && !sent ? { verdict: false, pins: ask.pins } : { verdict: false, pins: false }} drafts={drafts} onDraft={(i, p) => setDraft(src, i, p)} onClose={() => setOpen(null)} source={src} />}
     </section>
   );
