@@ -55,6 +55,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const sessions = interrupt(next.sessions, ev.created_at, (s) => ownedBy(s, ev.origin));
     return { ...next, sessions, sidecar: ev.origin && next.instance && ev.origin !== next.instance ? next.sidecar : { up: true, claude: (p.claude as string) ?? null } };
   }
+  // Claude Code was installed (or removed) since the sidecar started: it found out on a re-check.
+  if (ev.kind === "sidecar.claude") return ev.origin && next.instance && ev.origin !== next.instance ? next : { ...next, sidecar: { ...next.sidecar, claude: (p.claude as string) ?? null } };
   // Another copy quit or died: its sessions stop there and can be resumed here (MR-99).
   if (ev.kind === "app.stopped") {
     const gone = (s: SessionState) => s.owner !== null && s.owner === p.origin;

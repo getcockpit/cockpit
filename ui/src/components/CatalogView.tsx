@@ -1,6 +1,7 @@
 import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import { Key, ProgressTrack, type Seg } from ".";
 import { pointer } from "./pointer";
+import { modKey } from "../platform";
 import { Diff } from "./Diff";
 import { Markdown, inline } from "./Markdown";
 import { Chips, Mark } from "./Turn";
@@ -292,18 +293,26 @@ function Lanes({ b }: { b: ViewBlock }) {
   );
 }
 
-// Cards: parts or concepts as a scannable grid instead of a bullet list.
+// Cards: parts or concepts as a scannable grid instead of a bullet list. A mark reads as a
+// coloured edge and a word (New / Changed / Removed), not a bare "+"/"~" glyph, and a detail
+// listing several things ("check, path choice, swap") splits into chips so it scans.
+export const detailParts = (d: string) => d.split(/\s*[,;]\s*/).map((p) => p.trim()).filter(Boolean);
 function Cards({ b }: { b: ViewBlock }) {
   return (
     <section style={{ ...card, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
       {list(b.items).map((x, i) => {
-        const mark = str(x.mark);
+        const title = str(x.title), raw = str(x.mark);
+        const m = raw || /^\s*[~+\-−]\s/.test(title) ? MARK[markOf({ label: title, mark: raw })] : null;
+        const parts = detailParts(str(x.detail));
         return (
-          <div key={i} style={{ padding: "8px 10px", background: "var(--mr-well)", display: "flex", flexDirection: "column", gap: 2 }}>
-            <strong style={{ fontSize: 13 }}>
-              {mark && <b className="mr-mono" style={{ color: mark === "+" ? "var(--mr-done)" : mark === "-" ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{mark} </b>}{inline(str(x.title))}
-            </strong>
-            {x.detail ? <span className="mr-ink2" style={{ fontSize: 12 }}>{inline(str(x.detail))}</span> : null}
+          <div key={i} style={{ padding: "8px 10px 10px 14px", background: "var(--mr-well)", boxShadow: m ? `inset 4px 0 0 ${m.color}` : undefined, display: "flex", flexDirection: "column", gap: 6 }}>
+            {m && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: m.color }}>{m.word}</span>}
+            <strong style={{ fontSize: 14, lineHeight: 1.3 }}>{inline(changeLabel(title))}</strong>
+            {parts.length > 1 ? (
+              <span style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {parts.map((p, j) => <span key={j} className="mr-ink2" style={{ fontSize: 11, padding: "2px 6px", background: "var(--mr-tile)" }}>{inline(p)}</span>)}
+              </span>
+            ) : parts.length ? <span className="mr-ink2" style={{ fontSize: 12 }}>{inline(parts[0])}</span> : null}
           </div>
         );
       })}
@@ -651,7 +660,7 @@ export function CatalogView({ id, title, blocks, onReply, onDiscover, live }: { 
         const actionable = b.type !== "next" && b.type !== "text";
         const point = actionable ? pointer({ deeper: live ? () => onReply(`Go one level deeper on "${blockGist(b)}"`) : undefined, discover: onDiscover && (() => onDiscover(`the "${title}" view, ${blockGist(b)}`)) }) : undefined;
         return (
-          <div key={i} data-mr={`View:${b.type}`} data-mr-source={`${id}:${i}`} className="mr-view-block" style={{ position: "relative" }} onClickCapture={(e) => { if (point && (e.metaKey || e.altKey)) point(e); }}>
+          <div key={i} data-mr={`View:${b.type}`} data-mr-source={`${id}:${i}`} className="mr-view-block" style={{ position: "relative" }} onClickCapture={(e) => { if (point && (modKey(e) || e.altKey)) point(e); }}>
             <Block b={b} onReply={onReply} live={live} />
             {actionable && <Actions b={b} title={title} onReply={onReply} onDiscover={onDiscover} live={live} />}
           </div>

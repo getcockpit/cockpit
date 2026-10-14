@@ -1,3 +1,4 @@
+import { NO_CLAUDE } from "./claude-path";
 import type { CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, ToolSpec } from "./protocol";
 
 // The slice of the Agent SDK this module needs, so tests can inject a fake.
@@ -41,7 +42,7 @@ type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; init: { skills: strin
 export class Sessions {
   private live = new Map<string, Live>();
   private seq = 0;
-  constructor(private emit: (m: Outbound) => void, private query: QueryFn, private claudePath: string | undefined, private mcp: McpFactory = () => undefined) {}
+  constructor(private emit: (m: Outbound) => void, private query: QueryFn, private claude: () => string | undefined, private mcp: McpFactory = () => undefined) {}
 
   handle(m: Inbound): void {
     switch (m.type) {
@@ -128,6 +129,8 @@ export class Sessions {
 
   private start(m: Extract<Inbound, { type: "start" }>) {
     if (this.live.has(m.session)) return this.emit({ type: "error", session: m.session, error: "session already running" });
+    const claudePath = this.claude();
+    if (!claudePath) return this.emit({ type: "session_ended", session: m.session, ok: false, reason: NO_CLAUDE });
     const s: Live = { inbox: new Inbox(), q: null, init: { skills: [], terminal: [] }, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
     this.live.set(m.session, s);
     s.inbox.push(m.prompt);
@@ -146,7 +149,7 @@ export class Sessions {
       env: m.env ? { ...process.env, ...m.env } : undefined,
       model: m.model,
       effort: m.effort,
-      pathToClaudeCodeExecutable: this.claudePath,
+      pathToClaudeCodeExecutable: claudePath,
       systemPrompt: m.append_system_prompt ? { type: "preset", preset: "claude_code", append: m.append_system_prompt } : undefined,
       mcpServers: mcpServer ? { mr: mcpServer } : undefined,
       canUseTool: (tool: string, input: Record<string, unknown>, opts: { signal?: AbortSignal; suggestions?: unknown[]; decisionReason?: string; mcpServer?: { name: string; source: string } }) =>

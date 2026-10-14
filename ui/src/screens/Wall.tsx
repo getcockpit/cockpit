@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { keyLabel } from "../platform";
 import { ContextMeter } from "../components/ContextMeter";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -18,6 +19,7 @@ import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./
 import { needsQueue } from "../picker/queue";
 import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
+import { NoClaude } from "../components/NoClaude";
 import { plural, sessionTitle } from "../picker/title";
 import { ViewTabs } from "../components/ViewTabs";
 
@@ -124,11 +126,12 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
         <span className="mr-grow" />
         <Usage label="5-hour" v={state.usage.fiveHour} resets={state.usage.resetsAt} />
         <Usage label="Week" v={state.usage.weekly} resets={state.usage.weeklyResetsAt} />
-        <span className="mr-mono" title={state.sidecar.up ? `Claude Code: ${state.sidecar.claude ?? ""}` : "Claude Code isn't connected"} style={{ color: state.sidecar.up ? "var(--mr-done)" : "var(--mr-error)" }}>●</span>
+        <span className="mr-mono" title={!state.sidecar.up ? "Claude Code isn't connected" : state.sidecar.claude ? `Claude Code: ${state.sidecar.claude}` : "Claude Code isn't installed"} style={{ color: !state.sidecar.up ? "var(--mr-error)" : state.sidecar.claude ? "var(--mr-done)" : "var(--mr-needs)" }}>●</span>
       </header>
 
 
       <main style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20, padding: "16px 24px 24px" }}>
+        {state.sidecar.up && !state.sidecar.claude && <NoClaude />}
         {rows > 0 && (
           <section id="mr-needs" aria-label="Needs you" style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 12 }}>
             <h2 className="mr-h"><span style={{ color: queue.length ? "var(--mr-needs-ink)" : "var(--mr-ink-3)" }}>◆</span>Needs you<span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · S skip · R reply · X dismiss · ↵ open</span></h2>
@@ -157,7 +160,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
           <div className="mr-grid">
             {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} compactWindow={state.compactWindow} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
             <button type="button" className="mr-tile" onClick={() => onStart()} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
-              <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>⌘K</kbd>Start something</span>
+              <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>{keyLabel("⌘K")}</kbd>Start something</span>
             </button>
           </div>
         </section>}
@@ -203,11 +206,11 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
       </main>
       <footer className="mr-band mr-row mr-dim" style={{ padding: "8px 24px", fontSize: 12 }}>
         {/* Calm footer (MR-53): one hint, the two places you go from here, and a quiet progress note. */}
-        <span>Right-click anything for actions · ⌘-click to go deeper</span>
+        <span>Right-click anything for actions · {keyLabel("⌘-click")} to go deeper</span>
         <span className="mr-grow" />
         {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-3)" }}>{daily.streak}/{daily.goal} days</span>}
         <button type="button" className="mr-link" onClick={() => api.report()}>Report a bug</button>
-        <button type="button" className="mr-link" onClick={onArchive}>Archive{archived ? ` (${archived})` : ""} <kbd className="mr-mono">⌘⇧A</kbd></button>
+        <button type="button" className="mr-link" onClick={onArchive}>Archive{archived ? ` (${archived})` : ""} <kbd className="mr-mono">{keyLabel("⌘⇧A")}</kbd></button>
         <Key k="⌘K" tone="primary" onClick={() => onStart()}>Start</Key>
       </footer>
     </div>
