@@ -170,7 +170,7 @@ export function WorkspaceSwitcher({ state, docs, active, onSwitch, onClose }: { 
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 480, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
         <input autoFocus className="mr-input" placeholder="Switch to…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter workspaces" style={{ margin: 10, fontSize: 16, background: "var(--mr-well)" }} />
         {list.map((x, i) => (
-          <button key={x.w.id} type="button" onClick={() => go(x.w.id)} onMouseEnter={() => setSel(i)} className="mr-row"
+          <button key={x.w.id} type="button" data-mr="WorkspaceOption" data-mr-source={x.w.id} aria-current={i === sel || undefined} onClick={() => go(x.w.id)} onMouseEnter={() => setSel(i)} className="mr-row"
             style={{ gap: 10, padding: "10px 14px", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", color: "var(--mr-ink)", background: i === sel ? "var(--mr-well)" : "transparent", boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
             <strong className="mr-grow">{x.w.name}{x.w.id === active ? <span className="mr-dim" style={{ fontWeight: 400 }}> · here</span> : null}</strong>
             {x.n > 0 && <span className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-needs)", fontWeight: 700 }}>{x.n} need you</span>}

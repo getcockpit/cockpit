@@ -13,6 +13,7 @@ function pt(...args: string[]): string {
   if (r.status !== 0) throw new Error(`pinchtab ${args.join(" ")}: ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
   return r.stdout;
 }
+const MOD = process.platform === "darwin" ? "Meta+" : "Control+";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Page-derived text is data only: it is matched against, never acted on beyond these checks.
@@ -48,11 +49,23 @@ const ui = {
     const n = await until(`find ${role} "${name}"`, () => ui.find(role, name, within));
     pt("click", n.ref);
   },
+  // Clicks until `tag` shows: a click that lands mid-render (a stale ref) is simply retried.
+  async clickUntil(role: string, name: string | RegExp, within: string | undefined, tag: string) {
+    await until(`${tag} after clicking ${role} "${name}"`, () => {
+      if (ui.count(`[data-mr="${tag}"]`) > 0) return;
+      pt("click", ui.find(role, name, within).ref);
+      throw new Error("not open yet");
+    }, 8000);
+  },
   async fill(name: string, text: string) {
     const n = await until(`find textbox "${name}"`, () => ui.find("textbox", name));
     pt("fill", n.ref, text);
   },
   async press(key: string) { pt("press", key); },
+  // A shortcut, with "Mod" for the platform's command key (⌘ on a Mac, Ctrl in Linux CI).
+  // PinchTab drops modifiers on punctuation and types unknown names as text, so ⌘, ⌘. and ⌥Space
+  // are unit-tested in ui/src/components/keys.test.ts instead; Space is " ".
+  async key(...combos: string[]) { for (const c of combos) { pt("press", c.replace(/\bMod\+/g, MOD)); await sleep(80); } },
   // Right-click at the element's centre: the Cockpit menu listens on the window (GodMode.tsx).
   async rightClick(role: string, name: string | RegExp) {
     const n = await until(`find ${role} "${name}"`, () => ui.find(role, name));
@@ -72,6 +85,15 @@ const ui = {
   gone: (role: string, name: string | RegExp) => until(`expected no ${role} "${name}"`, () => {
     if (snap().some((n) => n.role === role && (typeof name === "string" ? n.name.startsWith(name) : name.test(n.name)))) throw new Error("still there");
   }),
+  // Any CSS: rows marked aria-current, open dialogs, a pressed tab.
+  css: (css: string, n: number | ((n: number) => boolean)) => until(`expected ${typeof n === "number" ? n : "some"} ${css}`, () => {
+    const c = ui.count(css);
+    if (typeof n === "number" ? c !== n : !n(c)) throw new Error(`found ${c}`);
+  }),
+  // Which row of a component is selected (aria-current), by its data-mr-source.
+  selectedId: (tag: string) => pt("attr", `css:[aria-current="true"][data-mr="${tag}"]`, "data-mr-source").trim(),
+  // The selected row (aria-current) is this component.
+  selected: (tag: string) => until(`expected the selection on ${tag}`, () => { if (ui.count(`[aria-current="true"][data-mr="${tag}"]`) !== 1) throw new Error("not selected"); }),
   tags: (tag: string, n: number | ((n: number) => boolean)) => until(`expected ${typeof n === "number" ? n : "some"} [data-mr=${tag}]`, () => {
     const c = ui.count(`[data-mr="${tag}"]`);
     if (typeof n === "number" ? c !== n : !n(c)) throw new Error(`found ${c}`);
@@ -194,7 +216,7 @@ const flows: Flow[] = [
   { name: "J11 note a line in a session's diff", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
-    await ui.click("button", "Review", '[data-mr="ChangeMap"]');
+    await ui.clickUntil("button", "Review", '[data-mr="ChangeMap"]', "ReviewChanges");
     await ui.tags("ReviewChanges", 1);
     await ui.see("button", /Looks good · open a PR$/);
     await ui.clickCss('[data-mr="DiffView"] > div:nth-child(2) > div');
@@ -257,6 +279,572 @@ const flows: Flow[] = [
   { name: "Errors light the error lamp", run: async () => {
     await ui.open("broken");
     await ui.see("button", "1 error");
+  } },
+
+  // Keyboard (MR-152): every shortcut PinchTab can press, in the scenario it applies to.
+  { name: "Keys: ⌘K opens the picker from the wall and from a session, Esc closes it", run: async () => {
+    await ui.open("busy");
+    await ui.key("Mod+k");
+    await ui.tags("KindTile", (c) => c >= 4);
+    await ui.key("Escape");
+    await ui.tags("KindTile", 0);
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.tags("SessionName", 1);
+    await ui.key("Mod+k");
+    await ui.tags("KindTile", (c) => c >= 4);
+    await ui.key("Escape");
+    await ui.tags("KindTile", 0);
+    await ui.tags("SessionName", 1); // the picker's Esc didn't also leave the session
+  } },
+  { name: "Keys: ⌘1–9 in the picker pick the kind of session", run: async () => {
+    await ui.open("empty");
+    await ui.key("Mod+k");
+    await ui.css('[data-mr="KindTile"][aria-checked="true"]', 1);
+    for (const n of [2, 3, 1]) {
+      await ui.key(`Mod+${n}`);
+      await ui.css(`[data-mr="KindTile"]:nth-child(${n})[aria-checked="true"]`, 1);
+    }
+  } },
+  { name: "Keys: ⌘⇧A toggles the archive", run: async () => {
+    await ui.open("archive");
+    await ui.key("Mod+Shift+a");
+    await ui.tags("Archive", 1);
+    await ui.tags("ArchivedSession", 2);
+    await ui.key("Mod+Shift+a");
+    await ui.tags("Archive", 0);
+  } },
+  { name: "Keys: archive ↓/↑ move, Enter opens, Esc closes", run: async () => {
+    await ui.open("archive");
+    await ui.click("button", /^Archive/);
+    await ui.tags("Archive", 1);
+    const first = await until("a selected row", () => ui.selectedId("ArchivedSession"));
+    await ui.key("ArrowDown");
+    await until("selection moved down", () => { if (ui.selectedId("ArchivedSession") === first) throw new Error("didn't move"); });
+    await ui.key("ArrowUp");
+    await until("selection back up", () => { if (ui.selectedId("ArchivedSession") !== first) throw new Error("didn't move back"); });
+    await ui.key("Escape");
+    await ui.tags("Archive", 0);
+    await ui.click("button", /^Archive/);
+    await ui.key("Enter");
+    await ui.tags("Archive", 0);
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: ⌘2 / ⌘1 switch workspaces, ⌘ with no such workspace does nothing", run: async () => {
+    await ui.open("busy");
+    await ui.key("Mod+2");
+    await ui.see("button", "1 need you");
+    await ui.key("Mod+3");
+    await ui.see("button", "1 need you");
+    await ui.key("Mod+1");
+    await ui.see("button", "4 need you");
+  } },
+  { name: "Keys: ⌃Tab and ⌃⇧Tab cycle workspaces, wrapping", run: async () => {
+    await ui.open("busy");
+    await ui.key("Control+Tab");
+    await ui.see("button", "1 need you");
+    await ui.key("Control+Tab");
+    await ui.see("button", "4 need you");
+    await ui.key("Control+Shift+Tab");
+    await ui.see("button", "1 need you");
+  } },
+  { name: "Keys: workspaces don't switch under an open dialog", run: async () => {
+    await ui.open("busy");
+    await ui.key("Mod+k");
+    await ui.tags("KindTile", (c) => c >= 4);
+    await ui.key("Control+Tab", "Mod+2", "Escape");
+    await ui.see("button", "4 need you");
+  } },
+  { name: "Keys: ⌘J opens the switcher, ↓ Enter switches, Esc closes", run: async () => {
+    await ui.open("busy");
+    await ui.key("Mod+j");
+    await ui.tags("WorkspaceSwitcher", 1);
+    await ui.key("Escape");
+    await ui.tags("WorkspaceSwitcher", 0);
+    await ui.key("Mod+j");
+    await ui.selected("WorkspaceOption");
+    await ui.key("ArrowDown");
+    await ui.css('[data-mr="WorkspaceOption"][data-mr-source="ws_client"][aria-current="true"]', 1);
+    await ui.key("ArrowUp", "ArrowDown", "Enter");
+    await ui.tags("WorkspaceSwitcher", 0);
+    await ui.see("button", "1 need you");
+  } },
+  { name: "Keys: ⌘⇧G turns god mode on and off, Esc leaves it", run: async () => {
+    await ui.open("busy");
+    for (const off of ["Mod+Shift+g", "Escape"]) {
+      await ui.key("Mod+Shift+g");
+      await ui.css("[data-godmode-ui]", some);
+      await ui.key(off);
+      await ui.css("[data-godmode-ui]", 0);
+    }
+  } },
+  { name: "Keys: T flips Wall ↔ Timeline, not while typing or inside a session", run: async () => {
+    await ui.open("busy");
+    await ui.key("t");
+    await ui.tags("TimelineSummary", 1);
+    await ui.key("t");
+    await ui.tags("TimelineSummary", 0);
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.tags("SessionName", 1);
+    await ui.key("t");
+    await sleep(300);
+    await ui.tags("TimelineSummary", 0);
+    await ui.key("Escape");
+    await ui.tags("SessionName", 0);
+    await ui.fill("Answer in your own words", "t");
+    await sleep(300);
+    await ui.tags("TimelineSummary", 0);
+  } },
+  { name: "Keys: Wall J/K move the selection across the queue and suggestions", run: async () => {
+    await ui.open("busy");
+    await ui.selected("DocQuestion");
+    await ui.key("j", "j");
+    await ui.selected("CommandCard");
+    await ui.key("j");
+    await ui.selected("QuestionCard");
+    await ui.key("j");
+    await ui.selected("Suggestion");
+    for (let i = 0; i < 8; i++) await ui.key("j");
+    await ui.selected("Suggestion"); // stops at the last row
+    for (let i = 0; i < 10; i++) await ui.key("k");
+    await ui.css('[data-mr="DocQuestion"][data-mr-source="doc1:b5"][aria-current="true"]', 1);
+  } },
+  { name: "Keys: Wall A allows the selected command", run: async () => {
+    await ui.open("busy");
+    await ui.key("a"); // a doc question is selected: A does nothing there
+    await ui.tags("CommandCard", 1);
+    await ui.key("j", "j", "a");
+    await ui.tags("CommandCard", 0);
+    await ui.see("button", "3 need you");
+  } },
+  { name: "Keys: Wall D denies the selected command", run: async () => {
+    await ui.open("busy");
+    await ui.key("j", "j", "d");
+    await ui.tags("CommandCard", 0);
+    await ui.see("button", "3 need you");
+  } },
+  { name: "Keys: Wall S skips the selected question", run: async () => {
+    await ui.open("busy");
+    await ui.key("j", "j", "j", "s");
+    await ui.tags("QuestionCard", 0);
+    await ui.see("button", "3 need you");
+  } },
+  { name: "Keys: Wall 1–9 answer the selected doc question, S skips one", run: async () => {
+    await ui.open("busy");
+    await ui.key("2");
+    await ui.tags("DocQuestion", 1);
+    await ui.see("button", "3 need you");
+    await ui.key("s");
+    await ui.tags("DocQuestion", 0);
+    await ui.see("button", "2 need you");
+  } },
+  { name: "Keys: Wall Enter opens the selected row", run: async () => {
+    await ui.open("busy");
+    await ui.key("Enter");
+    await ui.tags("DocBlock", some);
+    await ui.key("Escape");
+    await ui.tags("DocBlock", 0);
+    await ui.key("j", "j", "Enter");
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: Wall Enter acts on a suggestion, X dismisses it", run: async () => {
+    await ui.open("busy");
+    await ui.tags("Suggestion", 2);
+    await ui.key("j", "j", "j", "j", "j", "x");
+    await ui.tags("Suggestion", 1);
+    await ui.key("Enter");
+    await ui.tags("Suggestion", 0);
+  } },
+  { name: "Keys: Wall keys stay off while typing or under the picker", run: async () => {
+    await ui.open("busy");
+    await ui.key("Mod+k");
+    await ui.tags("KindTile", (c) => c >= 4);
+    await ui.key("Escape");
+    await ui.fill("Answer in your own words", "jjas");
+    await ui.tags("CommandCard", 1);
+    await ui.selected("DocQuestion");
+  } },
+  { name: "Keys: Esc leaves a session; with a draft it only leaves the box", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.tags("SessionName", 1);
+    await ui.fill("Message this session", "half a thought");
+    pt("focus", ui.find("textbox", "Message this session").ref);
+    await ui.key("Escape");
+    await sleep(300);
+    await ui.tags("SessionName", 1); // still here, draft kept
+    await ui.key("Escape");
+    await ui.tags("SessionName", 0);
+  } },
+  { name: "Keys: ⌘R toggles the raw transcript", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.see("button", key("R", "Raw transcript"));
+    await ui.key("Mod+r");
+    await ui.see("button", key("R", "Visual"));
+    await ui.key("Mod+r");
+    await ui.see("button", key("R", "Raw transcript"));
+  } },
+  { name: "Keys: ⌘⇧D marks a finished session done", run: async () => {
+    await ui.open("busy");
+    await ui.see("button", "1 to review");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.tags("SessionName", 1);
+    await ui.key("Mod+Shift+d");
+    await ui.see("button", "0 to review");
+  } },
+  { name: "Keys: ⌘⇧M opens the model picker, Esc closes only it", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.tags("SessionName", 1);
+    await ui.key("Mod+Shift+m");
+    await ui.css('[role="dialog"][aria-label="Model and effort"]', 1);
+    await ui.key("Escape");
+    await ui.css('[role="dialog"][aria-label="Model and effort"]', 0);
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: ⌘⇧U catches me up on a session", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.tags("SessionName", 1);
+    await ui.key("Mod+Shift+u");
+    await ui.tags("DocBlock", some);
+  } },
+  { name: "Keys: doc map Space walks, ←/→ step, O and Esc go back to the overview, Esc again leaves", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Open map ↵");
+    await ui.css('[data-mr="DocStep"][data-mr-source="0"]', 1);
+    await ui.key(" ");
+    await ui.css('[data-mr="DocStep"][data-mr-source="1"]', 1);
+    await ui.key("ArrowRight", "ArrowRight");
+    await ui.css('[data-mr="DocStep"][data-mr-source="3"]', 1);
+    await ui.key("ArrowLeft");
+    await ui.css('[data-mr="DocStep"][data-mr-source="2"]', 1);
+    await ui.key("o");
+    await ui.css('[data-mr="DocStep"][data-mr-source="0"]', 1);
+    await ui.key("ArrowRight", "Escape");
+    await ui.css('[data-mr="DocStep"][data-mr-source="0"]', 1);
+    await ui.key("Escape");
+    await ui.tags("DocBlock", 0);
+  } },
+  { name: "Keys: doc map ⌘↵ sends the notes", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Open map ↵");
+    await ui.click("button", "Open Scope");
+    await ui.fill("Note on this block", "Include refunds too");
+    await ui.press("Enter");
+    await ui.see("button", /Regenerate with 1 change$/);
+    await ui.key("Mod+Enter");
+    await ui.seeText("Changed in v3");
+  } },
+  { name: "Keys: timeline Enter handles the top waiting item", run: async () => {
+    await ui.open("timeline");
+    await ui.key("t");
+    await ui.tags("TimelineSummary", 1);
+    await ui.see("button", /^↵ Handle/);
+    await ui.key("Enter");
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: Settings ←/→ cycle tabs, Esc closes", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Settings");
+    await ui.tags("Look", 1);
+    const first = pt("attr", 'css:[data-mr="SettingsTab"][aria-selected="true"]', "data-mr-source").trim();
+    pt("press", ui.find("tab", "Look", '[aria-label="Settings sections"]').ref, "ArrowRight"); // focuses the tab list first
+    await until("next tab", () => { if (pt("attr", 'css:[data-mr="SettingsTab"][aria-selected="true"]', "data-mr-source").trim() === first) throw new Error("same tab"); });
+    await ui.key("ArrowLeft");
+    await until("back to the first tab", () => { if (pt("attr", 'css:[data-mr="SettingsTab"][aria-selected="true"]', "data-mr-source").trim() !== first) throw new Error("not back"); });
+    await ui.key("Escape");
+    await ui.tags("SettingsTab", 0);
+  } },
+  { name: "Keys: intro → / ← step through, Esc skips it", run: async () => {
+    await ui.open("fresh");
+    await ui.css('[data-mr="Onboarding"][data-mr-source="The wall"]', 1);
+    await ui.key("ArrowRight");
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Pictures"]', 1);
+    await ui.key("ArrowRight", "ArrowLeft");
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Pictures"]', 1);
+    await ui.key("Escape");
+    await ui.tags("Onboarding", 0);
+  } },
+  { name: "Keys: intro A / D answer its demo permission", run: async () => {
+    for (const [k, after] of [["a", "Pushing…"], ["d", "Okay, pushing to a branch instead"]]) {
+      await ui.open("fresh");
+      await ui.see("button", "A Allow");
+      await ui.key(k);
+      await ui.gone("button", "A Allow");
+      await ui.seeText(after);
+    }
+  } },
+  { name: "Keys: intro Enter on the last step closes it", run: async () => {
+    await ui.open("fresh");
+    for (let i = 0; i < 5; i++) await ui.key("ArrowRight");
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Go"]', 1);
+    await ui.key("Enter");
+    await ui.tags("Onboarding", 0);
+    // With no sessions yet the wall's own quick start takes over; how often to ask comes first.
+    await ui.tags("PermissionPrompt", 1);
+  } },
+  { name: "Keys: permission prompt Enter picks Only when it's risky", run: async () => {
+    await ui.open("permissions");
+    await ui.tags("PermissionPrompt", 1);
+    await ui.key("Enter");
+    await ui.tags("PermissionPrompt", 0);
+  } },
+  { name: "Keys: Esc on the Never ask disclaimer keeps asking", run: async () => {
+    await ui.open("permissions");
+    await ui.clickCss('[data-mr="PermissionOption"][data-mr-source="never"]');
+    await ui.tags("NeverAskDisclaimer", 1);
+    await ui.key("Escape");
+    await ui.tags("NeverAskDisclaimer", 0);
+    await ui.tags("PermissionPrompt", 1);
+  } },
+  { name: "Keys: review overview J/K move, Enter opens a point, N raises it", run: async () => {
+    await ui.open("review-overview");
+    await ui.click("button", "↵ Continue review");
+    await ui.tags("ReviewOverview", 1);
+    await ui.css('[data-mr="ReviewPoint"][data-mr-source$=":0"][aria-current="true"]', 1);
+    await ui.key("j");
+    await ui.css('[data-mr="ReviewPoint"][data-mr-source$=":1"][aria-current="true"]', 1);
+    await ui.key("k");
+    await ui.css('[data-mr="ReviewPoint"][data-mr-source$=":0"][aria-current="true"]', 1);
+    await ui.key("Enter");
+    await ui.see("button", "N Raise it in the review");
+    await ui.key("n");
+    await ui.see("button", "N Raised ✓ · undo");
+    await ui.key("Enter");
+    await ui.gone("button", /^N Raise/);
+  } },
+  { name: "Keys: review overview Space starts the walkthrough", run: async () => {
+    await ui.open("review-overview");
+    await ui.click("button", "↵ Continue review");
+    await ui.see("button", /^space Start walkthrough/);
+    await ui.key(" ");
+    await ui.gone("button", /^space Start walkthrough/);
+  } },
+  { name: "Keys: review snippet 1–9 note findings, Space asks for the next one", run: async () => {
+    await ui.open("review");
+    await ui.click("button", "↵ Continue review");
+    await ui.see("button", "1 Note it");
+    await ui.key("1");
+    await ui.see("button", "1 Noted ✓ · undo");
+    await ui.key("1");
+    await ui.see("button", "1 Note it");
+    await ui.key(" ");
+    await ui.seeText("Snippet 2 of 3"); // the demo draws it at once
+  } },
+  { name: "Keys: review ← / → look back at a snippet and return", run: async () => {
+    await ui.open("review");
+    await ui.click("button", "↵ Continue review");
+    await ui.see("button", "space Next snippet");
+    await ui.key("ArrowRight"); // snippet 2 isn't drawn yet: asks Claude for it
+    await ui.seeText("Snippet 2 of 3");
+    await ui.key("ArrowLeft"); // back to snippet 1, looking back
+    await ui.seeText("Snippet 1 of 3");
+    await ui.see("button", /^space Back to snippet 2/);
+    await ui.key(" "); // Space returns to where Claude is
+    await ui.see("button", "space Next snippet");
+  } },
+  { name: "Keys: address a / b / c pick a fix for the thread", run: async () => {
+    await ui.open("address");
+    await ui.click("button", "↵ Continue");
+    await ui.see("button", /^a Stream with a cursor/);
+    await ui.key("b");
+    await ui.see("button", /^export\.ts:30 .*queued/);
+  } },
+  { name: "Keys: Esc in the review-changes view goes back to the session, J/K switch files", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.clickUntil("button", "Review", '[data-mr="ChangeMap"]', "ReviewChanges");
+    await ui.tags("ReviewChanges", 1);
+    await ui.key("j");
+    await ui.key("k");
+    await ui.key("Escape");
+    await ui.tags("ReviewChanges", 0);
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: ⌘↵ in review-changes sends the line notes", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.clickUntil("button", "Review", '[data-mr="ChangeMap"]', "ReviewChanges");
+    await ui.clickCss('[data-mr="DiffView"] > div:nth-child(2) > div');
+    await ui.fill("Note on line", "Guard against a missing user");
+    await ui.press("Enter");
+    await ui.see("button", /Send 1 note$/);
+    await ui.key("Mod+Enter");
+    await ui.tags("Toast", some);
+  } },
+  { name: "Keys: ⌥1–3 send a suggested reply", run: async () => {
+    await ui.open("view");
+    await ui.click("button", "Open Where are we on the settings refactor?");
+    await ui.see("button", /^Add the shim/);
+    await ui.key("Alt+2");
+    await ui.tags("UserText", some);
+    await until("the reply was sent", () => { if (!ui.text('[data-mr="UserText"]').includes("Bump the minimum version")) throw new Error("not in the transcript"); });
+  } },
+  { name: "Keys: lightbox ← / → page, 0 fits, Esc closes", run: async () => {
+    await ui.open("view");
+    await ui.click("button", "Open Where are we on the settings refactor?");
+    await ui.click("button", "Open inline image");
+    await ui.tags("Lightbox", 1);
+    await ui.css('[data-mr="LightboxIndex"][data-mr-source="0"]', 1);
+    await ui.key("ArrowRight");
+    await ui.css('[data-mr="LightboxIndex"][data-mr-source="1"]', 1);
+    await ui.key("ArrowLeft");
+    await ui.css('[data-mr="LightboxIndex"][data-mr-source="0"]', 1);
+    const b = Object.fromEntries([...pt("box", "css:[data-mr=Lightbox] img").matchAll(/(\w+):(-?[\d.]+)/g)].map(([, k, v]) => [k, Number(v)]));
+    pt("mouse", "move", "--x", String(b.x + b.width / 2), "--y", String(b.y + b.height / 2));
+    pt("mouse", "wheel", "--dy", "-400");
+    await ui.css('[data-mr="LightboxZoom"]:not([data-mr-source="100"])', 1);
+    await ui.key("0");
+    await ui.css('[data-mr="LightboxZoom"][data-mr-source="100"]', 1);
+    await ui.key("Escape");
+    await ui.tags("Lightbox", 0);
+    await ui.tags("SessionName", 1); // Esc closed the lightbox, not the session
+  } },
+  { name: "Keys: lightbox A / R give a verdict, C goes to the comment, Esc there only leaves it", run: async () => {
+    await ui.open("view");
+    await ui.click("button", "Open Where are we on the settings refactor?");
+    await ui.clickUntil("button", "Open inline image", '[data-mr="ImageGallery"]', "Lightbox");
+    await ui.tags("LightboxNotes", 1);
+    const verdict = (v: string) => until(`verdict ${v}`, () => { if (!ui.text('[data-mr="LightboxNotes"] [data-mr="VerdictTag"]').includes(v)) throw new Error("other verdict"); });
+    await ui.key("a");
+    await verdict("Approved");
+    await ui.key("r");
+    await verdict("Rejected");
+    await ui.key("c", "a"); // typing in the comment: A is a letter there, not Approve
+    await sleep(200);
+    await verdict("Rejected");
+    await ui.key("Escape");
+    await ui.tags("Lightbox", 1);
+    await ui.key("Escape");
+    await ui.tags("Lightbox", 0);
+  } },
+  { name: "Keys: lightbox P / D / W / B pick the tool, U undoes a mark", run: async () => {
+    await ui.open("view");
+    await ui.click("button", "Open Where are we on the settings refactor?");
+    await ui.clickUntil("button", "Open inline image", '[data-mr="ImageGallery"]', "Lightbox");
+    for (const [k, label] of [["d", "Draw"], ["w", "Arrow"], ["b", "Box"], ["p", "Pin"]]) {
+      await ui.key(k);
+      await until(`${label} picked`, () => { if (!ui.text('[data-mr="LightboxNotes"] [aria-pressed="true"]').includes(label)) throw new Error("other tool"); });
+    }
+    const b = Object.fromEntries([...pt("box", "css:[data-mr=Lightbox] img").matchAll(/(\w+):(-?[\d.]+)/g)].map(([, k, v]) => [k, Number(v)]));
+    // A box (B, picked last but one) is a mark Undo can take back; a pin is a note with its own ×.
+    await ui.key("b");
+    const from = ["--x", String(b.x + b.width / 4), "--y", String(b.y + b.height / 4)];
+    const to = ["--x", String(b.x + b.width / 2), "--y", String(b.y + b.height / 2)];
+    pt("mouse", "move", ...from);
+    pt("mouse", "down", ...from);
+    pt("mouse", "move", ...to);
+    pt("mouse", "up", ...to);
+    pt("press", "Enter"); // leaves the new box's label field
+    await sleep(200);
+    await ui.see("button", "u Undo");
+    await ui.key("u");
+    await ui.gone("button", "u Undo");
+  } },
+  { name: "Keys: message box Enter sends, ↑ on an empty box recalls it", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.fill("Message this session", "Add a changelog entry");
+    pt("press", ui.find("textbox", "Message this session").ref, "Enter");
+    await until("the message was sent", () => { if (!ui.text('[data-mr="UserText"]').includes("Add a changelog entry")) throw new Error("not in the transcript"); });
+    await until("box cleared", () => { if (pt("text", "css:[data-mr=PromptBox] textarea").trim()) throw new Error("box not empty"); });
+    pt("press", ui.find("textbox", "Message this session").ref, "ArrowUp");
+    await until("history recalled", () => { if (!pt("html", "css:[data-mr=PromptBox] textarea").includes("Add a changelog entry")) throw new Error("not recalled"); });
+  } },
+  { name: "Keys: / opens the command menu, Esc closes it without leaving the session", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    const box = ui.find("textbox", "Message this session").ref;
+    pt("press", box, "/");
+    await ui.tags("SlashMenu", 1);
+    await ui.key("ArrowDown", "Escape");
+    await ui.tags("SlashMenu", 0);
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: /mcp opens the MCP panel, Esc closes it", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.fill("Message this session", "/mcp");
+    pt("press", ui.find("textbox", "Message this session").ref, "Enter");
+    await ui.tags("McpPanel", 1);
+    await ui.key("Escape");
+    await ui.tags("McpPanel", 0);
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: picker ↓ / Enter pick a PR to address", run: async () => {
+    await ui.open("busy");
+    await ui.key("Mod+k");
+    await ui.click("radio", "Address");
+    await ui.see("button", "#479 Billing CSV export");
+    await ui.key("Enter"); // the first PR is selected
+    await ui.tags("AskRepo", 1);
+  } },
+  { name: "Keys: Enter in the quick start starts a session", run: async () => {
+    await ui.open("empty");
+    await ui.key("x"); // the weekly suggestion hides the quick start
+    await ui.tags("QuickStart", 1);
+    await ui.fill("What should Claude do?", "Add a health check endpoint");
+    pt("press", ui.find("textbox", "What should Claude do?").ref, "Enter");
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: god mode ⌘↵ saves the mark and starts a fix", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Report a bug");
+    await ui.fill("What's wrong", "Archive opens empty");
+    pt("press", ui.find("textbox", "What's wrong").ref, MOD + "Enter");
+    await ui.see("button", "Fix: Archive opens empty");
+  } },
+  { name: "Keys: ⌘⌥⇧B opens the builds, Esc closes them", run: async () => {
+    await ui.open("busy");
+    await ui.key("Mod+Alt+Shift+b");
+    await ui.tags("Builds", 1);
+    await ui.key("Escape");
+    await ui.tags("Builds", 0);
+  } },
+  { name: "Keys: ⌘⇧B updates the app from main", run: async () => {
+    await ui.open("busy&update=1");
+    await ui.css('[data-mr="UpdateBanner"]', 1);
+    const before = pt("attr", 'css:[data-mr="UpdateBanner"]', "data-mr-source").trim();
+    await ui.key("Mod+Shift+b");
+    await until("the update started", () => { if (pt("attr", 'css:[data-mr="UpdateBanner"]', "data-mr-source").trim() === before) throw new Error(`still ${before}`); });
+  } },
+  { name: "Keys: ⌘T toggles a session's terminal", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.see("button", key("T", "Open in terminal"));
+    await ui.key("Mod+t");
+    await ui.see("button", key("T", "Back to visual"));
+    await ui.key("Mod+t");
+    await ui.see("button", key("T", "Open in terminal"));
+  } },
+  { name: "Keys: Shift+Enter is a new line, not a send", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.fill("Message this session", "first line");
+    pt("press", ui.find("textbox", "Message this session").ref, "Shift+Enter");
+    await sleep(300);
+    await ui.tags("UserText", 0);
+    await until("the draft is still there", () => { if (!pt("html", "css:[data-mr=PromptBox] textarea").includes("first line")) throw new Error("draft gone"); });
+  } },
+  { name: "Keys: Tab completes a slash command", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    pt("press", ui.find("textbox", "Message this session").ref, "/");
+    await ui.tags("SlashMenu", 1);
+    await ui.key("Tab");
+    await ui.tags("SlashMenu", 0);
+    await until("a command filled in", () => { if (!/\/\w+/.test(pt("html", "css:[data-mr=PromptBox] textarea"))) throw new Error("no command in the box"); });
+    await ui.tags("SessionName", 1);
+  } },
+  { name: "Keys: Esc closes the delete-workspace dialog", run: async () => {
+    await ui.open("busy");
+    await ui.rightClick("button", "Client A");
+    await ui.click("menuitem", "Delete workspace…");
+    await ui.tags("DeleteWorkspace", 1);
+    await ui.key("Escape");
+    await ui.tags("DeleteWorkspace", 0);
+    await ui.see("button", "Client A");
   } },
 ];
 

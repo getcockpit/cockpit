@@ -222,9 +222,9 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <div style={bar}>
           <strong className="mr-ellipsis" style={{ minWidth: 0 }}>{im?.caption || im?.name}</strong>
-          {images.length > 1 && <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{i + 1} / {images.length}</span>}
+          {images.length > 1 && <span className="mr-mono mr-dim" data-mr="LightboxIndex" data-mr-source={String(i)} style={{ fontSize: 12 }}>{i + 1} / {images.length}</span>}
           <span className="mr-grow" />
-          <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{Math.round(view.s * 100)}%</span>
+          <span className="mr-mono mr-dim" data-mr="LightboxZoom" data-mr-source={String(Math.round(view.s * 100))} style={{ fontSize: 12 }}>{Math.round(view.s * 100)}%</span>
           <Key k="0" onClick={() => setView({ s: 1, x: 0, y: 0 })}>Fit</Key>
           {images.length > 1 && <><Key onClick={() => go(i - 1)}>←</Key><Key onClick={() => go(i + 1)}>→</Key></>}
           <Key k="esc" onClick={onClose}>Close</Key>

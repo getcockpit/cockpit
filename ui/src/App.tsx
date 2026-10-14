@@ -1,7 +1,6 @@
 import { BuildReadyBanner } from "./components/BuildReadyBanner";
 import { RecoveryBanner } from "./components/RecoveryBanner";
-import { keyOf } from "./components/keys";
-import { modKey } from "./platform";
+import { appKey } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2 } from "./picker/pick";
 import { DeleteWorkspace, WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
@@ -137,26 +136,22 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (modKey(e) && keyOf(e) === "k") { e.preventDefault(); setPicker(true); }
-      if (modKey(e) && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
-      if (modKey(e) && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
-      if (modKey(e) && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
-      // ⌘⇧B updates the app from main (decision 27); ⌘⌥⇧B still opens the build history.
-      if (modKey(e) && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); if (e.altKey) setBuilds((x) => (x === null ? "" : null)); else void startUpdate().catch(() => {}); }
-      if (modKey(e) && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
-        const ws = all.workspaces[Number(keyOf(e)) - 1];
-        if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); switchTo(ws.id); }
-      }
-      // ⌃Tab / ⌃⇧Tab cycle workspaces like browser tabs; ⌘J opens the switcher (MR-55).
-      if (e.ctrlKey && keyOf(e) === "Tab" && all.workspaces.length > 1 && !document.querySelector('[role="dialog"]')) {
-        e.preventDefault();
+      const a = appKey(e, { workspaces: all.workspaces.length, screen: docId ? "doc" : focus ? "focus" : "wall", dialog: !!document.querySelector('[role="dialog"]') });
+      if (!a) return;
+      e.preventDefault();
+      if (a.do === "picker") setPicker(true);
+      else if (a.do === "god") setGod((x) => !x);
+      else if (a.do === "settings") setSettings((x) => !x);
+      else if (a.do === "archive") setArchive((x) => !x);
+      else if (a.do === "update") void startUpdate().catch(() => {});
+      else if (a.do === "builds") setBuilds((x) => (x === null ? "" : null));
+      else if (a.do === "workspace") switchTo(all.workspaces[a.index].id);
+      else if (a.do === "cycle") {
         const i = all.workspaces.findIndex((w) => w.id === workspace);
-        switchTo(all.workspaces[(i + (e.shiftKey ? -1 : 1) + all.workspaces.length) % all.workspaces.length].id);
+        switchTo(all.workspaces[(i + a.by + all.workspaces.length) % all.workspaces.length].id);
       }
-      if (modKey(e) && keyOf(e) === "j") { e.preventDefault(); setSwitcher((x) => !x); }
-      // T switches Wall ↔ Timeline, only on those screens and never while typing.
-      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
-      if (keyOf(e) === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing && !focus && !docId && !document.querySelector('[role="dialog"]')) { e.preventDefault(); setWallView(wallView === "wall" ? "timeline" : "wall"); }
+      else if (a.do === "switcher") setSwitcher((x) => !x);
+      else if (a.do === "wallView") setWallView(wallView === "wall" ? "timeline" : "wall");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

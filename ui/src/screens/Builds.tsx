@@ -34,8 +34,15 @@ export function Builds({ defaultWorktree, onClose }: { defaultWorktree?: string;
   const relaunch = (id: string) => invoke("selfbuild_relaunch", { buildId: id }).catch((e) => setError(shortError(e)));
   const running = progress && progress.ok === undefined;
 
+  // Esc closes it wherever focus is: ⌘⌥⇧B opens it without moving focus inside (MR-152).
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+
   return (
-    <div role="dialog" className="mr-scrim" aria-label="Builds" onKeyDown={(e) => e.key === "Escape" && onClose()}
+    <div role="dialog" className="mr-scrim" aria-label="Builds" data-mr="Builds"
       style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "80px 24px", background: "rgba(21,24,27,.35)", zIndex: 20 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 760, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>

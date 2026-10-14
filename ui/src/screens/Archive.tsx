@@ -48,7 +48,7 @@ export function Archive({ sessions, onOpen, onClose }: { sessions: SessionState[
             return (
               <div key={s.id}>
                 {head && <div className="mr-h" style={{ padding: "12px 4px 6px" }}>{head}</div>}
-                <div data-mr="ArchivedSession" data-mr-source={s.id} className="mr-row" onMouseEnter={() => setSel(i)} onClick={() => onOpen(s.id)}
+                <div data-mr="ArchivedSession" data-mr-source={s.id} aria-current={i === sel || undefined} className="mr-row" onMouseEnter={() => setSel(i)} onClick={() => onOpen(s.id)}
                   style={{ padding: "10px 12px", gap: 12, cursor: "pointer", background: i === sel ? "var(--mr-well)" : "transparent", boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
                   <StateMark s={pickTile(s).state === "error" ? "error" : "done"} />
                   <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
