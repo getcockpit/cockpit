@@ -51,3 +51,23 @@ test("weekly usage review: owner only, once per ISO week, gone once run or dismi
   const ran = replay([{ id: "A1", session_id: "s", kind: "ui.session_requested", payload: { prompt: "/mr-usage-review", cwd: "/repo" }, anchor: null, created_at: mon }]);
   expect(suggest(ran, [], none, new Set(), "/repo", mon)).toEqual([]);
 });
+
+test("doc lifecycle: shipped docs close in one click; a doc idle 3 days before building asks build or drop", () => {
+  const now = 10 * 86_400_000;
+  const base: Doc = { id: "d1", title: "Plan", session_id: null, version: 1, pending_notes: [], pending_changes: [], blocks: {} };
+  const state = replay([ev("A1", "ui.session_requested", { prompt: "build", cwd: "/w" }, "b1")]);
+  const none = { review: [], mine: [] };
+  const docs: Doc[] = [
+    { ...base, id: "fresh", title: "Fresh", updated_at: now - 86_400_000 },
+    { ...base, id: "old", title: "Old", updated_at: now - 4 * 86_400_000 },
+    { ...base, id: "building", title: "Building", updated_at: now - 9 * 86_400_000, build_sessions: ["b1"] },
+    { ...base, id: "s1", title: "One", shipped_at: now - 1 },
+    { ...base, id: "s2", title: "Two", shipped_at: now - 1 },
+  ];
+  const out = suggest(state, docs, none, new Set(), null, now);
+  expect(out.map((x) => x.why)).toEqual(["2 working docs shipped", "“Old” hasn't moved in 4 days"]);
+  expect(out[0].action).toEqual({ kind: "docs_done", ids: ["s1", "s2"] });
+  // A build that was archived no longer counts: the doc is back to waiting, so it's stalled too.
+  const dropped = replay([ev("A1", "ui.session_requested", { prompt: "build", cwd: "/w" }, "b1"), ev("A2", "ui.session_archived", {}, "b1")]);
+  expect(suggest(dropped, docs.slice(0, 3), none, new Set(), null, now).map((x) => x.why)).toEqual(["“Old” hasn't moved in 4 days", "“Building” hasn't moved in 9 days"]);
+});

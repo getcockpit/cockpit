@@ -10,7 +10,7 @@ import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
-import { isOpenQuestion, type Doc } from "../state/docs";
+import { docApi, docStage, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
 import { loadPrs as fetchPrs, PRS_TTL, startCwd } from "../state/prs";
@@ -67,6 +67,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
     if (a.kind === "open_session") onOpen(a.id);
     else if (a.kind === "open_doc") onOpenDoc(a.id);
     else if (a.kind === "build_mine") onBuild(await api.mineWorktree());
+    else if (a.kind === "docs_done") { for (const id of a.ids) { const d = docs.find((x) => x.id === id); if (d) await docApi.done(d); } }
     else if (a.kind === "usage_review") { onOpen(await api.start(a.repo, USAGE_REVIEW, "blank", false)); void api.log("ui.suggestion_dismissed", { id: g.id }); }
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
     else {
@@ -179,12 +180,13 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
               {docs.map((d) => {
                 const blocks = Object.values(d.blocks);
                 const open = blocks.filter(isOpenQuestion).length;
+                const stage = isBrief(d) ? null : docStage(d, state.sessions);
                 return (
-                  <button key={d.id} type="button" className="mr-tile" data-s={open ? "needs_you" : "working"} onClick={() => onOpenDoc(d.id)} style={{ minHeight: 96 }}>
+                  <button key={d.id} type="button" className="mr-tile" data-mr="DocTile" data-mr-source={d.id} data-s={open ? "needs_you" : stage === "shipped" ? "done" : "working"} onClick={() => onOpenDoc(d.id)} style={{ minHeight: 96 }}>
                     <div className="mr-flag" />
                     <div className="mr-tbody">
                       <strong style={{ fontSize: 15 }}>{d.title}</strong>
-                      <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>v{d.version} · {blocks.length} blocks{open ? ` · ${open} open question${open === 1 ? "" : "s"}` : ""}</span>
+                      <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>v{d.version} · {blocks.length} blocks{stage ? ` · ${STAGE_LABEL[stage]}` : ""}{open ? ` · ${open} open question${open === 1 ? "" : "s"}` : ""}</span>
                       <span className="mr-ink2 mr-ellipsis">{blocks.find((b) => b.section === "goal")?.takeaway ?? ""}</span>
                     </div>
                   </button>
