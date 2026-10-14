@@ -136,9 +136,9 @@ pub fn preview_merge(repo: &Path, tag: &str) -> Result<Option<Preview>, String> 
 }
 
 /// Merges a release tag into `mine`. Nothing changes on a conflict.
-pub fn merge_release(repo: &Path, tag: &str) -> Result<String, String> {
+pub fn merge_release(repo: &Path, rev: &str, tag: &str) -> Result<String, String> {
     let wt = mine_worktree(repo)?;
-    git(&wt, &["merge", "--no-edit", "-m", &format!("Merge release {tag}"), tag]).map_err(|e| {
+    git(&wt, &["merge", "--no-edit", "-m", &format!("Merge release {tag}"), rev]).map_err(|e| {
         let _ = git(&wt, &["merge", "--abort"]);
         format!("merge conflict with {tag}, nothing changed: {e}")
     })
@@ -146,14 +146,14 @@ pub fn merge_release(repo: &Path, tag: &str) -> Result<String, String> {
 
 /// Takes the release as it is: your changes are kept on `mine-before-<tag>`, `mine` moves to the
 /// tag. Refused while `mine` has uncommitted work, so nothing is lost. Returns the set-aside branch.
-pub fn set_aside(repo: &Path, tag: &str) -> Result<String, String> {
+pub fn set_aside(repo: &Path, rev: &str, tag: &str) -> Result<String, String> {
     let wt = mine_worktree(repo)?;
     if !git(&wt, &["status", "--porcelain"])?.is_empty() {
         return Err("your changes have uncommitted work; commit or discard it first".into());
     }
     let kept = format!("{BRANCH}-before-{tag}");
     git(repo, &["branch", "-f", &kept, BRANCH])?;
-    git(&wt, &["reset", "-q", "--hard", tag])?;
+    git(&wt, &["reset", "-q", "--hard", rev])?;
     Ok(kept)
 }
 
@@ -304,14 +304,14 @@ mod tests {
         let head = git(&mine, &["rev-parse", "HEAD"]).unwrap();
         assert_eq!(preview_merge(&repo, "v0.3.0").unwrap().unwrap().conflicts, vec!["a.txt"]);
         assert_eq!(git(&mine, &["rev-parse", "HEAD"]).unwrap(), head);
-        assert!(merge_release(&repo, "v0.3.0").is_err());
+        assert!(merge_release(&repo, "v0.3.0", "v0.3.0").is_err());
         assert_eq!(git(&mine, &["rev-parse", "HEAD"]).unwrap(), head);
-        merge_release(&repo, "v0.2.0").unwrap();
+        merge_release(&repo, "v0.2.0", "v0.2.0").unwrap();
         assert_eq!(std::fs::read_to_string(mine.join("b.txt")).unwrap(), "v2\n");
         assert_eq!(std::fs::read_to_string(mine.join("a.txt")).unwrap(), "mine\n");
         // Take the release: your changes stay on a branch.
         let merged = git(&mine, &["rev-parse", "HEAD"]).unwrap();
-        assert_eq!(set_aside(&repo, "v0.3.0").unwrap(), "mine-before-v0.3.0");
+        assert_eq!(set_aside(&repo, "v0.3.0", "v0.3.0").unwrap(), "mine-before-v0.3.0");
         assert_eq!(std::fs::read_to_string(mine.join("a.txt")).unwrap(), "release\n");
         assert_eq!(git(&repo, &["rev-parse", "mine-before-v0.3.0"]).unwrap(), merged);
         // History this repo doesn't share (the scrubbed public export) has nothing to merge.
