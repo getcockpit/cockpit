@@ -51,6 +51,19 @@ const ui = {
     pt("fill", n.ref, text);
   },
   async press(key: string) { pt("press", key); },
+  // Right-click at the element's centre: the Cockpit menu listens on the window (GodMode.tsx).
+  async rightClick(role: string, name: string | RegExp) {
+    const n = await until(`find ${role} "${name}"`, () => ui.find(role, name));
+    pt("scrollintoview", n.ref);
+    const b = Object.fromEntries([...pt("box", n.ref).matchAll(/(\w+):(-?[\d.]+)/g)].map(([, k, v]) => [k, Number(v)]));
+    const at = ["--x", String(b.x + b.width / 2), "--y", String(b.y + b.height / 2)];
+    pt("mouse", "move", ...at);
+    pt("mouse", "down", ...at, "--button", "right");
+    pt("mouse", "up", ...at, "--button", "right");
+  },
+  // For elements with no accessible role (diff lines).
+  async clickCss(css: string) { await until(`find ${css}`, () => pt("click", `css:${css}`)); },
+  seeText: (needle: string) => until(`expected text "${needle}"`, () => { if (!pt("text", "--full").includes(needle)) throw new Error("not on the page"); }),
   text: (css: string) => pt("text", `css:${css}`),
   // Expectations poll: the UI settles a beat after a click.
   see: (role: string, name: string | RegExp) => until(`expected ${role} "${name}"`, () => ui.find(role, name)),
@@ -109,7 +122,7 @@ const flows: Flow[] = [
   } },
   { name: "J5 open a finished session and see what it did", run: async () => {
     await ui.open("busy");
-    await ui.click("button", "Done Refactor the settings schema");
+    await ui.click("button", "Ready to review Refactor the settings schema");
     await ui.tags("SessionName", 1);
     await ui.tags("PlanPanel", 1);
     await ui.tags("ChangeMap", 1);
@@ -166,6 +179,69 @@ const flows: Flow[] = [
     await ui.click("button", /^Nightly backup check/);
     await ui.click("button", "Mark shipped");
     await ui.see("button", "Done, archive it");
+  } },
+  { name: "J10 right-click, mark as wrong, get a fix session", run: async () => {
+    await ui.open("busy");
+    await ui.rightClick("button", "4 need you");
+    await ui.click("menuitem", "Mark as wrong & fix…");
+    await ui.fill("What's wrong", "The lamp counts the doc questions twice");
+    await ui.click("button", /Save mark and fix it$/);
+    await ui.see("button", "Fix: The lamp counts the doc questions twice");
+  } },
+  { name: "J11 note a line in a session's diff", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.click("button", "Review", '[data-mr="ChangeMap"]');
+    await ui.tags("ReviewChanges", 1);
+    await ui.see("button", /Looks good · open a PR$/);
+    await ui.clickCss('[data-mr="DiffView"] > div:nth-child(2) > div');
+    await ui.fill("Note on line", "Guard against a missing user");
+    await ui.press("Enter");
+    await ui.click("button", /Send 1 note$/);
+    await ui.tags("Toast", some);
+  } },
+  { name: "J12 address a PR from the picker", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", key("K", "Start"));
+    await ui.click("radio", "Address");
+    await ui.see("button", "#479 Billing CSV export");
+    await ui.click("button", "#479 Billing CSV export");
+    // No clone known for acme/billing yet: it asks for the folder once (a native dialog from here).
+    await ui.tags("AskRepo", 1);
+  } },
+  { name: "J13 note a plan block and regenerate", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Open map ↵");
+    await ui.click("button", "Open Scope");
+    await ui.fill("Note on this block", "Include refunds too");
+    await ui.press("Enter");
+    await ui.click("button", /Regenerate with 1 change$/);
+    await ui.seeText("Changed in v3");
+    await ui.see("button", /Build from this doc$/);
+  } },
+  { name: "J14 report a bug and get a fix session", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Report a bug");
+    await ui.fill("What's wrong", "Archive opens empty");
+    await ui.click("button", /Save mark and fix it$/);
+    await ui.see("button", "Fix: Archive opens empty");
+  } },
+  { name: "J15 switch the theme in Settings", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Settings");
+    await ui.tags("Look", 1);
+    await ui.click("button", "Transit");
+    await until("theme applied", () => { const t = pt("attr", "html", "data-theme").trim(); if (t !== "transit") throw new Error(`data-theme is "${t}"`); });
+  } },
+  { name: "J16 delete a workspace by typing its name", run: async () => {
+    await ui.open("busy");
+    await ui.rightClick("button", "Client A");
+    await ui.click("menuitem", "Delete workspace…");
+    await ui.tags("DeleteWorkspace", 1);
+    await ui.fill("Workspace name to confirm", "Client A");
+    await ui.click("button", "Delete workspace", '[data-mr="DeleteWorkspace"]');
+    await ui.gone("button", "Client A");
+    await ui.tags("WorkspaceTab", 1);
   } },
   { name: "J17 switch workspaces", run: async () => {
     await ui.open("busy");
