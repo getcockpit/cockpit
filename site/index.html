@@ -40,7 +40,7 @@
   nav .links { margin-left: auto; display: flex; align-items: center; gap: 24px; font-size: 15px; }
   nav .links a { text-decoration: none; opacity: .78; }
   nav .links a:hover { opacity: 1; }
-  nav .links a.dl { opacity: 1; background: var(--needs); color: var(--ink); font-weight: 700; padding: 8px 14px; }
+  nav .links a.nav-dl { opacity: 1; background: var(--needs); color: var(--ink); font-weight: 700; padding: 8px 14px; }
 
   .hero { text-align: center; padding: 88px 0 36px; }
   .eyebrow { display: inline-flex; gap: 10px; align-items: center; font: 600 14px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--needs-ink); }
@@ -104,6 +104,10 @@
   .dl .req { color: var(--ink-3); font-size: 15px; margin-bottom: 14px; }
   .dl a.file { display: block; padding: 11px 13px; margin-top: 4px; background: var(--well); text-decoration: none; font: 600 14px var(--mono); }
   .dl a.file:hover { background: var(--needs); }
+  .dl a.file.main { padding: 14px 16px; font: 700 17px var(--font); background: var(--ink); color: #fff; }
+  .dl a.file.main:hover { background: var(--needs); color: var(--ink); }
+  .dl .me a.file.main { background: var(--needs); color: var(--ink); }
+  .dl .me a.file.main:hover { filter: brightness(1.05); }
   .dl .tip { font-size: 14px; color: var(--ink-3); margin-top: 12px; }
 
   details { background: var(--tile); padding: 20px 24px; margin-bottom: 4px; }
@@ -120,7 +124,7 @@
     .proof, .trust, .dl { grid-template-columns: 1fr 1fr; }
     .vs, .pair, .pair.tall { grid-template-columns: 1fr; }
     .step .head { grid-template-columns: 1fr; }
-    nav .links a:not(.dl) { display: none; }
+    nav .links a:not(.nav-dl) { display: none; }
   }
 </style>
 </head>
@@ -133,7 +137,7 @@
       <a href="#privacy">Privacy</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/getcockpit/cockpit">GitHub</a>
-      <a class="dl" href="#download">Download</a>
+      <a class="nav-dl" href="#download">Download</a>
     </div>
   </div>
 </nav>
@@ -266,7 +270,7 @@
   <div class="wrap">
     <h2>Up and running in 2 minutes.</h2>
     <p class="sub">You need Claude Code, signed in. Don't have it yet?</p>
-    <div class="term" style="position:relative"><button class="copy" data-copy="curl -fsSL https://getcockpit.github.io/install.sh | bash" type="button">Copy</button><span class="c"># 1. Claude Code, signed in once (skip if you have it)</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit: macOS or Linux, no security prompts</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
+    <div class="term" style="position:relative"><button class="copy" data-copy="curl -fsSL https://getcockpit.github.io/install.sh | bash" type="button">Copy Cockpit install</button><span class="c"># 1. Claude Code, signed in once (skip if you have it)</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit: macOS or Linux, no security prompts</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
     <p class="sub" style="margin:-8px 0 28px;font-size:18px">Prefer a normal download? Pick yours below.</p>
     <div class="dl">
       <div data-os="mac"><h3>macOS</h3><div class="req">macOS 11+ · Apple Silicon and Intel</div><div class="files" data-match="\.dmg$"></div><div class="tip">The one-line installer above skips the "unidentified developer" prompt. From the .dmg, run <code>xattr -dr com.apple.quarantine /Applications/Cockpit.app</code> once.</div></div>
@@ -313,6 +317,7 @@
   if (os) document.querySelector(`[data-os="${os}"]`).classList.add("me");
   const latest = "https://github.com/getcockpit/cockpit/releases/latest";
   const label = (n) => /\.dmg$/.test(n) ? "Disk image (.dmg) · Apple Silicon + Intel" : /setup\.exe$/.test(n) ? "Installer (.exe)" : /\.msi$/.test(n) ? "MSI package" : /\.AppImage$/.test(n) ? "AppImage" : /\.deb$/.test(n) ? "Debian / Ubuntu (.deb)" : /\.rpm$/.test(n) ? "Fedora / RHEL (.rpm)" : n;
+  const cta = (n) => /\.dmg$/.test(n) ? "Download .dmg" : /setup\.exe$/.test(n) ? "Download installer (.exe)" : /\.msi$/.test(n) ? ".msi package" : /\.AppImage$/.test(n) ? "Download AppImage" : /\.deb$/.test(n) ? ".deb for Debian / Ubuntu" : /\.rpm$/.test(n) ? ".rpm for Fedora / RHEL" : n;
   fetch("https://api.github.com/repos/getcockpit/cockpit/releases/latest")
     .then((r) => (r.ok ? r.json() : Promise.reject()))
     .then((rel) => {
@@ -320,7 +325,7 @@
         const re = new RegExp(box.dataset.match, "i");
         // The fixed-name copies (Cockpit-macos.dmg, Cockpit-linux-x86_64.AppImage, Cockpit-windows-x64-setup.exe) exist for install.sh and the in-app updater; list each build once.
         const assets = rel.assets.filter((a) => re.test(a.name) && !/^Cockpit-(macos|linux-x86_64|windows-x64-setup)\./.test(a.name)).sort((a, b) => /setup\.exe$/.test(b.name) - /setup\.exe$/.test(a.name));
-        box.innerHTML = assets.map((a) => `<a class="file" href="${a.browser_download_url}">↓ ${label(a.name)} · ${(a.size / 1e6).toFixed(0)} MB</a>`).join("") || `<a class="file" href="${latest}">See all downloads</a>`;
+        box.innerHTML = assets.map((a, i) => `<a class="file${i ? "" : " main"}" href="${a.browser_download_url}" data-label="${label(a.name)}">↓ ${cta(a.name)} · ${(a.size / 1e6).toFixed(0)} MB</a>`).join("") || `<a class="file" href="${latest}">See all downloads</a>`;
       });
       const mine = os && document.querySelector(`[data-os="${os}"] a.file`);
       for (const id of ["dl-main", "dl-final"]) {
@@ -336,9 +341,9 @@
   document.addEventListener("click", (e) => {
     const a = e.target.closest("a, button");
     if (!a) return;
-    if (a.classList.contains("file")) track(`download/${(a.textContent || "").replace(/[↓·]|\d+ MB/g, "").trim().toLowerCase().replace(/\W+/g, "-")}`);
+    if (a.classList.contains("file")) track(`download/${(a.dataset.label || a.textContent || "").replace(/[↓·]|\d+ MB/g, "").trim().toLowerCase().replace(/\W+/g, "-")}`);
     else if (a.id === "dl-main" || a.id === "dl-final") track(`cta/${a.id}`);
-    else if (a.classList.contains("copy")) { navigator.clipboard?.writeText(a.dataset.copy); a.textContent = "Copied"; track("install/copy"); }
+    else if (a.classList.contains("copy")) { navigator.clipboard?.writeText(a.dataset.copy); a.textContent = "Copied ✓"; track("install/copy"); }
     else if (/github\.com\/getcockpit/.test(a.href || "")) track(`github/${a.closest("nav, header, section, footer")?.id || a.closest("nav, footer")?.tagName.toLowerCase() || "page"}`);
   });
   const film = document.querySelector("#film video");
