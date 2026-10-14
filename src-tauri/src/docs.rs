@@ -55,6 +55,12 @@ pub struct Doc {
     /// Sessions started from it with Build it, oldest first (MR-118).
     #[serde(default)]
     pub build_sessions: Vec<String>,
+    /// When anything last happened to it (ms), so a doc that stalls before building shows (MR-151).
+    #[serde(default)]
+    pub updated_at: i64,
+    /// When its builds were merged, or you marked it shipped (MR-151, decision 38).
+    #[serde(default)]
+    pub shipped_at: Option<i64>,
 }
 
 #[derive(Default)]
@@ -79,6 +85,14 @@ impl Docs {
 }
 
 fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
+    let doc_id = ev.payload["doc_id"].as_str().unwrap_or_default().to_owned();
+    fold(docs, ev);
+    if let Some(doc) = docs.get_mut(&doc_id) {
+        doc.updated_at = doc.updated_at.max(ev.created_at);
+    }
+}
+
+fn fold(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
     let p = &ev.payload;
     let doc_id = p["doc_id"].as_str().unwrap_or_default().to_owned();
     match ev.kind.as_str() {
@@ -173,8 +187,15 @@ fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
                 doc.build_sessions.push(sid.clone());
             }
         }
-        // Deleting a doc hides it: the log keeps its events, the fold drops it.
-        "ui.doc_archived" => {
+        // Its builds merged (the core saw it) or you said so (MR-151).
+        "doc.shipped" | "ui.doc_shipped" => {
+            if let Some(doc) = docs.get_mut(&doc_id) {
+                doc.shipped_at.get_or_insert(ev.created_at);
+            }
+        }
+        // Deleting a doc hides it: the log keeps its events, the fold drops it. Done and Drop
+        // close it the same way; the kind says how it ended (MR-151).
+        "ui.doc_archived" | "ui.doc_done" | "ui.doc_dropped" => {
             docs.remove(&doc_id);
         }
         "ui.doc_feedback_sent" => {
@@ -428,6 +449,47 @@ mod tests {
         assert_eq!(doc.build_sessions, vec!["b1", "b2"]);
         assert_eq!(doc.session_id.as_deref(), Some("s1"));
     }
+
+    #[test]
+    fn a_doc_ships_once_and_done_or_drop_closes_it() {
+        let docs = Docs::default();
+        let mut n = 0;
+        let (text, _) = run(&docs, &mut n, "doc_create", json!({ "title": "T" }));
+        let id = text.split_whitespace().nth(2).unwrap().to_owned();
+        assert_eq!(docs.get(&id).unwrap().updated_at, 1);
+        docs.apply(&ev(20, "doc.shipped", json!({ "doc_id": id })));
+        docs.apply(&ev(21, "ui.doc_shipped", json!({ "doc_id": id })));
+        let d = docs.get(&id).unwrap();
+        assert_eq!((d.shipped_at, d.updated_at), (Some(20), 21));
+        docs.apply(&ev(22, "ui.doc_done", json!({ "doc_id": id })));
+        assert!(docs.get(&id).is_none());
+
+        let (text, _) = run(&docs, &mut n, "doc_create", json!({ "title": "U" }));
+        let id = text.split_whitespace().nth(2).unwrap().to_owned();
+        docs.apply(&ev(30, "ui.doc_dropped", json!({ "doc_id": id, "reason": "not needed" })));
+        assert!(docs.list().is_empty());
+    }
+
+    #[test]
+    fn a_branch_counts_as_merged_only_once_it_moved_and_landed() {
+        let dir = std::env::temp_dir().join(format!("mr-docs-merged-{}", ulid::Ulid::new()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| assert!(std::process::Command::new("git").arg("-C").arg(&dir).args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]).args(args).output().unwrap().status.success(), "{args:?}");
+        git(&["init", "-q", "-b", "main"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "a"]);
+        git(&["branch", "mr/fresh"]);
+        assert!(!branch_merged(&dir, "mr/fresh"), "a branch with no work of its own isn't shipped");
+        git(&["checkout", "-q", "-b", "mr/work"]);
+        git(&["commit", "-q", "--allow-empty", "-m", "b"]);
+        git(&["checkout", "-q", "main"]);
+        assert!(!branch_merged(&dir, "mr/work"), "not merged yet");
+        git(&["merge", "-q", "--no-ff", "mr/work", "-m", "merge"]);
+        assert!(branch_merged(&dir, "mr/work"));
+        git(&["branch", "-d", "mr/work"]);
+        assert!(branch_merged(&dir, "mr/work"), "deleted after merging");
+        assert!(!branch_merged(&dir.join("nope"), "mr/work"), "no repo, nothing shipped");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[tauri::command]
@@ -435,11 +497,79 @@ pub fn docs_list(docs: tauri::State<'_, Docs>) -> Vec<Doc> {
     docs.list()
 }
 
-/// Deletes a working doc for the user. The log is append-only, so it's hidden, not erased.
+/// Closes a working doc for the user: Done once it shipped, Drop when it won't be built, or a
+/// plain delete. The log is append-only, so it's hidden, not erased (MR-78, MR-151).
 #[tauri::command]
-pub fn doc_archive(app: tauri::AppHandle, docs: tauri::State<'_, Docs>, doc_id: String) -> Result<(), String> {
+pub fn doc_archive(app: tauri::AppHandle, docs: tauri::State<'_, Docs>, doc_id: String, outcome: Option<String>, reason: Option<String>) -> Result<(), String> {
     let doc = docs.get(&doc_id).ok_or("no such doc")?;
-    crate::eventlog::record(&app, doc.session_id.as_deref(), "ui.doc_archived", &json!({ "doc_id": doc.id, "title": doc.title }), Some(&format!("doc:{}", doc.id)));
+    let kind = match outcome.as_deref() {
+        Some("done") => "ui.doc_done",
+        Some("dropped") => "ui.doc_dropped",
+        _ => "ui.doc_archived",
+    };
+    let mut payload = json!({ "doc_id": doc.id, "title": doc.title });
+    if let Some(r) = reason.filter(|r| !r.trim().is_empty()) {
+        payload["reason"] = r.trim().into();
+    }
+    crate::eventlog::record(&app, doc.session_id.as_deref(), kind, &payload, Some(&format!("doc:{}", doc.id)));
+    Ok(())
+}
+
+/// A build of a doc, as the UI knows it: the repo and the worktree branch it works on.
+#[derive(serde::Deserialize)]
+pub struct BuildRef {
+    pub session_id: String,
+    pub repo: Option<String>,
+    pub branch: Option<String>,
+}
+
+/// Whether a build's branch is in the repo's main line: its tip is an ancestor of main and it
+/// moved past where it was created (a fresh branch is trivially an ancestor). A branch that's
+/// gone counts too: `git branch -d` only deletes merged branches, which is how builds end here.
+pub fn branch_merged(repo: &std::path::Path, branch: &str) -> bool {
+    let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(repo).args(args).output().ok();
+    let ok = |args: &[&str]| git(args).map(|o| o.status.success()).unwrap_or(false);
+    if !repo.join(".git").exists() {
+        return false;
+    }
+    let reference = format!("refs/heads/{branch}");
+    if !ok(&["rev-parse", "--verify", "--quiet", &reference]) {
+        return true;
+    }
+    let base = ["main", "master"].into_iter().find(|b| ok(&["rev-parse", "--verify", "--quiet", &format!("refs/heads/{b}")])).unwrap_or("HEAD");
+    let moved = git(&["reflog", "show", "--format=%H", &reference]).map(|o| String::from_utf8_lossy(&o.stdout).lines().count() > 1).unwrap_or(false);
+    moved && ok(&["merge-base", "--is-ancestor", &reference, base])
+}
+
+/// Marks a doc shipped once every live build's branch is merged (decision 38). The UI passes the
+/// builds it still counts (archived ones are dropped); a build without a branch can't be checked,
+/// so that doc waits for you to mark it. Returns whether it's shipped.
+#[tauri::command]
+pub async fn doc_check_shipped(app: tauri::AppHandle, doc_id: String, builds: Vec<BuildRef>) -> Result<bool, String> {
+    use tauri::Manager;
+    let doc = app.state::<Docs>().get(&doc_id).ok_or("no such doc")?;
+    if doc.shipped_at.is_some() {
+        return Ok(true);
+    }
+    if builds.is_empty() {
+        return Ok(false);
+    }
+    let Some(watched) = builds.iter().map(|b| Some((b.repo.clone()?, b.branch.clone()?))).collect::<Option<Vec<(String, String)>>>() else { return Ok(false) };
+    let all = tauri::async_runtime::spawn_blocking(move || watched.iter().all(|(repo, branch)| branch_merged(std::path::Path::new(repo), branch)))
+        .await
+        .map_err(|e| e.to_string())?;
+    if all {
+        let sessions: Vec<&str> = builds.iter().map(|b| b.session_id.as_str()).collect();
+        crate::eventlog::record(&app, doc.session_id.as_deref(), "doc.shipped", &json!({ "doc_id": doc.id, "title": doc.title, "sessions": sessions }), Some(&format!("doc:{}", doc.id)));
+    }
+    Ok(all)
+}
+
+/// You mark a doc shipped yourself: its build had no branch to watch, or shipped some other way.
+#[tauri::command]
+pub fn doc_mark_shipped(app: tauri::AppHandle, docs: tauri::State<'_, Docs>, doc_id: String) -> Result<(), String> {
+    let doc = docs.get(&doc_id).ok_or("no such doc")?;
+    crate::eventlog::record(&app, doc.session_id.as_deref(), "ui.doc_shipped", &json!({ "doc_id": doc.id, "title": doc.title }), Some(&format!("doc:{}", doc.id)));
     Ok(())
 }
 
