@@ -132,6 +132,7 @@ pub fn term_resize(terms: State<'_, Terminals>, session: String, cols: u16, rows
 mod tests {
     use super::*;
 
+    #[cfg(unix)] // on Windows `bash` can resolve to the WSL stub
     #[test]
     fn a_pty_runs_a_command_and_streams_its_output() {
         let pty = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();

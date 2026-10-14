@@ -70,7 +70,7 @@ mod tests {
         }
         let wt = create(&repo.join("."), "Add retry worker", "01ABCDEFGHJK").unwrap();
         assert_eq!(wt.branch, "mr/add-retry-worker-ghjk");
-        assert!(wt.path.starts_with(root.canonicalize().unwrap().join("demo-worktrees")), "{:?}", wt.path);
+        assert!(wt.path.canonicalize().unwrap().starts_with(root.canonicalize().unwrap().join("demo-worktrees")), "{:?}", wt.path);
         assert!(wt.path.join(".git").exists());
         assert_eq!(repo_root(&wt.path).unwrap().canonicalize().unwrap(), wt.path.canonicalize().unwrap());
         assert!(repo_root(&root).is_none());
