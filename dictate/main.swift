@@ -94,7 +94,7 @@ SFSpeechRecognizer.requestAuthorization { status in
                     let d = e.localizedDescription
                     let msg = d.contains("Siri and Dictation are disabled")
                         ? "Dictation is off. Turn it on in System Settings → Keyboard → Dictation, then try again."
-                        : d.contains("No speech detected") ? "Didn't hear anything. Hold ⌥ Space while you speak." : d
+                        : d.contains("No speech detected") ? "Didn't hear anything. Hold or tap ⌥ Space, then speak." : d
                     emit(["type": "error", "error": msg]); exit(4)
                 }
             }
