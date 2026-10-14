@@ -3,6 +3,8 @@ import { insertDropped } from "../picker/mention";
 
 // Files thrown into the app: dropped on a message box they land as @ mentions at the caret, so
 // Claude reads them (images too). Off a box, they go to the box in focus, else this session's.
+// A box that handles files itself (PromptBox: images attach with a thumbnail) takes the
+// `mr:files` event and cancels it.
 const BOX = "input.mr-input, textarea.mr-input";
 
 function boxAt(x: number, y: number): HTMLInputElement | HTMLTextAreaElement | null {
@@ -44,7 +46,7 @@ export function listenFileDrop(): () => void {
       mark(null);
       if (!p.paths.length) return;
       const box = at(p.position);
-      if (box) put(box, p.paths);
+      if (box && box.dispatchEvent(new CustomEvent("mr:files", { detail: p.paths, cancelable: true }))) put(box, p.paths);
       else window.dispatchEvent(new CustomEvent("mr:toast", { detail: "Drop files on a message box to send them to Claude" }));
     }
   }).then((u) => (gone ? u() : (stop = u))).catch(() => {});

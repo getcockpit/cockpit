@@ -17,11 +17,14 @@ export type CommandRow = { name: string; description: string; hint: string; alia
 // One MCP server as /mcp would show it (mcpServerStatus).
 export type McpServer = { name: string; status: string; source: string | null; scope: string | null; error: string | null; version: string | null; url: string | null; tools: string[] };
 export type McpAction = "reconnect" | "enable" | "disable";
+// A file sent with a message: pasted (saved under the data folder), dropped or picked. Images and
+// PDFs go to Claude as content blocks; anything else by path, for Claude to read.
+export type Attachment = { path: string; name: string; mime: string };
 
 export type Inbound =
   | { type: "ping"; id?: string }
-  | { type: "start"; session: string; cwd: string; prompt: string; resume?: string; model?: string; effort?: Effort; tools?: ToolSpec[]; append_system_prompt?: string; env?: Record<string, string> }
-  | { type: "send"; session: string; text: string }
+  | { type: "start"; session: string; cwd: string; prompt: string; resume?: string; model?: string; effort?: Effort; tools?: ToolSpec[]; append_system_prompt?: string; env?: Record<string, string>; attachments?: Attachment[] }
+  | { type: "send"; session: string; text: string; attachments?: Attachment[] }
   | { type: "interrupt"; session: string }
   // Mid-session switch; null goes back to Claude Code's default. Omitted keys stay as they are.
   | { type: "set_model"; session: string; model?: string | null; effort?: Effort | null }
