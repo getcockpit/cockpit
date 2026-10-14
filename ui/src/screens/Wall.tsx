@@ -247,6 +247,7 @@ function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState;
         </div>
         <div className="mr-row" style={{ gap: 8 }}>
           <span className="mr-mono mr-dim mr-ellipsis mr-grow" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
+          {s.goal && <span className="mr-mono" data-mr="GoalMark" data-mr-source={s.id} title={`Goal: ${s.goal.condition}`} style={{ fontSize: 12, color: "var(--mr-selected)" }}>◎ goal</span>}
           <ContextMeter s={s} compactWindow={compactWindow} running={false} slim />
         </div>
         {s.status === "working" || s.status === "starting"
