@@ -46,7 +46,7 @@ function runAgent(session: string, prompt: string) {
   later(400, () => record(session, "sidecar.session_started", { sdk_session_id: `sdk-${session}`, model: "claude-opus-5-5" }));
   later(900, () => sdk(session, { type: "assistant", message: { content: [{ type: "text", text: `On it: “${prompt.slice(0, 80)}”. Looking at the code first.` }, { type: "tool_use", id: "t1", name: "TodoWrite", input: { todos: todos(0) } }] } }));
   later(1700, () => sdk(session, { type: "assistant", message: { content: [{ type: "tool_use", id: "t2", name: "Read", input: { file_path: "src/app/routes.ts" } }] } }));
-  later(2600, () => sdk(session, { type: "assistant", message: { content: [{ type: "tool_use", id: "t3", name: "TodoWrite", input: { todos: todos(1) } }, { type: "tool_use", id: "t4", name: "Edit", input: { file_path: "src/app/routes.ts", old_string: "a\nb", new_string: "a\nb\nc\nd" } }] } }));
+  later(2600, () => sdk(session, { type: "assistant", message: { content: [{ type: "tool_use", id: "t3", name: "TodoWrite", input: { todos: todos(1) } }, { type: "tool_use", id: "t4", name: "Edit", input: { file_path: "src/app/routes.ts", old_string: "router.beforeEach(render);\nrouter.beforeEach(authGuard);", new_string: "// The guard must run first, or /login renders and bounces back\nrouter.beforeEach(authGuard);\nrouter.beforeEach(render);" } }] } }));
   later(3600, () => sdk(session, { type: "assistant", message: { content: [{ type: "tool_use", id: "t5", name: "TodoWrite", input: { todos: todos(2) } }] } }));
   later(4000, () => record(session, "sidecar.permission_request", { request_id: `p-${session}`, tool: "Bash", input: { command: "bun test", description: "Run the test suite" }, suggestions: null, decision_reason: null }));
 }
@@ -168,9 +168,18 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       const did = `doc_brief${Date.now().toString(36)}`;
       const blk = (bid: string, section: string, takeaway: string, key: string, body: string, order: number, view: unknown[], data: Doc["blocks"][string]["data"] = null) =>
         ({ id: bid, section, status: "", takeaway, key, body, data, order, decision: null, updated: "", view: view as never });
-      docs = [...docs, { id: did, title: "Catch-up: Fix the login redirect loop", session_id: sid, version: 1, kind: "brief", blocks: {}, pending_notes: [], pending_changes: [] }];
+      // The brief matches the session it's for (MR-139): the finished settings refactor, else the login fix.
+      const settings = sid === "D";
+      docs = [...docs, { id: did, title: settings ? "Catch-up: Refactor the settings schema" : "Catch-up: Fix the login redirect loop", session_id: sid, version: 1, kind: "brief", blocks: {}, pending_notes: [], pending_changes: [] }];
       record(sid, "doc.created", { doc_id: did, title: "Catch-up", kind: "brief" });
-      const steps: Doc["blocks"][string][] = [
+      const steps: Doc["blocks"][string][] = settings ? [
+        blk("where", "goal", "Settings refactor: all 4 steps done, ready to review", "Asked: one typed schema for settings", "Original ask [D01]: replace ad-hoc settings reads with one typed schema. Plan: 4 of 4 done.", 1, [{ type: "progress", n: 4, total: 4, label: "Ready to review" }]),
+        blk("done", "log", "Typed schema with defaults; three readers migrated", "2 files changed: schema.ts (new), read.ts", "- `src/settings/schema.ts` new zod schema with defaults\n- `src/settings/read.ts` parses through it; v1 files upgraded on read\n- No commit yet", 2, [{ type: "takeaway", heading: "Done", items: [{ title: "Typed schema with defaults", state: "done" }, { title: "Readers migrated", state: "done" }, { title: "Tests", state: "todo" }] }]),
+        blk("next", "design", "Next: run the tests, then open a PR", "Nothing is running now", "The session finished its turn and is waiting for you.", 3, [{ type: "steps", items: [{ text: "Run bun test" }, { text: "Open a PR" }] }]),
+        blk("q_1", "question", "Keep reading v1 settings files for one release?", "Claude assumed: upgrade them on read, forever", "Never asked; read.ts upgrades every v1 file silently.", 4, [], { options: [{ label: "One release, then drop", description: "Smaller code later" }, { label: "Forever", description: "As Claude did" }] }),
+        blk("risk_1", "risk", "\"All 211 tests pass\", but no test ran", "Not verified: the log has no test command", "The recap says all 211 tests pass. No test command appears anywhere in this session.", 5, [{ type: "risks", items: [{ risk: "Unverified done", mitigation: "Run bun test before the PR", level: "high" }] }]),
+        blk("risk_2", "risk", "Old desktop builds can't read the new format", "Claude flagged it; nothing handles it", "Settings written by this build break older desktop builds that sync the same file.", 6, [{ type: "risks", items: [{ risk: "Older builds break on v2 files", mitigation: "Write v1 alongside for one release", level: "medium" }] }]),
+      ] : [
         blk("where", "goal", "Fixing the login redirect loop: step 3 of 4, running the tests", "Asked: stop /login bouncing after OAuth", "Original ask [D01]: stop the redirect loop. Current step: Run the tests (plan).", 1, [{ type: "progress", n: 3, total: 4, label: "Run the tests" }]),
         blk("done", "log", "Route guard moved before render; regression test added", "1 file changed: src/app/routes.ts", "- `src/app/routes.ts:10` guard now checks `req.session?.user`\n- No commit yet", 2, [{ type: "takeaway", heading: "Done", items: [{ title: "Guard runs before render", state: "done" }, { title: "Regression test", state: "done" }, { title: "Commit", state: "todo" }] }]),
         blk("next", "design", "Next: run bun test, then commit", "Waiting on your OK to run the tests", "Claude asked to run `bun test` and is waiting on the permission.", 3, [{ type: "steps", items: [{ text: "Run bun test" }, { text: "Commit the fix" }] }]),

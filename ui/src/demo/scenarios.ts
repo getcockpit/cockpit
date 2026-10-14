@@ -32,7 +32,7 @@ const busy: E[] = [
   // A: needs a permission (risky command)
   ...start("A", "Retire the old invoices table", { cwd: "/Users/me/code/shop-worktrees/retire-invoices", repo: "/Users/me/code/shop", branch: "mr/retire-invoices" }, 10),
   todos("A", 3, [["Find every reader of invoices_v1", "Finding every reader of invoices_v1"], ["Move readers to the new table", "Moving readers to the new table"], ["Backfill missing rows", "Backfilling missing rows"], ["Drop the old table", "Dropping the old table"], ["Remove the dead code", "Removing the dead code"]], 20),
-  tool("A", "Edit", { file_path: "src/billing/invoices.ts", old_string: "a\nb\nc", new_string: "a\nb\nc\nd\ne" }, 60),
+  tool("A", "Edit", { file_path: "src/billing/invoices.ts", old_string: "export async function listInvoices(accountId: string) {\n  return db.invoices_v1.findMany({ where: { accountId } });\n}", new_string: "export async function listInvoices(accountId: string) {\n  return db.invoices.findMany({\n    where: { accountId, deletedAt: null },\n    orderBy: { issuedAt: \"desc\" },\n  });\n}" }, 60),
   // The description sounds routine; the command says production, with CASCADE.
   { session: "A", kind: "sidecar.permission_request", payload: { request_id: "pA", tool: "Bash", input: { command: "psql \"$PROD_DATABASE_URL\" -c 'DROP TABLE invoices_v1 CASCADE;'", description: "Drop the old invoices table" }, suggestions: null, decision_reason: null }, at: 2300 },
   // E: asks a structured question
@@ -67,8 +67,8 @@ const busy: E[] = [
   // D: finished with a recap (diagram already drawn)
   ...start("D", "Refactor the settings schema", { cwd: "/Users/me/code/shop-worktrees/settings-schema", repo: "/Users/me/code/shop", branch: "mr/settings-schema" }, 60),
   todos("D", 5, [["Design schema", "Designing schema"], ["Migrate readers", "Migrating readers"], ["Write migration", "Writing migration"], ["Tests", "Running tests"]], 1500),
-  tool("D", "Write", { file_path: "src/settings/schema.ts", content: "x\n".repeat(80) }, 1510),
-  tool("D", "Edit", { file_path: "src/settings/read.ts", old_string: "a\n".repeat(12), new_string: "b\n".repeat(20) }, 1520),
+  tool("D", "Write", { file_path: "src/settings/schema.ts", content: "import { z } from \"zod\";\n\n// One typed schema for every setting; unknown keys are dropped, missing ones get defaults.\nexport const Settings = z.object({\n  version: z.literal(2).default(2),\n  theme: z.enum([\"light\", \"dark\", \"system\"]).default(\"system\"),\n  fontSize: z.number().int().min(10).max(24).default(14),\n  telemetry: z.boolean().default(false),\n  editor: z.object({\n    tabSize: z.number().int().min(1).max(8).default(2),\n    wordWrap: z.boolean().default(true),\n  }).default({}),\n  sync: z.object({\n    enabled: z.boolean().default(false),\n    intervalMin: z.number().int().min(5).default(15),\n  }).default({}),\n});\n\nexport type Settings = z.infer<typeof Settings>;\n\nexport function parseSettings(raw: unknown): Settings {\n  return Settings.parse(raw ?? {});\n}\n" }, 1510),
+  tool("D", "Edit", { file_path: "src/settings/read.ts", old_string: "export function readSettings(path: string) {\n  const raw = JSON.parse(fs.readFileSync(path, \"utf8\"));\n  return {\n    theme: raw.theme || \"system\",\n    fontSize: raw.fontSize || 14,\n    tabSize: raw.tabSize || 2,\n  };\n}", new_string: "import { parseSettings, type Settings } from \"./schema\";\n\nexport function readSettings(path: string): Settings {\n  if (!fs.existsSync(path)) return parseSettings({});\n  const raw = JSON.parse(fs.readFileSync(path, \"utf8\"));\n  // v1 files kept tabSize at the top level\n  if (raw.version !== 2) raw.editor = { tabSize: raw.tabSize, ...raw.editor };\n  return parseSettings(raw);\n}" }, 1520),
   say("D", RECAP, 1900),
   result("D", "done", 1901, 1.12),
 ];
@@ -234,6 +234,8 @@ const timelineEvents: E[] = [
 
 export const SCENARIOS: Record<string, Scenario> = {
   timeline: { events: timelineEvents, docs: [] },
+  // The timeline sessions with nothing waiting on you: the grey, calm wall (film, MR-139).
+  calm: { events: timelineEvents.filter((e) => e.kind !== "sidecar.permission_request"), docs: [] },
   "review-overview": { events: reviewOverviewEvents, docs: [] },
   plan: { events: planEvents, docs: [] },
   view: { events: viewEvents, docs: [] },

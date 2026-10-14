@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/getcockpit/cockpit/releases/latest"><b>⬇ Download for free</b></a> &nbsp;·&nbsp;
-  <a href="https://getcockpit.github.io/#film">▶ Watch the 40-second demo</a> &nbsp;·&nbsp;
+  <a href="https://getcockpit.github.io/#film">▶ Watch the 45-second film</a> &nbsp;·&nbsp;
   <a href="https://getcockpit.github.io/">Website</a>
 </p>
 
