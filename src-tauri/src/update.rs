@@ -146,10 +146,12 @@ pub fn update_restart(app: AppHandle) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn sh(dir: &Path, cmd: &str) {
         assert!(Command::new("bash").arg("-c").arg(cmd).current_dir(dir).status().unwrap().success(), "{cmd}");
     }
 
+    #[cfg(unix)] // on Windows `bash` can resolve to the WSL stub
     #[test]
     fn only_app_changes_count_as_pending() {
         let dir = std::env::temp_dir().join(format!("mr-up-{}", ulid::Ulid::new()));
