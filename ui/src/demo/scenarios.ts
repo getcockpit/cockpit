@@ -234,6 +234,8 @@ const timelineEvents: E[] = [
 
 export const SCENARIOS: Record<string, Scenario> = {
   timeline: { events: timelineEvents, docs: [] },
+  // The timeline sessions with nothing waiting on you: the grey, calm wall (film, MR-139).
+  calm: { events: timelineEvents.filter((e) => e.kind !== "sidecar.permission_request"), docs: [] },
   "review-overview": { events: reviewOverviewEvents, docs: [] },
   plan: { events: planEvents, docs: [] },
   view: { events: viewEvents, docs: [] },

@@ -114,14 +114,36 @@
   summary { cursor: pointer; font-weight: 700; font-size: 19px; }
   details p { color: var(--ink-2); margin: 12px 0 0; }
 
+  .kicker { font: 600 15px var(--mono); color: var(--ink-3); margin-top: 22px; letter-spacing: .02em; }
+  .kicker::before { content: ""; display: inline-block; width: 10px; height: 10px; background: var(--ink-3); margin-right: 10px; }
+  .scroll { background: #0b0c0d; color: #6b737b; font: 14px/1.6 var(--mono); padding: 18px 22px; height: 100%; min-height: 380px; overflow: hidden; position: relative; }
+  .scroll .bar { color: #8b939b; margin-bottom: 10px; }
+  .scroll .ask { color: #c9cdd1; }
+  .scroll::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 90px; background: linear-gradient(transparent, #0b0c0d); }
+  .ab { display: grid; grid-template-columns: 1fr 1.25fr; gap: 4px; align-items: stretch; }
+  .ab > div { display: flex; flex-direction: column; }
+  .ab h3 { margin: 0; padding: 14px 20px; font: 600 15px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); background: var(--tile); }
+  .ab .them h3::before { content: "■ "; color: var(--error); }
+  .ab .us h3::before { content: "■ "; color: var(--needs); }
+  .ab .us .shot { flex: 1; display: flex; flex-direction: column; justify-content: center; background: var(--well); padding: 16px; }
+  .ab p.cap { margin: 0; padding: 14px 20px; background: var(--tile); color: var(--ink-2); font-size: 17px; }
+  .quote { background: var(--tile); border-left: 6px solid var(--needs); padding: 30px 34px; margin: 0 0 4px; }
+  .quote p { font-size: clamp(22px, 2.4vw, 30px); line-height: 1.3; margin: 0 0 14px; font-weight: 700; letter-spacing: -.01em; }
+  .quote cite { font-style: normal; color: var(--ink-3); font-size: 16px; }
+  .box { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .box > div { background: var(--tile); padding: 24px; color: var(--ink-2); font-size: 17px; }
+  .box b { display: block; color: var(--ink); font-size: 20px; margin-bottom: 6px; }
+  .box img { margin: -24px -24px 18px; width: calc(100% + 48px); max-width: none; height: 190px; object-fit: cover; object-position: top left; background: var(--night); }
   .final { background: var(--night); color: #fff; text-align: center; padding: 104px 0; }
   .final h2 { color: #fff; }
+  .final .btn:not(.primary) { color: var(--ink); }
   .final p { color: #b8bcc4; font-size: 21px; margin: 0 0 34px; }
   footer { background: #0f1113; color: #8b939b; padding: 30px 0; font-size: 14px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
 
   @media (max-width: 860px) {
     .proof, .trust, .dl { grid-template-columns: 1fr 1fr; }
+    .ab, .box { grid-template-columns: 1fr; }
     .vs, .pair, .pair.tall { grid-template-columns: 1fr; }
     .step .head { grid-template-columns: 1fr; }
     nav .links a:not(.nav-dl) { display: none; }
@@ -146,18 +168,19 @@
   <div class="wrap">
     <span class="eyebrow">Free and open source · for Claude Code</span>
     <h1>Run ten Claude Code sessions. Read none of them.</h1>
-    <p class="lede">Cockpit shows each decision with only the context it needs, so you stop reading transcripts and just decide. Every question, permission and plan from all your sessions is in one queue, one key each.</p>
+    <p class="lede">Every question, permission and plan from all your sessions lands in one queue, with only the context it needs. One key each. You decide; you don't reread.</p>
     <div class="cta">
       <a class="btn primary" id="dl-main" href="#download">Download Cockpit, free</a>
-      <a class="btn" href="#film">▶ Watch the 40-second film</a>
+      <a class="btn" id="watch" href="#film">▶ Watch the 45-second film</a>
     </div>
     <p class="fine">2-minute install · no account · runs on the Claude plan you already have · macOS, Windows, Linux</p>
+    <p class="kicker">Grey and calm until something needs you.</p>
   </div>
   <div class="wrap">
     <div class="film" id="film">
-      <video src="assets/cockpit-demo.mp4" poster="assets/poster.jpg" autoplay muted loop playsinline controls preload="auto"></video>
+      <video src="assets/hero-loop.mp4" poster="assets/poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Cockpit: a session needs you, one key answers it, a risky command is denied in one key"></video>
     </div>
-    <p class="fine" style="text-align:center;margin:10px 0 18px">🔊 Turn the sound on: it has its own score.</p>
+    <p class="fine" style="text-align:center;margin:10px 0 18px" id="film-note">The real app, no sound. <a href="#film" id="watch-2">Play the full 45-second film with its score ▶</a></p>
     <div class="proof">
       <div><b>10</b><span>sessions side by side, each in its own worktree</span></div>
       <div><b>1 key</b><span>to allow, deny or answer anything</span></div>
@@ -169,26 +192,18 @@
 
 <section class="band">
   <div class="wrap">
-    <h2>The model got fast. Now you're the bottleneck.</h2>
-    <p class="sub">Run a few agents in terminals and your day turns into babysitting. Cockpit takes that job off your plate.</p>
-    <div class="vs">
+    <h2>Same question. Two ways to answer it.</h2>
+    <p class="sub">In a terminal you rebuild the context for every decision. In Cockpit it arrives with the question, and the safe answer is one key.</p>
+    <div class="ab">
       <div class="them">
-        <h3>Claude Code in terminals</h3>
-        <ul>
-          <li>A session sits idle for 20 minutes because its "Allow?" scrolled away.</li>
-          <li>A production <code>DROP TABLE</code> scrolls past like any other command.</li>
-          <li>Every switch back means minutes of rereading.</li>
-          <li>The plan lives somewhere in the chat history.</li>
-        </ul>
+        <h3>Claude Code in a terminal</h3>
+        <div class="scroll"><div class="bar">claude — ~/code/shop-worktrees/retire-invoices · tab 6 of 8</div>⏺ Read(src/billing/invoices.ts)<br>  ⎿  Read 214 lines<br>⏺ Update(src/billing/invoices.ts)<br>  ⎿  Updated with 6 additions and 3 removals<br>⏺ Bash(bun test src/billing)<br>  ⎿  48 pass, 0 fail<br>⏺ Searching for invoices_v1 readers…<br>  ⎿  Found 0 files<br>✻ Thinking…<br>⏺ The readers are moved. Backfill next.<br>⏺ Bash(bun run backfill --dry-run)<br>  ⎿  12,408 rows would be copied<br>⏺ Bash(bun run backfill)<br>  ⎿  12,408 rows copied<br>⏺ Dropping the old table now.<br>⏺ Bash(psql "$PROD_DATABASE_URL" -c …)<br><span class="ask">  Do you want to proceed?</span><br><span class="ask">  ❯ 1. Yes  2. No</span><br>⏺ Read(src/billing/report.ts)<br>  ⎿  Read 96 lines<br>⏺ Update(src/billing/report.ts)</div>
+        <p class="cap">Which table? Which database? Scroll up and find out, in one of eight tabs.</p>
       </div>
       <div class="us">
         <h3>Claude Code in Cockpit</h3>
-        <ul>
-          <li>Everything waiting on you sits in one queue, and you know the moment it arrives.</li>
-          <li>Risky commands stop in red, showing exactly what will run and where.</li>
-          <li>Each session tells you where it is with a plan and a change map.</li>
-          <li>Plans are a one-page map you can mark up and build from.</li>
-        </ul>
+        <div class="shot"><img src="assets/risk-card.jpg" alt="The same request as a card: the exact psql command against production, High risk in red, Deny as the first key" loading="lazy"><img src="assets/safer.jpg" alt="After Deny, Claude offers to run it on staging first" loading="lazy" style="margin-top:8px"></div>
+        <p class="cap">Production, <code>CASCADE</code>, high risk. Press <span class="key">D</span>, and Claude comes back with a safer plan.</p>
       </div>
     </div>
   </div>
@@ -196,29 +211,27 @@
 
 <section>
   <div class="wrap">
-    <h2>Less reading. Faster decisions.</h2>
+    <h2>Only what you need to decide.</h2>
     <p class="sub">Reading is the tiring part. A terminal makes you rebuild the context for every decision. Cockpit brings it with the question and leaves everything else out.</p>
     <div class="vs" style="grid-template-columns:repeat(3,1fr)">
       <div class="us"><h3>Only the decision</h3><ul><li>The question, the options and their trade-offs. You don't scroll back through 400 lines to see why it's asking.</li></ul></div>
       <div class="us"><h3>Only the risk</h3><ul><li>The exact command, where it runs, and how hard it is to undo, highlighted before you press a key.</li></ul></div>
       <div class="us"><h3>Only what changed</h3><ul><li>The plan's progress and the files it touched, grouped by folder. Auth and migrations are flagged.</li></ul></div>
     </div>
-    <h3 style="margin:64px 0 6px;font-size:28px">The first week, measured</h3>
-    <p class="sub" style="margin-bottom:24px;font-size:18px">The author's own numbers: 25 days in terminals vs the first 4 days in Cockpit.</p>
-    <div class="proof">
-      <div><b>10×</b><span>Claude Code sessions a day (6.9 → 71.5)</span></div>
-      <div><b>3×</b><span>sessions running at once at peak (3.8 → 11)</span></div>
-      <div><b>14</b><span>sessions at the same time on the busiest day (was 7)</span></div>
-      <div><b>6×</b><span>commits a day (27 → 161)</span></div>
+    <h3 style="margin:64px 0 18px;font-size:28px">What changed for me</h3>
+    <blockquote class="quote"><p>“The difference I didn't expect was how much less tired I was. Each decision arrives with only the context it needs, so I'm not rebuilding it from scrollback every time.”</p><cite>Bohdan Kostko, who built Cockpit</cite></blockquote>
+    <div class="proof" style="grid-template-columns:repeat(2,1fr)">
+      <div><b>~7 → ~70</b><span>Claude Code sessions a day</span></div>
+      <div><b>4 → 11</b><span>sessions running at once at peak (14 on the busiest day)</span></div>
     </div>
-    <p class="fine">Small sample, and most of that week went into building Cockpit itself. Measured from session file timestamps and git history; no content was read.</p>
+    <p class="fine">My own numbers: 25 days in terminals vs the first 4 days in Cockpit. A small sample, and most of that week went into building Cockpit itself. Measured from session file timestamps; no content was read.</p>
   </div>
 </section>
 
 <section id="how">
   <div class="wrap">
-    <h2>One workflow, start to finish.</h2>
-    <p class="sub">Here's what a morning with eight sessions looks like.</p>
+    <h2>A morning with eight sessions.</h2>
+    <p class="sub">Four moments where Cockpit saves you the reading.</p>
 
     <div class="step">
       <div class="head"><div class="n">1</div><div><h3>Everything that needs you, in one queue.</h3><p>Questions, permissions and plan approvals from every session, oldest first. Press <span class="key">1</span>–<span class="key">3</span> to pick, <span class="key">A</span> to allow, <span class="key">D</span> to deny. The session carries on by itself.</p></div></div>
@@ -232,8 +245,8 @@
     </div>
 
     <div class="step">
-      <div class="head"><div class="n">3</div><div><h3>Know where every session stands without reading the transcript.</h3><p>Each session has a plan with live progress and a change map grouped by folder, with auth and migrations flagged.</p></div></div>
-      <div class="shot" style="max-width:520px"><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"></div>
+      <div class="head"><div class="n">3</div><div><h3>Claude says it's done. Cockpit checks.</h3><p>Press <span class="key">⌘⇧U</span> on any session for a one-page catch-up: where it is, what it decided without asking, and which claims the log doesn't back up. "All 211 tests pass" with no test in the log is flagged before you open a PR.</p></div></div>
+      <div class="shot"><img src="assets/brief.jpg" alt="A catch-up brief flagging 'All 211 tests pass, but no test ran' as high risk, with an open question Claude never asked" loading="lazy"></div>
     </div>
 
     <div class="step">
@@ -241,14 +254,14 @@
       <div class="shot"><img src="assets/doc.jpg" alt="A plan as a map of blocks with open questions pinned to the side" loading="lazy"></div>
     </div>
 
-    <div class="step">
-      <div class="head"><div class="n">5</div><div><h3>Know which session needs you next.</h3><p>The timeline shows what every session did, what it does next, and who will need you in the next 15 minutes.</p></div></div>
-      <div class="shot"><img src="assets/timeline.jpg" alt="Timeline of sessions with forecasts" loading="lazy"></div>
-    </div>
-
-    <div class="step">
-      <div class="head"><div class="n">6</div><div><h3>Review pull requests one finding at a time.</h3><p>The riskiest snippets come first, with the findings ranked. Press one key to note a finding and it becomes a review comment. Address mode does the reverse and turns reviewer threads into fixes.</p></div></div>
-      <div class="shot"><img src="assets/review.jpg" alt="Guided PR review with a noted finding" loading="lazy"></div>
+    <h3 style="margin:104px 0 18px;font-size:28px">Also in the box</h3>
+    <div class="box">
+      <div><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"><b>Change map</b>Every session's plan with live progress, and the files it touched grouped by folder. Auth and migrations are flagged.</div>
+      <div><img src="assets/timeline.jpg" alt="Timeline of sessions with forecasts" loading="lazy"><b>Timeline</b>What every session did, what it does next, and who will need you in the next 15 minutes.</div>
+      <div><img src="assets/review.jpg" alt="Guided PR review with a noted finding" loading="lazy"><b>PR review, one finding at a time</b>Riskiest snippets first; one key turns a finding into a review comment. Address mode turns reviewer threads into fixes.</div>
+      <div><b>A worktree per session</b>Ten sessions on one repo never trip over each other. Start one from anywhere with <span class="key">⌘K</span>.</div>
+      <div><b>Your terminal, one key away</b>The raw transcript is <span class="key">⌘R</span>; hand any session to a real terminal with <span class="key">⌘T</span>.</div>
+      <div><b>A workspace per client</b>Separate Claude sign-ins, memory and history per client, sharing your skills and settings. Switch with <span class="key">⌘1</span>–<span class="key">9</span>.</div>
     </div>
   </div>
 </section>
@@ -286,6 +299,8 @@
     <details><summary>Is it really free?</summary><p>Yes. Cockpit is MIT licensed. Your sessions use your existing Claude plan (Pro, Max, Team or API), exactly as they do in a terminal.</p></details>
     <details><summary>Do my skills, commands, hooks and settings still work?</summary><p>Yes. Cockpit runs your real Claude Code with your real setup. Workspaces keep memory and history separate per client while sharing your skills and settings.</p></details>
     <details><summary>What if a card gets something wrong?</summary><p>The full transcript is one key away (<span class="key">⌘R</span>), and every approval shows the exact command before it runs.</p></details>
+    <details><summary>How is this different from Conductor or Vibe Kanban?</summary><p>They help you run agents in parallel. Cockpit is about deciding: one queue across every session, one key per answer, risky commands and unbacked claims flagged before you act. It runs locally on your own Claude Code, with no account and no cloud.</p></details>
+    <details><summary>Why one git worktree per session? Don't they share my environment?</summary><p>Each session gets its own checkout so edits never collide, while it uses your normal machine, tools and Claude setup. Like any fresh clone, a worktree may need its dependencies installed; ask the session, or note it in your project's CLAUDE.md. Prefer your own checkout? Turn worktrees off when you start a session. Review and Address always run in your existing clone.</p></details>
     <details><summary>Is this made by Anthropic?</summary><p>No. Cockpit is an independent open-source project built on Anthropic's public Agent SDK. "Claude" and "Claude Code" are trademarks of Anthropic.</p></details>
     <details><summary>Can I build it or contribute?</summary><p>Please do: <code>git clone https://github.com/getcockpit/cockpit && ./scripts/dev.sh</code>. See <a href="https://github.com/getcockpit/cockpit/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p></details>
   </div>
@@ -293,7 +308,7 @@
 
 <section class="final">
   <div class="wrap">
-    <h2>Stop babysitting terminals.</h2>
+    <h2>Stop reading. Start deciding.</h2>
     <p>Free, open source, and running in two minutes.</p>
     <div class="cta">
       <a class="btn primary" id="dl-final" href="#download">Download Cockpit, free</a>
@@ -347,6 +362,18 @@
     else if (/github\.com\/getcockpit/.test(a.href || "")) track(`github/${a.closest("nav, header, section, footer")?.id || a.closest("nav, footer")?.tagName.toLowerCase() || "page"}`);
   });
   const film = document.querySelector("#film video");
+  // The hero is a silent loop of the real app; Watch swaps in the full film with its score.
+  const watch = (e) => {
+    e.preventDefault();
+    if (film.dataset.full) return film.play();
+    film.dataset.full = "1"; film.src = "assets/cockpit-demo.mp4"; film.loop = false; film.controls = true; film.muted = false;
+    film.play().catch(() => { film.muted = true; film.play(); });
+    document.getElementById("film-note").textContent = "The 45-second film, with its own score.";
+    document.getElementById("film").scrollIntoView({ behavior: "smooth", block: "center" });
+    track("film/watch");
+  };
+  document.getElementById("watch")?.addEventListener("click", watch);
+  document.getElementById("watch-2")?.addEventListener("click", watch);
   let played = false;
   film?.addEventListener("play", () => { if (!played) { played = true; track("film/play"); } });
   film?.addEventListener("volumechange", () => { if (!film.muted) track("film/sound-on"); }, { once: true });
