@@ -152,14 +152,20 @@ const flows: Flow[] = [
   } },
   { name: "Doc lifecycle: shipped docs close, a stalled one is dropped", run: async () => {
     await ui.open("doclife");
-    await ui.tags("DocTile", 3);
+    await ui.tags("DocTile", 4);
     await ui.click("button", "Mark done");
-    await ui.tags("DocTile", 2);
+    await ui.tags("DocTile", 3);
     await ui.click("button", /^Open$/); // the stalled-doc suggestion
     await ui.tags("DocStage", 1);
     await ui.click("button", "Drop doc");
     await ui.click("button", "Click again to drop this doc");
-    await ui.tags("DocTile", 1);
+    await ui.tags("DocTile", 2);
+  } },
+  { name: "Doc lifecycle: a doc built without Build it can be marked shipped", run: async () => {
+    await ui.open("doclife");
+    await ui.click("button", /^Nightly backup check/);
+    await ui.click("button", "Mark shipped");
+    await ui.see("button", "Done, archive it");
   } },
   { name: "J17 switch workspaces", run: async () => {
     await ui.open("busy");
