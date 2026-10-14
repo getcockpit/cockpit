@@ -163,6 +163,7 @@ export type AppState = {
   notifications: boolean; // macOS notifications for new needs-you items while the app is in the background (MR-94)
   compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I63)
   sessionCap: number; // how many sessions may be mid-turn at once; idle ones don't count (MR-105)
+  permissionMode: PermissionMode | null; // how sessions ask before using tools; null = not chosen yet, which runs as auto (I106)
   clef: ClefMeter;
   cockpitLayer: boolean; // cards drawn by the Cockpit layer on its own key, sessions run plain (decision 34)
   cockpit: CockpitMeter;
@@ -174,3 +175,5 @@ export type AppState = {
   selfbuild: { id: string; branch: string; sha: string; phase: "building" | "ready" } | null; // the latest self-build until relaunched or dismissed
   update: UpdateState;
 };
+
+export type PermissionMode = "auto" | "acceptEdits" | "default";

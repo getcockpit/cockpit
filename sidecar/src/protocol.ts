@@ -21,13 +21,18 @@ export type McpAction = "reconnect" | "enable" | "disable";
 // PDFs go to Claude as content blocks; anything else by path, for Claude to read.
 export type Attachment = { path: string; name: string; mime: string };
 
+// How a session asks before using tools (decision I106): auto = Claude Code's classifier approves
+// safe calls and asks about risky ones; acceptEdits = edits go through, commands ask; default = every tool asks.
+export type PermissionMode = "auto" | "acceptEdits" | "default";
+
 export type Inbound =
   | { type: "ping"; id?: string }
-  | { type: "start"; session: string; cwd: string; prompt: string; resume?: string; model?: string; effort?: Effort; tools?: ToolSpec[]; append_system_prompt?: string; env?: Record<string, string>; attachments?: Attachment[] }
+  | { type: "start"; session: string; cwd: string; prompt: string; resume?: string; model?: string; effort?: Effort; tools?: ToolSpec[]; append_system_prompt?: string; env?: Record<string, string>; attachments?: Attachment[]; permission_mode?: PermissionMode }
   | { type: "send"; session: string; text: string; attachments?: Attachment[] }
   | { type: "interrupt"; session: string }
   // Mid-session switch; null goes back to Claude Code's default. Omitted keys stay as they are.
   | { type: "set_model"; session: string; model?: string | null; effort?: Effort | null }
+  | { type: "set_permission_mode"; session: string; mode: PermissionMode }
   | { type: "stop"; session: string }
   | { type: "permission_response"; session: string; request_id: string; decision: PermissionDecision }
   | { type: "tool_result"; session: string; call_id: string; text: string; is_error?: boolean }
@@ -50,6 +55,7 @@ export type Outbound =
   | { type: "session_ended"; session: string; ok: boolean; reason?: string }
   | { type: "limits"; available: boolean; plan?: string | null; five_hour?: { utilization: number; resetsAt: number | null } | null; seven_day?: { utilization: number; resetsAt: number | null } | null; error?: string }
   | { type: "model_set"; session: string; model?: string | null; effort?: Effort | null; ok: boolean; error?: string }
+  | { type: "permission_mode_set"; session: string; mode: PermissionMode; ok: boolean; error?: string }
   | { type: "models"; models: ModelRow[]; error?: string }
   | { type: "commands"; session: string; commands: CommandRow[]; error?: string }
   // done: the action this answers, if any; its error when it failed (the list is still the fresh one).

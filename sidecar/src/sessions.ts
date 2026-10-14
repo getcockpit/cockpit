@@ -1,6 +1,6 @@
 import { NO_CLAUDE } from "./claude-path";
 import { userContent } from "./attachments";
-import type { Attachment, CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, ToolSpec } from "./protocol";
+import type { Attachment, CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, PermissionMode, ToolSpec } from "./protocol";
 
 // The slice of the Agent SDK this module needs, so tests can inject a fake.
 export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
@@ -13,6 +13,7 @@ export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record
   mcpServerStatus?(): Promise<SdkMcpStatus[]>;
   reconnectMcpServer?(name: string): Promise<void>;
   toggleMcpServer?(name: string, enabled: boolean): Promise<void>;
+  setPermissionMode?(mode: PermissionMode): Promise<void>;
 };
 type SdkMcpStatus = { name: string; status: string; source?: string; scope?: string; error?: string; serverInfo?: { version: string }; config?: { url?: string }; tools?: { name: string }[] };
 export type { ModelRow };
@@ -51,6 +52,9 @@ export class Sessions {
       case "send": return void this.with(m.session, (s) => s.inbox.push(m.text, m.attachments));
       case "interrupt": return void this.with(m.session, (s) => { void s.q?.interrupt(); });
       case "set_model": return void this.with(m.session, (s) => { s.switching = s.switching.then(() => this.setModel(m.session, s, m.model, m.effort)); });
+      case "set_permission_mode": return void this.with(m.session, (s) => {
+        s.switching = s.switching.then(() => this.setPermissionMode(m.session, s, m.mode));
+      });
       case "stop": return void this.with(m.session, (s) => { s.inbox.close(); s.q?.close?.(); });
       case "permission_response": return void this.with(m.session, (s) => {
         const r = s.pending.get(m.request_id);
@@ -78,6 +82,16 @@ export class Sessions {
       this.emit({ type: "model_set", session, model, effort, ok: true });
     } catch (e) {
       this.emit({ type: "model_set", session, model, effort, ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  private async setPermissionMode(session: string, s: Live, mode: PermissionMode) {
+    try {
+      if (!s.q?.setPermissionMode) throw new Error("this SDK can't switch permission modes mid-session");
+      await s.q.setPermissionMode(mode);
+      this.emit({ type: "permission_mode_set", session, mode, ok: true });
+    } catch (e) {
+      this.emit({ type: "permission_mode_set", session, mode, ok: false, error: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -153,6 +167,7 @@ export class Sessions {
       pathToClaudeCodeExecutable: claudePath,
       systemPrompt: m.append_system_prompt ? { type: "preset", preset: "claude_code", append: m.append_system_prompt } : undefined,
       mcpServers: mcpServer ? { mr: mcpServer } : undefined,
+      permissionMode: m.permission_mode,
       canUseTool: (tool: string, input: Record<string, unknown>, opts: { signal?: AbortSignal; suggestions?: unknown[]; decisionReason?: string; mcpServer?: { name: string; source: string } }) =>
         new Promise<PermissionDecision>((resolve) => {
           const request_id = `p${++this.seq}`;
