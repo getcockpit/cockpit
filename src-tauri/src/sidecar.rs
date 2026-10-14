@@ -69,7 +69,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let mut payload = serde_json::from_str::<serde_json::Value>(line)
                             .unwrap_or_else(|_| serde_json::json!({ "type": "raw", "line": line }));
-                        // Never ask (I107): allowed here, logged as auto_allowed so no card is drawn.
+                        // Never ask (I109): allowed here, logged as auto_allowed so no card is drawn.
                         if payload["type"] == "permission_request" && permission_mode(&handle) == "never" && auto_allows(&payload) {
                             payload["auto_allowed"] = true.into();
                             let decision = serde_json::json!({ "behavior": "allow", "updatedInput": payload["input"] });
@@ -226,7 +226,7 @@ fn compact_window(app: &AppHandle) -> Option<u64> {
 
 /// How sessions ask before using tools: `auto` (Claude Code's classifier approves safe calls and asks
 /// about the risky ones), `acceptEdits` (file edits go through, commands ask), `default` (every
-/// tool asks) or `never` (Cockpit allows everything below high risk, I107). Auto until you choose;
+/// tool asks) or `never` (Cockpit allows everything below high risk, I109). Auto until you choose;
 /// the first-run intro asks you to (decision I106).
 pub const PERMISSION_MODE: &str = "auto";
 pub const PERMISSION_MODES: [&str; 4] = ["auto", "acceptEdits", "default", "never"];
