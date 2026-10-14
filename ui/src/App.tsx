@@ -25,7 +25,7 @@ import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
 import { Builds } from "./screens/Builds";
 import { VoiceController, type PointTarget } from "./screens/Voice";
 import { api } from "./state/store";
-import { docApi, docsOf, useDocs } from "./state/docs";
+import { docApi, docsOf, docStage, isBrief, liveBuilds, useDocs } from "./state/docs";
 import { useAppState } from "./state/store";
 import { useAutoReview } from "./state/useAutoReview";
 import { useNotify } from "./state/notify";
@@ -38,6 +38,19 @@ export default function App() {
   const all = useAppState();
   useAutoReview(all);
   const allDocs = useDocs();
+  // Doc lifecycle (MR-151): on every doc change and every minute, ask the core whether the
+  // builds of each building doc are merged; it records doc.shipped when they all are.
+  const latest = useRef({ allDocs, sessions: all.sessions });
+  latest.current = { allDocs, sessions: all.sessions };
+  useEffect(() => {
+    const check = () => {
+      const { allDocs: ds, sessions } = latest.current;
+      for (const d of ds) if (!isBrief(d) && docStage(d, sessions) === "building") void docApi.checkShipped(d, liveBuilds(d, sessions)).catch(() => {});
+    };
+    check();
+    const t = setInterval(check, 60_000);
+    return () => clearInterval(t);
+  }, [allDocs]);
   const [workspace, setWorkspace] = useState(() => { try { return localStorage.getItem("mr.workspace") ?? "personal"; } catch { return "personal"; } });
   const [signIn, setSignIn] = useState<string | null>(null);
   const [settings, setSettings] = useState(false);
@@ -208,5 +221,5 @@ export default function App() {
   const focused = focus ? state.sessions[focus] : null;
   if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, overlays);
   if (wallView === "timeline") return shell(<ErrorBoundary key="timeline" name="timeline"><Timeline state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onWall={() => setWallView("wall")} /></ErrorBoundary>, overlays);
-  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onSettings={() => setSettings(true)} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
 }

@@ -136,7 +136,15 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       const d = docs.find((x) => x.id === a.docId);
       if (!d) throw new Error("no such doc");
       docs = docs.filter((x) => x !== d);
-      record(d.session_id, "ui.doc_archived", { doc_id: d.id, title: d.title });
+      record(d.session_id, a.outcome === "done" ? "ui.doc_done" : a.outcome === "dropped" ? "ui.doc_dropped" : "ui.doc_archived", { doc_id: d.id, title: d.title });
+      return null;
+    }
+    case "doc_check_shipped": return !!docs.find((x) => x.id === a.docId)?.shipped_at; // no git here
+    case "doc_mark_shipped": {
+      const d = docs.find((x) => x.id === a.docId);
+      if (!d) throw new Error("no such doc");
+      d.shipped_at = Date.now(); docs = [...docs];
+      record(d.session_id, "ui.doc_shipped", { doc_id: d.id, title: d.title });
       return null;
     }
     case "doc_build_started": {

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { api } from "../state/store";
 import { Key } from ".";
 import { keyOf } from "./keys";
-import { EMPTY, inkGeometry, isUrl, type Ask, type Draft, type Ink, type Pin, type Pt } from "./reviewDraft";
+import { EMPTY, inkGeometry, inkLabel, isUrl, type Ask, type Draft, type Ink, type Pin, type Pt } from "./reviewDraft";
 
 // Image sources (MR-142): a URL loads as is; a local file's bytes come once through
 // attachment_read (images only, size-capped) and are kept as a blob URL per path.
@@ -37,7 +37,9 @@ export function useImageSrc(path: string | null): string | null | undefined {
 export type LbImage = { path: string; name: string; caption?: string };
 
 // Drawn marks use the error ink: they say "this is wrong" (theme: colour only for state).
-const ink = () => getComputedStyle(document.documentElement).getPropertyValue("--mr-error").trim() || "red";
+const token = (name: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+const ink = () => token("--mr-error", "red");
+const LABEL_FONT = "700 SIZEpx system-ui, sans-serif";
 
 /**
  * The image with its marks burned in, as a PNG at the image's own size (MR-143, MR-145), so Claude can
@@ -66,6 +68,13 @@ export async function burnIn(path: string, marks: Ink[] = []): Promise<Blob | nu
       if (part.close) g.closePath();
       if (part.fill) g.fill();
       g.stroke();
+    }
+    // Box labels (MR-147): the error ink on a halo of the tile colour, so they read on any image.
+    for (const l of marks.map((m) => inkLabel(m, w, h)).filter((x) => x !== null)) {
+      g.font = LABEL_FONT.replace("SIZE", String(l.size));
+      g.lineWidth = l.size / 5; g.strokeStyle = token("--mr-tile", "white");
+      g.strokeText(l.text, l.x, l.y);
+      g.fillStyle = ink(); g.fillText(l.text, l.x, l.y);
     }
     return await new Promise<Blob | null>((ok) => c.toBlob((b) => ok(b), "image/png"));
   } catch { return null; }
@@ -99,6 +108,7 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
   const [i, setI] = useState(Math.min(start, images.length - 1));
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
   const [focusPin, setFocusPin] = useState<number | null>(null);
+  const [focusBox, setFocusBox] = useState<number | null>(null); // a new box's label field
   const [tool, setTool] = useState<Tool>("pin");
   const [live, setLive] = useState<Ink | null>(null); // the mark being drawn
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null); // the image's own size
@@ -184,6 +194,7 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
     // An arrow or box needs a drag; a click with those tools would only leave a speck.
     if (live.kind !== "line" && Math.hypot(live.b[0] - live.a[0], live.b[1] - live.a[1]) < 1) return;
     onDraft?.(i, { ink: [...marks, live.kind === "line" ? { kind: "line", pts: live.pts.map(r) } : { kind: live.kind, a: r(live.a), b: r(live.b) }] });
+    if (live.kind === "box") setFocusBox(marks.length);
   };
   const onUp = (e: MouseEvent) => {
     if (live) { endMark(); return; }
@@ -198,6 +209,7 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
     onDraft?.(i, { pins: [...d.pins, pin] });
     setFocusPin(d.pins.length);
   };
+  const setLabel = (k: number, label: string) => onDraft?.(i, { ink: marks.map((m, j) => (j === k && m.kind === "box" ? { ...m, label } : m)) });
   const setPin = (k: number, note: string) => onDraft?.(i, { pins: d.pins.map((p, j) => (j === k ? { ...p, note } : p)) });
   const dropPin = (k: number) => onDraft?.(i, { pins: d.pins.filter((_, j) => j !== k) });
 
@@ -231,6 +243,10 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
                     const style = { fill: g.fill ? "var(--mr-error)" : "none", stroke: "var(--mr-error)", strokeWidth: 3, strokeLinecap: "round", strokeLinejoin: "round", vectorEffect: "non-scaling-stroke" } as const;
                     return g.close ? <polygon key={`${k}.${j}`} points={pts} {...style} /> : <polyline key={`${k}.${j}`} points={pts} {...style} />;
                   }))}
+                  {marks.map((m, k) => {
+                    const l = inkLabel(m, nat.w, nat.h);
+                    return l && <text key={`l${k}`} x={l.x} y={l.y} fontSize={l.size} fontWeight={700} fontFamily="system-ui, sans-serif" fill="var(--mr-error)" stroke="var(--mr-tile)" strokeWidth={l.size / 5} paintOrder="stroke" data-mr="BoxLabel">{l.text}</text>;
+                  })}
                 </svg>
               )}
               {d.pins.map((p, k) => (
@@ -269,6 +285,14 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
                   <Key k="u" onClick={undo}>Undo</Key>
                 </div>
               )}
+              {marks.map((m, k) => m.kind === "box" && (
+                <div key={k} className="mr-row" style={{ gap: 6 }}>
+                  <b className="mr-mono" style={{ flex: "none", fontSize: 11, padding: "2px 6px", background: "var(--mr-well)", color: "var(--mr-error)" }}>Box {marks.slice(0, k + 1).filter((x) => x.kind === "box").length}</b>
+                  <input value={m.label ?? ""} onChange={(e) => setLabel(k, e.target.value)} autoFocus={focusBox === k} onBlur={() => setFocusBox(null)} placeholder="Label this box"
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                    style={{ flex: 1, minWidth: 0, font: "inherit", padding: "3px 6px", border: 0, background: "var(--mr-well)", color: "var(--mr-ink)" }} />
+                </div>
+              ))}
               <span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>Pins · {d.pins.length}</span>
               {d.pins.length === 0 && <span className="mr-dim" style={{ fontSize: 12 }}>Click the image to pin what you mean.</span>}
               {d.pins.map((p, k) => (

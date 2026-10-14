@@ -1,0 +1,15 @@
+{
+  "_": "Shell commands rated high risk. Read by the cards (pick.ts) and by the core, which never auto-allows these under Never ask (I109). Each is a regex source; flags \"i\" = case-insensitive.",
+  "high": [
+    { "source": "\\brm\\s+-[a-z]*r[a-z]*f", "flags": "i" },
+    { "source": "\\brm\\s+-[a-z]*f[a-z]*r", "flags": "i" },
+    { "source": "\\bgit\\s+push\\b.*--force", "flags": "" },
+    { "source": "\\bsudo\\b", "flags": "" },
+    { "source": "\\b(curl|wget)\\b[^|]*\\|\\s*(ba|z)?sh", "flags": "" },
+    { "source": "\\bdrop\\s+(table|database)\\b", "flags": "i" },
+    { "source": "\\bkubectl\\s+(delete|apply)\\b", "flags": "" },
+    { "source": "\\bterraform\\s+(apply|destroy)\\b", "flags": "" },
+    { "source": "\\b(prisma|alembic|knex)\\b.*\\b(migrate|deploy)\\b", "flags": "" },
+    { "source": "\\bmigrate\\b.*\\b(deploy|up)\\b", "flags": "" }
+  ]
+}

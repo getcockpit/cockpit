@@ -10,7 +10,7 @@ import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
-import { isOpenQuestion, type Doc } from "../state/docs";
+import { docApi, docStage, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
 import { loadPrs as fetchPrs, PRS_TTL, startCwd } from "../state/prs";
@@ -28,10 +28,10 @@ import { ViewTabs } from "../components/ViewTabs";
 
 // A session waiting for your next step ("idle") stays in the running grid, where its tile says
 // "Waiting · Your turn"; only finished, stopped or failed work goes to the review tray.
-const REVIEW = new Set<TileSpec["state"]>(["done", "interrupted", "error"]);
+const REVIEW = new Set<TileSpec["state"]>(["review", "done", "interrupted", "error"]);
 export const inReviewTray = (t: TileSpec) => REVIEW.has(t.state);
 
-export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild, onTimeline }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void }) {
+export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild, onTimeline, onSettings }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -67,6 +67,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
     if (a.kind === "open_session") onOpen(a.id);
     else if (a.kind === "open_doc") onOpenDoc(a.id);
     else if (a.kind === "build_mine") onBuild(await api.mineWorktree());
+    else if (a.kind === "docs_done") { for (const id of a.ids) { const d = docs.find((x) => x.id === id); if (d) await docApi.done(d); } }
     else if (a.kind === "usage_review") { onOpen(await api.start(a.repo, USAGE_REVIEW, "blank", false)); void api.log("ui.suggestion_dismissed", { id: g.id }); }
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
     else {
@@ -124,6 +125,13 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
           <Count n={review.length} label="to review" onClick={() => jump("mr-review")} />
         </>}
         <span className="mr-grow" />
+        {/* Never ask is on (I109): a red lamp for as long as it is; click for Settings. */}
+        {state.permissionMode === "never" && (
+          <button type="button" data-mr="NeverAskLamp" data-mr-source="never" onClick={onSettings} title="Sessions act without asking, except for high-risk actions. Click to change it in Settings."
+            className="mr-row" style={{ gap: 6, border: 0, padding: "3px 10px", marginRight: 8, font: "inherit", fontWeight: 700, cursor: "pointer", background: "var(--mr-error)", color: "var(--mr-tile)" }}>
+            <span aria-hidden>●</span>Never ask
+          </button>
+        )}
         <Usage label="5-hour" v={state.usage.fiveHour} resets={state.usage.resetsAt} />
         <Usage label="Week" v={state.usage.weekly} resets={state.usage.weeklyResetsAt} />
         <span className="mr-mono" title={!state.sidecar.up ? "Claude Code isn't connected" : state.sidecar.claude ? `Claude Code: ${state.sidecar.claude}` : "Claude Code isn't installed"} style={{ color: !state.sidecar.up ? "var(--mr-error)" : state.sidecar.claude ? "var(--mr-done)" : "var(--mr-needs)" }}>●</span>
@@ -172,12 +180,13 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
               {docs.map((d) => {
                 const blocks = Object.values(d.blocks);
                 const open = blocks.filter(isOpenQuestion).length;
+                const stage = isBrief(d) ? null : docStage(d, state.sessions);
                 return (
-                  <button key={d.id} type="button" className="mr-tile" data-s={open ? "needs_you" : "working"} onClick={() => onOpenDoc(d.id)} style={{ minHeight: 96 }}>
+                  <button key={d.id} type="button" className="mr-tile" data-mr="DocTile" data-mr-source={d.id} data-s={open ? "needs_you" : stage === "shipped" ? "done" : "working"} onClick={() => onOpenDoc(d.id)} style={{ minHeight: 96 }}>
                     <div className="mr-flag" />
                     <div className="mr-tbody">
                       <strong style={{ fontSize: 15 }}>{d.title}</strong>
-                      <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>v{d.version} · {blocks.length} blocks{open ? ` · ${open} open question${open === 1 ? "" : "s"}` : ""}</span>
+                      <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>v{d.version} · {blocks.length} blocks{stage ? ` · ${STAGE_LABEL[stage]}` : ""}{open ? ` · ${open} open question${open === 1 ? "" : "s"}` : ""}</span>
                       <span className="mr-ink2 mr-ellipsis">{blocks.find((b) => b.section === "goal")?.takeaway ?? ""}</span>
                     </div>
                   </button>
@@ -269,7 +278,7 @@ export function tileNote(tile: TileSpec): string {
 }
 
 // The track's caption on a resting tile: the name of the plan step in progress (or next up),
-// falling back to the picker's "Step n of m" / "Ready to review".
+// falling back to the picker's "Step n of m" / "All n steps done".
 export function tileStep(todos: Todo[], fallback: string): string {
   const t = todos.find((x) => x.status === "in_progress") ?? todos.find((x) => x.status === "pending");
   return t ? t.activeForm || t.content : fallback;

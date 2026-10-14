@@ -127,7 +127,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if (ev.kind === "ui.compact_window_set") return { ...next, compactWindow: typeof p.tokens === "number" ? p.tokens : null };
   if (ev.kind === "ui.session_cap_set") return { ...next, sessionCap: typeof p.cap === "number" ? Math.max(1, p.cap) : next.sessionCap };
-  if (ev.kind === "ui.permission_mode_set") return { ...next, permissionMode: p.mode === "auto" || p.mode === "acceptEdits" || p.mode === "default" ? p.mode : next.permissionMode };
+  if (ev.kind === "ui.permission_mode_set") return { ...next, permissionMode: p.mode === "auto" || p.mode === "acceptEdits" || p.mode === "default" || p.mode === "never" ? p.mode : next.permissionMode };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.notifications_set") return { ...next, notifications: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
@@ -206,6 +206,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.status = "working";
       break;
     case "sidecar.permission_request": {
+      if (p.auto_allowed) break; // Never ask let it through in the core (I109): no card
       const tool = String(p.tool);
       const ask: PendingAsk = tool === "AskUserQuestion"
         ? { kind: "question", requestId: String(p.request_id), questions: ((p.input as { questions?: unknown }).questions ?? []) as never, input: p.input as Record<string, unknown>, at: ev.created_at }

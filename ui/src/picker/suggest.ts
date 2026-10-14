@@ -1,4 +1,4 @@
-import { isOpenQuestion, type Doc } from "../state/docs";
+import { isBrief, isOpenQuestion, isStalled, type Doc } from "../state/docs";
 import type { Pr } from "../state/store";
 import type { AppState } from "../state/types";
 import { pickTile } from "./pick";
@@ -12,7 +12,7 @@ export type Suggestion = {
   id: string; // stable, so a dismissal sticks
   why: string;
   what: string;
-  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "start"; mode: "review" | "address"; value: string; repo?: string } | { kind: "build_mine" } | { kind: "usage_review"; repo: string };
+  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "start"; mode: "review" | "address"; value: string; repo?: string } | { kind: "build_mine" } | { kind: "usage_review"; repo: string } | { kind: "docs_done"; ids: string[] };
   label: string;
   rank: number; // lower first
 };
@@ -45,10 +45,14 @@ export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine:
     // Open questions and prose asks live in the needs-you queue, never here too (F2).
     if (!open.length && d.pending_notes.length + d.pending_changes.length) out.push({ id: `doc-regen:${d.id}:${d.version}`, why: `Your notes on “${d.title}” aren't sent yet`, what: "Regenerate the doc with them", action: { kind: "open_doc", id: d.id }, label: "Open", rank: 2 });
   }
+  // Doc lifecycle (decision 38): shipped docs close in one click; stalled ones ask build or drop.
+  const shipped = docs.filter((d) => !isBrief(d) && d.shipped_at);
+  if (shipped.length) out.push({ id: `docs-done:${shipped.map((d) => d.id).join(",")}`, why: shipped.length === 1 ? `“${shipped[0].title}” shipped` : `${plural(shipped.length, "working doc")} shipped`, what: "Mark done to archive", action: { kind: "docs_done", ids: shipped.map((d) => d.id) }, label: "Mark done", rank: 3 });
+  for (const d of docs) if (isStalled(d, state.sessions, now)) out.push({ id: `doc-stalled:${d.id}:${d.updated_at}`, why: `“${d.title}” hasn't moved in ${plural(Math.floor((now - (d.updated_at ?? now)) / 86_400_000), "day")}`, what: "Build it or drop it", action: { kind: "open_doc", id: d.id }, label: "Open", rank: 5 });
   for (const s of sessions) {
     const t = pickTile(s);
     if (t.state === "interrupted" && s.sdkSessionId) out.push({ id: `resume:${s.id}`, why: "Stopped when the app closed", what: `Resume “${sessionTitle(s)}”`, action: { kind: "resume", id: s.id }, label: "Resume", rank: 3 });
-    if ((t.state === "idle" || t.state === "done") && Object.keys(s.files).length && !fixReady(s)) out.push({ id: `diff:${s.id}:${Object.keys(s.files).length}`, why: `${plural(Object.keys(s.files).length, "file")} changed in “${sessionTitle(s)}”`, what: "Review its changes", action: { kind: "open_session", id: s.id }, label: "Review", rank: 4 });
+    if ((t.state === "idle" || t.state === "review" || t.state === "done") && Object.keys(s.files).length && !fixReady(s)) out.push({ id: `diff:${s.id}:${Object.keys(s.files).length}`, why: `${plural(Object.keys(s.files).length, "file")} changed in “${sessionTitle(s)}”`, what: "Review its changes", action: { kind: "open_session", id: s.id }, label: "Review", rank: 4 });
   }
   // Applied fixes only reach the app you're using after a rebuild (J14).
   const applied = sessions.filter((s) => s.fixApplied && s.fixApplied > (state.lastBuildAt ?? 0)).length;

@@ -35,6 +35,7 @@
 .mr-mark[data-s="needs_you"] { color: var(--mr-needs-ink); }
 .mr-mark[data-s="error"] { color: var(--mr-error); }
 .mr-mark[data-s="done"] { color: var(--mr-done); }
+.mr-mark[data-s="review"] { color: var(--mr-ink); }
 .mr-mark[data-s="working"], .mr-mark[data-s="almost"], .mr-mark[data-s="starting"], .mr-mark[data-s="idle"] { color: var(--mr-ink-2); }
 
 /* Bars */

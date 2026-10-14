@@ -88,6 +88,9 @@ const planDoc: Doc = {
   ].map((b, i) => [b.id, { data: null, decision: null, updated: "", since: 1, was: null, ...b, order: i }])),
 } as Doc;
 
+// The plan doc with every question answered by its first option.
+const decided = (d: Doc): Doc["blocks"] => Object.fromEntries(Object.entries(d.blocks).map(([k, b]) => [k, b.section === "question" ? { ...b, decision: b.data?.options?.[0]?.label ?? "Yes", status: "decided" } : b]));
+
 // Review (J8): /review on a PR, as an overview then snippets with findings.
 export const REVIEW_SNIPPETS = [
   { n: 1, total: 3, area: "Payments", title: "Retry loop around the charge call", file: "src/payments/charge.ts", code: "@@ -40,6 +40,14 @@\n-  const res = await stripe.charge(req)\n+  for (let i = 0; i < 3; i++) {\n+    try { return await stripe.charge(req) }\n+    catch (e) { await sleep(2 ** i * 100) }\n+  }", explain: "Retries a failed charge up to three times with backoff.", good: "Backoff is bounded.", findings: [{ id: "f1", severity: "blocking", at: "charge.ts:42", text: "Retrying a charge without an idempotency key can double-charge the customer." }, { id: "f2", severity: "nit", at: "charge.ts:44", text: "Swallows the last error; rethrow after the final attempt." }] },
@@ -252,8 +255,15 @@ export const SCENARIOS: Record<string, Scenario> = {
   address: { events: addressEvents, docs: [] },
   fresh: { events: [...sidecarUp], docs: [] },
   permissions: { events: [...sidecarUp, onboarded], docs: [] },
+  neverask: { events: [...ready, { kind: "ui.permission_mode_set", payload: { mode: "never" }, at: 1 }, onboarded], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
+  // Doc lifecycle (MR-151): one stalled with open questions, one building, one shipped. ?demo=doclife
+  doclife: { events: busy, docs: [
+    { ...planDoc, updated_at: Date.now() - 5 * 86_400_000 },
+    { ...planDoc, id: "doc2", title: "Settings schema v2", blocks: decided(planDoc), build_sessions: ["D"], updated_at: Date.now() - 3_600_000 },
+    { ...planDoc, id: "doc3", title: "Retire the old invoices table", blocks: decided(planDoc), build_sessions: ["A"], shipped_at: Date.now() - 600_000, updated_at: Date.now() - 600_000 },
+  ] },
   // A 14-block working doc with long bodies, tables and lists (the doc map must stay usable).
   bigdoc: { events: [...ready, onboarded], docs: [planDocFixture as unknown as Doc] },
   // The same plan doc: a view on every block (MR-102/103): ?demo=multiplayer
