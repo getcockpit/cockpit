@@ -136,6 +136,9 @@ const reportEvents: E[] = [
 ];
 
 
+// MR-142: screenshots for the image blocks, drawn inline so the demo needs no files.
+const shot = (title: string, fill: string, off = 0) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#f4f2ee"/><rect width="640" height="56" fill="#15181b"/><text x="24" y="36" font-family="sans-serif" font-size="20" fill="#fff">${title}</text><rect x="${180 + off}" y="150" width="280" height="44" fill="${fill}"/><text x="${250 + off}" y="178" font-family="sans-serif" font-size="16" fill="#fff">Sign in</text><rect x="180" y="100" width="280" height="32" fill="#ddd"/></svg>`)}`;
+
 // MR-61: a session that answered with a view composed from the catalog (render_view).
 const viewEvents: E[] = [
   ...ready, onboarded,
@@ -155,6 +158,8 @@ const viewEvents: E[] = [
     { type: "tradeoff", label: "How long to keep the reader shim", points: [{ x: 1, y: 40 }, { x: 2, y: 81 }, { x: 3, y: 90 }, { x: 6, y: 96 }, { x: 12, y: 99 }], x_unit: "months", y_unit: "% of users covered", pick: 2 },
     { type: "fix_options", finding: "Old builds crash on the new format", options: [{ label: "Bump the minimum version", detail: "10 min, forces 4% to update" }, { label: "Ship a reader shim", detail: "2 h, nobody notices", recommended: true }] },
     { type: "thread", author: "marta", where: "round 2 · read.ts:42", state: "replied", body: "This throws on v1 files, so the desktop app will crash on launch.", note: "You replied \"will do\" in round 1, still open." },
+    { type: "images", ask: "both", items: [{ path: shot("Settings · light", "#2e7d6b"), caption: "Settings, light theme" }, { path: shot("Settings · narrow", "#2e7d6b", 60), caption: "Settings at 800 px" }, { path: shot("Settings · error", "#b3261e"), caption: "Invalid value state" }] },
+    { type: "image_compare", before: { path: shot("Settings · main", "#2e7d6b"), label: "main" }, after: { path: shot("Settings · this branch", "#2e7d6b", 30), label: "this branch" } },
     { type: "next", text: "Add the reader shim, then run the old-build check.", replies: ["Add the shim", "Bump the minimum version", "Explain the risk"] },
   ] }, at: 60 },
   result("V", "ok", 61),
