@@ -1,5 +1,6 @@
 import { asksUser, proseQuestion } from "./queue";
 import type { PendingAsk, SessionState } from "../state/types";
+import riskRules from "./risk-rules.json";
 
 // Picker layer 1 (decision 5): plain code maps typed agent state to catalog components.
 // No model involved; anything this layer can't classify falls through to layer 2 (MR-20).
@@ -23,7 +24,8 @@ export type TileSpec = {
 
 export type RenderRecord = { component: string; layer: "code"; source: string; ms: number };
 
-const HIGH = [/\brm\s+-[a-z]*r[a-z]*f/i, /\bgit\s+push\b.*--force/, /\bsudo\b/, /\b(curl|wget)\b[^|]*\|\s*(ba|z)?sh/, /\bdrop\s+(table|database)\b/i, /\bkubectl\s+(delete|apply)\b/, /\bterraform\s+(apply|destroy)\b/, /\b(prisma|alembic|knex)\b.*\b(migrate|deploy)\b/, /\bmigrate\b.*\b(deploy|up)\b/];
+// Shared with the core, which keeps asking about these under Never ask (I107).
+const HIGH = riskRules.high.map((r) => new RegExp(r.source, r.flags));
 const MEDIUM = [/\bgit\s+(push|reset|rebase|checkout\s+-f|clean)\b/, /\b(npm|bun|pnpm|yarn)\s+(install|add|remove|publish)\b/, /\brm\b/, /\bmv\b/, /\bchmod\b/, />\s*[^&]/, /\bdocker\b/];
 
 export function bashRisk(command: string): { risk: Risk; why: string } {

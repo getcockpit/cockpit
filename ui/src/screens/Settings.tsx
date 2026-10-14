@@ -9,7 +9,7 @@ import { sessionTitle } from "../picker/title";
 import { isAppChange } from "../picker/queue";
 import type { AppState, MrEvent } from "../state/types";
 import { Usage } from "./Usage";
-import { PERMISSION_MODES } from "../components/PermissionChoice";
+import { PERMISSION_MODES, usePermissionPick } from "../components/PermissionChoice";
 
 // Settings (decision 25): theme, and the history of your own changes to the app — collected on a
 // local branch `mine` that's never pushed — with apply / revert / build & relaunch / roll back.
@@ -55,6 +55,7 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
   const [token, setToken] = useState("");
   const [cockpitOn, setCockpitOn] = useState<boolean | null>(null);
   const [cockpitKey, setCockpitKey] = useState("");
+  const perm = usePermissionPick();
 
   const load = () => {
     invoke<History>("personal_history").then(setHist).catch((e) => setMsg(`Couldn't read your changes: ${shortError(e)}`));
@@ -126,9 +127,15 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
             <span className="mr-dim" style={{ fontSize: 12 }}>Sessions summarise their history once it reaches this many tokens. Every reply re-reads the whole history, so sooner uses less of your plan; later keeps more exact detail. Applies to sessions started or resumed after the change.</span>
           </div>
           <div className="mr-row" data-mr="PermissionMode" style={{ gap: 12 }}>
-            <Segmented label="Ask before" value={state.permissionMode ?? "auto"} options={PERMISSION_MODES.map((m) => [m.id, m.short])} onPick={(v) => void api.setPermissionMode(v as (typeof PERMISSION_MODES)[number]["id"])} />
+            <Segmented label="Ask before" value={state.permissionMode ?? "auto"} options={PERMISSION_MODES.map((m) => [m.id, m.short])} onPick={(v) => perm.pick(v as (typeof PERMISSION_MODES)[number]["id"])} />
             <span className="mr-dim" style={{ fontSize: 12 }}>{PERMISSION_MODES.find((m) => m.id === (state.permissionMode ?? "auto"))?.what} Applies to running sessions right away.</span>
           </div>
+          {state.permissionMode === "never" && <div data-mr="NeverAskOn" className="mr-row" style={{ gap: 10, padding: "10px 12px", background: "var(--mr-well)", boxShadow: "inset 4px 0 0 var(--mr-error)" }}>
+            <strong style={{ color: "var(--mr-error)" }}>⚠ Never ask is on.</strong>
+            <span className="mr-grow">Sessions act without asking, except for high-risk actions. Anything they do is on you.</span>
+            <Key onClick={() => perm.pick("auto")}>Back to risky only</Key>
+          </div>}
+          {perm.dialog}
           <div className="mr-row" data-mr="SessionCap" style={{ gap: 12 }}>
             <Segmented label="Working at once" value={String(state.sessionCap)} options={[["4", "4"], ["6", "6"], ["10", "10"], ["15", "15"]]} onPick={(v) => void api.log("ui.session_cap_set", { cap: Number(v) })} />
             <span className="mr-dim" style={{ fontSize: 12 }}>A new session can start while fewer than this many are mid-turn; sessions waiting for your reply don't count. The default went from 6 to 10 once idle sessions stopped counting, since most of a wall is usually waiting on you. Every working session draws on the same 5-hour and weekly plan limits, so a higher number gets you to them sooner, and gives you more to keep an eye on.</span>
