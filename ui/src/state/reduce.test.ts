@@ -63,6 +63,14 @@ describe("permissions and questions", () => {
     expect(after.sessions.s.status).toBe("working");
   });
 
+  test("a request Never ask let through draws no card, and rm -fr rates high like rm -rf (I107)", () => {
+    const auto: MrEvent = { ...perm("p9", "Bash", { command: "ls" }), payload: { request_id: "p9", tool: "Bash", input: { command: "ls" }, auto_allowed: true } };
+    const st = replay([...base, auto]);
+    expect(st.sessions.s.pending).toEqual([]);
+    expect(st.sessions.s.status).not.toBe("needs_you");
+    expect(pickDecision(replay([...base, perm("p8", "Bash", { command: "rm -fr ~/code" })]).sessions.s.pending[0]).spec).toMatchObject({ risk: "high" });
+  });
+
   test("AskUserQuestion becomes a QuestionCard", () => {
     const q = { questions: [{ question: "Red or blue?", header: "Color", options: [{ label: "red", description: "" }, { label: "blue", description: "" }] }] };
     const st = replay([...base, perm("p2", "AskUserQuestion", q)]);
@@ -486,7 +494,9 @@ describe("permission mode (I106)", () => {
   test("unchosen until you pick; the last valid pick wins", () => {
     expect(replay([]).permissionMode).toBeNull();
     expect(replay([ev("A", "auto"), ev("B", "default")]).permissionMode).toBe("default");
-    expect(replay([ev("A", "acceptEdits"), ev("B", "bypassPermissions")]).permissionMode).toBe("acceptEdits");
+    expect(replay([ev("A", "acceptEdits"), ev("B", "plan")]).permissionMode).toBe("acceptEdits");
+    expect(replay([ev("A", "never")]).permissionMode).toBe("never");
+    expect(replay([ev("A", "bypassPermissions")]).permissionMode).toBeNull();
   });
 });
 

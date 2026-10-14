@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NoClaude } from "../components/NoClaude";
-import { PermissionOptions } from "../components/PermissionChoice";
+import { PermissionOptions, usePermissionPick } from "../components/PermissionChoice";
 import { Bar, Key, Lamp, Lamps, RiskMeter, StateMark } from "../components";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { keyOf } from "../components/keys";
@@ -361,12 +361,14 @@ function Check({ ok, title, detail, action, optional }: { ok: boolean | null; ti
 // ── 5. How often sessions ask. ──
 function PermissionStep({ state, onNext }: { state: AppState; onNext: () => void }) {
   // The pick is logged right away, so skipping the intro after this step keeps it.
+  const { pick, dialog } = usePermissionPick();
   return (
     <>
       <Title kicker="Fewer interruptions" sub="Every tool a session uses can stop and wait for your Allow. Pick how often. You can change it any time in Settings → Sessions.">
         How often should sessions <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>ask</span>?
       </Title>
-      <div style={{ maxWidth: 1100 }}><PermissionOptions value={state.permissionMode} onPick={(m) => void api.setPermissionMode(m)} /></div>
+      <div style={{ maxWidth: 1100 }}><PermissionOptions value={state.permissionMode} onPick={pick} /></div>
+      {dialog}
       <Next onClick={() => { if (state.permissionMode === null) void api.setPermissionMode("auto"); onNext(); }}>Next: go</Next>
     </>
   );

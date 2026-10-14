@@ -494,6 +494,7 @@ dependencies = [
  "dirs",
  "mac-notification-sys",
  "portable-pty",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
