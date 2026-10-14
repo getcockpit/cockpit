@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrowHead, askOf, attachmentNotes, clearDrafts, compareReply, getDrafts, hasInput, nameOf, resolvePath, reviewReply, setDraft } from "./reviewDraft";
+import { arrowHead, askOf, inkLabel, attachmentNotes, clearDrafts, compareReply, getDrafts, hasInput, nameOf, resolvePath, reviewReply, setDraft } from "./reviewDraft";
 
 describe("image review", () => {
   it("reads ask, defaulting to both", () => {
@@ -67,6 +67,18 @@ describe("image review", () => {
       "   - Arrow 1 from (10%, 90%) pointing at (45% from left, 52% from top)",
       "   - Box 2 around (1%–5% from left, 1%–5% from top)",
     ]);
+  });
+
+  it("quotes a box's label and places it over the box, or inside at the top edge", () => {
+    const text = reviewReply([{ path: "/r/a.png" }], [{ pins: [], ink: [{ kind: "box", a: [20, 40], b: [60, 50], label: " overlaps logo " }, { kind: "box", a: [0, 0], b: [10, 10], label: "  " }] }]);
+    expect(text).toContain('- Box 1 "overlaps logo" around (20%–60% from left, 40%–50% from top)');
+    expect(text).toContain("- Box 2 around (0%–10% from left, 0%–10% from top)");
+    const over = inkLabel({ kind: "box", a: [60, 50], b: [20, 40], label: "x" }, 1000, 500)!;
+    expect(over.size).toBe(25);
+    expect(over.y).toBeLessThan(200); // above the box's top at 200 px
+    expect(inkLabel({ kind: "box", a: [0, 0], b: [10, 10], label: "x" }, 1000, 500)!.y).toBeGreaterThan(0);
+    expect(inkLabel({ kind: "box", a: [0, 0], b: [10, 10] }, 1000, 500)).toBeNull();
+    expect(inkLabel({ kind: "arrow", a: [0, 0], b: [10, 10] }, 1000, 500)).toBeNull();
   });
 
   it("puts the arrowhead's corners behind the tip, either side of the shaft", () => {
