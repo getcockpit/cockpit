@@ -348,7 +348,7 @@ fn resume_interrupted(app: &AppHandle) {
             None,
             Some(kind),
             Some(false),
-            Some(sid), None, None
+            Some(sid), None, None, None
         );
     }
 }
