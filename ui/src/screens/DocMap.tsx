@@ -154,7 +154,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
                 </div>
               )}
               <div className="mr-row" style={{ flex: "none", padding: "10px 14px", background: "var(--mr-tile)", borderTop: "2px solid var(--mr-well)" }}>
-                <span className="mr-mono mr-dim" style={{ flex: "none" }}>{focus ? `${step} / ${blocks.length}` : "Overview"}</span>
+                <span className="mr-mono mr-dim" data-mr="DocStep" data-mr-source={String(step)} style={{ flex: "none" }}>{focus ? `${step} / ${blocks.length}` : "Overview"}</span>
                 <span className="mr-grow mr-ellipsis" style={{ fontWeight: 700, minWidth: 0 }}>{focus ? SECTION_LABEL[focus.section] ?? focus.section : "At a glance. Space walks through it block by block."}</span>
                 {changed.length > 0 && !focus && <Key tone={onlyChanged ? "primary" : undefined} onClick={() => setOnlyChanged((x) => !x)}>{onlyChanged ? "Show everything" : `What changed in v${doc.version} · ${changed.length}`}</Key>}
                 <Key k="←" onClick={() => setStep((s) => Math.max(0, s - 1))}>Back</Key>
