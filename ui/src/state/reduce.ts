@@ -206,7 +206,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.status = "working";
       break;
     case "sidecar.permission_request": {
-      if (p.auto_allowed) break; // Never ask let it through in the core (I107): no card
+      if (p.auto_allowed) break; // Never ask let it through in the core (I109): no card
       const tool = String(p.tool);
       const ask: PendingAsk = tool === "AskUserQuestion"
         ? { kind: "question", requestId: String(p.request_id), questions: ((p.input as { questions?: unknown }).questions ?? []) as never, input: p.input as Record<string, unknown>, at: ev.created_at }

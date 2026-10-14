@@ -63,7 +63,7 @@ describe("permissions and questions", () => {
     expect(after.sessions.s.status).toBe("working");
   });
 
-  test("a request Never ask let through draws no card, and rm -fr rates high like rm -rf (I107)", () => {
+  test("a request Never ask let through draws no card, and rm -fr rates high like rm -rf (I109)", () => {
     const auto: MrEvent = { ...perm("p9", "Bash", { command: "ls" }), payload: { request_id: "p9", tool: "Bash", input: { command: "ls" }, auto_allowed: true } };
     const st = replay([...base, auto]);
     expect(st.sessions.s.pending).toEqual([]);

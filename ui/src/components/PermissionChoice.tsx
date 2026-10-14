@@ -6,7 +6,7 @@ import type { PermissionMode } from "../state/types";
 
 // How sessions ask before using tools (decision I106). Asked once: in the intro, or on the wall for
 // anyone who finished the intro before it asked. Settings → Sessions changes it later.
-// Never ask (I107) is Cockpit's own: everything below high risk goes through, and only after you
+// Never ask (I109) is Cockpit's own: everything below high risk goes through, and only after you
 // accept the disclaimer.
 
 export const PERMISSION_MODES: { id: PermissionMode; title: string; what: string; short: string }[] = [
@@ -43,7 +43,7 @@ export function PermissionOptions({ value, onPick }: { value: PermissionMode | n
   );
 }
 
-// The disclaimer (I107): you accept it with a tick before Never ask turns on. Keep asking is the default.
+// The disclaimer (I109): you accept it with a tick before Never ask turns on. Keep asking is the default.
 export function NeverAskDisclaimer({ onCancel, onAccept }: { onCancel: () => void; onAccept: () => void }) {
   const [ok, setOk] = useState(false);
   useEffect(() => {
