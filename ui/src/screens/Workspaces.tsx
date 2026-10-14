@@ -1,6 +1,7 @@
 import { needsQueue } from "../picker/queue";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { keyOf } from "../components/keys";
+import { keyLabel } from "../platform";
 import { shortError } from "../components/ErrorLine";
 import { invoke } from "@tauri-apps/api/core";
 import { FolderPicker } from "../components/FolderPicker";
@@ -122,7 +123,7 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
               position: "relative", zIndex: lifted ? 1 : undefined, transform: drag?.moved ? `translateX(${shift(w.id)}px)${lifted ? " translateY(-2px)" : ""}` : undefined, transition: drag?.moved && !lifted && !still ? EASE : undefined, boxShadow: lifted ? "inset 0 -3px 0 var(--mr-selected)" : undefined }}
             title={`${w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}${w.folder ? `\nStarts in ${w.folder}` : ""}\nDrag to reorder`}>
             {w.name}
-            {slot(w.id, i) < 9 && <kbd className="mr-mono" style={{ fontSize: 11, opacity: 0.55 }}>⌘{slot(w.id, i) + 1}</kbd>}
+            {slot(w.id, i) < 9 && <kbd className="mr-mono" style={{ fontSize: 11, opacity: 0.55 }}>{keyLabel(`⌘${slot(w.id, i) + 1}`)}</kbd>}
             {n > 0 && <span className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-needs)", color: "var(--mr-ink)", fontWeight: 700 }}>{n}</span>}
             {loggedOut(w.id) && <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onSignIn(w.id); }} style={{ color: "var(--mr-needs)" }}>sign in</span>}
           </button>
@@ -142,8 +143,8 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
         <button type="button" onClick={() => setAdding(true)} aria-label="New workspace" style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>+</button>
       )}
       <span className="mr-grow" />
-      {state.workspaces.length > 1 && <button type="button" onClick={onSwitcher} title="Switch workspace (⌃Tab cycles)" style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Switch <span className="mr-mono">⌘J</span></button>}
-      <button type="button" onClick={onSettings} style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Settings <span className="mr-mono">⌘,</span></button>
+      {state.workspaces.length > 1 && <button type="button" onClick={onSwitcher} title={keyLabel("Switch workspace (⌃Tab cycles)")} style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Switch <span className="mr-mono">{keyLabel("⌘J")}</span></button>}
+      <button type="button" onClick={onSettings} style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Settings <span className="mr-mono">{keyLabel("⌘,")}</span></button>
     </nav>
   );
 }
@@ -174,10 +175,10 @@ export function WorkspaceSwitcher({ state, docs, active, onSwitch, onClose }: { 
             <strong className="mr-grow">{x.w.name}{x.w.id === active ? <span className="mr-dim" style={{ fontWeight: 400 }}> · here</span> : null}</strong>
             {x.n > 0 && <span className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-needs)", fontWeight: 700 }}>{x.n} need you</span>}
             {x.running > 0 && <span className="mr-dim">{x.running} running</span>}
-            {x.i < 9 && <kbd className="mr-mono mr-dim">⌘{x.i + 1}</kbd>}
+            {x.i < 9 && <kbd className="mr-mono mr-dim">{keyLabel(`⌘${x.i + 1}`)}</kbd>}
           </button>
         ))}
-        <div className="mr-row mr-dim" style={{ padding: "8px 14px", background: "var(--mr-band)", fontSize: 12 }}>↑↓ pick · ↵ switch · ⌃Tab next workspace · ⌘1–9 direct</div>
+        <div className="mr-row mr-dim" style={{ padding: "8px 14px", background: "var(--mr-band)", fontSize: 12 }}>{keyLabel("↑↓ pick · ↵ switch · ⌃Tab next workspace · ⌘1–9 direct")}</div>
       </div>
     </div>
   );

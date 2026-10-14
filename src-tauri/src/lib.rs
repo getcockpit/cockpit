@@ -12,6 +12,7 @@ mod layer3;
 mod mentions;
 mod files;
 mod layer2;
+mod migrate;
 mod notify;
 mod personal;
 mod release_update;
@@ -40,6 +41,8 @@ pub fn run() {
         // SAFETY: single-threaded here; nothing else reads the environment yet.
         unsafe { std::env::set_var("PATH", path) };
     }
+    // Before anything opens the data folder or a webview: the identifier changed (MR-135).
+    migrate::run();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())

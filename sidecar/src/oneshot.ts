@@ -1,3 +1,4 @@
+import { NO_CLAUDE } from "./claude-path";
 import type { Outbound } from "./protocol";
 import type { QueryFn } from "./sessions";
 
@@ -25,6 +26,7 @@ export async function oneshot(
   };
   const t0 = Date.now();
   try {
+    if (!claudePath) throw new Error(NO_CLAUDE);
     let text = "";
     let ok = false;
     for await (const msg of query({ prompt: prompt(), options })) {

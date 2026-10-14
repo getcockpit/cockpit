@@ -43,7 +43,7 @@ It installs the latest release (macOS: `/Applications/Cockpit.app`; Linux: `~/.l
 
 ## Good to know
 
-- Your data stays on your machine: `~/Library/Application Support/dev.minorityreport.app` (macOS), `~/.local/share/dev.minorityreport.app` (Linux), `%APPDATA%\dev.minorityreport.app` (Windows).
+- Your data stays on your machine: `~/Library/Application Support/dev.getcockpit.app` (macOS), `~/.local/share/dev.getcockpit.app` (Linux), `%APPDATA%\dev.getcockpit.app` (Windows).
 - Linux and Windows are new: push-to-talk is macOS-only, and on Windows commands you run from Cockpit go through `cmd`.
 - Auto-review (start `/review` on PRs waiting for you) is off; turn it on in Settings if you have a `/review` command.
 - Push-to-talk (hold ⌥ Space) asks for microphone and speech permission the first time.
