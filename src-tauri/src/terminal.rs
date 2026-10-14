@@ -109,7 +109,7 @@ pub fn term_open(app: AppHandle, session: String, sdk_session_id: String, cwd: S
         let _ = crate::sidecar::session_start(
             app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd2,
             "I'm back from the terminal. Say in one line what changed there, then continue.".into(),
-            Some(sdk), None, None, Some(false), Some(sid), Some(workspace), None,
+            Some(sdk), None, None, Some(false), Some(sid), Some(workspace), None, None
         );
     }))
 }

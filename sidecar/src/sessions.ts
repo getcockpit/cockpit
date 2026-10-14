@@ -1,5 +1,6 @@
 import { NO_CLAUDE } from "./claude-path";
-import type { CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, ToolSpec } from "./protocol";
+import { userContent } from "./attachments";
+import type { Attachment, CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, ToolSpec } from "./protocol";
 
 // The slice of the Agent SDK this module needs, so tests can inject a fake.
 export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
@@ -16,15 +17,15 @@ export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record
 type SdkMcpStatus = { name: string; status: string; source?: string; scope?: string; error?: string; serverInfo?: { version: string }; config?: { url?: string }; tools?: { name: string }[] };
 export type { ModelRow };
 export type McpFactory = (session: string, tools: ToolSpec[], call: (tool: string, args: Record<string, unknown>) => Promise<{ text: string; is_error?: boolean }>) => Record<string, unknown> | undefined;
-type UserMsg = { type: "user"; message: { role: "user"; content: string }; parent_tool_use_id: null };
+type UserMsg = { type: "user"; message: { role: "user"; content: string | Record<string, unknown>[] }; parent_tool_use_id: null };
 
 // A push-based async queue: the prompt stream for one session, so follow-ups can be sent mid-run.
 class Inbox implements AsyncIterable<UserMsg> {
   private items: UserMsg[] = [];
   private waiting: ((r: IteratorResult<UserMsg>) => void) | null = null;
   private closed = false;
-  push(text: string) {
-    const m: UserMsg = { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null };
+  push(text: string, attachments?: Attachment[]) {
+    const m: UserMsg = { type: "user", message: { role: "user", content: userContent(text, attachments) }, parent_tool_use_id: null };
     if (this.waiting) { const w = this.waiting; this.waiting = null; w({ value: m, done: false }); } else this.items.push(m);
   }
   close() { this.closed = true; if (this.waiting) { const w = this.waiting; this.waiting = null; w({ value: undefined as never, done: true }); } }
@@ -47,7 +48,7 @@ export class Sessions {
   handle(m: Inbound): void {
     switch (m.type) {
       case "start": return this.start(m);
-      case "send": return void this.with(m.session, (s) => s.inbox.push(m.text));
+      case "send": return void this.with(m.session, (s) => s.inbox.push(m.text, m.attachments));
       case "interrupt": return void this.with(m.session, (s) => { void s.q?.interrupt(); });
       case "set_model": return void this.with(m.session, (s) => { s.switching = s.switching.then(() => this.setModel(m.session, s, m.model, m.effort)); });
       case "stop": return void this.with(m.session, (s) => { s.inbox.close(); s.q?.close?.(); });
@@ -133,7 +134,7 @@ export class Sessions {
     if (!claudePath) return this.emit({ type: "session_ended", session: m.session, ok: false, reason: NO_CLAUDE });
     const s: Live = { inbox: new Inbox(), q: null, init: { skills: [], terminal: [] }, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
     this.live.set(m.session, s);
-    s.inbox.push(m.prompt);
+    s.inbox.push(m.prompt, m.attachments);
 
     const callTool = (tool: string, args: Record<string, unknown>) => new Promise<{ text: string; is_error?: boolean }>((resolve) => {
       const call_id = `c${++this.seq}`;
