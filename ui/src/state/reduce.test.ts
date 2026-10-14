@@ -481,6 +481,15 @@ describe("session cap (MR-105)", () => {
   });
 });
 
+describe("permission mode (I106)", () => {
+  const ev = (id: string, mode: unknown): MrEvent => ({ id, session_id: null, kind: "ui.permission_mode_set", payload: { mode }, anchor: null, created_at: 1 });
+  test("unchosen until you pick; the last valid pick wins", () => {
+    expect(replay([]).permissionMode).toBeNull();
+    expect(replay([ev("A", "auto"), ev("B", "default")]).permissionMode).toBe("default");
+    expect(replay([ev("A", "acceptEdits"), ev("B", "bypassPermissions")]).permissionMode).toBe("acceptEdits");
+  });
+});
+
 describe("Cockpit layer (decision 34)", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>, at = "2026-10-11T10:00:00Z"): MrEvent => ({ id, session_id: "S1", kind, payload, anchor: null, created_at: at });
   test("is off until switched on", () => {

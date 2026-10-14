@@ -7,6 +7,7 @@ import { needsLayer2 } from "./picker/pick";
 import { DeleteWorkspace, WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
+import { PermissionPrompt } from "./components/PermissionChoice";
 import { Archive } from "./screens/Archive";
 import { Toast } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -108,6 +109,9 @@ export default function App() {
   const setWallView = (v: "wall" | "timeline") => navigate("side", () => { setWallViewNow(v); try { localStorage.setItem("mr.wallView", v); } catch { /* per-viewer convenience */ } });
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
   const [introClosedAt, setIntroClosedAt] = useState<string | null>(null);
+  // Anyone onboarded before the intro asked how often sessions should ask is asked once here (I106).
+  const [permAsked, setPermAsked] = useState(false);
+  const permPrompt = !introOpen(all, introClosedAt) && all.onboarded && all.permissionMode === null && !permAsked && <PermissionPrompt onDone={() => setPermAsked(true)} />;
   const intro = introOpen(all, introClosedAt) && <Onboarding state={all} onDone={() => setIntroClosedAt(all.lastEventId)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
   // A notification's click lands on its decision (MR-94): its workspace, then the session or doc, over anything open.
   useNotify(all, allDocs, { workspace, session: focus, doc: docId }, (t) => {
@@ -197,7 +201,7 @@ export default function App() {
       <Toast />
       <Presence show={!!deleting}>{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}</Presence>
       <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>
-      {godmode}{voice}<Presence show={!!intro}>{intro}</Presence>
+      {godmode}{voice}<Presence show={!!intro}>{intro}</Presence>{permPrompt}
     </>;
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);

@@ -113,6 +113,18 @@ test("model and effort switch mid-session, and a refused switch reports why", as
   expect(sets[1]).toMatchObject({ session: "m1", model: "broken", ok: false, error: "unknown model" });
 });
 
+test("the permission mode reaches Claude Code on start and switches mid-session", async () => {
+  const out = await run(
+    [{ type: "start", session: "pm", cwd: "/tmp", prompt: "hi", permission_mode: "auto" }, { type: "set_permission_mode", session: "pm", mode: "acceptEdits" }, { type: "set_permission_mode", session: "pm", mode: "plan" }],
+    ["ready", "permission_mode_set", "permission_mode_set"],
+  );
+  const init = out.find((x) => x.type === "sdk" && (x.message as { subtype?: string }).subtype === "init") as { message: { permissionMode: string } } | undefined;
+  expect(init?.message.permissionMode).toBe("auto");
+  const sets = out.filter((x) => x.type === "permission_mode_set");
+  expect(sets[0]).toMatchObject({ session: "pm", mode: "acceptEdits", ok: true });
+  expect(sets[1]).toMatchObject({ session: "pm", mode: "plan", ok: false, error: "not in this test" });
+});
+
 test("a session lists its commands once it starts, marking skills and terminal-only ones", async () => {
   const out = await run([{ type: "start", session: "c1", cwd: "/tmp", prompt: "hi" }], ["ready", "session_started", "commands"]);
   const c = out.find((x) => x.type === "commands") as { session: string; commands: { name: string; skill: boolean; terminal: boolean; hint: string }[] };
