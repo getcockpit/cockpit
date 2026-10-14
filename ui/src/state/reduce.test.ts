@@ -136,7 +136,7 @@ test("a turn that ends with plan steps still open says the plan was left open (M
   const open = pickTile(replay(base).sessions.s);
   expect(open).toMatchObject({ state: "idle", planOpen: true, step: "Plan left open · 2 of 3" });
   const closed = pickTile(replay([...base.slice(0, 3), ev("E3b", "plan.updated", { steps: steps("done") }), base[3]]).sessions.s);
-  expect(closed).toMatchObject({ state: "done", planOpen: false, step: "Ready to review" });
+  expect(closed).toMatchObject({ state: "review", planOpen: false, step: "All 3 steps done" });
 });
 
 test("a finished turn with a script still running in the background stays Working, not Waiting", () => {
