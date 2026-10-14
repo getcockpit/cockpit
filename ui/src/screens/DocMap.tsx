@@ -5,7 +5,7 @@ import { Key, PickAny } from "../components";
 import { Markdown } from "../components/Markdown";
 import { FileContext } from "../components/FileChip";
 import { CatalogView, ViewGlance } from "../components/CatalogView";
-import { blockView, buildDoc, continueBrief, continueLabel, decideQuestion, isDecision, docApi, sendDocFeedback, isBrief, isOpenQuestion, orderedBlocks, SECTION_LABEL, type Block, type Doc } from "../state/docs";
+import { blockView, buildDoc, continueBrief, continueLabel, decideQuestion, docStage, isDecision, docApi, sendDocFeedback, isBrief, isOpenQuestion, orderedBlocks, SECTION_LABEL, STAGE_LABEL, type Block, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import type { AppState } from "../state/types";
 
@@ -60,13 +60,16 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
   };
 
   const [sent, setSent] = useState("");
-  // Delete takes two clicks; the second says what it does.
+  // Drop takes two clicks; the second says what it does. A brief is just deleted.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const remove = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return; }
-    await docApi.archive(doc);
+    await (brief ? docApi.archive(doc) : docApi.drop(doc));
     onBack();
   };
+  // Lifecycle (decision 38): shipped → Done archives it; a build with no branch to watch is marked by hand.
+  const stage = brief ? null : docStage(doc, state.sessions);
+  const done = async () => { await docApi.done(doc); onBack(); };
   const sendFeedback = async (regenerate: boolean) => {
     const id = await sendDocFeedback(doc, session, regenerate);
     setSent(regenerate ? "Sent. Claude is writing the next version; it appears here as it lands." : "Sent to the plan session.");
@@ -105,11 +108,14 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
           {brief && <span className="mr-dim">Catch-up brief</span>}
           <strong style={{ fontSize: 15 }}>{doc.title}</strong>
           <span className="mr-mono mr-dim">v{doc.version} · {blocks.length} blocks</span>
+          {stage && <span data-mr="DocStage" data-mr-source={doc.id} className="mr-mono" style={{ fontSize: 12, padding: "2px 8px", background: "var(--mr-well)", color: stage === "shipped" ? "var(--mr-done)" : stage === "drafting" && open.length ? "var(--mr-needs-ink)" : "var(--mr-ink-2)" }}>{STAGE_LABEL[stage]}</span>}
           <span className="mr-grow" />
+          {stage === "shipped" && <button type="button" className="mr-key" data-mr="DocDone" data-mr-source={doc.id} data-tone="primary" style={{ minHeight: 30 }} onClick={() => void done()}>Done, archive it</button>}
+          {stage === "building" && <button type="button" className="mr-key" data-mr="DocMarkShipped" data-mr-source={doc.id} style={{ minHeight: 30 }} title="Shipped is set by itself once the build branch is merged into main" onClick={() => void docApi.markShipped(doc)}>Mark shipped</button>}
           {session && <button type="button" className="mr-key" style={{ minHeight: 30 }} onClick={() => onOpenSession(session.id)}>{brief ? "Open the session" : "Open the plan session"}{live ? "" : " (ended)"}</button>}
           {builder && <button type="button" className="mr-key" data-mr="DocBuildSession" data-mr-source={builder.id} style={{ minHeight: 30 }} onClick={() => onOpenSession(builder.id)}>Open the build session{building ? "" : " (ended)"}</button>}
           <button type="button" className="mr-key" data-mr="DocDelete" data-mr-source={doc.id} style={{ minHeight: 30, ...(confirmDelete ? { background: "var(--mr-error)", color: "var(--mr-tile)" } : {}) }}
-            onClick={() => void remove()} onBlur={() => setConfirmDelete(false)}>{confirmDelete ? "Click again to delete this doc" : "Delete doc"}</button>
+            onClick={() => void remove()} onBlur={() => setConfirmDelete(false)}>{brief ? (confirmDelete ? "Click again to delete this brief" : "Delete brief") : confirmDelete ? "Click again to drop this doc" : "Drop doc"}</button>
         </header>
 
         <main style={{ flex: 1, minHeight: 0, display: "flex", gap: 16, padding: 16 }}>
