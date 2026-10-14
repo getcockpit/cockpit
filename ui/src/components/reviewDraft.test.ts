@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { askOf, attachmentNotes, clearDrafts, compareReply, getDrafts, hasInput, nameOf, resolvePath, reviewReply, setDraft } from "./reviewDraft";
+import { arrowHead, askOf, attachmentNotes, clearDrafts, compareReply, getDrafts, hasInput, nameOf, resolvePath, reviewReply, setDraft } from "./reviewDraft";
 
 describe("image review", () => {
   it("reads ask, defaulting to both", () => {
@@ -45,12 +45,12 @@ describe("image review", () => {
     const files = [{ path: "/d/a.png", name: "a.png" }, { path: "/d/b.png", name: "b.png" }];
     expect(attachmentNotes(files, (p) => ({ pins: pins[p] ?? [] }))).toBe("Notes on a.png (/d/a.png):\n- Pin 1 at (1% from left, 2% from top): here");
     expect(attachmentNotes(files, () => ({ pins: [] }))).toBe("");
-    expect(attachmentNotes(files, (p) => ({ pins: [], strokes: p === "/d/b.png" ? [[[10, 10], [30, 20]]] : [] }), { "/d/b.png": "/data/b-drawn.png" }))
+    expect(attachmentNotes(files, (p) => ({ pins: [], ink: p === "/d/b.png" ? [{ kind: "line" as const, pts: [[10, 10], [30, 20]] as [number, number][] }] : [] }), { "/d/b.png": "/data/b-drawn.png" }))
       .toBe("Notes on b.png (/d/b.png):\n- Drawing 1 around (10%–30% from left, 10%–20% from top)\n- Drawn-on copy attached: /data/b-drawn.png");
   });
 
   it("names each drawing by the box around it and points at the drawn-on copy", () => {
-    const text = reviewReply([{ path: "/r/a.png" }], [{ pins: [], strokes: [[[20.2, 40], [35.6, 41], [50, 60.4]], [[70, 70]]] }], ["/data/a-drawn.png"]);
+    const text = reviewReply([{ path: "/r/a.png" }], [{ pins: [], ink: [{ kind: "line", pts: [[20.2, 40], [35.6, 41], [50, 60.4]] }, { kind: "line", pts: [[70, 70]] }] }], ["/data/a-drawn.png"]);
     expect(text).toBe([
       "Image review (1 image):",
       "1. Comment · a.png (/r/a.png)",
@@ -58,6 +58,22 @@ describe("image review", () => {
       "   - Drawing 2 around (70% from left, 70% from top)",
       "   - Drawn-on copy: /data/a-drawn.png",
     ].join("\n"));
+  });
+
+  it("names arrows by start and target and boxes by area, numbered per kind", () => {
+    const text = reviewReply([{ path: "/r/a.png" }], [{ pins: [], ink: [{ kind: "box", a: [60, 40], b: [20, 10] }, { kind: "arrow", a: [10, 90], b: [45.4, 52] }, { kind: "box", a: [1, 1], b: [5, 5] }] }]);
+    expect(text.split("\n").slice(2)).toEqual([
+      "   - Box 1 around (20%–60% from left, 10%–40% from top)",
+      "   - Arrow 1 from (10%, 90%) pointing at (45% from left, 52% from top)",
+      "   - Box 2 around (1%–5% from left, 1%–5% from top)",
+    ]);
+  });
+
+  it("puts the arrowhead's corners behind the tip, either side of the shaft", () => {
+    const [l, r] = arrowHead([0, 0], [10, 0], 2);
+    expect(l[0]).toBeLessThan(10);
+    expect(r[0]).toBeLessThan(10);
+    expect(Math.sign(l[1])).toBe(-Math.sign(r[1]));
   });
 
   it("keeps drafts per key until cleared", () => {
