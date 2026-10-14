@@ -4,14 +4,14 @@
 
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer" || v == "attach")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -102,6 +102,37 @@ fn brief_layer_mode() -> bool {
 }
 static BRIEFED: AtomicBool = AtomicBool::new(false);
 
+/// The message box's attachments (MR-141), driven in the real UI: once the session is up, the UI
+/// pastes an image and a long text and drops a PDF on the box, then sends; Claude must see both files.
+fn attach_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "attach")
+}
+
+/// A one-page PDF that says `word`, with a correct xref table.
+fn tiny_pdf(word: &str) -> Vec<u8> {
+    let stream = format!("BT /F1 48 Tf 72 700 Td ({word}) Tj ET");
+    let objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_owned(),
+        format!("<< /Length {} >>\nstream\n{stream}\nendstream", stream.len()),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+    ];
+    let mut out = String::from("%PDF-1.4\n");
+    let mut at = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        at.push(out.len());
+        out.push_str(&format!("{} 0 obj\n{o}\nendobj\n", i + 1));
+    }
+    let xref = out.len();
+    out.push_str(&format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1));
+    for a in at {
+        out.push_str(&format!("{a:010} 00000 n \n"));
+    }
+    out.push_str(&format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1));
+    out.into_bytes()
+}
+
 fn doc_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "doc")
 }
@@ -127,6 +158,10 @@ pub fn run(app: AppHandle) {
         }
         if layer_mode() {
             crate::eventlog::record(&app, None, "ui.cockpit_layer_set", &serde_json::json!({ "on": true }), None);
+        }
+        // The UI drives this one: the first-run intro would cover the session.
+        if attach_mode() {
+            crate::eventlog::record(&app, None, "ui.onboarded", &serde_json::json!({}), None);
         }
         let ws = if workspace_mode() { Some(crate::workspaces::workspace_create(app.clone(), "Selftest".into()).expect("workspace")) } else { None };
         let state = app.state::<crate::sidecar::Sidecar>();
@@ -158,6 +193,8 @@ pub fn run(app: AppHandle) {
                 "This is a UI test. Run the shell command `sleep 40` with the Bash tool, then reply with exactly: SELFTEST DONE".into()
             } else if brief_mode() {
                 "This is a UI test. Create a file retry.txt in the current directory containing the word retry. Don't run any tests. Then reply with exactly: Done, retries are in and all tests pass.".into()
+            } else if attach_mode() {
+                "This is a UI test. Reply with exactly: READY".into()
             } else if doc_mode() {
                 "Create a working document titled 'Selftest plan' with the mr doc_create tool. Add a goal block (block_id goal) whose takeaway is 'Prove the doc loop works', and an open question block (section question, block_id q1, takeaway 'Pick a colour') with data options red and blue. Don't decide it. Then reply with exactly: SELFTEST DONE".into()
             } else {
@@ -253,6 +290,13 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 std::thread::sleep(Duration::from_millis(600));
                 let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session, "\r".into());
             });
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && attach_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
+            // The UI takes it from here (state/selftestUi.ts): paste, drop, send.
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            let pdf = std::env::temp_dir().join(format!("mr-selftest-attach-{}.pdf", ulid::Ulid::new()));
+            if let Err(e) = std::fs::write(&pdf, tiny_pdf("BANANA")) { eprintln!("[selftest] pdf: {e}"); std::process::exit(1); }
+            let _ = app.emit("mr:selftest", serde_json::json!({ "mode": "attach", "session": session, "pdf": pdf.to_string_lossy() }));
         }
         Some("sdk") if payload["message"]["type"] == "result" && flow_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
