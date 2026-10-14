@@ -262,8 +262,8 @@ mod tests {
     #[test]
     fn finds_a_clone_only_by_its_origin() {
         let home = std::env::temp_dir().join(format!("mr-home-{}", ulid::Ulid::new()));
-        let right = home.join("go/github.com/acme/shop");
-        let wrong = home.join("code/shop");
+        let right = home.join("go").join("github.com").join("acme").join("shop");
+        let wrong = home.join("code").join("shop");
         for (d, url) in [(&right, "git@github.com:acme/shop.git"), (&wrong, "https://github.com/someone-else/shop")] {
             std::fs::create_dir_all(d).unwrap();
             assert!(Command::new("git").arg("-C").arg(d).args(["init", "-q"]).status().unwrap().success());

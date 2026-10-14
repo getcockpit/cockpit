@@ -93,7 +93,7 @@ mod tests {
         std::fs::create_dir_all(&b).unwrap();
         for (dir, cwd, n) in [("p1", a.display().to_string(), 1), ("p2", format!("{}-worktrees/x", a.display()), 2), ("p3", b.display().to_string(), 3)] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
-            std::fs::write(root.join(dir).join("s.jsonl"), format!("{{\"type\":\"x\"}}\n{{\"cwd\":\"{cwd}\"}}\n")).unwrap();
+            std::fs::write(root.join(dir).join("s.jsonl"), format!("{{\"type\":\"x\"}}\n{}\n", serde_json::json!({ "cwd": cwd }))).unwrap();
             let _ = n;
             std::thread::sleep(std::time::Duration::from_millis(1100));
         }
