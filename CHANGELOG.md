@@ -4,6 +4,21 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-14
+
+### Added
+- In-app updates: Cockpit checks GitHub releases and installs a new version with one click.
+- Prompt boxes grow with what you type or paste (↵ sends, ⇧↵ adds a line).
+
+### Changed
+- The app identifier is now `dev.getcockpit.app`. On first launch Cockpit moves your data folder, caches and saved keys to the new name and leaves a link at the old path, so nothing is lost. macOS asks once more for notification and microphone permission.
+- Linux and Windows show Ctrl, Shift and Alt in shortcut labels, and the shortcuts work with Ctrl.
+- View cards show marks as a coloured edge and a word, and details as chips.
+
+### Fixed
+- Without Claude Code installed, Cockpit no longer crashes its background process. The Wall says how to install it, and **Check again** picks it up without a restart.
+- The changes panel no longer stays on "Reading git…" forever when git is missing; it says "git isn't installed".
+
 ## [0.1.1] - 2026-10-14
 
 ### Added
