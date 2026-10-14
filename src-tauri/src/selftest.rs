@@ -169,7 +169,7 @@ pub fn run(app: AppHandle) {
             Some(resume_mode()),
             None,
             ws,
-            None,
+            None, None
         );
         if let Err(e) = res {
             eprintln!("[selftest] start failed: {e}");
@@ -257,14 +257,14 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
         Some("sdk") if payload["message"]["type"] == "result" && flow_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             crate::eventlog::record(app, Some(&session), "ui.review_noted", &serde_json::json!({ "finding_id": "f1" }), Some("review:f1"));
-            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "note f1. That was the last snippet: now call review_publish_ready with the noted finding and a verdict, then reply with exactly: SELFTEST DONE".into());
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "note f1. That was the last snippet: now call review_publish_ready with the noted finding and a verdict, then reply with exactly: SELFTEST DONE".into(), None);
         }
         Some("sdk") if payload["message"]["type"] == "result" && address_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             for id in ["t1", "t2"] {
                 crate::eventlog::record(app, Some(&session), "ui.address_chosen", &serde_json::json!({ "id": id, "option": "A" }), Some(&format!("address:{id}")));
             }
-            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Thread t1 · Option A and Thread t2 · Option A, and push back on t3. It's a pretend PR: don't edit files or post anything, just report each step with the tools (one passing check per proof, replies posted: true), call address_done, then reply with exactly: SELFTEST DONE".into());
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Thread t1 · Option A and Thread t2 · Option A, and push back on t3. It's a pretend PR: don't edit files or post anything, just report each step with the tools (one passing check per proof, replies posted: true), call address_done, then reply with exactly: SELFTEST DONE".into(), None);
         }
         Some("sdk") if payload["message"]["type"] == "result" && resume_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 1 done: stop the session; session_ended triggers the resume below.
@@ -285,7 +285,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let res = crate::sidecar::session_start(
                 app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd,
                 "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(),
-                sdk, None, Some("blank".into()), Some(false), Some(session), None, None,
+                sdk, None, Some("blank".into()), Some(false), Some(session), None, None, None
             );
             if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
         }
@@ -350,7 +350,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             crate::eventlog::record(app, Some(&session), "ui.doc_decision", &serde_json::json!({ "doc_id": doc.id, "block_id": qid, "choice": label }), Some(&anchor));
             let msg = crate::brief::brief_continue(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone()).ok().flatten();
             let Some(msg) = msg else { eprintln!("[selftest] Continue sent nothing despite a correction"); std::process::exit(1); };
-            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nThis is a UI test: don't change files. Reply with exactly: SELFTEST DONE"));
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nThis is a UI test: don't change files. Reply with exactly: SELFTEST DONE"), None);
         }
         Some("sdk") if payload["message"]["type"] == "result" && doc_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 2: act like the user on the doc map — decide, note, Regenerate.
@@ -364,7 +364,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             crate::eventlog::record(app, Some(&session), "ui.doc_decision", &serde_json::json!({ "doc_id": doc.id, "block_id": "q1", "choice": "blue" }), Some(&anchor));
             crate::eventlog::record(app, Some(&session), "ui.doc_note", &serde_json::json!({ "doc_id": doc.id, "block_id": "goal", "text": "Mention that the colour is blue in the goal's key detail." }), Some(&anchor));
             let msg = crate::docs::doc_feedback(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), true).unwrap_or_default();
-            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nWhen done, reply with exactly: SELFTEST DONE"));
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nWhen done, reply with exactly: SELFTEST DONE"), None);
         }
         // The round-2 guard above counts every result, so the second result finds RESULTS at 2.
         Some("sdk") if payload["message"]["type"] == "result" && doc_mode() && RESULTS.load(Ordering::SeqCst) == 2 => {
@@ -377,7 +377,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let events = app.state::<crate::eventlog::EventLog>().list(Some(&plan), None, 1000).unwrap_or_default();
             let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
             let prompt = format!("Implement the plan in working doc \"{}\" (doc_id {}). First read it with the mr doc_read tool and follow its decisions. This is a UI test: don't write code. After reading it, add a log block with doc_set_block (section log, block_id build_log, takeaway 'Build read the plan') that names the decided colour, then reply with exactly: SELFTEST DONE", doc.title, doc.id);
-            let build = crate::sidecar::session_start(app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd, prompt, None, None, Some("blank".into()), Some(false), None, None, None);
+            let build = crate::sidecar::session_start(app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd, prompt, None, None, Some("blank".into()), Some(false), None, None, None, None);
             let Ok(build) = build else { eprintln!("[selftest] build session failed: {build:?}"); std::process::exit(1); };
             if let Err(e) = crate::docs::doc_build_started(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), build.clone()) {
                 eprintln!("[selftest] doc_build_started: {e}");
@@ -390,7 +390,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             // Claude asked its clarifying questions in prose and ended the turn: reply like the user would.
             eprintln!("[selftest] clarifying turn: {}", payload["message"]["result"]);
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
-            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Keep it simple: this is a throwaway test folder and either name is fine by me. Now ask me again.".into());
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Keep it simple: this is a throwaway test folder and either name is fine by me. Now ask me again.".into(), None);
         }
         Some("sdk") if payload["message"]["type"] == "result" => {
             let ok = payload["message"]["is_error"] == false;

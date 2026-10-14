@@ -209,7 +209,7 @@ pub fn brief_start(app: AppHandle, session: String) -> Result<Value, String> {
     crate::eventlog::record(&app, Some(&session), "doc.created", &json!({ "doc_id": doc_id, "title": format!("Catch-up: {}", title_of(&evs)), "kind": "brief" }), Some(&anchor));
     if own {
         let state = app.state::<crate::sidecar::Sidecar>();
-        if crate::sidecar::session_send(app.clone(), state, session.clone(), instructions(&doc_id, true)).is_err() {
+        if crate::sidecar::session_send(app.clone(), state, session.clone(), instructions(&doc_id, true), None).is_err() {
             write_with_layer(app, session, doc_id.clone(), evs);
             return Ok(json!({ "doc_id": doc_id, "via": "cockpit" }));
         }

@@ -1,3 +1,4 @@
+mod attachments;
 mod brief;
 mod changes;
 mod cockpit_layer;
@@ -129,6 +130,9 @@ pub fn run() {
             folders::recent_folders,
             mentions::session_paths,
             files::files_exist,
+            attachments::attachment_save,
+            attachments::attachment_info,
+            attachments::attachment_read,
             files::file_reveal,
             layer2::layer2_status,
             layer2::layer2_save_credentials,

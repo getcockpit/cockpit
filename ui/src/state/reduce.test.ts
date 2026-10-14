@@ -610,3 +610,25 @@ describe("context meter", () => {
     expect(s.context.used).toBe(15_000);
   });
 });
+
+describe("attachments", () => {
+  let n = 0;
+  const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `A${String(++n).padStart(4, "0")}`, session_id: "s1", kind, payload, anchor: null, created_at: 1_000_000 + n * 1000 });
+  const shot = { path: "/data/attachments/01-shot.png", name: "Pasted image 1.png", mime: "image/png", size: 2048 };
+  test("a first prompt with files shows as your first message; a message keeps its files", () => {
+    const st = replay([
+      ev("ui.session_requested", { cwd: "/r", prompt: "what's wrong here?", kind: "blank", attachments: [shot] }),
+      ev("ui.message_sent", { text: "and this", attachments: [{ path: "/r/spec.pdf", name: "spec.pdf", mime: "application/pdf" }, { bogus: 1 }] }),
+      ev("ui.message_sent", { text: "plain" }),
+    ]);
+    const users = st.sessions.s1.transcript.filter((t) => t.kind === "user");
+    expect(users.map((t) => t.kind === "user" && [t.text, t.attachments?.map((a) => a.name)])).toEqual([
+      ["what's wrong here?", ["Pasted image 1.png"]],
+      ["and this", ["spec.pdf"]],
+      ["plain", undefined],
+    ]);
+  });
+  test("a first prompt without files adds no message", () => {
+    expect(replay([ev("ui.session_requested", { cwd: "/r", prompt: "go", kind: "blank" })]).sessions.s1.transcript).toEqual([]);
+  });
+});

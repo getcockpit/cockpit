@@ -296,6 +296,7 @@ pub fn session_start(
     session_id: Option<String>,
     workspace: Option<String>,
     preset: Option<String>,
+    attachments: Option<Vec<serde_json::Value>>,
 ) -> Result<String, String> {
     let mut cwd = expand_home(&app, &cwd);
     if !std::path::Path::new(&cwd).is_dir() {
@@ -337,8 +338,16 @@ pub fn session_start(
     if layer {
         payload["cockpit_layer"] = true.into();
     }
+    // Pasted, dropped or picked files (images, PDFs…): the log keeps their paths, the sidecar reads them.
+    let attachments = attachments.filter(|a| !a.is_empty());
+    if let Some(a) = &attachments {
+        payload["attachments"] = a.clone().into();
+    }
     crate::eventlog::record(&app, Some(&session), "ui.session_requested", &payload, None);
     let mut msg = serde_json::json!({ "type": "start", "session": session, "cwd": cwd, "prompt": prompt });
+    if let Some(a) = attachments {
+        msg["attachments"] = a.into();
+    }
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
@@ -384,20 +393,29 @@ pub fn session_start(
 }
 
 #[tauri::command]
-pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, text: String) -> Result<(), String> {
+pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, text: String, attachments: Option<Vec<serde_json::Value>>) -> Result<(), String> {
     let live = state.live.lock().unwrap().contains(&session);
     if !live && crate::instances::owned_elsewhere(&app, &session).is_some() {
         return Err(ELSEWHERE.into());
     }
-    crate::eventlog::record(&app, Some(&session), "ui.message_sent", &serde_json::json!({ "text": text }), None);
+    let attachments = attachments.filter(|a| !a.is_empty());
+    let mut sent = serde_json::json!({ "text": text });
+    if let Some(a) = &attachments {
+        sent["attachments"] = a.clone().into();
+    }
+    crate::eventlog::record(&app, Some(&session), "ui.message_sent", &sent, None);
     if live {
         state.idle.lock().unwrap().remove(&session); // a message starts (or joins) a turn
-        return sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }));
+        let mut msg = serde_json::json!({ "type": "send", "session": session, "text": text });
+        if let Some(a) = attachments {
+            msg["attachments"] = a.into();
+        }
+        return sidecar_send(state, msg);
     }
     // Not running any more (app restarted, or it ended): resume the same conversation with this
     // message instead of failing with "unknown session" (MR-52).
     let (cwd, kind, workspace, sdk) = resume_info(&app, &session).ok_or("this session can't be resumed; start a new one")?;
-    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace), None).map(|_| ())
+    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace), None, attachments).map(|_| ())
 }
 
 /// Whether a session can take a turn of Cockpit's asking right now (the catch-up brief): live and
