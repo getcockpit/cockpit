@@ -21,7 +21,7 @@ Cockpit is a desktop front-end for Claude Code (macOS first; Linux and Windows t
 
 (cd ui && bunx vite --port 1530)    # UX demo harness: http://127.0.0.1:1530/?demo=fresh|empty|busy|archive (no Claude)
 ./scripts/selftest.sh                # end-to-end through the real app + sidecar + claude (uses a little usage)
-./scripts/selftest-{doc,resume,flow,address,terminal,selfbuild,workspace,view,plan,title,update,layer,skip,askfirst}.sh
+./scripts/selftest-{doc,resume,flow,address,terminal,selfbuild,workspace,view,plan,title,update,layer,skip,askfirst,attach}.sh
 ```
 
 **Self-tests:**
