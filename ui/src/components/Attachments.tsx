@@ -1,28 +1,19 @@
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { api } from "../state/store";
 import type { Attachment } from "../state/types";
 import { fileSize } from "../picker/compose";
-import { keyOf } from "./keys";
+import { Lightbox, previewOf } from "./Lightbox";
+import { getDrafts, setDraft, useDrafts } from "./reviewDraft";
+
+export { seedPreview } from "./Lightbox";
+
+// Pins on your own image, before you send it (MR-142): the message box's lightbox drops them,
+// and PromptBox appends them to the message as text.
+export const notesKey = (path: string) => `attach:${path}`;
 
 // Files sent with a message, as chips: an image as its thumbnail (click for the full view), any
 // other file as its name and size (click to show it in Finder). The message box shows them with ×
 // to take them off; your sent message shows them under its text.
-
-// Thumbnails per path: a pasted image seeds its own (it's already in memory), the rest load once.
-const urls = new Map<string, Promise<string | null>>();
-export function seedPreview(path: string, blob: Blob) {
-  urls.set(path, Promise.resolve(URL.createObjectURL(blob)));
-}
-function previewOf(path: string): Promise<string | null> {
-  let u = urls.get(path);
-  if (!u) {
-    u = api.attachmentRead(path).then((b) => URL.createObjectURL(new Blob([b]))).catch(() => null);
-    urls.set(path, u);
-  }
-  return u;
-}
 
 const isImage = (a: Attachment) => a.mime.startsWith("image/") && a.mime !== "image/heic";
 
@@ -45,8 +36,10 @@ function reveal(a: Attachment, session?: string) {
 
 /** One attachment. `onRemove` adds the × (the message box); without it the chip is read-only (the transcript). */
 export function AttachmentChip({ a, onRemove, session, big }: { a: Attachment; onRemove?: () => void; session?: string; big?: boolean }) {
+  useDrafts();
   const url = usePreview(a);
   const [open, setOpen] = useState(false);
+  const pins = onRemove ? getDrafts(notesKey(a.path), 1)[0].pins.length : 0;
   const h = big ? 96 : 52;
   const kind = a.mime === "application/pdf" ? "PDF" : isImage(a) ? "image" : (a.name.split(".").pop() ?? "file").slice(0, 5).toUpperCase();
   return (
@@ -64,28 +57,15 @@ export function AttachmentChip({ a, onRemove, session, big }: { a: Attachment; o
               </span>
             </>}
       </button>
+      {pins > 0 && <span className="mr-mono" title="Pinned notes go with the message" style={{ position: "absolute", bottom: 2, left: 2, padding: "0 4px", fontSize: 10, fontWeight: 700, background: "var(--mr-needs)" }}>{pins} pin{pins === 1 ? "" : "s"}</span>}
       {onRemove && (
         <button type="button" onClick={onRemove} aria-label={`Remove ${a.name}`} title="Remove"
           style={{ position: "absolute", top: 2, right: 2, width: 20, height: 20, minHeight: 0, padding: 0, border: 0, borderRadius: "var(--mr-radius)", background: "var(--mr-ink)", color: "var(--mr-tile)", font: "inherit", fontSize: 12, lineHeight: "20px", cursor: "pointer" }}>×</button>
       )}
-      {open && url && createPortal(<ImageView url={url} a={a} onClose={() => setOpen(false)} />, document.body)}
+      {open && url && (onRemove
+        ? <Lightbox images={[{ path: a.path, name: a.name }]} ask={{ verdict: false, pins: true }} drafts={getDrafts(notesKey(a.path), 1)} onDraft={(_, p) => setDraft(notesKey(a.path), 0, p)} onClose={() => setOpen(false)} />
+        : <Lightbox images={[{ path: a.path, name: a.name }]} onClose={() => setOpen(false)} />)}
     </span>
-  );
-}
-
-// The image at full size over everything; Esc or a click closes it.
-function ImageView({ url, a, onClose }: { url: string; a: Attachment; onClose: () => void }) {
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (keyOf(e) === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); } };
-    window.addEventListener("keydown", k, true);
-    return () => window.removeEventListener("keydown", k, true);
-  }, [onClose]);
-  return (
-    <div role="dialog" aria-label={a.name} data-mr="ImageView" data-mr-source={a.path} onMouseDown={onClose}
-      style={{ position: "fixed", inset: 0, zIndex: 30, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 40, background: "rgba(21,24,27,.6)" }}>
-      <img src={url} alt={a.name} style={{ maxWidth: "100%", maxHeight: "calc(100% - 40px)", objectFit: "contain", background: "var(--mr-tile)" }} />
-      <span className="mr-mono" style={{ color: "var(--mr-tile)", fontSize: 12 }}>{a.name}{a.size != null && ` · ${fileSize(a.size)}`} · Esc to close</span>
-    </div>
   );
 }
 

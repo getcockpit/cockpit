@@ -6,7 +6,8 @@ import { matchCommands, typedCommand } from "../picker/slash";
 import { insertMention, matchPaths, typedMention } from "../picker/mention";
 import { expandPastes, foldsPaste, pasteToken, pastesIn, placeFile, segments } from "../picker/compose";
 import { MentionMenu, SlashMenu } from "./SlashMenu";
-import { AttachmentRow, seedPreview } from "./Attachments";
+import { AttachmentRow, notesKey, seedPreview } from "./Attachments";
+import { attachmentNotes, clearDrafts, getDrafts } from "./reviewDraft";
 import { sendsOnEnter, useAutoGrow } from "./autoGrow";
 import { keyOf } from "./keys";
 
@@ -165,9 +166,13 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
   };
 
   const submit = () => {
-    const t = expandPastes(text, pastes.current).trim();
-    if (!t && !files.length) return;
+    const typed = expandPastes(text, pastes.current).trim();
+    if (!typed && !files.length) return;
     if (busy) { toast("Still attaching: one moment"); return; }
+    // Pins on your own images travel as text after the message (MR-142).
+    const notes = attachmentNotes(files, (path) => getDrafts(notesKey(path), 1)[0].pins);
+    const t = [typed, notes].filter(Boolean).join("\n\n");
+    files.forEach((f) => clearDrafts(notesKey(f.path)));
     p.onSubmit(t, files);
     setText(""); setCaret(0); setClosed(false); setFiles([]);
     pastes.current = {};
@@ -238,7 +243,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
       {!rows.length && <MentionMenu paths={found} active={active} onPick={pickPath} onHover={setActive} source={source} below={p.menuBelow} />}
       {(files.length > 0 || folded.length > 0 || busy > 0) && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--mr-gap)", alignItems: "center" }}>
-          <AttachmentRow items={files} onRemove={(a) => setFiles((xs) => xs.filter((x) => x.path !== a.path))} />
+          <AttachmentRow items={files} onRemove={(a) => { clearDrafts(notesKey(a.path)); setFiles((xs) => xs.filter((x) => x.path !== a.path)); }} />
           {folded.map((n) => (
             <button key={n} type="button" data-mr="PasteChip" data-mr-source={`paste-${n}`} onClick={() => unfold(n)} title={pastes.current[n].slice(0, 600)}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 52, padding: "0 10px", border: 0, borderRadius: "var(--mr-radius)", background: "var(--mr-well)", color: "var(--mr-ink)", font: "inherit", fontSize: 13, cursor: "pointer" }}>
