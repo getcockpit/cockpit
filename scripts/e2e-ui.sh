@@ -17,7 +17,8 @@ cleanup() {
   [ -n "$session" ] && pinchtab session revoke "$session" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-for _ in $(seq 50); do curl -sf "http://127.0.0.1:$port/" >/dev/null && break; sleep 0.2; done
+# A cold Vite start on a CI runner can take well over 10 s.
+for _ in $(seq 300); do curl -sf "http://127.0.0.1:$port/" >/dev/null && break; sleep 0.2; done
 curl -sf "http://127.0.0.1:$port/" >/dev/null || { echo "vite did not start:"; cat /tmp/mr-e2e-vite.log; exit 1; }
 
 session="$(pinchtab session create --agent-id mr-e2e 2>/dev/null)"
