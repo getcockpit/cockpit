@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NoClaude } from "../components/NoClaude";
+import { PermissionOptions } from "../components/PermissionChoice";
 import { Bar, Key, Lamp, Lamps, RiskMeter, StateMark } from "../components";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { keyOf } from "../components/keys";
@@ -14,10 +15,11 @@ const SignInPane = lazy(() => import("./Terminal").then((m) => ({ default: m.Sig
 // 2. a wall of agent text that turns into a picture
 // 3. right-click / ⌘ / ⌥ pointing on a demo tile
 // 4. a live check that Claude Code is installed and signed in (the official `claude` /login, never an in-app login)
-// 5. your first session.
+// 5. how often sessions ask for permission (I106)
+// 6. your first session.
 // Shows once (ui.onboarded); Settings → Show the intro brings it back.
 
-const STEPS = ["The wall", "Pictures", "Point", "Connect", "Go"] as const;
+const STEPS = ["The wall", "Pictures", "Point", "Connect", "Permissions", "Go"] as const;
 
 export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone: () => void; onStart: (kind: SessionKind) => void }) {
   const [step, setStep] = useState(0);
@@ -68,7 +70,8 @@ export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone
         {step === 1 && <PictureStep onNext={() => go(2)} />}
         {step === 2 && <PointStep onNext={() => go(3)} />}
         {step === 3 && <ConnectStep state={state} onNext={() => go(4)} />}
-        {step === 4 && <GoStep onStart={(k) => finish(k)} />}
+        {step === 4 && <PermissionStep state={state} onNext={() => go(5)} />}
+        {step === 5 && <GoStep onStart={(k) => finish(k)} />}
       </main>
     </div>
   );
@@ -334,7 +337,7 @@ function ConnectStep({ state, onNext }: { state: AppState; onNext: () => void })
         <Check ok={null} optional title="Picker model (optional)"
           detail={keyLabel("Cloudflare's free Clef-flash model helps sort unclear messages. Everything works without it. Add it any time in Settings (⌘,).")} />
       </div>
-      <Next onClick={onNext} ready={acct.signedIn}>Next: go</Next>
+      <Next onClick={onNext} ready={acct.signedIn}>Next: permissions</Next>
     </>
   );
 }
@@ -355,7 +358,21 @@ function Check({ ok, title, detail, action, optional }: { ok: boolean | null; ti
   );
 }
 
-// ── 5. Go. ──
+// ── 5. How often sessions ask. ──
+function PermissionStep({ state, onNext }: { state: AppState; onNext: () => void }) {
+  // The pick is logged right away, so skipping the intro after this step keeps it.
+  return (
+    <>
+      <Title kicker="Fewer interruptions" sub="Every tool a session uses can stop and wait for your Allow. Pick how often. You can change it any time in Settings → Sessions.">
+        How often should sessions <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>ask</span>?
+      </Title>
+      <div style={{ maxWidth: 1100 }}><PermissionOptions value={state.permissionMode} onPick={(m) => void api.setPermissionMode(m)} /></div>
+      <Next onClick={() => { if (state.permissionMode === null) void api.setPermissionMode("auto"); onNext(); }}>Next: go</Next>
+    </>
+  );
+}
+
+// ── 6. Go. ──
 function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
   const kinds = [
     { id: "blank" as const, t: "Blank", d: "Any task. Gets its own git worktree, so your checkout stays clean.", k: "⌘1" },

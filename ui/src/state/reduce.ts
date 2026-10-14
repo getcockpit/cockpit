@@ -20,6 +20,7 @@ export const initialState: AppState = {
   notifications: true,
   compactWindow: 200_000,
   sessionCap: 10,
+  permissionMode: null,
   presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   cockpitLayer: false,
@@ -126,6 +127,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if (ev.kind === "ui.compact_window_set") return { ...next, compactWindow: typeof p.tokens === "number" ? p.tokens : null };
   if (ev.kind === "ui.session_cap_set") return { ...next, sessionCap: typeof p.cap === "number" ? Math.max(1, p.cap) : next.sessionCap };
+  if (ev.kind === "ui.permission_mode_set") return { ...next, permissionMode: p.mode === "auto" || p.mode === "acceptEdits" || p.mode === "default" ? p.mode : next.permissionMode };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.notifications_set") return { ...next, notifications: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };

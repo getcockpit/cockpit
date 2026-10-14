@@ -8,10 +8,12 @@ import planDocFixture from "./fixtures/plan-doc.json";
 type E = { session?: string; kind: string; payload?: Record<string, unknown>; at?: number };
 export type Scenario = { events: E[]; docs: Doc[] };
 
-const ready: E[] = [
+const sidecarUp: E[] = [
   { kind: "sidecar.ready", payload: { claude: "/Users/me/.local/bin/claude" }, at: 0 },
   { kind: "sidecar.limits", payload: { available: true, plan: "max", five_hour: { utilization: 0.34, resetsAt: Math.round(Date.now() / 1000) + 7200 }, seven_day: { utilization: 0.58, resetsAt: null } }, at: 1 },
 ];
+// Demos past the intro have made the permission choice (I106); ?demo=permissions hasn't.
+const ready: E[] = [...sidecarUp, { kind: "ui.permission_mode_set", payload: { mode: "auto" }, at: 1 }];
 const onboarded: E = { kind: "ui.onboarded", at: 2 };
 
 // What each reply had in context, for the context meter: grows with the session, up to ~190k.
@@ -248,7 +250,8 @@ export const SCENARIOS: Record<string, Scenario> = {
   bugs: { events: bugEvents, docs: [] },
   review: { events: reviewEvents, docs: [] },
   address: { events: addressEvents, docs: [] },
-  fresh: { events: [...ready], docs: [] },
+  fresh: { events: [...sidecarUp], docs: [] },
+  permissions: { events: [...sidecarUp, onboarded], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
   // A 14-block working doc with long bodies, tables and lists (the doc map must stay usable).
