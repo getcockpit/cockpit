@@ -32,7 +32,9 @@ async function until<T>(what: string, check: () => T, ms = 5000): Promise<T> {
 
 const ui = {
   async open(demo: string) {
-    pt("nav", `${BASE}/?demo=${demo}`, "--block-images");
+    // motion=off: a headless tab draws no frames, so entry animations would leave tiles at opacity 0,
+    // which PinchTab's click treats as hidden.
+    pt("nav", `${BASE}/?demo=${demo}&motion=off`, "--block-images");
     await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); });
   },
   count: (css: string) => Number(pt("count", css).trim()),
@@ -176,9 +178,7 @@ const flows: Flow[] = [
   } },
   { name: "Doc lifecycle: a doc built without Build it can be marked shipped", run: async () => {
     await ui.open("doclife");
-    // PinchTab's normal click calls the Wall's doc tiles "hidden" (they work by hand), and Enter is the
-    // Wall's own open-selected key, so click the element directly.
-    pt("click", (await until("find the ready doc", () => ui.find("button", /^Nightly backup check/))).ref, "--mode", "dom");
+    await ui.click("button", /^Nightly backup check/);
     await ui.tags("DocStage", 1);
     await ui.click("button", "Mark shipped");
     await ui.see("button", "Done, archive it");

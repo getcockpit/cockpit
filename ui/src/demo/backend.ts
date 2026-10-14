@@ -356,6 +356,7 @@ export function install(name: string) {
   // Each load starts clean: remembered UI choices (start-picker kind, workspace, folder) would
   // otherwise carry from one scenario into the next and make it depend on what ran before.
   try { for (const k of Object.keys(localStorage)) if (k.startsWith("mr.")) localStorage.removeItem(k); } catch { /* no storage */ }
+  if (new URLSearchParams(location.search).get("motion") === "off") document.documentElement.dataset.motion = "off";
   const base = Date.now() - 40 * 60_000;
   docs = structuredClone(sc.docs);
   for (const [i, e] of sc.events.entries()) {
