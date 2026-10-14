@@ -165,14 +165,23 @@ const flows: Flow[] = [
   } },
   { name: "Doc lifecycle: shipped docs close, a stalled one is dropped", run: async () => {
     await ui.open("doclife");
-    await ui.tags("DocTile", 3);
+    await ui.tags("DocTile", 4);
     await ui.click("button", "Mark done");
-    await ui.tags("DocTile", 2);
+    await ui.tags("DocTile", 3);
     await ui.click("button", /^Open$/); // the stalled-doc suggestion
     await ui.tags("DocStage", 1);
     await ui.click("button", "Drop doc");
     await ui.click("button", "Click again to drop this doc");
-    await ui.tags("DocTile", 1);
+    await ui.tags("DocTile", 2);
+  } },
+  { name: "Doc lifecycle: a doc built without Build it can be marked shipped", run: async () => {
+    await ui.open("doclife");
+    // PinchTab's normal click calls the Wall's doc tiles "hidden" (they work by hand), and Enter is the
+    // Wall's own open-selected key, so click the element directly.
+    pt("click", (await until("find the ready doc", () => ui.find("button", /^Nightly backup check/))).ref, "--mode", "dom");
+    await ui.tags("DocStage", 1);
+    await ui.click("button", "Mark shipped");
+    await ui.see("button", "Done, archive it");
   } },
   { name: "J10 right-click, mark as wrong, get a fix session", run: async () => {
     await ui.open("busy");

@@ -258,10 +258,11 @@ export const SCENARIOS: Record<string, Scenario> = {
   neverask: { events: [...ready, { kind: "ui.permission_mode_set", payload: { mode: "never" }, at: 1 }, onboarded], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
-  // Doc lifecycle (MR-151): one stalled with open questions, one building, one shipped. ?demo=doclife
+  // Doc lifecycle (MR-151): one stalled with open questions, one ready, one building, one shipped. ?demo=doclife
   doclife: { events: busy, docs: [
     { ...planDoc, updated_at: Date.now() - 5 * 86_400_000 },
     { ...planDoc, id: "doc2", title: "Settings schema v2", blocks: decided(planDoc), build_sessions: ["D"], updated_at: Date.now() - 3_600_000 },
+    { ...planDoc, id: "doc4", title: "Nightly backup check", blocks: decided(planDoc), updated_at: Date.now() - 600_000 },
     { ...planDoc, id: "doc3", title: "Retire the old invoices table", blocks: decided(planDoc), build_sessions: ["A"], shipped_at: Date.now() - 600_000, updated_at: Date.now() - 600_000 },
   ] },
   // A 14-block working doc with long bodies, tables and lists (the doc map must stay usable).
