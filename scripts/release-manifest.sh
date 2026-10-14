@@ -2,14 +2,17 @@
 # Writes latest.json for the in-app updater (MR-136) from a release's updater signatures.
 #   scripts/release-manifest.sh <tag> <dir with the .sig files> [notes] > latest.json
 # Expects, in <dir>: Cockpit-macos.app.tar.gz.sig, Cockpit-linux-x86_64.AppImage.sig and
-# Cockpit-windows-x64-setup.exe.sig (each optional: a missing platform is left out).
+# Cockpit-windows-x64-setup.exe.sig. A missing one fails: a partial latest.json would strand
+# that platform on its old version without a word.
 # The universal macOS bundle serves both Apple Silicon and Intel.
 set -euo pipefail
 tag="$1"; dir="$2"; notes="${3:-}"
 base="https://github.com/getcockpit/cockpit/releases/download/$tag"
+for f in Cockpit-macos.app.tar.gz Cockpit-linux-x86_64.AppImage Cockpit-windows-x64-setup.exe; do
+  [ -f "$dir/$f.sig" ] || { echo "release-manifest: no signature $f.sig in $dir" >&2; exit 1; }
+done
 entry() { # platform file
   local sig="$dir/$2.sig"
-  [ -f "$sig" ] || return 0
   jq -n --arg p "$1" --arg url "$base/$2" --rawfile sig "$sig" '{($p): {signature: ($sig | rtrimstr("\n")), url: $url}}'
 }
 {
