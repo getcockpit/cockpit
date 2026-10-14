@@ -4,6 +4,21 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-14
+
+### Added
+- Fewer permission prompts: sessions start in Claude Code's auto mode, which approves routine reads, edits and commands and asks only about risky ones. The intro (or a one-time prompt, if you've used Cockpit before) asks how often sessions should ask; change it any time in Settings → Sessions → Ask before.
+- **Never ask**, behind a full-screen disclaimer: everything goes through except high-risk actions (rm -rf, force-push, sudo, piping a download into a shell, DROP TABLE, kubectl or terraform apply or destroy, migrations), edits outside the project, and Claude's own questions and plans. A red Never ask lamp shows on the Wall while it's on.
+- Image review: Claude can show images as a gallery or a side-by-side compare. In the Lightbox you approve, reject, comment, pin numbered notes, draw, and add arrows and labelled boxes; your marks are sent back as text plus a PNG with them drawn in. Your own pasted screenshots can be marked up the same way.
+- An active `/goal` shows in Focus with its condition and the last check, with Cancel, and as a ◎ mark on the Wall tile.
+- The message box matches Claude Code: paste images and files, drop PDFs, and pick @files and /skills.
+- Voice: tap ⌥ Space to talk hands-free (tap again or ↵ to send, Esc to cancel); holding still works as push-to-talk.
+
+### Fixed
+- Dictation sometimes pasted nothing; it now always delivers the text.
+- Leaving the window while holding the voice key turns the microphone off.
+- A fresh data folder opens on the Personal workspace instead of an empty wall.
+
 ## [0.1.2] - 2026-10-14
 
 ### Added
