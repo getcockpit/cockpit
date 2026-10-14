@@ -142,6 +142,7 @@ mod tests {
         d
     }
 
+    #[cfg(unix)] // the command is sh syntax; Windows runs cmd
     #[test]
     fn a_run_writes_stdout_and_stderr_to_its_file_in_the_session_folder() {
         let d = temp();
