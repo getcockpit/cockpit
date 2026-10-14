@@ -33,6 +33,29 @@ jobs:
         working-directory: sidecar
       - run: bun test scripts/
 
+  e2e-ui:
+    name: UI end-to-end (PinchTab)
+    # 22.04: 24.04's AppArmor blocks the user namespaces Chrome's sandbox needs.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Drives the runner's preinstalled Google Chrome, headless.
+      - run: npm install -g pinchtab@0.15.2
+      - run: bun install --frozen-lockfile
+        working-directory: ui
+      - run: ./scripts/e2e-ui.sh
+      - name: Screenshots of failed flows
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-ui-failures
+          path: /tmp/mr-e2e/
+          if-no-files-found: ignore
+
   core:
     name: Rust core (${{ matrix.os }})
     strategy:
