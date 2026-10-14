@@ -85,6 +85,7 @@ pub fn run() {
             sidecar::session_send,
             sidecar::session_interrupt,
             sidecar::session_set_model,
+            sidecar::permission_mode_set,
             sidecar::session_commands,
             sidecar::session_mcp_status,
             sidecar::session_mcp_action,

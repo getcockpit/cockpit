@@ -2,7 +2,7 @@ import { useEffect, useReducer } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "./listen";
 import { initialState, reduce, replay } from "./reduce";
-import type { AppState, Attachment, MrEvent } from "./types";
+import type { AppState, Attachment, MrEvent, PermissionMode } from "./types";
 
 export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string };
 
@@ -108,6 +108,8 @@ export const api = {
   // Model and effort for one session (MR-73): null goes back to Claude Code's default, a missing key leaves it.
   setModel: (session: string, change: { model?: string | null; effort?: string | null }) => invoke("session_set_model", { session, change }),
   modelsRefresh: () => invoke("models_refresh"),
+  // How sessions ask before using tools (I106): logged, then switched on every running session.
+  setPermissionMode: (mode: PermissionMode) => invoke("permission_mode_set", { mode }),
   interrupt: (session: string) => invoke("session_interrupt", { session }),
   // Files for the message box: pasted bytes are saved under the data folder; dropped or picked
   // paths are described (type, size); an image's bytes come back for its thumbnail.

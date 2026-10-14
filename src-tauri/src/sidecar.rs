@@ -218,6 +218,37 @@ fn compact_window(app: &AppHandle) -> Option<u64> {
     fold_compact_window(evs.iter().map(|e| &e.payload))
 }
 
+/// How sessions ask before using tools: `auto` (Claude Code's classifier approves safe calls and asks
+/// about the risky ones), `acceptEdits` (file edits go through, commands ask) or `default` (every
+/// tool asks). Auto until you choose; the first-run intro asks you to (decision I106).
+pub const PERMISSION_MODE: &str = "auto";
+pub const PERMISSION_MODES: [&str; 3] = ["auto", "acceptEdits", "default"];
+
+/// Your last valid `ui.permission_mode_set`, else `PERMISSION_MODE`.
+pub fn fold_permission_mode<'a>(payloads: impl IntoIterator<Item = &'a serde_json::Value>) -> &'static str {
+    payloads.into_iter().fold(PERMISSION_MODE, |m, p| PERMISSION_MODES.into_iter().find(|x| p["mode"].as_str() == Some(*x)).unwrap_or(m))
+}
+
+fn permission_mode(app: &AppHandle) -> &'static str {
+    let evs = app.state::<crate::eventlog::EventLog>().list_kind("ui.permission_mode_set").unwrap_or_default();
+    fold_permission_mode(evs.iter().map(|e| &e.payload))
+}
+
+/// Sets how sessions ask for permission. Logged first, then switched on every running session so
+/// it applies at once; new and resumed sessions start in it.
+#[tauri::command]
+pub fn permission_mode_set(app: AppHandle, state: State<'_, Sidecar>, mode: String) -> Result<(), String> {
+    if !PERMISSION_MODES.contains(&mode.as_str()) {
+        return Err(format!("unknown permission mode: {mode}"));
+    }
+    crate::eventlog::record(&app, None, "ui.permission_mode_set", &serde_json::json!({ "mode": mode }), None);
+    let live: Vec<String> = state.live.lock().unwrap().iter().cloned().collect();
+    for id in live {
+        let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "set_permission_mode", "session": id, "mode": mode }));
+    }
+    Ok(())
+}
+
 fn model_choice(app: &AppHandle, session: &str) -> (Option<String>, Option<String>) {
     let evs = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).unwrap_or_default();
     fold_model_choice(evs.iter().filter(|e| e.kind == "ui.model_set").map(|e| &e.payload))
@@ -351,6 +382,7 @@ pub fn session_start(
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
+    msg["permission_mode"] = permission_mode(&app).into();
     let (model, effort) = model_choice(&app, &session);
     if let Some(m) = model {
         msg["model"] = m.into();
@@ -553,7 +585,7 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prompt, fold_compact_window, fold_model_choice, fold_session_cap, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
+    use super::{append_prompt, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
     use serde_json::json;
 
     #[test]
@@ -582,6 +614,14 @@ mod tests {
         let evs = [json!({ "tokens": 400_000 }), json!({ "tokens": null }), json!({ "tokens": 120_000 })];
         assert_eq!(fold_compact_window(&evs), Some(120_000));
         assert_eq!(fold_compact_window(&evs[..2]), None);
+    }
+
+    #[test]
+    fn permission_mode_is_auto_until_you_choose_and_unknown_modes_are_ignored() {
+        assert_eq!(fold_permission_mode(&[]), "auto");
+        let evs = [json!({ "mode": "default" }), json!({ "mode": "bypassPermissions" }), json!({})];
+        assert_eq!(fold_permission_mode(&evs), "default");
+        assert_eq!(fold_permission_mode(&[json!({ "mode": "acceptEdits" })]), "acceptEdits");
     }
 
     #[test]

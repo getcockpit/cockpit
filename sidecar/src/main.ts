@@ -33,7 +33,7 @@ function handle(message: Inbound): void {
   if (message.type === "limits") return void limits(queryFn, findClaude(), message.env, emit);
   if (message.type === "models") return void models(queryFn, findClaude(), message.env, emit);
   if (message.type === "oneshot") return void oneshot(queryFn, findClaude(), message, emit);
-  if (["start", "send", "interrupt", "set_model", "stop", "permission_response", "tool_result", "commands", "mcp_status", "mcp_action"].includes(message.type)) return sessions.handle(message);
+  if (["start", "send", "interrupt", "set_model", "set_permission_mode", "stop", "permission_response", "tool_result", "commands", "mcp_status", "mcp_action"].includes(message.type)) return sessions.handle(message);
   emit({ type: "error", error: `unknown message type: ${(message as { type: string }).type}` });
 }
 
