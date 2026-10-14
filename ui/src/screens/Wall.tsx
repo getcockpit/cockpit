@@ -28,7 +28,7 @@ import { ViewTabs } from "../components/ViewTabs";
 
 // A session waiting for your next step ("idle") stays in the running grid, where its tile says
 // "Waiting · Your turn"; only finished, stopped or failed work goes to the review tray.
-const REVIEW = new Set<TileSpec["state"]>(["done", "interrupted", "error"]);
+const REVIEW = new Set<TileSpec["state"]>(["review", "done", "interrupted", "error"]);
 export const inReviewTray = (t: TileSpec) => REVIEW.has(t.state);
 
 export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild, onTimeline, onSettings }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
@@ -276,7 +276,7 @@ export function tileNote(tile: TileSpec): string {
 }
 
 // The track's caption on a resting tile: the name of the plan step in progress (or next up),
-// falling back to the picker's "Step n of m" / "Ready to review".
+// falling back to the picker's "Step n of m" / "All n steps done".
 export function tileStep(todos: Todo[], fallback: string): string {
   const t = todos.find((x) => x.status === "in_progress") ?? todos.find((x) => x.status === "pending");
   return t ? t.activeForm || t.content : fallback;

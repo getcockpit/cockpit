@@ -69,7 +69,7 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
   useEffect(() => { if (needsCount) needsRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [needsCount]);
   // A turn is in flight: only then does interrupting mean anything (F9).
   const running = s.status === "working" || s.status === "starting";
-  const finished = tile.state === "done" || tile.state === "idle" || tile.state === "error" || s.status === "ended";
+  const finished = tile.state === "review" || tile.state === "done" || tile.state === "idle" || tile.state === "error" || s.status === "ended";
   const where = [(s.repo ?? s.cwd).split("/").filter(Boolean).pop(), s.branch].filter(Boolean).join(" · ");
   const replies = useMemo(() => nextReplies(s), [s]);
   // A report reply shows its own quick replies inline; the bar below would only repeat them.
@@ -144,7 +144,7 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
             <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }} title={s.cwd}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{where || s.cwd}</span>
           </div>
           <StateMark s={tile.state} />
-          <span className="mr-mono mr-ink2">{tile.state === "done" ? tile.step : tile.progressLabel || tile.step}</span>
+          <span className="mr-mono mr-ink2">{tile.state === "review" || tile.state === "done" ? tile.step : tile.progressLabel || tile.step}</span>
         </div>
         {running && <LiveTrack s={s} />}
         {/* Wraps: Ctrl+Shift+… labels off macOS are wider than ⌘⇧… (MR-133). */}
