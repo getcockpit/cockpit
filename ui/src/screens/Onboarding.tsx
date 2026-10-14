@@ -272,7 +272,7 @@ function PointStep({ onNext }: { onNext: () => void }) {
     { k: "right", key: "Right-click", what: "Mark it wrong. A session fixes the app itself and adds a test (god mode)." },
     { k: "deeper", key: "⌘-click", what: "Go deeper: open the session, file or block behind it." },
     { k: "discover", key: "⌥-click", what: "Discover: a side session explains it and flags risks, changing nothing." },
-    { k: "voice", key: "⌥Space", what: "Hold and talk to whatever is under the pointer." },
+    { k: "voice", key: "⌥Space", what: "Hold and talk to whatever is under the pointer, or tap to talk hands-free." },
   ];
   return (
     <>
