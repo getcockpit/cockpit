@@ -1,7 +1,10 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { NoClaude } from "../components/NoClaude";
+import { PermissionOptions } from "../components/PermissionChoice";
 import { Bar, Key, Lamp, Lamps, RiskMeter, StateMark } from "../components";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { keyOf } from "../components/keys";
+import { keyLabel, modKey } from "../platform";
 import type { TileSpec } from "../picker/pick";
 import { api } from "../state/store";
 import type { AppState, Diagram, SessionKind } from "../state/types";
@@ -12,10 +15,11 @@ const SignInPane = lazy(() => import("./Terminal").then((m) => ({ default: m.Sig
 // 2. a wall of agent text that turns into a picture
 // 3. right-click / ⌘ / ⌥ pointing on a demo tile
 // 4. a live check that Claude Code is installed and signed in (the official `claude` /login, never an in-app login)
-// 5. your first session.
+// 5. how often sessions ask for permission (I106)
+// 6. your first session.
 // Shows once (ui.onboarded); Settings → Show the intro brings it back.
 
-const STEPS = ["The wall", "Pictures", "Point", "Connect", "Go"] as const;
+const STEPS = ["The wall", "Pictures", "Point", "Connect", "Permissions", "Go"] as const;
 
 export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone: () => void; onStart: (kind: SessionKind) => void }) {
   const [step, setStep] = useState(0);
@@ -66,7 +70,8 @@ export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone
         {step === 1 && <PictureStep onNext={() => go(2)} />}
         {step === 2 && <PointStep onNext={() => go(3)} />}
         {step === 3 && <ConnectStep state={state} onNext={() => go(4)} />}
-        {step === 4 && <GoStep onStart={(k) => finish(k)} />}
+        {step === 4 && <PermissionStep state={state} onNext={() => go(5)} />}
+        {step === 5 && <GoStep onStart={(k) => finish(k)} />}
       </main>
     </div>
   );
@@ -151,8 +156,8 @@ function WallStep({ onNext }: { onNext: () => void }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <span className="mr-dim">Try it:</span>
-              <Key k="A" tone="primary" onClick={() => answer(true)}>Allow</Key>
-              <Key k="D" onClick={() => answer(false)}>Deny</Key>
+              <Key k="D" tone="primary" onClick={() => answer(false)}>Deny</Key>
+              <Key k="A" onClick={() => answer(true)}>Allow</Key>
             </div>
           </div>
         )}
@@ -258,7 +263,7 @@ function PointStep({ onNext }: { onNext: () => void }) {
     if (!el) return;
     const mark = (k: string) => setTried((t) => new Set(t).add(k));
     const ctx = () => mark("right");
-    const click = (e: MouseEvent) => { if (e.metaKey) mark("deeper"); else if (e.altKey) mark("discover"); };
+    const click = (e: MouseEvent) => { if (modKey(e)) mark("deeper"); else if (e.altKey) mark("discover"); };
     el.addEventListener("contextmenu", ctx);
     el.addEventListener("click", click);
     return () => { el.removeEventListener("contextmenu", ctx); el.removeEventListener("click", click); };
@@ -267,7 +272,7 @@ function PointStep({ onNext }: { onNext: () => void }) {
     { k: "right", key: "Right-click", what: "Mark it wrong. A session fixes the app itself and adds a test (god mode)." },
     { k: "deeper", key: "⌘-click", what: "Go deeper: open the session, file or block behind it." },
     { k: "discover", key: "⌥-click", what: "Discover: a side session explains it and flags risks, changing nothing." },
-    { k: "voice", key: "⌥Space", what: "Hold and talk to whatever is under the pointer." },
+    { k: "voice", key: "⌥Space", what: "Hold and talk to whatever is under the pointer, or tap to talk hands-free." },
   ];
   return (
     <>
@@ -279,14 +284,14 @@ function PointStep({ onNext }: { onNext: () => void }) {
           {moves.map((m) => (
             <div key={m.k} className="mr-row" style={{ gap: 14, padding: 12, background: tried.has(m.k) ? "var(--mr-tile)" : "var(--mr-well)", transition: "background .3s" }}>
               <span key={String(tried.has(m.k))} className={tried.has(m.k) ? "mr-onb-pop mr-mono" : "mr-mono"} style={{ width: 22, color: tried.has(m.k) ? "var(--mr-done)" : "var(--mr-ink-3)", fontSize: 18 }}>{tried.has(m.k) ? "✓" : "○"}</span>
-              <kbd className="mr-mono" style={{ padding: "3px 8px", background: "var(--mr-ink)", color: "var(--mr-tile)", minWidth: 96, textAlign: "center" }}>{m.key}</kbd>
+              <kbd className="mr-mono" style={{ padding: "3px 8px", background: "var(--mr-ink)", color: "var(--mr-tile)", minWidth: 96, textAlign: "center" }}>{keyLabel(m.key)}</kbd>
               <span>{m.what}</span>
             </div>
           ))}
         </div>
         <div ref={ref} data-mr="DemoTile" data-mr-source="onboarding" className={tried.size === 0 ? "mr-onb-pulse" : undefined}
           style={{ padding: 18, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10, cursor: "context-menu" }}>
-          <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>try me: right-click · ⌘-click · ⌥-click</span>
+          <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>{keyLabel("try me: right-click · ⌘-click · ⌥-click")}</span>
           <StateMark s="almost" />
           <strong style={{ fontSize: 18 }}>Migrate settings to the new schema</strong>
           <span className="mr-dim">Step 4 of 5 · Running the migration test</span>
@@ -312,7 +317,7 @@ function ConnectStep({ state, onNext }: { state: AppState; onNext: () => void })
       </Title>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)", maxWidth: 900 }}>
         <Check ok={claude ? true : state.sidecar.up ? false : null} title="Claude Code is installed"
-          detail={claude ? claude : state.sidecar.up ? <>Not found. In a terminal run <span className="mr-mono">curl -fsSL https://claude.ai/install.sh | bash</span>, then reopen this app.</> : "Looking…"} />
+          detail={claude ? claude : state.sidecar.up ? <NoClaude compact /> : "Looking…"} />
         <Check ok={acct.checked ? acct.signedIn : null} title="Signed in with a Claude plan"
           detail={!acct.checked ? "Checking…" : acct.signedIn ? (
             <span className="mr-row" style={{ gap: 14, flexWrap: "wrap" }}>
@@ -330,9 +335,9 @@ function ConnectStep({ state, onNext }: { state: AppState; onNext: () => void })
           </div>
         )}
         <Check ok={null} optional title="Picker model (optional)"
-          detail="Cloudflare's free Clef-flash model helps sort unclear messages. Everything works without it. Add it any time in Settings (⌘,)." />
+          detail={keyLabel("Cloudflare's free Clef-flash model helps sort unclear messages. Everything works without it. Add it any time in Settings (⌘,).")} />
       </div>
-      <Next onClick={onNext} ready={acct.signedIn}>Next: go</Next>
+      <Next onClick={onNext} ready={acct.signedIn}>Next: permissions</Next>
     </>
   );
 }
@@ -353,7 +358,21 @@ function Check({ ok, title, detail, action, optional }: { ok: boolean | null; ti
   );
 }
 
-// ── 5. Go. ──
+// ── 5. How often sessions ask. ──
+function PermissionStep({ state, onNext }: { state: AppState; onNext: () => void }) {
+  // The pick is logged right away, so skipping the intro after this step keeps it.
+  return (
+    <>
+      <Title kicker="Fewer interruptions" sub="Every tool a session uses can stop and wait for your Allow. Pick how often. You can change it any time in Settings → Sessions.">
+        How often should sessions <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>ask</span>?
+      </Title>
+      <div style={{ maxWidth: 1100 }}><PermissionOptions value={state.permissionMode} onPick={(m) => void api.setPermissionMode(m)} /></div>
+      <Next onClick={() => { if (state.permissionMode === null) void api.setPermissionMode("auto"); onNext(); }}>Next: go</Next>
+    </>
+  );
+}
+
+// ── 6. Go. ──
 function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
   const kinds = [
     { id: "blank" as const, t: "Blank", d: "Any task. Gets its own git worktree, so your checkout stays clean.", k: "⌘1" },
@@ -375,13 +394,13 @@ function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
         {kinds.map((x, i) => (
           <button key={x.t} type="button" onClick={() => onStart(x.id)} className="mr-onb-rise mr-onb-lift"
             style={{ animationDelay: `${i * 80}ms`, border: 0, padding: 18, textAlign: "left", font: "inherit", color: "var(--mr-ink)", background: "var(--mr-tile)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 8, minHeight: 150 }}>
-            <span className="mr-row" style={{ justifyContent: "space-between" }}><strong style={{ fontSize: 18 }}>{x.t}</strong><kbd className="mr-mono mr-dim">{x.k}</kbd></span>
+            <span className="mr-row" style={{ justifyContent: "space-between" }}><strong style={{ fontSize: 18 }}>{x.t}</strong><kbd className="mr-mono mr-dim">{keyLabel(x.k)}</kbd></span>
             <span className="mr-dim">{x.d}</span>
           </button>
         ))}
       </div>
       <div className="mr-row" style={{ gap: 18, marginTop: "auto" }}>
-        <span className="mr-dim">Any time: <span className="mr-mono">⌘K</span> start · <span className="mr-mono">⌘,</span> settings · <span className="mr-mono">⌘⇧G</span> god mode · right-click anything</span>
+        <span className="mr-dim">Any time: <span className="mr-mono">{keyLabel("⌘K")}</span> start · <span className="mr-mono">{keyLabel("⌘,")}</span> settings · <span className="mr-mono">{keyLabel("⌘⇧G")}</span> god mode · right-click anything</span>
         <span className="mr-grow" />
         <span className="mr-onb-nudge"><Key k="↵" tone="primary" onClick={() => onStart("blank")}>Start my first session</Key></span>
       </div>

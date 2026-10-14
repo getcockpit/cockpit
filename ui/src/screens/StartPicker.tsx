@@ -1,4 +1,6 @@
 import { keyOf } from "../components/keys";
+import { keyLabel, modKey } from "../platform";
+import { PromptBox, type PromptBoxHandle } from "../components/PromptBox";
 import { FolderPicker, PinFolder, useWorkFolder } from "../components/FolderPicker";
 import { workspaceFolder } from "../state/reduce";
 import { cleanTitle } from "../picker/title";
@@ -8,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
 import { addressNote, toAddress } from "../picker/suggest";
-import type { AppState, Preset, SessionKind } from "../state/types";
+import type { AppState, Attachment, CommandRow, Preset, SessionKind } from "../state/types";
 
 // ⌘K start picker (decision 18): Review / Address / Plan / Blank, each with its own suggestions.
 const MODES: { id: SessionKind; name: string; what: string; placeholder: string }[] = [
@@ -73,7 +75,13 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   const [prs, setPrs] = useState<Pr[] | null>(null);
   const [error, setError] = useState("");
   const [sel, setSel] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const box = useRef<PromptBoxHandle>(null);
+  // No session yet: the / menu offers what the last session in this folder (else any) offered.
+  const commands: CommandRow[] = useMemo(() => {
+    const ss = state.order.map((id) => state.sessions[id]).filter((s) => s.commands.length).reverse();
+    return (ss.find((s) => s.cwd === cwd || s.repo === cwd) ?? ss[0])?.commands ?? [];
+  }, [state, cwd]);
   const prMode = mode === "review" || mode === "address";
   // PR lists cover every repo (MR-48) unless "only this repo" is on (MR-79): then the folder picks
   // the repo. `repo` is undefined while the folder's origin is being read, null when it isn't GitHub.
@@ -115,8 +123,8 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
 
   // PR work runs in the PR's own clone (MR-48); if it can't be found, ask once and remember.
   const [askRepo, setAskRepo] = useState<{ slug: string; value: string } | null>(null);
-  const start = async (value: string, repo?: string) => {
-    if (!value.trim()) return;
+  const start = async (value: string, repo?: string, files: Attachment[] = []) => {
+    if (!value.trim() && !files.length) return;
     setError("");
     try {
       let where = cwd;
@@ -126,7 +134,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
         if (!found) { setAskRepo({ slug, value }); return; }
         where = found;
       }
-      onStarted(preset ? await api.start(where, fill(preset.template, value), "blank", preset.worktree, undefined, preset.id) : await api.start(where, promptFor(mode, value), mode));
+      onStarted(preset ? await api.start(where, fill(preset.template, value), "blank", preset.worktree, undefined, preset.id, files) : await api.start(where, promptFor(mode, value), mode, undefined, undefined, undefined, files));
     } catch (e) { setError(shortError(e)); }
   };
   const useFolderFor = async (path: string) => {
@@ -141,6 +149,9 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
     if (mode === "review" || mode === "address") void start(it.value, it.repo);
     else { setText(it.value); input.current?.focus(); }
   };
+
+  // ↵ or Start: what's typed (and attached) starts; an empty box opens the picked row.
+  const startOrPick = () => { if (!text.trim() && items[sel]) pick(items[sel]); else box.current?.submit(); };
 
   const savePreset = async (d: Draft) => {
     if (!d.name.trim() || !d.template.trim()) return;
@@ -157,7 +168,8 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   const onKey = (e: React.KeyboardEvent) => {
     if (keyOf(e) === "Escape") { e.preventDefault(); if (draft) setDraft(null); else onClose(); }
     else if (draft) return;
-    else if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && tiles[Number(keyOf(e)) - 1]) { e.preventDefault(); setMode(tiles[Number(keyOf(e)) - 1].id); }
+    else if (modKey(e) && /^[1-9]$/.test(keyOf(e)) && tiles[Number(keyOf(e)) - 1]) { e.preventDefault(); setMode(tiles[Number(keyOf(e)) - 1].id); }
+    else if (text.includes("\n") && (keyOf(e) === "ArrowDown" || keyOf(e) === "ArrowUp")) return; // several lines: arrows move the caret
     else if (keyOf(e) === "ArrowDown") { e.preventDefault(); setSel((x) => Math.min(items.length - 1, x + 1)); }
     else if (keyOf(e) === "ArrowUp") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
     else if (keyOf(e) === "Enter" && !text.trim() && items[sel]) { e.preventDefault(); pick(items[sel]); }
@@ -169,13 +181,16 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
       style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "96px 24px", background: "rgba(21,24,27,.35)", zIndex: 10 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 880, background: "var(--mr-tile)", display: "flex", flexDirection: "column" }}>
-        <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)" }} onSubmit={(e) => { e.preventDefault(); void start(text); }}>
+        <form className="mr-row" style={{ padding: "14px 18px", background: "var(--mr-band)", alignItems: "flex-end" }} onSubmit={(e) => { e.preventDefault(); startOrPick(); }}>
           {prMode && !only
             ? <span className="mr-dim" style={{ flex: "0 1 240px", padding: "0 8px" }} title="Review and Address run in the PR's own clone">Runs in the PR's repo</span>
             : <><FolderPicker value={cwd} onChange={(p) => { setCwd(p); input.current?.focus(); }} extra={[...new Set(state.order.map((id) => state.sessions[id]).reverse().map((x) => x.repo ?? x.cwd))].slice(0, 5)} />
               <PinFolder workspace={workspace} folder={cwd} pinned={state.workspaces.find((w) => w.id === workspace)?.folder ?? null} /></>}
-          <input ref={input} className="mr-input" style={{ fontSize: 17, background: "var(--mr-well)" }} placeholder={m.placeholder} value={text} onChange={(e) => setText(e.target.value)} aria-label={m.placeholder} />
-          <Key k="↵" tone="primary" disabled={!text.trim() && !items[sel]}>Start</Key>
+          <PromptBox ref={box} inputRef={input} text={text} setText={setText} cwd={cwd} commands={prMode ? [] : commands} source="start" menuBelow
+            fieldStyle={{ fontSize: 17, background: "var(--mr-well)" }} placeholder={m.placeholder} ariaLabel={m.placeholder}
+            onSubmit={(t, files) => void start(t, undefined, files)}>
+            <Key k="↵" tone="primary" onClick={startOrPick}>Start</Key>
+          </PromptBox>
         </form>
         <div role="radiogroup" aria-label="Kind of session" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "var(--mr-gap)", padding: "12px 18px" }}>
           {tiles.map((x, i) => {
@@ -183,7 +198,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
             return (
               <button key={x.id} type="button" role="radio" aria-checked={on} onClick={() => setMode(x.id)} data-mr="KindTile" data-mr-source={x.id}
                 style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, borderRadius: "var(--mr-radius)", textAlign: "left", cursor: "pointer", minWidth: 0, background: on ? "var(--mr-ink)" : "var(--mr-well)", color: on ? "var(--mr-tile)" : "var(--mr-ink)" }}>
-                <span className="mr-row" style={{ justifyContent: "space-between" }}><strong className="mr-ellipsis" style={{ fontSize: 15 }}>{x.name}</strong>{i < 9 && <kbd className="mr-mono" style={{ opacity: 0.7 }}>⌘{i + 1}</kbd>}</span>
+                <span className="mr-row" style={{ justifyContent: "space-between" }}><strong className="mr-ellipsis" style={{ fontSize: 15 }}>{x.name}</strong>{i < 9 && <kbd className="mr-mono" style={{ opacity: 0.7 }}>{keyLabel(`⌘${i + 1}`)}</kbd>}</span>
                 <span className={x.mono ? "mr-mono mr-ellipsis" : undefined} style={{ opacity: 0.8 }}>{x.what}</span>
               </button>
             );
@@ -233,7 +248,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           {error && <span style={{ color: "var(--mr-error)", padding: "4px 8px" }}>{error}</span>}
         </div>
         <div className="mr-row mr-dim" style={{ padding: "10px 18px", background: "var(--mr-band)" }}>
-          <span>{draft ? "↵ save · esc cancel" : `⌘1–${Math.min(9, tiles.length)} switch · ↑↓ pick · ↵ start · esc close`}</span>
+          <span>{draft ? "↵ save · esc cancel" : keyLabel(`⌘1–${Math.min(9, tiles.length)} switch · ↑↓ pick · ↵ start · esc close`)}</span>
           <span className="mr-grow" />
           <span className="mr-ellipsis">{draft ? "Saved for every workspace" : preset ? `Sends your template${preset.worktree ? ", in its own git worktree" : ", in the folder you pick"}` : HOW[mode]}</span>
         </div>

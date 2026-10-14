@@ -1,11 +1,13 @@
 import { BuildReadyBanner } from "./components/BuildReadyBanner";
 import { RecoveryBanner } from "./components/RecoveryBanner";
 import { keyOf } from "./components/keys";
+import { modKey } from "./platform";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2 } from "./picker/pick";
 import { DeleteWorkspace, WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
 import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
+import { PermissionPrompt } from "./components/PermissionChoice";
 import { Archive } from "./screens/Archive";
 import { Toast } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -30,6 +32,7 @@ import { useNotify } from "./state/notify";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installUsage, useViews } from "./state/usage";
 import { listenFileDrop } from "./state/fileDrop";
+import { listenSelftest } from "./state/selftestUi";
 
 export default function App() {
   const all = useAppState();
@@ -74,13 +77,17 @@ export default function App() {
   const [docId, setDocIdNow] = useState<string | null>(null);
   // Screen changes morph (MR-67): opening something goes deeper, closing it comes back.
   const setFocus = (id: string | null) => navigate(id ? "deeper" : "back", () => setFocusNow(id));
+  const allRef = useRef(all);
+  allRef.current = all;
+  useEffect(() => listenSelftest((id) => { setWorkspace(allRef.current.sessions[id]?.workspace ?? "personal"); setFocusNow(id); }), []);
   const setDocId = (id: string | null) => navigate(id ? "deeper" : "back", () => setDocIdNow(id));
   // Each workspace remembers where you were (wall, a session or a doc), so switching back is a return, not a restart.
   const views = useRef<Record<string, { focus: string | null; docId: string | null }>>({});
   const [switcher, setSwitcher] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
-  // If the open workspace disappears (deleted), fall back to Personal.
-  useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocusNow(null); setDocIdNow(null); setWorkspace("personal"); } }, [all.workspaces, workspace]);
+  // If the open workspace disappears (deleted), or the remembered one isn't in this log (a fresh
+  // data folder), fall back to Personal. Checked again once the log has loaded.
+  useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocusNow(null); setDocIdNow(null); setWorkspace("personal"); } }, [all.workspaces, workspace, all.lastEventId !== null]);
   const switchTo = (id: string) => {
     if (id === workspace) return;
     views.current[workspace] = { focus, docId };
@@ -102,6 +109,9 @@ export default function App() {
   const setWallView = (v: "wall" | "timeline") => navigate("side", () => { setWallViewNow(v); try { localStorage.setItem("mr.wallView", v); } catch { /* per-viewer convenience */ } });
   // First run: show the intro until it's finished or skipped (ui.onboarded); wait for the replay.
   const [introClosedAt, setIntroClosedAt] = useState<string | null>(null);
+  // Anyone onboarded before the intro asked how often sessions should ask is asked once here (I106).
+  const [permAsked, setPermAsked] = useState(false);
+  const permPrompt = !introOpen(all, introClosedAt) && all.onboarded && all.permissionMode === null && !permAsked && <PermissionPrompt onDone={() => setPermAsked(true)} />;
   const intro = introOpen(all, introClosedAt) && <Onboarding state={all} onDone={() => setIntroClosedAt(all.lastEventId)} onStart={(kind) => { if (all.order.length > 0 || kind === "review" || kind === "address") setPicker(true); }} />;
   // A notification's click lands on its decision (MR-94): its workspace, then the session or doc, over anything open.
   useNotify(all, allDocs, { workspace, session: focus, doc: docId }, (t) => {
@@ -114,13 +124,13 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && keyOf(e) === "k") { e.preventDefault(); setPicker(true); }
-      if (e.metaKey && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
-      if (e.metaKey && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
-      if (e.metaKey && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
+      if (modKey(e) && keyOf(e) === "k") { e.preventDefault(); setPicker(true); }
+      if (modKey(e) && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
+      if (modKey(e) && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
+      if (modKey(e) && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
       // ⌘⇧B updates the app from main (decision 27); ⌘⌥⇧B still opens the build history.
-      if (e.metaKey && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); if (e.altKey) setBuilds((x) => (x === null ? "" : null)); else void startUpdate().catch(() => {}); }
-      if (e.metaKey && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
+      if (modKey(e) && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); if (e.altKey) setBuilds((x) => (x === null ? "" : null)); else void startUpdate().catch(() => {}); }
+      if (modKey(e) && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
         const ws = all.workspaces[Number(keyOf(e)) - 1];
         if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); switchTo(ws.id); }
       }
@@ -130,7 +140,7 @@ export default function App() {
         const i = all.workspaces.findIndex((w) => w.id === workspace);
         switchTo(all.workspaces[(i + (e.shiftKey ? -1 : 1) + all.workspaces.length) % all.workspaces.length].id);
       }
-      if (e.metaKey && keyOf(e) === "j") { e.preventDefault(); setSwitcher((x) => !x); }
+      if (modKey(e) && keyOf(e) === "j") { e.preventDefault(); setSwitcher((x) => !x); }
       // T switches Wall ↔ Timeline, only on those screens and never while typing.
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
       if (keyOf(e) === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing && !focus && !docId && !document.querySelector('[role="dialog"]')) { e.preventDefault(); setWallView(wallView === "wall" ? "timeline" : "wall"); }
@@ -191,7 +201,7 @@ export default function App() {
       <Toast />
       <Presence show={!!deleting}>{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}</Presence>
       <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>
-      {godmode}{voice}<Presence show={!!intro}>{intro}</Presence>
+      {godmode}{voice}<Presence show={!!intro}>{intro}</Presence>{permPrompt}
     </>;
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);

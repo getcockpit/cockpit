@@ -1,8 +1,11 @@
 import { expect, test } from "bun:test";
 
 // Drives the real sidecar process over stdio, like the Rust core does, with the scripted fake query.
-async function run(lines: object[], untilTypes: string[], timeoutMs = 5000) {
-  const proc = Bun.spawn(["bun", "run", `${import.meta.dir}/main.ts`], { stdin: "pipe", stdout: "pipe", env: { ...process.env, MR_FAKE_QUERY: "1" } });
+// Any existing file passes as claude for the fake query; noClaude hides every copy.
+const withClaude = { MR_CLAUDE_PATH: process.execPath };
+const noClaude = { MR_CLAUDE_PATH: "", PATH: "", HOME: "/nonexistent" };
+async function run(lines: object[], untilTypes: string[], timeoutMs = 5000, env: Record<string, string> = withClaude) {
+  const proc = Bun.spawn([process.execPath, "run", `${import.meta.dir}/main.ts`], { stdin: "pipe", stdout: "pipe", env: { ...process.env, MR_FAKE_QUERY: "1", ...env } });
   const out: Record<string, unknown>[] = [];
   const reader = proc.stdout.getReader();
   const dec = new TextDecoder();
@@ -28,9 +31,21 @@ async function run(lines: object[], untilTypes: string[], timeoutMs = 5000) {
 
 test("ping works and ready reports which claude it will drive", async () => {
   const out = await run([{ type: "ping", id: "a" }], ["ready", "pong"]);
-  expect(out[0]).toMatchObject({ type: "ready" });
-  expect(typeof out[0].claude).toBe("string");
+  expect(out[0]).toMatchObject({ type: "ready", claude: process.execPath });
   expect(out[1]).toMatchObject({ type: "pong", id: "a" });
+});
+
+test("without Claude Code everything fails cleanly and the sidecar stays up", async () => {
+  const out = await run(
+    [{ type: "limits" }, { type: "models" }, { type: "oneshot", id: "o", prompt: "x", system: "y" }, { type: "start", session: "s0", cwd: "/tmp", prompt: "hi" }, { type: "ping", id: "alive" }],
+    ["ready", "limits", "models", "oneshot_result", "session_ended", "pong"], 5000, noClaude,
+  );
+  expect(out[0]).toMatchObject({ type: "ready", claude: null });
+  expect(out.find((m) => m.type === "limits")).toMatchObject({ available: false, error: expect.stringContaining("isn't installed") });
+  expect(out.find((m) => m.type === "models")).toMatchObject({ models: [], error: expect.stringContaining("isn't installed") });
+  expect(out.find((m) => m.type === "oneshot_result")).toMatchObject({ ok: false, error: expect.stringContaining("isn't installed") });
+  expect(out.find((m) => m.type === "session_ended")).toMatchObject({ session: "s0", ok: false, reason: expect.stringContaining("isn't installed") });
+  expect(out.find((m) => m.type === "pong")).toMatchObject({ id: "alive" });
 });
 
 test("a session starts, asks permission, gets answered, and finishes a turn", async () => {
@@ -96,6 +111,18 @@ test("model and effort switch mid-session, and a refused switch reports why", as
   const sets = out.filter((x) => x.type === "model_set");
   expect(sets[0]).toMatchObject({ session: "m1", model: "haiku", effort: "low", ok: true });
   expect(sets[1]).toMatchObject({ session: "m1", model: "broken", ok: false, error: "unknown model" });
+});
+
+test("the permission mode reaches Claude Code on start and switches mid-session", async () => {
+  const out = await run(
+    [{ type: "start", session: "pm", cwd: "/tmp", prompt: "hi", permission_mode: "auto" }, { type: "set_permission_mode", session: "pm", mode: "acceptEdits" }, { type: "set_permission_mode", session: "pm", mode: "plan" }],
+    ["ready", "permission_mode_set", "permission_mode_set"],
+  );
+  const init = out.find((x) => x.type === "sdk" && (x.message as { subtype?: string }).subtype === "init") as { message: { permissionMode: string } } | undefined;
+  expect(init?.message.permissionMode).toBe("auto");
+  const sets = out.filter((x) => x.type === "permission_mode_set");
+  expect(sets[0]).toMatchObject({ session: "pm", mode: "acceptEdits", ok: true });
+  expect(sets[1]).toMatchObject({ session: "pm", mode: "plan", ok: false, error: "not in this test" });
 });
 
 test("a session lists its commands once it starts, marking skills and terminal-only ones", async () => {

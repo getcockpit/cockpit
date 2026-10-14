@@ -1,4 +1,4 @@
-import type { AppState, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
+import type { AppState, Attachment, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
 
 // Packaged builds (scripts/package.sh sets VITE_MR_PACKAGED=1) go to people without the /review
 // command, so auto-review starts off there (MR-93). Settings → Auto-review still turns it on.
@@ -20,6 +20,7 @@ export const initialState: AppState = {
   notifications: true,
   compactWindow: 200_000,
   sessionCap: 10,
+  permissionMode: null,
   presets: [],
   clef: { day: "", calls: 0, tokens: 0, errors: 0 },
   cockpitLayer: false,
@@ -36,7 +37,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], owner: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null,
   };
 }
 
@@ -55,6 +56,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const sessions = interrupt(next.sessions, ev.created_at, (s) => ownedBy(s, ev.origin));
     return { ...next, sessions, sidecar: ev.origin && next.instance && ev.origin !== next.instance ? next.sidecar : { up: true, claude: (p.claude as string) ?? null } };
   }
+  // Claude Code was installed (or removed) since the sidecar started: it found out on a re-check.
+  if (ev.kind === "sidecar.claude") return ev.origin && next.instance && ev.origin !== next.instance ? next : { ...next, sidecar: { ...next.sidecar, claude: (p.claude as string) ?? null } };
   // Another copy quit or died: its sessions stop there and can be resumed here (MR-99).
   if (ev.kind === "app.stopped") {
     const gone = (s: SessionState) => s.owner !== null && s.owner === p.origin;
@@ -124,6 +127,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   }
   if (ev.kind === "ui.compact_window_set") return { ...next, compactWindow: typeof p.tokens === "number" ? p.tokens : null };
   if (ev.kind === "ui.session_cap_set") return { ...next, sessionCap: typeof p.cap === "number" ? Math.max(1, p.cap) : next.sessionCap };
+  if (ev.kind === "ui.permission_mode_set") return { ...next, permissionMode: p.mode === "auto" || p.mode === "acceptEdits" || p.mode === "default" ? p.mode : next.permissionMode };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
   if (ev.kind === "ui.notifications_set") return { ...next, notifications: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
@@ -143,7 +147,11 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       const resumed = p.resume ? { status: "starting" as const, error: null, archivedAt: null } : {};
       return { ...next, sessions: { ...next.sessions, [sid]: { ...existing, kind, ...resumed, owner: ev.origin ?? null, spans: p.resume ? track(existing, "starting", ev.created_at) : existing.spans, title: existing.title || String(p.prompt ?? ""), cwd: existing.cwd || String(p.cwd ?? ""), repo: existing.repo ?? where.repo, branch: existing.branch ?? where.branch, preset: existing.preset ?? where.preset } } };
     }
-    return { ...next, sessions: { ...next.sessions, [sid]: { ...newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind), ...where, owner: ev.origin ?? null } }, order: [...next.order, sid] };
+    const fresh = newSession(sid, ev.created_at, String(p.prompt ?? ""), String(p.cwd ?? ""), kind);
+    // Files sent with the first prompt: it shows as your first message, so they can be seen.
+    const files = attached(p);
+    if (files.attachments) fresh.transcript = [{ kind: "user", id: ev.id, text: String(p.prompt ?? ""), at: ev.created_at, ...files }];
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...fresh, ...where, owner: ev.origin ?? null } }, order: [...next.order, sid] };
   }
   if (ev.kind === "picker.layer2" && sid) {
     // A render decision, not session activity: annotate the item and tick the meter, nothing else.
@@ -214,7 +222,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.fixApplied = ev.created_at;
       break;
     case "ui.message_sent":
-      s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending" }];
+      s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending", ...attached(p) }];
       if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
       s.status = "working";
       break;
@@ -273,6 +281,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.error = p.ok ? null : String(p.reason ?? "session failed");
       s.pending = [];
       s.turnOpen = false;
+      // The goal lives in the run: a resumed session reports it again if Claude Code restores it.
+      s.goal = null;
       s.transcript = settle(s.transcript, ["sending", "queued", "taken"], "lost");
       break;
   }
@@ -294,7 +304,7 @@ function ownedBy(s: SessionState, origin: string | null | undefined): boolean {
 function interrupt(sessions: AppState["sessions"], at: number, which: (s: SessionState) => boolean): AppState["sessions"] {
   const out = { ...sessions };
   for (const [id, s] of Object.entries(sessions)) {
-    if (which(s) && !["ended", "error", "interrupted"].includes(s.status)) out[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", at), pending: [], turnOpen: false, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
+    if (which(s) && !["ended", "error", "interrupted"].includes(s.status)) out[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", at), pending: [], turnOpen: false, goal: null, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
   }
   return out;
 }
@@ -364,6 +374,12 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     s.turnOpen = true;
     s.transcript = [...s.transcript, ...add];
     if (s.status !== "needs_you") s.status = "working";
+    return;
+  }
+  if (type === "active_goal") {
+    // Set, re-checked (not met yet) or cleared (met, /goal clear, an error): the full value each time.
+    const g = m.value as { condition?: unknown; iterations?: unknown; set_at?: unknown; last_reason?: unknown } | null;
+    s.goal = g && typeof g.condition === "string" ? { condition: g.condition, iterations: Number(g.iterations ?? 0), setAt: Number(g.set_at ?? ev.created_at), lastReason: typeof g.last_reason === "string" ? g.last_reason : null } : null;
     return;
   }
   if (type === "user") {
@@ -502,4 +518,10 @@ export function contextFill(s: SessionState, compactWindow: number | null): { us
   if (s.context.used === null) return null;
   const limit = Math.min(compactWindow ?? Infinity, s.context.window ?? Infinity);
   return Number.isFinite(limit) ? { used: s.context.used, limit, share: s.context.used / limit } : null;
+}
+
+// A message's attachments from its logged payload, when it has any.
+function attached(p: Record<string, unknown>): { attachments?: Attachment[] } {
+  const a = Array.isArray(p.attachments) ? (p.attachments as Record<string, unknown>[]).filter((x) => typeof x?.path === "string") : [];
+  return a.length ? { attachments: a.map((x) => ({ path: String(x.path), name: String(x.name ?? x.path), mime: String(x.mime ?? ""), ...(typeof x.size === "number" && { size: x.size }) })) } : {};
 }

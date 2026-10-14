@@ -147,6 +147,17 @@ test("a finished turn with a script still running in the background stays Workin
   expect(pickTile(replay([...base, { ...tasks([]), id: "D4" }]).sessions.s).state).toBe("idle");
 });
 
+test("an active /goal shows until it's met, cleared or the session ends", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
+  const goal = (id: string, value: Record<string, unknown> | null) => ev(id, "sidecar.sdk", { message: { type: "active_goal", value, uuid: "u", session_id: "x" } });
+  const base = [ev("G1", "ui.session_requested", { prompt: "p", cwd: "/w" }), goal("G2", { condition: "bun test exits 0", iterations: 0, set_at: 5, tokens_at_start: 100 })];
+  expect(replay(base).sessions.s.goal).toEqual({ condition: "bun test exits 0", iterations: 0, setAt: 5, lastReason: null });
+  const notMet = [...base, goal("G3", { condition: "bun test exits 0", iterations: 2, set_at: 5, tokens_at_start: 100, last_reason: "2 tests fail" })];
+  expect(replay(notMet).sessions.s.goal).toMatchObject({ iterations: 2, lastReason: "2 tests fail" });
+  expect(replay([...notMet, goal("G4", null)]).sessions.s.goal).toBeNull();
+  expect(replay([...notMet, ev("G4", "sidecar.session_ended", { ok: true })]).sessions.s.goal).toBeNull();
+});
+
 test("layer 2 catches a question asked without a question mark, and meters the call", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: Date.UTC(2026, 9, 9) });
   const base = [
@@ -470,6 +481,15 @@ describe("session cap (MR-105)", () => {
   });
 });
 
+describe("permission mode (I106)", () => {
+  const ev = (id: string, mode: unknown): MrEvent => ({ id, session_id: null, kind: "ui.permission_mode_set", payload: { mode }, anchor: null, created_at: 1 });
+  test("unchosen until you pick; the last valid pick wins", () => {
+    expect(replay([]).permissionMode).toBeNull();
+    expect(replay([ev("A", "auto"), ev("B", "default")]).permissionMode).toBe("default");
+    expect(replay([ev("A", "acceptEdits"), ev("B", "bypassPermissions")]).permissionMode).toBe("acceptEdits");
+  });
+});
+
 describe("Cockpit layer (decision 34)", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>, at = "2026-10-11T10:00:00Z"): MrEvent => ({ id, session_id: "S1", kind, payload, anchor: null, created_at: at });
   test("is off until switched on", () => {
@@ -608,5 +628,27 @@ describe("context meter", () => {
   it("a compact resets it to what was kept", () => {
     const s = replay([start, reply("1", 150_000), sdk("2", { type: "system", subtype: "compact_boundary", compact_metadata: { pre_tokens: 150_110, post_tokens: 15_000 } })]).sessions.S;
     expect(s.context.used).toBe(15_000);
+  });
+});
+
+describe("attachments", () => {
+  let n = 0;
+  const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `A${String(++n).padStart(4, "0")}`, session_id: "s1", kind, payload, anchor: null, created_at: 1_000_000 + n * 1000 });
+  const shot = { path: "/data/attachments/01-shot.png", name: "Pasted image 1.png", mime: "image/png", size: 2048 };
+  test("a first prompt with files shows as your first message; a message keeps its files", () => {
+    const st = replay([
+      ev("ui.session_requested", { cwd: "/r", prompt: "what's wrong here?", kind: "blank", attachments: [shot] }),
+      ev("ui.message_sent", { text: "and this", attachments: [{ path: "/r/spec.pdf", name: "spec.pdf", mime: "application/pdf" }, { bogus: 1 }] }),
+      ev("ui.message_sent", { text: "plain" }),
+    ]);
+    const users = st.sessions.s1.transcript.filter((t) => t.kind === "user");
+    expect(users.map((t) => t.kind === "user" && [t.text, t.attachments?.map((a) => a.name)])).toEqual([
+      ["what's wrong here?", ["Pasted image 1.png"]],
+      ["and this", ["spec.pdf"]],
+      ["plain", undefined],
+    ]);
+  });
+  test("a first prompt without files adds no message", () => {
+    expect(replay([ev("ui.session_requested", { cwd: "/r", prompt: "go", kind: "blank" })]).sessions.s1.transcript).toEqual([]);
   });
 });

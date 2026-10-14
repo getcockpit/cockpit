@@ -24,7 +24,7 @@ export function useChanges(s: SessionState): { files: Changed[] | null; error: s
   const touched = Object.keys(s.files).length;
   useEffect(() => {
     let alive = true;
-    const load = () => invoke<Changed[]>("session_changes", { cwd: s.cwd }).then((f) => alive && (setFiles(f), setError(""))).catch((e) => alive && setError(String(e)));
+    const load = () => invoke<Changed[]>("session_changes", { cwd: s.cwd }).then((f) => alive && (setFiles(f), setError(""))).catch((e) => alive && setError(String(e) || "git failed"));
     load();
     const t = setInterval(load, s.status === "working" ? 5000 : 30000);
     return () => { alive = false; clearInterval(t); };

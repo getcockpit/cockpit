@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { modKey } from "../platform";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DeliveryMark, Key, StateMark } from "../components";
@@ -10,7 +11,7 @@ import { editCard, isCard, isCheck } from "../picker/logCards";
 import { CheckList, EditSnippet, StepSummary } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
-import type { Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
+import type { Attachment, CommandRow, Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
 import { docApi, isOpenQuestion, type Doc } from "../state/docs";
 import { AskRow, DocQuestionRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
@@ -20,6 +21,7 @@ import { parseReport, TurnText } from "../components/Turn";
 import { ChangeMap } from "./ChangeMap";
 import { PlanPanel } from "../components/PlanPanel";
 import { BackgroundPanel } from "../components/BackgroundPanel";
+import { GoalStrip } from "../components/GoalStrip";
 import { RunCommand } from "../components/RunCommand";
 import { FileContext } from "../components/FileChip";
 import { CatalogView, viewReplies } from "../components/CatalogView";
@@ -30,10 +32,11 @@ import { LiveTrack } from "../components/Now";
 import { ReviewChanges } from "./ReviewChanges";
 import { ModelPicker } from "../components/ModelPicker";
 import { ContextMeter } from "../components/ContextMeter";
-import { MentionMenu, SlashMenu } from "../components/SlashMenu";
+import { PromptBox, type PromptBoxHandle } from "../components/PromptBox";
+import { AttachmentRow } from "../components/Attachments";
+import { UserText } from "../components/UserText";
 import { McpPanel } from "../components/McpPanel";
-import { matchCommands, routeSlash, typedCommand } from "../picker/slash";
-import { insertMention, matchPaths, typedMention } from "../picker/mention";
+import { routeSlash } from "../picker/slash";
 import { lazy, Suspense } from "react";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
@@ -56,7 +59,7 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
   // The terminal takeover; `command`: a slash command it runs first (MR-87: /doctor, /mcp sign-in…).
   const [term, setTerm] = useState<false | { command?: string }>(false);
   const [mcpOpen, setMcpOpen] = useState(false);
-  const [unknown, setUnknown] = useState<string | null>(null); // a /command this session doesn't know: ask first
+  const [unknown, setUnknown] = useState<{ msg: string; files: Attachment[] } | null>(null); // a /command this session doesn't know: ask first
   const [reviewing, setReviewing] = useState<string | null>(null); // a file path: the review panel is open
   const live = s.status !== "ended" && s.status !== "error";
   const openQuestions = docs.flatMap((d) => Object.values(d.blocks).filter(isOpenQuestion).map((b) => ({ d, b })));
@@ -92,13 +95,13 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
         if (typing && (el as HTMLInputElement).value) { el.blur(); return; }
         onBack();
       }
-      if (keyOf(e) === "." && e.metaKey && running) { e.preventDefault(); void api.interrupt(s.id); }
-      if (keyOf(e) === "d" && e.metaKey && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
+      if (keyOf(e) === "." && modKey(e) && running) { e.preventDefault(); void api.interrupt(s.id); }
+      if (keyOf(e) === "d" && modKey(e) && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
       if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
-      if (keyOf(e) === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
-      if (keyOf(e) === "m" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
-      if (keyOf(e) === "u" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); void catchUp(); }
-      if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => (x ? false : {})); }
+      if (keyOf(e) === "r" && modKey(e)) { e.preventDefault(); setShowRaw((x) => !x); }
+      if (keyOf(e) === "m" && modKey(e) && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
+      if (keyOf(e) === "u" && modKey(e) && e.shiftKey && !s.fromDeleted) { e.preventDefault(); void catchUp(); }
+      if (keyOf(e) === "t" && modKey(e) && s.sdkSessionId) { e.preventDefault(); setTerm((x) => (x ? false : {})); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -110,14 +113,14 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
     setMcpOpen(false); setTerm({ command });
   };
   // A message starting with / may be a command the app shows itself or one only Claude Code's terminal can run (MR-87).
-  const submit = (msg: string) => {
+  const submit = (msg: string, files: Attachment[] = []) => {
     const r = routeSlash(msg, s.commands);
     setUnknown(null);
     if (r.to === "native" && r.name === "mcp") { setMcpOpen(true); return; }
     if (r.to === "native" && r.name === "model") { document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); return; }
     if (r.to === "terminal") { openTerminal(r.command); return; }
-    if (r.to === "unknown") { setUnknown(msg); return; }
-    void api.send(s.id, msg);
+    if (r.to === "unknown") { setUnknown({ msg, files }); return; }
+    void api.send(s.id, msg, files);
   };
 
   // The pinned side panel sits just under the sticky header, whatever height it has right now.
@@ -144,7 +147,8 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
           <span className="mr-mono mr-ink2">{tile.state === "done" ? tile.step : tile.progressLabel || tile.step}</span>
         </div>
         {running && <LiveTrack s={s} />}
-        <div className="mr-row" style={{ gap: 8, paddingBottom: 10 }}>
+        {/* Wraps: Ctrl+Shift+… labels off macOS are wider than ⌘⇧… (MR-133). */}
+        <div className="mr-row" style={{ gap: 8, paddingBottom: 10, flexWrap: "wrap", rowGap: 8 }}>
           {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
           {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => (x ? false : {}))}>{term ? "Back to visual" : "Open in terminal"}</Key>}
@@ -172,8 +176,9 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
               </div>
             </button>
           ))}
+          <GoalStrip s={s} readOnly={elsewhere || !!s.fromDeleted} />
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
-          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} command={term.command} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <FileContext.Provider value={{ session: s.id, cwd: s.cwd }}><RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider></FileContext.Provider>}
+          {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} command={term.command} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <FileContext.Provider value={{ session: s.id, cwd: s.cwd }}><RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} commands={s.commands} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider></FileContext.Provider>}
           {/* What this session waits on you for, at the end of the transcript where Focus scrolls to,
               not above it: asks and the open questions in its working docs. */}
           {(s.pending.length > 0 || openQuestions.length > 0) && (
@@ -194,10 +199,10 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
               {mcpOpen && !term && <McpPanel s={s} onClose={() => setMcpOpen(false)} onSignIn={() => openTerminal("/mcp")} />}
               {unknown && (
                 <div className="mr-qrow" data-mr="UnknownCommand" data-mr-source={s.id}><div className="mr-flag" style={{ background: "var(--mr-needs)" }} /><div className="mr-qbody">
-                  <span><b className="mr-mono">{unknown.split(/\s/)[0]}</b> isn't a command this session knows.</span>
+                  <span><b className="mr-mono">{unknown.msg.split(/\s/)[0]}</b> isn't a command this session knows.</span>
                   <span className="mr-row" style={{ gap: 8 }}>
-                    {s.sdkSessionId && <Key tone="primary" onClick={() => { openTerminal(unknown); setUnknown(null); }}>Run it in the terminal</Key>}
-                    <Key onClick={() => { void api.send(s.id, unknown); setUnknown(null); }}>Send to Claude anyway</Key>
+                    {s.sdkSessionId && <Key tone="primary" onClick={() => { openTerminal(unknown.msg); setUnknown(null); }}>Run it in the terminal</Key>}
+                    <Key onClick={() => { void api.send(s.id, unknown.msg, unknown.files); setUnknown(null); }}>Send to Claude anyway</Key>
                     <Key onClick={() => setUnknown(null)}>Cancel</Key>
                   </span>
                 </div></div>
@@ -225,73 +230,27 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
   );
 }
 
-// A folder's files for the @ menu, listed once a minute at most: typing shouldn't re-run git (MR-108).
-const pathsCache = new Map<string, { at: number; paths: Promise<string[]> }>();
-function folderPaths(cwd: string): Promise<string[]> {
-  const hit = pathsCache.get(cwd);
-  if (hit && Date.now() - hit.at < 60_000) return hit.paths;
-  const paths = api.paths(cwd).catch(() => { pathsCache.delete(cwd); return [] as string[]; });
-  pathsCache.set(cwd, { at: Date.now(), paths });
-  return paths;
-}
-
-// The message box, with the / menu (MR-87): typing / lists this session's commands and skills; @ lists files and folders (MR-108).
-function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean; onSubmit: (text: string) => void }) {
+// The message box (components/PromptBox): / for commands and skills, @ for files, pasted or
+// dropped images and files attach, ↑ brings back what you sent.
+function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean; onSubmit: (text: string, attachments: Attachment[]) => void }) {
   const [text, setText] = useState("");
-  const [caret, setCaret] = useState(0);
-  const [active, setActive] = useState(0);
-  const [closed, setClosed] = useState(false); // Esc hides the menu for what's typed now
-  const [paths, setPaths] = useState<string[] | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const asked = useRef(false);
-  const typed = typedCommand(text);
-  const rows = useMemo(() => (typed === null || closed ? [] : matchCommands(s.commands, typed)), [typed, closed, s.commands]);
-  const mention = typed === null && !closed ? typedMention(text, caret) : null;
-  const mentioning = mention !== null;
-  useEffect(() => { if (mentioning) void folderPaths(s.cwd).then(setPaths); }, [mentioning, s.cwd]);
-  const found = useMemo(() => (mention && paths ? matchPaths(paths, mention.query) : []), [mention?.query, mention?.start, paths]); // eslint-disable-line react-hooks/exhaustive-deps
+  const box = useRef<PromptBoxHandle>(null);
   // Names come with init; descriptions need one ask of the running session.
-  useEffect(() => {
-    if (typed === null || asked.current || s.commands.some((c) => c.description)) return;
+  const asked = useRef(false);
+  const askCommands = () => {
+    if (asked.current || s.commands.some((c) => c.description)) return;
     asked.current = true;
     api.commands(s.id).catch(() => {});
-  }, [typed, s.id, s.commands]);
-  useEffect(() => { setActive(0); }, [typed, mention?.query]);
-  const pick = (name: string) => { setText(`/${name} `); setClosed(true); };
-  const pickPath = (p: string) => {
-    if (!mention) return;
-    const next = insertMention(text, mention, p);
-    setText(next.text);
-    setCaret(next.caret);
-    requestAnimationFrame(() => input.current?.setSelectionRange(next.caret, next.caret));
   };
-  const send = () => { const t = text.trim(); if (t) { onSubmit(t); setText(""); setCaret(0); setClosed(false); } };
-  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!rows.length && found.length) {
-      const k = keyOf(e.nativeEvent);
-      if (k === "ArrowDown" || k === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (k === "ArrowDown" ? 1 : found.length - 1)) % found.length); }
-      else if (k === "Tab" || k === "Enter") { e.preventDefault(); pickPath(found[active] ?? found[0]); }
-      else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); setClosed(true); }
-      return;
-    }
-    if (!rows.length) return;
-    const k = keyOf(e.nativeEvent);
-    if (k === "ArrowDown" || k === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (k === "ArrowDown" ? 1 : rows.length - 1)) % rows.length); }
-    else if (k === "Tab") { e.preventDefault(); pick(rows[active].name); }
-    // ↵ on a row: an exact name runs, anything else completes it first (so arguments can follow).
-    else if (k === "Enter" && rows[active].name !== typed) { e.preventDefault(); pick(rows[active].name); }
-    else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); setClosed(true); }
-  };
+  const history = useMemo(() => s.transcript.flatMap((t) => (t.kind === "user" && t.text ? [t.text] : [])).slice(-50), [s.transcript]);
   return (
-    <form className="mr-row" style={{ position: "relative" }} onSubmit={(e) => { e.preventDefault(); send(); }}>
-      <SlashMenu rows={rows} active={active} onPick={(r) => pick(r.name)} onHover={setActive} source={s.id} />
-      {!rows.length && <MentionMenu paths={found} active={active} onPick={pickPath} onHover={setActive} source={s.id} />}
-      <span className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
-      <input className="mr-input" placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next · / for commands and skills · @ for files"} value={text} ref={input}
-        onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); setClosed(false); }}
-        onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-        onKeyDown={onKey} aria-label="Message this session" aria-autocomplete="list" aria-expanded={rows.length > 0 || found.length > 0} />
-      <Key k="↵" onClick={send}>Send</Key>
+    <form className="mr-row" style={{ position: "relative", alignItems: "flex-end" }} onSubmit={(e) => { e.preventDefault(); box.current?.submit(); }}>
+      <span className="mr-mono" style={{ padding: "2px 6px", marginBottom: 10, background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
+      <PromptBox ref={box} text={text} setText={setText} cwd={s.cwd} commands={s.commands} source={s.id} history={history} onCommands={askCommands} onSubmit={onSubmit}
+        placeholder={running ? "Steer it while it works (it reads this after its current step)" : "Tell it what to do next · / for commands and skills · @ for files · paste or drop images"}
+        ariaLabel="Message this session">
+        <Key k="↵" onClick={() => box.current?.submit()}>Send</Key>
+      </PromptBox>
     </form>
   );
 }
@@ -300,7 +259,7 @@ function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean;
 const HIDDEN_TOOLS = new Set(["TodoWrite", "mcp__mr__plan_set", "mcp__mr__render_view"]);
 
 // The structured transcript (decision 13): readable rows, not terminal text. ⌘R shows raw JSON.
-function Transcript({ items, plan, running, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; plan: SessionState["todos"]; running: boolean; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
+function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; commands: CommandRow[]; plan: SessionState["todos"]; running: boolean; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
   // Only the latest reply offers quick replies; older ones are history.
   const lastTextId = [...items].reverse().find((t) => t.kind === "text" || t.kind === "view")?.id;
   const end = useRef<HTMLDivElement>(null);
@@ -327,7 +286,7 @@ function Transcript({ items, plan, running, raw, diagrams, onDiagram, onDiscover
       ) : t.kind === "view" ? (
         <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={onReply} onDiscover={onDiscover} live={live && t.id === lastTextId} />
       ) : t.kind === "user" ? (
-        <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)" }}><span className="mr-mono mr-dim">you →</span><span className="mr-grow">{t.text}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
+        <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)", alignItems: "flex-start" }}><span className="mr-mono mr-dim">you →</span><span className="mr-grow" style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>{t.text && <UserText text={t.text} commands={commands} />}{t.attachments && <AttachmentRow items={t.attachments} big />}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
       ) : t.kind === "result" ? (
         <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}</div>
       ) : t.kind === "tools" ? (

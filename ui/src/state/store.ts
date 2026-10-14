@@ -2,7 +2,7 @@ import { useEffect, useReducer } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "./listen";
 import { initialState, reduce, replay } from "./reduce";
-import type { AppState, MrEvent } from "./types";
+import type { AppState, Attachment, MrEvent, PermissionMode } from "./types";
 
 export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string };
 
@@ -73,6 +73,9 @@ export function useAppState(): AppState {
   return state;
 }
 
+// Only what the core and sidecar need of an attachment.
+const wire = (a?: Attachment[]) => (a?.length ? a.map(({ path, name, mime, size }) => ({ path, name, mime, size })) : undefined);
+
 export const api = {
   fixApply: (session: string) => invoke<string>("fix_apply", { session }),
   mineWorktree: () => invoke<{ worktree: string }>("personal_history").then((h) => h.worktree),
@@ -89,7 +92,7 @@ export const api = {
   layer2Save: (accountId: string, apiToken: string) => invoke("layer2_save_credentials", { accountId, apiToken }),
   cockpitStatus: () => invoke<{ configured: boolean }>("cockpit_status"),
   cockpitSaveKey: (key: string) => invoke("cockpit_save_key", { key }),
-  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean, workspace?: string, preset?: string) => invoke<string>("session_start", { cwd, prompt, kind, worktree, workspace: workspace ?? currentWorkspace(), preset }),
+  start: (cwd: string, prompt: string, kind: string = "blank", worktree?: boolean, workspace?: string, preset?: string, attachments?: Attachment[]) => invoke<string>("session_start", { cwd, prompt, kind, worktree, workspace: workspace ?? currentWorkspace(), preset, attachments: wire(attachments) }),
   resume: (s: { id: string; cwd: string; kind: string; sdkSessionId: string | null }) =>
     invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
   // Every repo by default (MR-48); `repo` ("owner/name") keeps one (MR-79).
@@ -97,14 +100,22 @@ export const api = {
   ghRepo: (cwd: string) => invoke<string | null>("gh_repo", { cwd }),
   reviewState: (url: string) => invoke<unknown>("gh_review_state", { url }),
   // Every message you send is acknowledged on screen right away (MR-58), then the session shows it's working.
-  send: (session: string, text: string) => {
-    window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Sent: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}` }));
-    return invoke("session_send", { session, text }).catch((e) => { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Not sent: ${String(e).split("\n")[0]}` })); throw e; });
+  send: (session: string, text: string, attachments?: Attachment[]) => {
+    const files = attachments?.length ? ` + ${attachments.length} file${attachments.length > 1 ? "s" : ""}` : "";
+    window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Sent: ${text.length > 60 ? `${text.slice(0, 57)}…` : text}${files}` }));
+    return invoke("session_send", { session, text, attachments: wire(attachments) }).catch((e) => { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Not sent: ${String(e).split("\n")[0]}` })); throw e; });
   },
   // Model and effort for one session (MR-73): null goes back to Claude Code's default, a missing key leaves it.
   setModel: (session: string, change: { model?: string | null; effort?: string | null }) => invoke("session_set_model", { session, change }),
   modelsRefresh: () => invoke("models_refresh"),
+  // How sessions ask before using tools (I106): logged, then switched on every running session.
+  setPermissionMode: (mode: PermissionMode) => invoke("permission_mode_set", { mode }),
   interrupt: (session: string) => invoke("session_interrupt", { session }),
+  // Files for the message box: pasted bytes are saved under the data folder; dropped or picked
+  // paths are described (type, size); an image's bytes come back for its thumbnail.
+  attachmentSave: async (blob: Blob, name: string) => invoke<Attachment>("attachment_save", new Uint8Array(await blob.arrayBuffer()), { headers: { "x-name": encodeURIComponent(name) } }),
+  attachmentInfo: (paths: string[]) => invoke<(Attachment & { dir: boolean; exists: boolean })[]>("attachment_info", { paths }),
+  attachmentRead: (path: string) => invoke<ArrayBuffer>("attachment_read", { path }),
   // Slash commands and /mcp (MR-87): answers arrive as sidecar.commands / sidecar.mcp_status.
   commands: (session: string) => invoke("session_commands", { session }),
   mcpStatus: (session: string) => invoke("session_mcp_status", { session }),

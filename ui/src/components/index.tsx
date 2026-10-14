@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import type { DecisionSpec, Risk, TileSpec } from "../picker/pick";
 import type { Delivery } from "../state/types";
+import { keyLabel } from "../platform";
 
 // The component catalog (decision 16). Screens are composed only from these.
 
@@ -19,7 +20,7 @@ export function Lamp({ value, label, on, onClick }: { value: string | number; la
 export function Key({ k, children, tone, onClick, disabled, submit, pressed }: { k?: string; children: ReactNode; tone?: "primary" | "needs"; onClick?: () => void; disabled?: boolean; submit?: boolean; pressed?: boolean }) {
   return (
     <button type={submit ? "submit" : "button"} className="mr-key" data-tone={tone} onClick={onClick} disabled={disabled} aria-pressed={pressed}>
-      {k && <kbd>{k}</kbd>}
+      {k && <kbd>{keyLabel(k)}</kbd>}
       {children}
     </button>
   );
@@ -110,10 +111,12 @@ export function DecisionCard({ spec, onAnswer }: { spec: DecisionSpec; onAnswer:
       {spec.component === "DiffCard" && <span className="mr-mono mr-dim">{spec.path} · +{spec.added} −{spec.removed}</span>}
       {body && <pre className="mr-code">{body}</pre>}
       <RiskMeter risk={spec.risk} why={spec.why} />
+      {/* High risk: the safe answer leads, so a glance never lands on Allow (MR-139). */}
       <div className="mr-row" style={{ flexWrap: "wrap" }}>
-        <Key k="A" tone="needs" onClick={() => onAnswer({ kind: "allow" })}>Allow</Key>
+        {spec.risk === "high" && <Key k="D" tone="primary" onClick={() => onAnswer({ kind: "deny" })}>Deny</Key>}
+        <Key k="A" tone={spec.risk === "high" ? undefined : "needs"} onClick={() => onAnswer({ kind: "allow" })}>Allow</Key>
         <Key k="S" onClick={() => onAnswer({ kind: "allow", always: true })}>Allow for this session</Key>
-        <Key k="D" onClick={() => onAnswer({ kind: "deny" })}>Deny</Key>
+        {spec.risk !== "high" && <Key k="D" onClick={() => onAnswer({ kind: "deny" })}>Deny</Key>}
       </div>
     </>
   );

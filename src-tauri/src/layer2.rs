@@ -9,7 +9,7 @@ use std::time::Instant;
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
-const KEYCHAIN_SERVICE: &str = "minority-report.cloudflare";
+pub const KEYCHAIN_SERVICE: &str = "cockpit.cloudflare";
 pub const LABELS: [(&str, &str); 5] = [
     ("question", "Asks the user something and waits for their answer"),
     ("plan", "Proposes a plan or next steps before doing them"),
@@ -19,8 +19,7 @@ pub const LABELS: [(&str, &str); 5] = [
 ];
 
 fn keychain_get(account: &str) -> Option<String> {
-    let out = Command::new("security").args(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-w"]).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned()).filter(|s| !s.is_empty())
+    crate::migrate::keychain_get(KEYCHAIN_SERVICE, account)
 }
 
 fn creds() -> Option<(String, String)> {

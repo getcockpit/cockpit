@@ -11,7 +11,7 @@ export const fakeQuery: QueryFn = ({ prompt, options }) => {
   async function* run() {
     let first = true;
     for await (const user of prompt) {
-      if (first) { yield { type: "system", subtype: "init", session_id: "sdk-fake-1", model: "fake", cwd: options.cwd, skills: ["mr-task"], terminal_slash_commands: ["doctor"], config_dir: (options.env as Record<string, string> | undefined)?.CLAUDE_CONFIG_DIR ?? null }; first = false; }
+      if (first) { yield { type: "system", subtype: "init", session_id: "sdk-fake-1", model: "fake", cwd: options.cwd, skills: ["mr-task"], terminal_slash_commands: ["doctor"], config_dir: (options.env as Record<string, string> | undefined)?.CLAUDE_CONFIG_DIR ?? null, permissionMode: options.permissionMode ?? "default" }; first = false; }
       const text = (user as { message: { content: string } }).message.content;
       const decision = await canUseTool("Bash", { command: "touch made-by-fake.txt" }, {});
       yield { type: "assistant", message: { content: [{ type: "tool_use", name: "Bash", input: { command: "touch made-by-fake.txt" } }] } };
@@ -30,6 +30,7 @@ export const fakeQuery: QueryFn = ({ prompt, options }) => {
   ];
   const setModel = async (model?: string) => { if (model === "broken") throw new Error("unknown model"); };
   const applyFlagSettings = async () => {};
+  const setPermissionMode = async (mode: string) => { if (mode === "plan") throw new Error("not in this test"); };
   const supportedCommands = async () => [
     { name: "mcp", description: "Manage MCP servers", argumentHint: "", builtin: true },
     { name: "doctor", description: "Diagnose the install", argumentHint: "", builtin: true },
@@ -39,5 +40,5 @@ export const fakeQuery: QueryFn = ({ prompt, options }) => {
   const mcpServerStatus = async () => [...servers].map(([name, x]) => ({ name, status: x.status, source: "claudeai", tools: x.tools }));
   const reconnectMcpServer = async (name: string) => { if (!servers.has(name)) throw new Error(`no server ${name}`); };
   const toggleMcpServer = async (name: string, on: boolean) => { const x = servers.get(name); if (!x) throw new Error(`no server ${name}`); x.status = on ? "connected" : "disabled"; };
-  return Object.assign(it, { interrupt: async () => { interrupted = true; }, close: () => {}, usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET, supportedModels, setModel, applyFlagSettings, supportedCommands, mcpServerStatus, reconnectMcpServer, toggleMcpServer });
+  return Object.assign(it, { interrupt: async () => { interrupted = true; }, close: () => {}, usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET, supportedModels, setModel, applyFlagSettings, setPermissionMode, supportedCommands, mcpServerStatus, reconnectMcpServer, toggleMcpServer });
 };

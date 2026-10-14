@@ -6,7 +6,7 @@ describe("fileRef", () => {
     expect(fileRef("src/auth.ts:42")).toEqual({ path: "src/auth.ts", line: 42 });
     expect(fileRef("ui/src/components/Turn.tsx:10:5")).toEqual({ path: "ui/src/components/Turn.tsx", line: 10 });
     expect(fileRef("docs/PRD.md")).toEqual({ path: "docs/PRD.md" });
-    expect(fileRef("~/minority-report/scripts/dev.sh")).toEqual({ path: "~/minority-report/scripts/dev.sh" });
+    expect(fileRef("~/app/scripts/dev.sh")).toEqual({ path: "~/app/scripts/dev.sh" });
     expect(fileRef("/Users/me/notes.txt")).toEqual({ path: "/Users/me/notes.txt" });
     expect(fileRef("design/mockups/")).toEqual({ path: "design/mockups/" });
   });

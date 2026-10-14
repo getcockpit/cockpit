@@ -8,10 +8,12 @@ import planDocFixture from "./fixtures/plan-doc.json";
 type E = { session?: string; kind: string; payload?: Record<string, unknown>; at?: number };
 export type Scenario = { events: E[]; docs: Doc[] };
 
-const ready: E[] = [
+const sidecarUp: E[] = [
   { kind: "sidecar.ready", payload: { claude: "/Users/me/.local/bin/claude" }, at: 0 },
   { kind: "sidecar.limits", payload: { available: true, plan: "max", five_hour: { utilization: 0.34, resetsAt: Math.round(Date.now() / 1000) + 7200 }, seven_day: { utilization: 0.58, resetsAt: null } }, at: 1 },
 ];
+// Demos past the intro have made the permission choice (I106); ?demo=permissions hasn't.
+const ready: E[] = [...sidecarUp, { kind: "ui.permission_mode_set", payload: { mode: "auto" }, at: 1 }];
 const onboarded: E = { kind: "ui.onboarded", at: 2 };
 
 // What each reply had in context, for the context meter: grows with the session, up to ~190k.
@@ -32,7 +34,7 @@ const busy: E[] = [
   // A: needs a permission (risky command)
   ...start("A", "Retire the old invoices table", { cwd: "/Users/me/code/shop-worktrees/retire-invoices", repo: "/Users/me/code/shop", branch: "mr/retire-invoices" }, 10),
   todos("A", 3, [["Find every reader of invoices_v1", "Finding every reader of invoices_v1"], ["Move readers to the new table", "Moving readers to the new table"], ["Backfill missing rows", "Backfilling missing rows"], ["Drop the old table", "Dropping the old table"], ["Remove the dead code", "Removing the dead code"]], 20),
-  tool("A", "Edit", { file_path: "src/billing/invoices.ts", old_string: "a\nb\nc", new_string: "a\nb\nc\nd\ne" }, 60),
+  tool("A", "Edit", { file_path: "src/billing/invoices.ts", old_string: "export async function listInvoices(accountId: string) {\n  return db.invoices_v1.findMany({ where: { accountId } });\n}", new_string: "export async function listInvoices(accountId: string) {\n  return db.invoices.findMany({\n    where: { accountId, deletedAt: null },\n    orderBy: { issuedAt: \"desc\" },\n  });\n}" }, 60),
   // The description sounds routine; the command says production, with CASCADE.
   { session: "A", kind: "sidecar.permission_request", payload: { request_id: "pA", tool: "Bash", input: { command: "psql \"$PROD_DATABASE_URL\" -c 'DROP TABLE invoices_v1 CASCADE;'", description: "Drop the old invoices table" }, suggestions: null, decision_reason: null }, at: 2300 },
   // E: asks a structured question
@@ -67,8 +69,8 @@ const busy: E[] = [
   // D: finished with a recap (diagram already drawn)
   ...start("D", "Refactor the settings schema", { cwd: "/Users/me/code/shop-worktrees/settings-schema", repo: "/Users/me/code/shop", branch: "mr/settings-schema" }, 60),
   todos("D", 5, [["Design schema", "Designing schema"], ["Migrate readers", "Migrating readers"], ["Write migration", "Writing migration"], ["Tests", "Running tests"]], 1500),
-  tool("D", "Write", { file_path: "src/settings/schema.ts", content: "x\n".repeat(80) }, 1510),
-  tool("D", "Edit", { file_path: "src/settings/read.ts", old_string: "a\n".repeat(12), new_string: "b\n".repeat(20) }, 1520),
+  tool("D", "Write", { file_path: "src/settings/schema.ts", content: "import { z } from \"zod\";\n\n// One typed schema for every setting; unknown keys are dropped, missing ones get defaults.\nexport const Settings = z.object({\n  version: z.literal(2).default(2),\n  theme: z.enum([\"light\", \"dark\", \"system\"]).default(\"system\"),\n  fontSize: z.number().int().min(10).max(24).default(14),\n  telemetry: z.boolean().default(false),\n  editor: z.object({\n    tabSize: z.number().int().min(1).max(8).default(2),\n    wordWrap: z.boolean().default(true),\n  }).default({}),\n  sync: z.object({\n    enabled: z.boolean().default(false),\n    intervalMin: z.number().int().min(5).default(15),\n  }).default({}),\n});\n\nexport type Settings = z.infer<typeof Settings>;\n\nexport function parseSettings(raw: unknown): Settings {\n  return Settings.parse(raw ?? {});\n}\n" }, 1510),
+  tool("D", "Edit", { file_path: "src/settings/read.ts", old_string: "export function readSettings(path: string) {\n  const raw = JSON.parse(fs.readFileSync(path, \"utf8\"));\n  return {\n    theme: raw.theme || \"system\",\n    fontSize: raw.fontSize || 14,\n    tabSize: raw.tabSize || 2,\n  };\n}", new_string: "import { parseSettings, type Settings } from \"./schema\";\n\nexport function readSettings(path: string): Settings {\n  if (!fs.existsSync(path)) return parseSettings({});\n  const raw = JSON.parse(fs.readFileSync(path, \"utf8\"));\n  // v1 files kept tabSize at the top level\n  if (raw.version !== 2) raw.editor = { tabSize: raw.tabSize, ...raw.editor };\n  return parseSettings(raw);\n}" }, 1520),
   say("D", RECAP, 1900),
   result("D", "done", 1901, 1.12),
 ];
@@ -136,6 +138,9 @@ const reportEvents: E[] = [
 ];
 
 
+// MR-142: screenshots for the image blocks, drawn inline so the demo needs no files.
+const shot = (title: string, fill: string, off = 0) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="#f4f2ee"/><rect width="640" height="56" fill="#15181b"/><text x="24" y="36" font-family="sans-serif" font-size="20" fill="#fff">${title}</text><rect x="${180 + off}" y="150" width="280" height="44" fill="${fill}"/><text x="${250 + off}" y="178" font-family="sans-serif" font-size="16" fill="#fff">Sign in</text><rect x="180" y="100" width="280" height="32" fill="#ddd"/></svg>`)}`;
+
 // MR-61: a session that answered with a view composed from the catalog (render_view).
 const viewEvents: E[] = [
   ...ready, onboarded,
@@ -155,6 +160,8 @@ const viewEvents: E[] = [
     { type: "tradeoff", label: "How long to keep the reader shim", points: [{ x: 1, y: 40 }, { x: 2, y: 81 }, { x: 3, y: 90 }, { x: 6, y: 96 }, { x: 12, y: 99 }], x_unit: "months", y_unit: "% of users covered", pick: 2 },
     { type: "fix_options", finding: "Old builds crash on the new format", options: [{ label: "Bump the minimum version", detail: "10 min, forces 4% to update" }, { label: "Ship a reader shim", detail: "2 h, nobody notices", recommended: true }] },
     { type: "thread", author: "marta", where: "round 2 · read.ts:42", state: "replied", body: "This throws on v1 files, so the desktop app will crash on launch.", note: "You replied \"will do\" in round 1, still open." },
+    { type: "images", ask: "both", items: [{ path: shot("Settings · light", "#2e7d6b"), caption: "Settings, light theme" }, { path: shot("Settings · narrow", "#2e7d6b", 60), caption: "Settings at 800 px" }, { path: shot("Settings · error", "#b3261e"), caption: "Invalid value state" }] },
+    { type: "image_compare", before: { path: shot("Settings · main", "#2e7d6b"), label: "main" }, after: { path: shot("Settings · this branch", "#2e7d6b", 30), label: "this branch" } },
     { type: "next", text: "Add the reader shim, then run the old-build check.", replies: ["Add the shim", "Bump the minimum version", "Explain the risk"] },
   ] }, at: 60 },
   result("V", "ok", 61),
@@ -234,6 +241,8 @@ const timelineEvents: E[] = [
 
 export const SCENARIOS: Record<string, Scenario> = {
   timeline: { events: timelineEvents, docs: [] },
+  // The timeline sessions with nothing waiting on you: the grey, calm wall (film, MR-139).
+  calm: { events: timelineEvents.filter((e) => e.kind !== "sidecar.permission_request"), docs: [] },
   "review-overview": { events: reviewOverviewEvents, docs: [] },
   plan: { events: planEvents, docs: [] },
   view: { events: viewEvents, docs: [] },
@@ -241,7 +250,8 @@ export const SCENARIOS: Record<string, Scenario> = {
   bugs: { events: bugEvents, docs: [] },
   review: { events: reviewEvents, docs: [] },
   address: { events: addressEvents, docs: [] },
-  fresh: { events: [...ready], docs: [] },
+  fresh: { events: [...sidecarUp], docs: [] },
+  permissions: { events: [...sidecarUp, onboarded], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
   // A 14-block working doc with long bodies, tables and lists (the doc map must stay usable).

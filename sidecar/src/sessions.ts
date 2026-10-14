@@ -1,4 +1,6 @@
-import type { CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, ToolSpec } from "./protocol";
+import { NO_CLAUDE } from "./claude-path";
+import { userContent } from "./attachments";
+import type { Attachment, CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, PermissionMode, ToolSpec } from "./protocol";
 
 // The slice of the Agent SDK this module needs, so tests can inject a fake.
 export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
@@ -11,19 +13,20 @@ export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record
   mcpServerStatus?(): Promise<SdkMcpStatus[]>;
   reconnectMcpServer?(name: string): Promise<void>;
   toggleMcpServer?(name: string, enabled: boolean): Promise<void>;
+  setPermissionMode?(mode: PermissionMode): Promise<void>;
 };
 type SdkMcpStatus = { name: string; status: string; source?: string; scope?: string; error?: string; serverInfo?: { version: string }; config?: { url?: string }; tools?: { name: string }[] };
 export type { ModelRow };
 export type McpFactory = (session: string, tools: ToolSpec[], call: (tool: string, args: Record<string, unknown>) => Promise<{ text: string; is_error?: boolean }>) => Record<string, unknown> | undefined;
-type UserMsg = { type: "user"; message: { role: "user"; content: string }; parent_tool_use_id: null };
+type UserMsg = { type: "user"; message: { role: "user"; content: string | Record<string, unknown>[] }; parent_tool_use_id: null };
 
 // A push-based async queue: the prompt stream for one session, so follow-ups can be sent mid-run.
 class Inbox implements AsyncIterable<UserMsg> {
   private items: UserMsg[] = [];
   private waiting: ((r: IteratorResult<UserMsg>) => void) | null = null;
   private closed = false;
-  push(text: string) {
-    const m: UserMsg = { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null };
+  push(text: string, attachments?: Attachment[]) {
+    const m: UserMsg = { type: "user", message: { role: "user", content: userContent(text, attachments) }, parent_tool_use_id: null };
     if (this.waiting) { const w = this.waiting; this.waiting = null; w({ value: m, done: false }); } else this.items.push(m);
   }
   close() { this.closed = true; if (this.waiting) { const w = this.waiting; this.waiting = null; w({ value: undefined as never, done: true }); } }
@@ -41,14 +44,17 @@ type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; init: { skills: strin
 export class Sessions {
   private live = new Map<string, Live>();
   private seq = 0;
-  constructor(private emit: (m: Outbound) => void, private query: QueryFn, private claudePath: string | undefined, private mcp: McpFactory = () => undefined) {}
+  constructor(private emit: (m: Outbound) => void, private query: QueryFn, private claude: () => string | undefined, private mcp: McpFactory = () => undefined) {}
 
   handle(m: Inbound): void {
     switch (m.type) {
       case "start": return this.start(m);
-      case "send": return void this.with(m.session, (s) => s.inbox.push(m.text));
+      case "send": return void this.with(m.session, (s) => s.inbox.push(m.text, m.attachments));
       case "interrupt": return void this.with(m.session, (s) => { void s.q?.interrupt(); });
       case "set_model": return void this.with(m.session, (s) => { s.switching = s.switching.then(() => this.setModel(m.session, s, m.model, m.effort)); });
+      case "set_permission_mode": return void this.with(m.session, (s) => {
+        s.switching = s.switching.then(() => this.setPermissionMode(m.session, s, m.mode));
+      });
       case "stop": return void this.with(m.session, (s) => { s.inbox.close(); s.q?.close?.(); });
       case "permission_response": return void this.with(m.session, (s) => {
         const r = s.pending.get(m.request_id);
@@ -76,6 +82,16 @@ export class Sessions {
       this.emit({ type: "model_set", session, model, effort, ok: true });
     } catch (e) {
       this.emit({ type: "model_set", session, model, effort, ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  private async setPermissionMode(session: string, s: Live, mode: PermissionMode) {
+    try {
+      if (!s.q?.setPermissionMode) throw new Error("this SDK can't switch permission modes mid-session");
+      await s.q.setPermissionMode(mode);
+      this.emit({ type: "permission_mode_set", session, mode, ok: true });
+    } catch (e) {
+      this.emit({ type: "permission_mode_set", session, mode, ok: false, error: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -128,9 +144,11 @@ export class Sessions {
 
   private start(m: Extract<Inbound, { type: "start" }>) {
     if (this.live.has(m.session)) return this.emit({ type: "error", session: m.session, error: "session already running" });
+    const claudePath = this.claude();
+    if (!claudePath) return this.emit({ type: "session_ended", session: m.session, ok: false, reason: NO_CLAUDE });
     const s: Live = { inbox: new Inbox(), q: null, init: { skills: [], terminal: [] }, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
     this.live.set(m.session, s);
-    s.inbox.push(m.prompt);
+    s.inbox.push(m.prompt, m.attachments);
 
     const callTool = (tool: string, args: Record<string, unknown>) => new Promise<{ text: string; is_error?: boolean }>((resolve) => {
       const call_id = `c${++this.seq}`;
@@ -146,9 +164,10 @@ export class Sessions {
       env: m.env ? { ...process.env, ...m.env } : undefined,
       model: m.model,
       effort: m.effort,
-      pathToClaudeCodeExecutable: this.claudePath,
+      pathToClaudeCodeExecutable: claudePath,
       systemPrompt: m.append_system_prompt ? { type: "preset", preset: "claude_code", append: m.append_system_prompt } : undefined,
       mcpServers: mcpServer ? { mr: mcpServer } : undefined,
+      permissionMode: m.permission_mode,
       canUseTool: (tool: string, input: Record<string, unknown>, opts: { signal?: AbortSignal; suggestions?: unknown[]; decisionReason?: string; mcpServer?: { name: string; source: string } }) =>
         new Promise<PermissionDecision>((resolve) => {
           const request_id = `p${++this.seq}`;

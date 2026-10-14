@@ -21,7 +21,7 @@ export type Question = { question: string; header: string; options: { label: str
 export type TranscriptItem = (
   | { kind: "text"; id: string; text: string; at: number }
   | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; background?: Background; at: number }
-  | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery }
+  | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery; attachments?: Attachment[] }
   | { kind: "view"; id: string; title: string; blocks: ViewBlock[]; at: number }
   | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number }
 ) & { step?: string }; // the plan step in progress when it arrived (MR-69)
@@ -40,6 +40,9 @@ export type ViewBlock = { type: string } & Record<string, unknown>;
 
 // Where a message you sent is (MR-59): sending → taken (Claude has it) → answered (its turn finished).
 // Sent mid-turn it's queued: Claude Code hands it over at the next tool result or turn. Lost: the session ended first.
+// A file sent with a message (pasted, dropped or picked): images and PDFs reach Claude as content, the rest by path.
+export type Attachment = { path: string; name: string; mime: string; size?: number };
+
 export type Delivery = "sending" | "queued" | "taken" | "answered" | "lost";
 
 export type Todo = { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string; since?: number; doneAt?: number }; // since: when the step started (plan_set, MR-62); doneAt: when it finished (Timeline, MR-32)
@@ -122,9 +125,12 @@ export type SessionState = {
   mcp: McpState | null; // its MCP servers (MR-87): from init, fresh from /mcp
   owner: string | null; // origin of the copy that last started or resumed it (MR-99)
   backgroundTasks: { id: string; description: string }[]; // commands and agents still running after the turn ended
+  goal: Goal | null; // the /goal Claude keeps working toward until an evaluator says it's met
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 
+// Claude Code's /goal (active_goal): the completion condition, how many turns it was checked and found not met, and why.
+export type Goal = { condition: string; iterations: number; setAt: number; lastReason: string | null };
 export type Diagram = { title?: string | null; nodes: { id: string; label: string; kind: "step" | "decision" | "done" | "risk" }[]; edges: { from: string; to: string; label?: string | null }[] };
 export type ProseKind = { label: "question" | "plan" | "done" | "blocked" | "other"; p: number; layer: "model" | "code" };
 // Layer-2 calls today (UTC day, when Cloudflare's free allocation resets).
@@ -157,6 +163,7 @@ export type AppState = {
   notifications: boolean; // macOS notifications for new needs-you items while the app is in the background (MR-94)
   compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I63)
   sessionCap: number; // how many sessions may be mid-turn at once; idle ones don't count (MR-105)
+  permissionMode: PermissionMode | null; // how sessions ask before using tools; null = not chosen yet, which runs as auto (I106)
   clef: ClefMeter;
   cockpitLayer: boolean; // cards drawn by the Cockpit layer on its own key, sessions run plain (decision 34)
   cockpit: CockpitMeter;
@@ -168,3 +175,5 @@ export type AppState = {
   selfbuild: { id: string; branch: string; sha: string; phase: "building" | "ready" } | null; // the latest self-build until relaunched or dismissed
   update: UpdateState;
 };
+
+export type PermissionMode = "auto" | "acceptEdits" | "default";

@@ -18,6 +18,8 @@ enum F {
     Str,
     Num,
     List,
+    /// An image: a path string, or an object with a non-empty `path`.
+    Image,
 }
 
 /// The catalog blocks Claude may use: type → required fields. Optional fields are listed in the
@@ -47,7 +49,14 @@ const CATALOG: &[(&str, &[(&str, F)])] = &[
     ("decision", &[("chosen", F::Str)]),
     ("phases", &[("items", F::List)]),
     ("matrix", &[("cols", F::List), ("rows", F::List)]),
+    ("images", &[("items", F::List)]),
+    ("image_compare", &[("before", F::Image), ("after", F::Image)]),
 ];
+
+/// An image reference: a non-empty path or URL, bare or as `{path}`.
+fn is_image(v: &Value) -> bool {
+    v.as_str().or_else(|| v["path"].as_str()).is_some_and(|p| !p.trim().is_empty())
+}
 
 pub fn tool_spec() -> Value {
     json!({
@@ -76,6 +85,8 @@ pub fn tool_spec() -> Value {
 - decision {chosen, why?, rejected?: [string], recommended?}: a settled question as its outcome; recommended shows when the choice overrode it.\n\
 - phases {items: [{name, detail?, min, max?}], unit?: 'days'}: sequential phases as bars sized by estimate (max = upper bound).\n\
 - matrix {cols: [string], rows: [{label, cells: [string]}]}: a grid of rules or support; cells 'yes', 'no', 'partial' draw as marks, other text as is.\n\
+- images {items: [{path, caption?}], ask?: 'both'|'verdict'|'pins'|'none'}: screenshots or pictures the user should look at (a bug, a UI to review, a render). path: absolute, relative to the session folder, or an https URL. The user opens each full size and, per ask (default both), approves/rejects/comments, pins numbered notes, and draws freehand, arrows and boxes on it; it all comes back as one reply with each pin, drawing, arrow and box located in %, plus the path of a copy with the marks burned in (Read it to see them).\n\
+- image_compare {before: {path, label?}, after: {path, label?}, ask?}: two images side by side or under a slider (visual regression, design vs build); same ask and reply.\n\
 - text {markdown}: a short paragraph, only when no other block fits.\n\
 Every block except next and text carries Deeper / Discover actions. Use AskUserQuestion, not render_view, for any other choice the user must make.",
         "params": { "title": "string", "blocks": "array" },
@@ -152,10 +163,18 @@ pub fn check_blocks(blocks: &[Value]) -> Result<(), Vec<String>> {
                 F::Str => v.as_str().is_some_and(|s| !s.trim().is_empty()),
                 F::Num => v.is_number(),
                 F::List => v.as_array().is_some_and(|a| !a.is_empty()),
+                F::Image => is_image(v),
             };
             if !ok {
-                let want = match kind { F::Str => "a non-empty string", F::Num => "a number", F::List => "a non-empty array" };
+                let want = match kind { F::Str => "a non-empty string", F::Num => "a number", F::List => "a non-empty array", F::Image => "{path} (a file path or https URL)" };
                 errors.push(format!("blocks[{i}] ({ty}): '{field}' must be {want}"));
+            }
+        }
+        if ty == "images" {
+            for (j, it) in b["items"].as_array().into_iter().flatten().enumerate() {
+                if !is_image(it) {
+                    errors.push(format!("blocks[{i}] (images): items[{j}] needs a 'path' (a file path or https URL)"));
+                }
             }
         }
     }
@@ -269,6 +288,21 @@ mod tests {
         assert!(!err && events.len() == 1);
         let (_, text, err) = handle_tool(TOOL, &json!({ "blocks": [{ "type": "tier", "label": "x" }, { "type": "thread", "author": "marta" }] }));
         assert!(err && text.contains("'tier' must be a number") && text.contains("'body' must be a non-empty string"));
+    }
+
+    #[test]
+    fn image_blocks_need_a_path_per_image() {
+        let ok = json!({ "blocks": [
+            { "type": "images", "ask": "both", "items": [{ "path": "shots/login.png", "caption": "Login" }, "https://example.com/a.png"] },
+            { "type": "image_compare", "before": { "path": "/tmp/a.png", "label": "main" }, "after": "/tmp/b.png" },
+        ] });
+        assert!(validate(&ok).is_ok());
+        let err = validate(&json!({ "blocks": [
+            { "type": "images", "items": [{ "caption": "no path" }, { "path": " " }] },
+            { "type": "image_compare", "before": { "path": "/tmp/a.png" } },
+        ] })).unwrap_err();
+        assert!(err.contains("items[0] needs a 'path'") && err.contains("items[1] needs a 'path'"), "{err}");
+        assert!(err.contains("'after' must be {path}"), "{err}");
     }
 
     #[test]
