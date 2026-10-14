@@ -252,6 +252,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   address: { events: addressEvents, docs: [] },
   fresh: { events: [...sidecarUp], docs: [] },
   permissions: { events: [...sidecarUp, onboarded], docs: [] },
+  neverask: { events: [...ready, { kind: "ui.permission_mode_set", payload: { mode: "never" }, at: 1 }, onboarded], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
   // A 14-block working doc with long bodies, tables and lists (the doc map must stay usable).
