@@ -8,6 +8,7 @@ import { expandPastes, foldsPaste, pasteToken, pastesIn, placeFile, segments } f
 import { MentionMenu, SlashMenu } from "./SlashMenu";
 import { AttachmentRow, notesKey, seedPreview } from "./Attachments";
 import { attachmentNotes, clearDrafts, getDrafts } from "./reviewDraft";
+import { burnIn } from "./Lightbox";
 import { sendsOnEnter, useAutoGrow } from "./autoGrow";
 import { keyOf } from "./keys";
 
@@ -169,14 +170,27 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
     const typed = expandPastes(text, pastes.current).trim();
     if (!typed && !files.length) return;
     if (busy) { toast("Still attaching: one moment"); return; }
-    // Pins on your own images travel as text after the message (MR-142).
-    const notes = attachmentNotes(files, (path) => getDrafts(notesKey(path), 1)[0].pins);
-    const t = [typed, notes].filter(Boolean).join("\n\n");
-    files.forEach((f) => clearDrafts(notesKey(f.path)));
-    p.onSubmit(t, files);
-    setText(""); setCaret(0); setClosed(false); setFiles([]);
-    pastes.current = {};
-    back.current = null;
+    const draftOf = (path: string) => getDrafts(notesKey(path), 1)[0];
+    const send = (copies: Record<string, string>, extra: Attachment[]) => {
+      // Pins and drawings on your own images travel as text after the message (MR-142, MR-143),
+      // and a drawn-on copy goes along as one more image.
+      const notes = attachmentNotes(files, draftOf, copies);
+      files.forEach((f) => clearDrafts(notesKey(f.path)));
+      p.onSubmit([typed, notes].filter(Boolean).join("\n\n"), [...files, ...extra]);
+      setText(""); setCaret(0); setClosed(false); setFiles([]);
+      pastes.current = {};
+      back.current = null;
+    };
+    const drawn = files.filter((f) => draftOf(f.path).strokes?.length);
+    if (!drawn.length) { send({}, []); return; }
+    setBusy((n) => n + 1);
+    void Promise.all(drawn.map(async (f) => {
+      const b = await burnIn(f.path, draftOf(f.path).strokes);
+      return b ? { from: f.path, a: await api.attachmentSave(b, `${f.name.replace(/\.[^.]+$/, "")}-drawn.png`) } : null;
+    })).then((xs) => {
+      const ok = xs.filter((x): x is { from: string; a: Attachment } => !!x);
+      send(Object.fromEntries(ok.map((x) => [x.from, x.a.path])), ok.map((x) => x.a));
+    }).catch((e) => toast(`Can't add the drawing: ${String(e).split("\n")[0]}`)).finally(() => setBusy((n) => n - 1));
   };
   useImperativeHandle(handle, () => ({ submit, focus: () => input.current?.focus(), addPaths: (l) => void addPaths(l) }));
 

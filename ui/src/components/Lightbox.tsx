@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { api } from "../state/store";
 import { Key } from ".";
 import { keyOf } from "./keys";
-import { EMPTY, isUrl, type Ask, type Draft, type Pin } from "./reviewDraft";
+import { EMPTY, isUrl, type Ask, type Draft, type Pin, type Stroke } from "./reviewDraft";
 
 // Image sources (MR-142): a URL loads as is; a local file's bytes come once through
 // attachment_read (images only, size-capped) and are kept as a blob URL per path.
@@ -36,13 +36,55 @@ export function useImageSrc(path: string | null): string | null | undefined {
 
 export type LbImage = { path: string; name: string; caption?: string };
 
+// Drawn marks use the error ink: they say "this is wrong" (theme: colour only for state).
+const ink = () => getComputedStyle(document.documentElement).getPropertyValue("--mr-error").trim() || "red";
+
+/**
+ * The image with its strokes burned in, as a PNG at the image's own size (MR-143), so Claude can
+ * look at exactly what was drawn. Null when there is nothing drawn or the pixels can't be read
+ * (a remote image without CORS taints the canvas).
+ */
+export async function burnIn(path: string, strokes: Stroke[] = []): Promise<Blob | null> {
+  if (!strokes.length) return null;
+  const url = await previewOf(path);
+  if (!url) return null;
+  try {
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.src = url;
+    await im.decode();
+    const w = im.naturalWidth || 1, h = im.naturalHeight || 1;
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const g = c.getContext("2d");
+    if (!g) return null;
+    g.drawImage(im, 0, 0, w, h);
+    g.strokeStyle = ink(); g.lineWidth = Math.max(3, Math.round(Math.max(w, h) / 250)); g.lineCap = "round"; g.lineJoin = "round";
+    for (const st of strokes) {
+      g.beginPath();
+      st.forEach(([x, y], k) => (k ? g.lineTo((x / 100) * w, (y / 100) * h) : g.moveTo((x / 100) * w, (y / 100) * h)));
+      if (st.length === 1) g.lineTo((st[0][0] / 100) * w + 0.1, (st[0][1] / 100) * h);
+      g.stroke();
+    }
+    return await new Promise<Blob | null>((ok) => c.toBlob((b) => ok(b), "image/png"));
+  } catch { return null; }
+}
+
+/** Saves a drawn-on copy next to the attachments; its path, or undefined when there's none. */
+export async function saveDrawn(path: string, name: string, strokes?: Stroke[]): Promise<string | undefined> {
+  const b = await burnIn(path, strokes);
+  if (!b) return undefined;
+  try { return (await api.attachmentSave(b, `${name.replace(/\.[^.]+$/, "") || "image"}-drawn.png`)).path; } catch { return undefined; }
+}
+
 const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
 const MIN = 0.5, MAX = 8;
 
 /**
  * Images at full size over everything. Wheel zooms around the pointer, drag pans, ←/→ move
- * between images, 0 fits. With `ask.pins` a click drops a numbered pin with a note; with
- * `ask.verdict` A approves, R rejects and C writes a comment. Esc closes.
+ * between images, 0 fits. With `ask.pins` a click drops a numbered pin with a note, and in
+ * Draw (D) a drag draws a stroke (U or ⌘Z undoes); with `ask.verdict` A approves, R rejects and
+ * C writes a comment. Esc closes.
  */
 export function Lightbox({ images, start = 0, ask = { verdict: false, pins: false }, drafts = [], onDraft, onClose, source }: {
   images: LbImage[]; start?: number; ask?: Ask; drafts?: Draft[]; onDraft?: (i: number, patch: Partial<Draft>) => void; onClose: () => void; source?: string;
@@ -50,6 +92,8 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
   const [i, setI] = useState(Math.min(start, images.length - 1));
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
   const [focusPin, setFocusPin] = useState<number | null>(null);
+  const [tool, setTool] = useState<"pin" | "draw">("pin");
+  const [line, setLine] = useState<Stroke | null>(null); // the stroke being drawn
   const drag = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null);
   const img = useRef<HTMLImageElement>(null);
   const comment = useRef<HTMLTextAreaElement>(null);
@@ -60,6 +104,15 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
 
   const go = (n: number) => { setI((n + images.length) % images.length); setView({ s: 1, x: 0, y: 0 }); setFocusPin(null); };
   const verdict = (v: Draft["verdict"]) => onDraft?.(i, { verdict: d.verdict === v ? undefined : v });
+  const strokes = d.strokes ?? [];
+  const undo = () => strokes.length && onDraft?.(i, { strokes: strokes.slice(0, -1) });
+  const draw = !!(edit && ask.pins && tool === "draw");
+  const at = (e: { clientX: number; clientY: number }): [number, number] | null => {
+    const r = img.current?.getBoundingClientRect();
+    if (!r) return null;
+    const x = ((e.clientX - r.left) / r.width) * 100, y = ((e.clientY - r.top) / r.height) * 100;
+    return [Math.max(0, Math.min(100, x)), Math.max(0, Math.min(100, y))];
+  };
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -69,14 +122,18 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
         if (typing(e.target)) (e.target as HTMLElement).blur(); else onClose();
         return;
       }
-      if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const took = () => { e.preventDefault(); e.stopPropagation(); };
+      if (!typing(e.target) && (e.metaKey || e.ctrlKey) && key === "z" && edit && ask.pins) { took(); undo(); return; }
+      if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (key === "ArrowRight" && images.length > 1) { took(); go(i + 1); }
       else if (key === "ArrowLeft" && images.length > 1) { took(); go(i - 1); }
       else if (key === "0") { took(); setView({ s: 1, x: 0, y: 0 }); }
       else if (edit && ask.verdict && key === "a") { took(); verdict("approve"); }
       else if (edit && ask.verdict && key === "r") { took(); verdict("reject"); }
       else if (edit && ask.verdict && key === "c") { took(); comment.current?.focus(); }
+      else if (edit && ask.pins && key === "d") { took(); setTool("draw"); }
+      else if (edit && ask.pins && key === "p") { took(); setTool("pin"); }
+      else if (edit && ask.pins && key === "u") { took(); undo(); }
     };
     window.addEventListener("keydown", k, true);
     return () => window.removeEventListener("keydown", k, true);
@@ -91,9 +148,15 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
   };
   const onDown = (e: MouseEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("[data-pin]")) return;
+    if (draw) { const p = at(e); if (p) setLine([p]); return; }
     drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
   };
   const onMove = (e: MouseEvent) => {
+    if (line) {
+      const p = at(e), last = line[line.length - 1];
+      if (p && Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.3) setLine([...line, p]);
+      return;
+    }
     const g = drag.current;
     if (!g) return;
     const dx = e.clientX - g.x, dy = e.clientY - g.y;
@@ -101,7 +164,13 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
     g.moved = true;
     setView((v) => ({ ...v, x: g.vx + dx, y: g.vy + dy }));
   };
+  const endLine = () => {
+    if (!line) return;
+    onDraft?.(i, { strokes: [...strokes, line.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10] as [number, number])] });
+    setLine(null);
+  };
   const onUp = (e: MouseEvent) => {
+    if (line) { endLine(); return; }
     const g = drag.current;
     drag.current = null;
     if (!g || g.moved || !img.current) return;
@@ -132,12 +201,18 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
           {images.length > 1 && <><Key onClick={() => go(i - 1)}>←</Key><Key onClick={() => go(i + 1)}>→</Key></>}
           <Key k="esc" onClick={onClose}>Close</Key>
         </div>
-        <div onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={() => { drag.current = null; }}
-          style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: edit && ask.pins ? "crosshair" : view.s > 1 ? "grab" : "default", userSelect: "none" }}>
+        <div onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={() => { drag.current = null; endLine(); }}
+          style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: draw ? "cell" : edit && ask.pins ? "crosshair" : view.s > 1 ? "grab" : "default", userSelect: "none" }}>
           {src === null && <span style={{ color: "var(--mr-tile)" }}>Can't load {im?.path}</span>}
           {src && (
             <div style={{ position: "relative", transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})`, transformOrigin: "center", lineHeight: 0 }}>
               <img ref={img} src={src} alt={im?.name} draggable={false} style={{ display: "block", maxWidth: side ? "calc(100vw - 380px)" : "calc(100vw - 48px)", maxHeight: "calc(100vh - 120px)", objectFit: "contain", background: "var(--mr-tile)" }} />
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
+                {[...strokes, ...(line ? [line] : [])].map((st, k) => (
+                  <polyline key={k} points={(st.length === 1 ? [st[0], [st[0][0] + 0.1, st[0][1]]] : st).map((p) => p.join(",")).join(" ")}
+                    fill="none" stroke="var(--mr-error)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                ))}
+              </svg>
               {d.pins.map((p, k) => (
                 <button key={k} type="button" data-pin onClick={() => setFocusPin(k)} title={p.note || `Pin ${k + 1}`} aria-label={`Pin ${k + 1}`}
                   style={{ position: "absolute", left: `${p.x}%`, top: `${p.y}%`, transform: `translate(-50%, -50%) scale(${1 / view.s})`, width: 24, height: 24, minHeight: 0, padding: 0, border: 0, borderRadius: "50%", font: "inherit", fontSize: 12, fontWeight: 700, lineHeight: "24px", cursor: "pointer",
@@ -147,7 +222,7 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
           )}
         </div>
         <div style={{ ...bar, justifyContent: "center", background: "transparent", color: "var(--mr-tile)", fontSize: 12 }} className="mr-mono">
-          Scroll to zoom · drag to pan{edit && ask.pins ? " · click to pin a note" : ""}{edit && ask.verdict ? " · A approve · R reject · C comment" : ""}{images.length > 1 ? " · ←/→ next" : ""} · Esc to close
+          Scroll to zoom · {draw ? "drag to draw · U undo · P pins" : `drag to pan${edit && ask.pins ? " · click to pin a note · D draw" : ""}`}{edit && ask.verdict ? " · A approve · R reject · C comment" : ""}{images.length > 1 ? " · ←/→ next" : ""} · Esc to close
         </div>
       </div>
       {side && (
@@ -165,6 +240,13 @@ export function Lightbox({ images, start = 0, ask = { verdict: false, pins: fals
           )}
           {ask.pins && (
             <>
+              <div className="mr-row" style={{ gap: 6 }}>
+                <Key k="p" pressed={tool === "pin"} onClick={() => setTool("pin")}>Pin</Key>
+                <Key k="d" pressed={tool === "draw"} onClick={() => setTool("draw")}>Draw</Key>
+                <span className="mr-grow" />
+                {strokes.length > 0 && <Key k="u" onClick={undo}>Undo</Key>}
+              </div>
+              {strokes.length > 0 && <span className="mr-dim" style={{ fontSize: 12 }}>{strokes.length} drawing{strokes.length === 1 ? "" : "s"} · Claude gets a copy with them drawn in</span>}
               <span className="mr-dim" style={{ fontSize: 12, fontWeight: 700 }}>Pins · {d.pins.length}</span>
               {d.pins.length === 0 && <span className="mr-dim" style={{ fontSize: 12 }}>Click the image to pin what you mean.</span>}
               {d.pins.map((p, k) => (
