@@ -25,4 +25,18 @@ db2="$data2/events.sqlite"
 echo "--- review view blocks"
 sqlite3 "$db2" "SELECT DISTINCT json_extract(b.value,'$.type') FROM events e, json_each(e.payload,'$.blocks') b WHERE e.kind='view.rendered';"
 [ "$(sqlite3 "$db2" "SELECT COUNT(*) FROM events e, json_each(e.payload,'$.blocks') b WHERE e.kind='view.rendered' AND json_extract(b.value,'$.type')='findings'")" != "0" ] || { echo "FAILED: review findings weren't shown as a findings block"; exit 1; }
-echo "SELFTEST VIEW PASSED ($db, $db2)"
+# MR-142: screenshots to judge, without naming a block, should come back as an image block.
+data3="$(mktemp -d)"; shots="$(mktemp -d)"
+python3 -I -c 'import sys,zlib,struct
+def png(p, rgb):
+    raw=b"".join(b"\0"+bytes(rgb)*64 for _ in range(40))
+    c=lambda t,d: struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d))
+    open(p,"wb").write(b"\x89PNG\r\n\x1a\n"+c(b"IHDR",struct.pack(">IIBBBBB",64,40,8,2,0,0,0))+c(b"IDAT",zlib.compress(raw))+c(b"IEND",b""))
+png(sys.argv[1]+"/login-before.png",(46,125,107)); png(sys.argv[1]+"/login-after.png",(179,38,30))' "$shots"
+MR_VIEW_PROMPT="This is a UI test. A tester attached two screenshots for a bug report on the login page: $shots/login-before.png (before the change) and $shots/login-after.png (after it). Show them to me so I can look at them and tell you what is broken; don't fix anything. Then on a final line reply with exactly: SELFTEST DONE" \
+  MR_SELFTEST=view MR_DATA_DIR="$data3" "$root/src-tauri/target/debug/Cockpit"
+db3="$data3/events.sqlite"
+echo "--- image view blocks"
+sqlite3 "$db3" "SELECT DISTINCT json_extract(b.value,'$.type') FROM events e, json_each(e.payload,'$.blocks') b WHERE e.kind='view.rendered';"
+[ "$(sqlite3 "$db3" "SELECT COUNT(*) FROM events e, json_each(e.payload,'$.blocks') b WHERE e.kind='view.rendered' AND json_extract(b.value,'$.type') IN ('images','image_compare') AND b.value LIKE '%login-after.png%'")" != "0" ] || { echo "FAILED: the screenshots weren't shown as an images or image_compare block"; exit 1; }
+echo "SELFTEST VIEW PASSED ($db, $db2, $db3)"

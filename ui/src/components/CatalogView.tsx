@@ -6,6 +6,7 @@ import { Diff } from "./Diff";
 import { Markdown, inline } from "./Markdown";
 import { Chips, Mark } from "./Turn";
 import { FileRefChip } from "./FileChip";
+import { ImageCompare, ImageGallery } from "./ImageReview";
 import type { ViewBlock } from "../state/types";
 
 // A view Claude composed with render_view (decision 26, MR-61): each block is one catalog
@@ -582,7 +583,7 @@ export function Thread({ b }: { b: ViewBlock }) {
   );
 }
 
-function Block({ b, onReply, live }: { b: ViewBlock; onReply: (t: string) => void; live: boolean }): ReactNode {
+function Block({ b, onReply, live, src = "" }: { b: ViewBlock; onReply: (t: string) => void; live: boolean; src?: string }): ReactNode {
   switch (b.type) {
     case "takeaway": return <Takeaway b={b} />;
     case "tally": return <Tally b={b} />;
@@ -608,14 +609,16 @@ function Block({ b, onReply, live }: { b: ViewBlock; onReply: (t: string) => voi
     case "decision": return <Decision b={b} />;
     case "phases": return <Phases b={b} />;
     case "matrix": return <Matrix b={b} />;
+    case "images": return <ImageGallery b={b} src={src} onReply={onReply} live={live} />;
+    case "image_compare": return <ImageCompare b={b} src={src} onReply={onReply} live={live} />;
     default: return null;
   }
 }
 
 // A block in a line, for Block actions: what "go deeper" and "discover" are about.
 export function blockGist(b: ViewBlock): string {
-  const first = (v: unknown) => list(v).map((x) => str(x.title ?? x.label ?? x.what ?? x.option)).filter(Boolean).slice(0, 3).join(", ");
-  const gist = str(b.heading || b.label || b.finding || b.text || b.file || b.body) || first(b.items) || first(b.options) || first(b.rows) || first(b.nodes) || str(b.markdown);
+  const first = (v: unknown) => list(v).map((x) => str(x.title ?? x.label ?? x.what ?? x.option ?? x.caption ?? x.path)).filter(Boolean).slice(0, 3).join(", ");
+  const gist = str(b.heading || b.label || b.finding || b.text || b.file || b.body) || first(b.items) || first(b.options) || first(b.rows) || first(b.nodes) || str(b.markdown) || (b.after ? `before/after ${first([b.before, b.after])}` : "");
   return `${b.type.replace("_", " ")}: ${gist}`.slice(0, 240);
 }
 
@@ -661,7 +664,7 @@ export function CatalogView({ id, title, blocks, onReply, onDiscover, live }: { 
         const point = actionable ? pointer({ deeper: live ? () => onReply(`Go one level deeper on "${blockGist(b)}"`) : undefined, discover: onDiscover && (() => onDiscover(`the "${title}" view, ${blockGist(b)}`)) }) : undefined;
         return (
           <div key={i} data-mr={`View:${b.type}`} data-mr-source={`${id}:${i}`} className="mr-view-block" style={{ position: "relative" }} onClickCapture={(e) => { if (point && (modKey(e) || e.altKey)) point(e); }}>
-            <Block b={b} onReply={onReply} live={live} />
+            <Block b={b} onReply={onReply} live={live} src={`${id}:${i}`} />
             {actionable && <Actions b={b} title={title} onReply={onReply} onDiscover={onDiscover} live={live} />}
           </div>
         );
