@@ -63,6 +63,8 @@ const ui = {
   }),
 };
 const some = (c: number) => c > 0;
+// Shortcut labels follow the platform (ui/src/platform.ts): "⌘K" on a Mac, "Ctrl+K" in Linux CI.
+const key = (k: string, rest: string) => new RegExp(`^(⌘|Ctrl\\+)${k} ${rest}$`);
 
 type Flow = { name: string; run: () => Promise<void> };
 const flows: Flow[] = [
@@ -73,7 +75,7 @@ const flows: Flow[] = [
   } },
   { name: "J2 start a session from the empty wall", run: async () => {
     await ui.open("empty");
-    await ui.click("button", "⌘K Start");
+    await ui.click("button", key("K", "Start"));
     await ui.tags("KindTile", (c) => c >= 4);
     await ui.fill("What should Claude do?", "Add a health check endpoint");
     await ui.click("button", "↵ Start");
