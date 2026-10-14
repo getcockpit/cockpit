@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cockpit · Run ten Claude Code sessions. Read none of them.</title>
-<meta name="description" content="Less reading, faster decisions: Cockpit shows each Claude Code decision with only the context it needs, in one queue you clear with one key. Free and open source for macOS, Windows and Linux, on the Claude plan you already have.">
-<meta property="og:title" content="Cockpit: run ten Claude Code sessions. Read none of them.">
-<meta property="og:description" content="Every question, permission and plan from all your Claude Code sessions in one queue you clear with one key. Free, open source, no account.">
+<title>Cockpit · A calmer way to run several Claude Code sessions</title>
+<meta name="description" content="Cockpit is a free, open-source desktop app for Claude Code. Questions, permissions and plans from every session land in one queue, and everything stays calm until something needs you. Runs on your own Claude plan, on macOS, Windows and Linux.">
+<meta property="og:title" content="Cockpit: a calmer way to run several Claude Code sessions">
+<meta property="og:description" content="One queue for everything your Claude Code sessions need from you. Risky commands stop in red, plans read as a map. Free and open source.">
 <meta property="og:image" content="https://getcockpit.github.io/assets/social.jpg">
 <meta property="og:url" content="https://getcockpit.github.io/">
 <meta name="twitter:card" content="summary_large_image">
@@ -18,109 +18,99 @@
 <style>
   /* The app's own Control Room theme: grey-first, square corners, colour only for state. */
   :root {
-    --base: #d3d6d9; --band: #c3c7cb; --tile: #e4e7ea; --well: #c9cdd1;
-    --ink: #15181b; --ink-2: #3a4046; --ink-3: #545b61; --night: #15181b;
+    --page: #e9ebed; --base: #d3d6d9; --tile: #f3f4f5; --well: #d9dcdf; --line: #cfd3d7;
+    --ink: #15181b; --ink-2: #3a4046; --ink-3: #5d646a; --night: #15181b;
     --needs: #ffb300; --needs-ink: #8a5b00; --error: #c62828; --selected: #0e6e78; --done: #1e7a4c;
     --font: "Atkinson Hyperlegible Next", -apple-system, system-ui, sans-serif;
     --mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--base); color: var(--ink); font: 18px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
-  a { color: inherit; }
-  img, video { display: block; max-width: 100%; }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 28px; }
-  .narrow { max-width: 860px; }
-  code { font-family: var(--mono); font-size: .9em; background: var(--well); padding: 2px 7px; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 18px/1.65 var(--font); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-underline-offset: 3px; }
+  img, video { display: block; max-width: 100%; height: auto; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+  .read { max-width: 640px; }
+  code { font-family: var(--mono); font-size: .88em; background: var(--well); padding: 1px 6px; }
+  .key { font: 600 .8em var(--mono); background: var(--tile); border: 1px solid var(--line); padding: 1px 7px; }
 
-  nav { background: var(--night); color: #fff; position: sticky; top: 0; z-index: 10; }
-  nav .wrap { display: flex; align-items: center; gap: 26px; height: 60px; }
-  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; text-decoration: none; }
-  nav .brand img { width: 28px; height: 28px; }
-  nav .links { margin-left: auto; display: flex; align-items: center; gap: 24px; font-size: 15px; }
-  nav .links a { text-decoration: none; opacity: .78; }
-  nav .links a:hover { opacity: 1; }
-  nav .links a.dl { opacity: 1; background: var(--needs); color: var(--ink); font-weight: 700; padding: 8px 14px; }
+  nav .wrap { display: flex; align-items: center; gap: 24px; height: 72px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; text-decoration: none; }
+  nav .brand img { width: 26px; height: 26px; }
+  nav .links { margin-left: auto; display: flex; align-items: center; gap: 22px; font-size: 15px; color: var(--ink-2); }
+  nav .links a { text-decoration: none; }
+  nav .links a:hover { color: var(--ink); text-decoration: underline; }
 
-  .hero { text-align: center; padding: 88px 0 36px; }
-  .eyebrow { display: inline-flex; gap: 10px; align-items: center; font: 600 14px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--needs-ink); }
-  .eyebrow::before { content: ""; width: 10px; height: 10px; background: var(--needs); }
-  h1 { font-size: clamp(44px, 7vw, 92px); line-height: 1; letter-spacing: -.03em; margin: 22px auto 24px; font-weight: 800; max-width: 17ch; }
-  .lede { font-size: clamp(19px, 2.1vw, 24px); color: var(--ink-2); max-width: 40ch; margin: 0 auto 36px; }
-  .cta { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 17px 26px; border-radius: 2px; font-weight: 700; font-size: 18px; text-decoration: none; background: var(--tile); }
-  .btn:hover { background: #eef0f2; }
+  .hero { padding: 64px 0 0; }
+  .hero .eyebrow { font: 600 14px var(--mono); color: var(--ink-3); margin: 0 0 18px; }
+  .hero .eyebrow::before { content: ""; display: inline-block; width: 9px; height: 9px; background: var(--needs); margin-right: 10px; }
+  h1 { font-size: clamp(38px, 5.2vw, 62px); line-height: 1.06; letter-spacing: -.025em; margin: 0 0 22px; font-weight: 800; max-width: 16ch; }
+  .lede { font-size: clamp(19px, 1.9vw, 22px); color: var(--ink-2); max-width: 46ch; margin: 0 0 30px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 14px 22px; border-radius: 2px; font-weight: 700; font-size: 17px; text-decoration: none; background: var(--tile); }
+  .btn:hover { background: #fff; }
   .btn.primary { background: var(--needs); color: var(--ink); }
-  .btn.primary:hover { filter: brightness(1.04); background: var(--needs); }
-  .fine { font-size: 15px; color: var(--ink-3); margin-top: 16px; }
+  .btn.primary:hover { filter: brightness(1.05); background: var(--needs); }
+  .fine { font-size: 15px; color: var(--ink-3); margin: 14px 0 0; }
 
-  .film { margin: 56px auto 0; background: var(--night); padding: 10px; }
-  .film video { width: 100%; height: auto; }
+  .film { margin: 56px 0 0; background: var(--night); padding: 8px; }
+  .film-note { font-size: 15px; color: var(--ink-3); margin: 10px 0 0; }
 
-  .proof { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; }
-  .proof div { background: var(--tile); padding: 22px 24px; }
-  .proof b { display: block; font: 800 40px/1 var(--font); letter-spacing: -.02em; }
-  .proof span { color: var(--ink-2); font-size: 16px; }
+  section { padding: 104px 0 0; }
+  #faq { padding-bottom: 104px; }
+  h2 { font-size: clamp(28px, 3.2vw, 40px); line-height: 1.12; letter-spacing: -.02em; margin: 0 0 18px; font-weight: 800; }
+  h3 { font-size: 22px; line-height: 1.25; margin: 0 0 8px; }
+  p { margin: 0 0 18px; }
+  .story p { color: var(--ink-2); }
+  .story p:first-of-type { color: var(--ink); font-size: 21px; }
+  .sig { display: flex; align-items: center; gap: 12px; margin-top: 28px; font-size: 16px; color: var(--ink-3); }
+  .sig b { color: var(--ink); }
+  .numbers { background: var(--tile); padding: 22px 26px; margin: 28px 0 0; font-size: 17px; color: var(--ink-2); }
+  .numbers b { color: var(--ink); }
 
-  section { padding: 96px 0; }
-  section.band { background: var(--band); }
-  h2 { font-size: clamp(32px, 4.2vw, 54px); line-height: 1.05; letter-spacing: -.02em; margin: 0 0 18px; font-weight: 800; }
-  .sub { color: var(--ink-2); max-width: 56ch; margin: 0 0 44px; font-size: 21px; }
+  .feature { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; margin-top: 72px; }
+  .feature .text { max-width: 600px; }
+  .feature .text p { color: var(--ink-2); margin: 0; }
+  .shot { background: var(--night); padding: 6px; }
+  .shots { display: grid; gap: 4px; }
+  .also { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 72px; }
+  .also p { color: var(--ink-2); margin: 0 0 18px; }
 
-  .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-  .vs > div { background: var(--tile); padding: 30px 32px; }
-  .vs h3 { margin: 0 0 18px; font-size: 15px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
-  .vs .them h3::before { content: "■ "; color: var(--error); }
-  .vs .us { border-left: 6px solid var(--needs); }
-  .vs .us h3::before { content: "■ "; color: var(--needs); }
-  .vs ul { margin: 0; padding: 0; list-style: none; }
-  .vs li { padding: 12px 0; border-top: 1px solid var(--well); font-size: 19px; }
-  .vs li:first-child { border-top: 0; }
-  .vs .them li { color: var(--ink-2); }
+  .plain { list-style: none; padding: 0; margin: 0; max-width: 640px; }
+  .plain li { padding: 14px 0; border-top: 1px solid var(--line); color: var(--ink-2); }
+  .plain li b { color: var(--ink); }
 
-  .step { margin-bottom: 104px; }
-  .step:last-child { margin-bottom: 0; }
-  .step .head { display: grid; grid-template-columns: 80px 1fr; gap: 0 20px; align-items: start; max-width: 900px; margin-bottom: 26px; }
-  .step .n { font: 800 64px/0.9 var(--font); color: var(--needs); }
-  .step h3 { font-size: clamp(28px, 3.2vw, 40px); line-height: 1.1; margin: 0 0 10px; letter-spacing: -.01em; }
-  .step p { margin: 0; color: var(--ink-2); font-size: 20px; max-width: 58ch; }
-  .shot { background: var(--night); padding: 8px; }
-  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-  .pair.tall { grid-template-columns: 2.6fr 1fr; align-items: start; }
-  .key { font: 600 14px var(--mono); background: var(--tile); padding: 2px 8px; margin: 0 2px; }
-
-  .trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-  .trust div { background: var(--tile); padding: 24px; color: var(--ink-2); font-size: 17px; }
-  .trust b { display: block; color: var(--ink); font-size: 20px; margin-bottom: 6px; }
-
-  .term { background: var(--night); color: #e4e7ea; font: 16px/1.7 var(--mono); padding: 24px 28px; margin-bottom: 28px; overflow-x: auto; }
+  .term { position: relative; background: var(--night); color: #e4e7ea; font: 15px/1.7 var(--mono); padding: 22px 26px; margin: 8px 0 28px; overflow-x: auto; }
   .term .c { color: #8b939b; }
   .term .p { color: var(--needs); }
-  .term .copy { position: absolute; top: 14px; right: 14px; font: 600 14px var(--mono); background: var(--needs); color: var(--ink); border: 0; padding: 8px 12px; cursor: pointer; }
+  .term .copy { position: absolute; top: 12px; right: 12px; font: 600 13px var(--mono); background: var(--needs); color: var(--ink); border: 0; padding: 7px 11px; cursor: pointer; }
   .dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-  .dl > div { background: var(--tile); padding: 26px; }
-  .dl > div.me { outline: 3px solid var(--selected); outline-offset: -3px; }
-  .dl h3 { margin: 0 0 4px; font-size: 22px; }
-  .dl .req { color: var(--ink-3); font-size: 15px; margin-bottom: 14px; }
-  .dl a.file { display: block; padding: 11px 13px; margin-top: 4px; background: var(--well); text-decoration: none; font: 600 14px var(--mono); }
+  .dl > div { background: var(--tile); padding: 24px; }
+  .dl > div.me { outline: 2px solid var(--selected); outline-offset: -2px; }
+  .dl h3 { margin: 0 0 2px; font-size: 20px; }
+  .dl .req { color: var(--ink-3); font-size: 15px; margin-bottom: 12px; }
+  .dl a.file { display: block; padding: 10px 12px; margin-top: 4px; background: var(--well); text-decoration: none; font: 600 14px var(--mono); }
   .dl a.file:hover { background: var(--needs); }
-  .dl .tip { font-size: 14px; color: var(--ink-3); margin-top: 12px; }
+  .dl .tip { font-size: 14px; color: var(--ink-3); margin-top: 12px; line-height: 1.5; }
 
-  details { background: var(--tile); padding: 20px 24px; margin-bottom: 4px; }
-  summary { cursor: pointer; font-weight: 700; font-size: 19px; }
-  details p { color: var(--ink-2); margin: 12px 0 0; }
+  details { border-top: 1px solid var(--line); padding: 16px 0; }
+  details:last-of-type { border-bottom: 1px solid var(--line); }
+  summary { cursor: pointer; font-weight: 700; }
+  details p { color: var(--ink-2); margin: 10px 0 0; }
 
-  .final { background: var(--night); color: #fff; text-align: center; padding: 104px 0; }
-  .final h2 { color: #fff; }
-  .final p { color: #b8bcc4; font-size: 21px; margin: 0 0 34px; }
-  footer { background: #0f1113; color: #8b939b; padding: 30px 0; font-size: 14px; }
+  section.ask { background: var(--night); color: #fff; padding: 88px 0; }
+  .ask h2 { color: #fff; }
+  .ask p { color: #b8bcc4; font-size: 20px; max-width: 52ch; }
+  .ask .btn { background: #2a2f34; color: #fff; }
+  .ask .btn:hover { background: #343a40; }
+  .ask .btn.primary { background: var(--needs); color: var(--ink); }
+  footer { background: #0f1113; color: #8b939b; padding: 28px 0; font-size: 14px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
 
-  @media (max-width: 860px) {
-    .proof, .trust, .dl { grid-template-columns: 1fr 1fr; }
-    .vs, .pair, .pair.tall { grid-template-columns: 1fr; }
-    .step .head { grid-template-columns: 1fr; }
-    nav .links a:not(.dl) { display: none; }
+  @media (max-width: 760px) {
+    .dl, .also { grid-template-columns: 1fr; }
+    nav .links a:not(.btn) { display: none; }
+    section { padding-top: 72px; }
   }
 </style>
 </head>
@@ -129,170 +119,141 @@
   <div class="wrap">
     <a class="brand" href="#"><img src="assets/icon.png" alt="">Cockpit</a>
     <div class="links">
-      <a href="#how">How it works</a>
-      <a href="#privacy">Privacy</a>
+      <a href="#why">Why</a>
+      <a href="#how">What it does</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/getcockpit/cockpit">GitHub</a>
-      <a class="dl" href="#download">Download</a>
+      <a class="btn primary" href="#download" style="padding:9px 16px;font-size:15px">Download</a>
     </div>
   </div>
 </nav>
 
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow">Free and open source · for Claude Code</span>
-    <h1>Run ten Claude Code sessions. Read none of them.</h1>
-    <p class="lede">Cockpit shows each decision with only the context it needs, so you stop reading transcripts and just decide. Every question, permission and plan from all your sessions is in one queue, one key each.</p>
+    <p class="eyebrow">Free and open source · a desktop app for Claude Code</p>
+    <h1>Run several Claude Code sessions without reading all of them.</h1>
+    <p class="lede">Cockpit puts every question, permission and plan from your sessions in one queue. Everything stays grey and calm until something needs you, and then that one thing lights up.</p>
     <div class="cta">
       <a class="btn primary" id="dl-main" href="#download">Download Cockpit, free</a>
       <a class="btn" href="#film">▶ Watch the 40-second film</a>
     </div>
-    <p class="fine">2-minute install · no account · runs on the Claude plan you already have · macOS, Windows, Linux</p>
-  </div>
-  <div class="wrap">
+    <p class="fine">macOS, Windows and Linux · no account · runs on the Claude plan you already have</p>
     <div class="film" id="film">
       <video src="assets/cockpit-demo.mp4" poster="assets/poster.jpg" autoplay muted loop playsinline controls preload="auto"></video>
     </div>
-    <p class="fine" style="text-align:center;margin:10px 0 18px">🔊 Turn the sound on: it has its own score.</p>
-    <div class="proof">
-      <div><b>10</b><span>sessions side by side, each in its own worktree</span></div>
-      <div><b>1 key</b><span>to allow, deny or answer anything</span></div>
-      <div><b>0</b><span>servers, accounts or stored tokens</span></div>
-      <div><b>MIT</b><span>open source, every line on GitHub</span></div>
-    </div>
+    <p class="film-note">It has its own score, so turn the sound on.</p>
   </div>
 </header>
 
-<section class="band">
-  <div class="wrap">
-    <h2>The model got fast. Now you're the bottleneck.</h2>
-    <p class="sub">Run a few agents in terminals and your day turns into babysitting. Cockpit takes that job off your plate.</p>
-    <div class="vs">
-      <div class="them">
-        <h3>Claude Code in terminals</h3>
-        <ul>
-          <li>A session sits idle for 20 minutes because its "Allow?" scrolled away.</li>
-          <li>A production <code>DROP TABLE</code> scrolls past like any other command.</li>
-          <li>Every switch back means minutes of rereading.</li>
-          <li>The plan lives somewhere in the chat history.</li>
-        </ul>
-      </div>
-      <div class="us">
-        <h3>Claude Code in Cockpit</h3>
-        <ul>
-          <li>Everything waiting on you sits in one queue, and you know the moment it arrives.</li>
-          <li>Risky commands stop in red, showing exactly what will run and where.</li>
-          <li>Each session tells you where it is with a plan and a change map.</li>
-          <li>Plans are a one-page map you can mark up and build from.</li>
-        </ul>
-      </div>
+<section id="why">
+  <div class="wrap"><div class="read story">
+    <h2>I got tired of reading.</h2>
+    <p>Most of my coding now happens through Claude Code, usually several sessions at once. Each one produces a lot of text, and my job had quietly become scrolling through it to find the one question that was waiting for me.</p>
+    <p>That reminded me of Minority Report, where nobody reads logs. They look at the situation and decide. So I started looking at interfaces built for that, and the ones that stuck with me came from air traffic and flight control. They're designed for people who can't afford to miss anything: everything stays quiet until something needs you.</p>
+    <p>That idea became Cockpit. The difference I didn't expect was how much less tired I was. Each decision arrives with only the context it needs, so I'm not rebuilding it from scrollback every time.</p>
+    <div class="numbers">
+      I compared my first four days with Cockpit against the three weeks before. I went from about <b>7 sessions a day to about 70</b>, and from about <b>4 running at once to 11</b> (14 on the busiest day). Most of that went into building Cockpit with Cockpit, so it isn't a clean experiment. But it's the most I've ever had going at once without losing track.
     </div>
+    <div class="sig"><span>— <b>Bohdan Kostko</b>, who made it · <a href="https://twitter.com/bohdan_kostko">@bohdan_kostko</a></span></div>
   </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <h2>Less reading. Faster decisions.</h2>
-    <p class="sub">Reading is the tiring part. A terminal makes you rebuild the context for every decision. Cockpit brings it with the question and leaves everything else out.</p>
-    <div class="vs" style="grid-template-columns:repeat(3,1fr)">
-      <div class="us"><h3>Only the decision</h3><ul><li>The question, the options and their trade-offs. You don't scroll back through 400 lines to see why it's asking.</li></ul></div>
-      <div class="us"><h3>Only the risk</h3><ul><li>The exact command, where it runs, and how hard it is to undo, highlighted before you press a key.</li></ul></div>
-      <div class="us"><h3>Only what changed</h3><ul><li>The plan's progress and the files it touched, grouped by folder. Auth and migrations are flagged.</li></ul></div>
-    </div>
-    <h3 style="margin:64px 0 6px;font-size:28px">The first week, measured</h3>
-    <p class="sub" style="margin-bottom:24px;font-size:18px">The author's own numbers: 25 days in terminals vs the first 4 days in Cockpit.</p>
-    <div class="proof">
-      <div><b>10×</b><span>Claude Code sessions a day (6.9 → 71.5)</span></div>
-      <div><b>3×</b><span>sessions running at once at peak (3.8 → 11)</span></div>
-      <div><b>14</b><span>sessions at the same time on the busiest day (was 7)</span></div>
-      <div><b>6×</b><span>commits a day (27 → 161)</span></div>
-    </div>
-    <p class="fine">Small sample, and most of that week went into building Cockpit itself. Measured from session file timestamps and git history; no content was read.</p>
   </div>
 </section>
 
 <section id="how">
   <div class="wrap">
-    <h2>One workflow, start to finish.</h2>
-    <p class="sub">Here's what a morning with eight sessions looks like.</p>
+    <div class="read">
+      <h2>What it does</h2>
+      <p class="story" style="color:var(--ink-2)">Cockpit drives the Claude Code you already use. Your sessions run as they always do; Cockpit changes what you have to look at.</p>
+    </div>
 
-    <div class="step">
-      <div class="head"><div class="n">1</div><div><h3>Everything that needs you, in one queue.</h3><p>Questions, permissions and plan approvals from every session, oldest first. Press <span class="key">1</span>–<span class="key">3</span> to pick, <span class="key">A</span> to allow, <span class="key">D</span> to deny. The session carries on by itself.</p></div></div>
+    <div class="feature">
+      <div class="text"><h3>One queue for everything that needs you</h3><p>Questions, permissions and plan approvals from every session, oldest first, each answered with a single key: <span class="key">1</span>–<span class="key">3</span> to pick, <span class="key">A</span> to allow, <span class="key">D</span> to deny. The session carries on by itself.</p></div>
       <div class="shot"><img src="assets/queue.jpg" alt="The Needs-you queue with a question and its options" loading="lazy"></div>
     </div>
 
-    <div class="step">
-      <div class="head"><div class="n">2</div><div><h3>Catch the command that sounds harmless.</h3><p>Claude says "drop the old invoices table." The card shows the rest: it's production, and it's <code>CASCADE</code>. Press <span class="key">D</span>, and Claude comes back with a safer plan instead of a restore from backup.</p></div></div>
-      <div class="shot"><img src="assets/risk.jpg" alt="A production DROP TABLE flagged high risk, waiting for approval" loading="lazy"></div>
-      <div class="shot" style="margin-top:4px"><img src="assets/done.jpg" alt="After Deny, Claude proposes running it on staging first" loading="lazy"></div>
+    <div class="feature">
+      <div class="text"><h3>Risky commands stop in red</h3><p>You see exactly what will run and where. A "cleanup" that turns out to be a <code>DROP TABLE … CASCADE</code> on production is hard to miss. Deny it and Claude comes back with a safer plan.</p></div>
+      <div class="shots">
+        <div class="shot"><img src="assets/risk.jpg" alt="A production DROP TABLE flagged high risk, waiting for approval" loading="lazy"></div>
+        <div class="shot"><img src="assets/done.jpg" alt="After Deny, Claude proposes running it on staging first" loading="lazy"></div>
+      </div>
     </div>
 
-    <div class="step">
-      <div class="head"><div class="n">3</div><div><h3>Know where every session stands without reading the transcript.</h3><p>Each session has a plan with live progress and a change map grouped by folder, with auth and migrations flagged.</p></div></div>
-      <div class="shot" style="max-width:520px"><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"></div>
-    </div>
-
-    <div class="step">
-      <div class="head"><div class="n">4</div><div><h3>Plans you can read in ten seconds.</h3><p>Ask Claude to plan before it codes and you get a one-page map: goal, scope, design, risks and open questions, each drawn the way it reads best. Mark it up, send every note at once, then hit <b>Build from doc</b>.</p></div></div>
+    <div class="feature">
+      <div class="text"><h3>Plans as a one-page map, not chat history</h3><p>Ask Claude to plan before it codes and you get goal, scope, design, risks and open questions on one page. Mark it up, send your notes at once, then build from it.</p></div>
       <div class="shot"><img src="assets/doc.jpg" alt="A plan as a map of blocks with open questions pinned to the side" loading="lazy"></div>
     </div>
 
-    <div class="step">
-      <div class="head"><div class="n">5</div><div><h3>Know which session needs you next.</h3><p>The timeline shows what every session did, what it does next, and who will need you in the next 15 minutes.</p></div></div>
+    <div class="feature">
+      <div class="text"><h3>A timeline of who needs you next</h3><p>What every session did, what it's doing now, and which one will want you in the next few minutes.</p></div>
       <div class="shot"><img src="assets/timeline.jpg" alt="Timeline of sessions with forecasts" loading="lazy"></div>
     </div>
 
-    <div class="step">
-      <div class="head"><div class="n">6</div><div><h3>Review pull requests one finding at a time.</h3><p>The riskiest snippets come first, with the findings ranked. Press one key to note a finding and it becomes a review comment. Address mode does the reverse and turns reviewer threads into fixes.</p></div></div>
-      <div class="shot"><img src="assets/review.jpg" alt="Guided PR review with a noted finding" loading="lazy"></div>
+    <div class="also">
+      <div>
+        <h3>Where each session stands</h3>
+        <p>A plan with live progress and the files it touched, grouped by folder, with auth and migrations flagged.</p>
+        <div class="shot" style="max-width:360px"><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"></div>
+      </div>
+      <div>
+        <h3>Pull request reviews, one finding at a time</h3>
+        <p>The riskiest snippets come first. Press one key to turn a finding into a review comment, or go the other way and turn reviewer threads into fixes.</p>
+        <div class="shot"><img src="assets/review.jpg" alt="Guided PR review with a noted finding" loading="lazy"></div>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="band" id="privacy">
-  <div class="wrap">
-    <h2>Your Claude. Your machine.</h2>
-    <p class="sub">Cockpit drives the Claude Code you already use, through Anthropic's official Agent SDK, signed in as you. Your skills, hooks and settings all keep working.</p>
-    <div class="trust">
-      <div><b>No tokens touched</b>It never reads or stores your Claude login.</div>
-      <div><b>No server</b>History stays in a local file on your computer.</div>
-      <div><b>No lock-in</b>Hand any session to a real terminal with <span class="key">⌘T</span>.</div>
-      <div><b>No cost</b>MIT licensed. It uses your existing plan, with nothing extra to pay.</div>
-    </div>
+<section id="privacy">
+  <div class="wrap"><div class="read">
+    <h2>Your Claude, on your machine</h2>
+    <p style="color:var(--ink-2)">Cockpit runs Claude Code through Anthropic's official Agent SDK, signed in as you. Your skills, hooks and settings keep working.</p>
+    <ul class="plain">
+      <li><b>It never touches your login.</b> No tokens are read or stored.</li>
+      <li><b>There's no server.</b> History stays in a local file on your computer.</li>
+      <li><b>You can leave any time.</b> Hand a session to a real terminal with <span class="key">⌘T</span>.</li>
+      <li><b>It costs nothing.</b> MIT licensed, and it uses the plan you already pay for.</li>
+    </ul>
+  </div>
   </div>
 </section>
 
 <section id="download">
   <div class="wrap">
-    <h2>Up and running in 2 minutes.</h2>
-    <p class="sub">You need Claude Code, signed in. Don't have it yet?</p>
-    <div class="term" style="position:relative"><button class="copy" data-copy="curl -fsSL https://getcockpit.github.io/install.sh | bash" type="button">Copy</button><span class="c"># 1. Claude Code, signed in once (skip if you have it)</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit: macOS or Linux, no security prompts</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
-    <p class="sub" style="margin:-8px 0 28px;font-size:18px">Prefer a normal download? Pick yours below.</p>
+    <div class="read">
+      <h2>Install it</h2>
+      <p style="color:var(--ink-2)">You need Claude Code, signed in once. On macOS or Linux, one line does the rest:</p>
+    </div>
+    <div class="term"><button class="copy" data-copy="curl -fsSL https://getcockpit.github.io/install.sh | bash" type="button">Copy</button><span class="c"># 1. Claude Code, if you don't have it yet</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit (macOS or Linux, no security prompts)</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
+    <p style="color:var(--ink-2)">Or download it for your system:</p>
     <div class="dl">
-      <div data-os="mac"><h3>macOS</h3><div class="req">macOS 11+ · Apple Silicon and Intel</div><div class="files" data-match="\.dmg$"></div><div class="tip">The one-line installer above skips the "unidentified developer" prompt. From the .dmg, run <code>xattr -dr com.apple.quarantine /Applications/Cockpit.app</code> once.</div></div>
+      <div data-os="mac"><h3>macOS</h3><div class="req">macOS 11+ · Apple Silicon and Intel</div><div class="files" data-match="\.dmg$"></div><div class="tip">The one-line installer skips the "unidentified developer" prompt. From the .dmg, run <code>xattr -dr com.apple.quarantine /Applications/Cockpit.app</code> once.</div></div>
       <div data-os="win"><h3>Windows</h3><div class="req">Windows 10/11 · x64</div><div class="files" data-match="\.(exe|msi)$"></div><div class="tip">If SmartScreen asks: More info → Run anyway</div></div>
-      <div data-os="linux"><h3>Linux</h3><div class="req">x64 · Ubuntu 22.04+, Fedora 38+</div><div class="files" data-match="\.(AppImage|deb|rpm)$"></div><div class="tip">Windows and Linux are new, so please <a href="https://github.com/getcockpit/cockpit/issues">report anything odd</a></div></div>
+      <div data-os="linux"><h3>Linux</h3><div class="req">x64 · Ubuntu 22.04+, Fedora 38+</div><div class="files" data-match="\.(AppImage|deb|rpm)$"></div><div class="tip">Windows and Linux are new, so please <a href="https://github.com/getcockpit/cockpit/issues">report anything odd</a>.</div></div>
     </div>
   </div>
 </section>
 
-<section class="band" id="faq">
-  <div class="wrap narrow">
+<section id="faq">
+  <div class="wrap"><div class="read">
     <h2>Questions</h2>
     <details><summary>Is it really free?</summary><p>Yes. Cockpit is MIT licensed. Your sessions use your existing Claude plan (Pro, Max, Team or API), exactly as they do in a terminal.</p></details>
     <details><summary>Do my skills, commands, hooks and settings still work?</summary><p>Yes. Cockpit runs your real Claude Code with your real setup. Workspaces keep memory and history separate per client while sharing your skills and settings.</p></details>
     <details><summary>What if a card gets something wrong?</summary><p>The full transcript is one key away (<span class="key">⌘R</span>), and every approval shows the exact command before it runs.</p></details>
+    <details><summary>How finished is it?</summary><p>Not very. It's young and rough in places, and I use it every day, so it changes fast. If something breaks, <a href="https://github.com/getcockpit/cockpit/issues">open an issue</a>.</p></details>
     <details><summary>Is this made by Anthropic?</summary><p>No. Cockpit is an independent open-source project built on Anthropic's public Agent SDK. "Claude" and "Claude Code" are trademarks of Anthropic.</p></details>
     <details><summary>Can I build it or contribute?</summary><p>Please do: <code>git clone https://github.com/getcockpit/cockpit && ./scripts/dev.sh</code>. See <a href="https://github.com/getcockpit/cockpit/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p></details>
   </div>
+  </div>
 </section>
 
-<section class="final">
+<section class="ask" id="final">
   <div class="wrap">
-    <h2>Stop babysitting terminals.</h2>
-    <p>Free, open source, and running in two minutes.</p>
+    <h2>If you run several agents at once, try it.</h2>
+    <p>I'm curious where it breaks down for you. Tell me in an issue, or on X.</p>
     <div class="cta">
       <a class="btn primary" id="dl-final" href="#download">Download Cockpit, free</a>
+      <a class="btn" href="https://github.com/getcockpit/cockpit/issues">Tell me what broke</a>
       <a class="btn" href="https://github.com/getcockpit/cockpit">★ Star on GitHub</a>
     </div>
   </div>
@@ -312,14 +273,14 @@
   const names = { mac: "macOS", win: "Windows", linux: "Linux" };
   if (os) document.querySelector(`[data-os="${os}"]`).classList.add("me");
   const latest = "https://github.com/getcockpit/cockpit/releases/latest";
-  const label = (n) => /\.dmg$/.test(n) ? "Disk image (.dmg)" : /setup\.exe$/.test(n) ? "Installer (.exe)" : /\.msi$/.test(n) ? "MSI package" : /\.AppImage$/.test(n) ? "AppImage" : /\.deb$/.test(n) ? "Debian / Ubuntu (.deb)" : /\.rpm$/.test(n) ? "Fedora / RHEL (.rpm)" : n;
+  const label = (n) => /\.dmg$/.test(n) ? "Disk image (.dmg) · Apple Silicon + Intel" : /setup\.exe$/.test(n) ? "Installer (.exe)" : /\.msi$/.test(n) ? "MSI package" : /\.AppImage$/.test(n) ? "AppImage" : /\.deb$/.test(n) ? "Debian / Ubuntu (.deb)" : /\.rpm$/.test(n) ? "Fedora / RHEL (.rpm)" : n;
   fetch("https://api.github.com/repos/getcockpit/cockpit/releases/latest")
     .then((r) => (r.ok ? r.json() : Promise.reject()))
     .then((rel) => {
       document.querySelectorAll(".files").forEach((box) => {
         const re = new RegExp(box.dataset.match, "i");
-        // The fixed-name copies (Cockpit-macos.dmg, Cockpit-linux-x86_64.AppImage) exist for install.sh; list each build once.
-        const assets = rel.assets.filter((a) => re.test(a.name) && !/^Cockpit-(macos|linux-x86_64)\./.test(a.name)).sort((a, b) => /setup\.exe$/.test(b.name) - /setup\.exe$/.test(a.name));
+        // The fixed-name copies (Cockpit-macos.dmg, Cockpit-linux-x86_64.AppImage, Cockpit-windows-x64-setup.exe) exist for install.sh and the in-app updater; list each build once.
+        const assets = rel.assets.filter((a) => re.test(a.name) && !/^Cockpit-(macos|linux-x86_64|windows-x64-setup)\./.test(a.name)).sort((a, b) => /setup\.exe$/.test(b.name) - /setup\.exe$/.test(a.name));
         box.innerHTML = assets.map((a) => `<a class="file" href="${a.browser_download_url}">↓ ${label(a.name)} · ${(a.size / 1e6).toFixed(0)} MB</a>`).join("") || `<a class="file" href="${latest}">See all downloads</a>`;
       });
       const mine = os && document.querySelector(`[data-os="${os}"] a.file`);

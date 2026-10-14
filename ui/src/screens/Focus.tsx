@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { modKey } from "../platform";
 import { sendsOnEnter, useAutoGrow } from "../components/autoGrow";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -93,13 +94,13 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
         if (typing && (el as HTMLInputElement).value) { el.blur(); return; }
         onBack();
       }
-      if (keyOf(e) === "." && e.metaKey && running) { e.preventDefault(); void api.interrupt(s.id); }
-      if (keyOf(e) === "d" && e.metaKey && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
+      if (keyOf(e) === "." && modKey(e) && running) { e.preventDefault(); void api.interrupt(s.id); }
+      if (keyOf(e) === "d" && modKey(e) && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
       if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
-      if (keyOf(e) === "r" && e.metaKey) { e.preventDefault(); setShowRaw((x) => !x); }
-      if (keyOf(e) === "m" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
-      if (keyOf(e) === "u" && e.metaKey && e.shiftKey && !s.fromDeleted) { e.preventDefault(); void catchUp(); }
-      if (keyOf(e) === "t" && e.metaKey && s.sdkSessionId) { e.preventDefault(); setTerm((x) => (x ? false : {})); }
+      if (keyOf(e) === "r" && modKey(e)) { e.preventDefault(); setShowRaw((x) => !x); }
+      if (keyOf(e) === "m" && modKey(e) && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
+      if (keyOf(e) === "u" && modKey(e) && e.shiftKey && !s.fromDeleted) { e.preventDefault(); void catchUp(); }
+      if (keyOf(e) === "t" && modKey(e) && s.sdkSessionId) { e.preventDefault(); setTerm((x) => (x ? false : {})); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -145,7 +146,8 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
           <span className="mr-mono mr-ink2">{tile.state === "done" ? tile.step : tile.progressLabel || tile.step}</span>
         </div>
         {running && <LiveTrack s={s} />}
-        <div className="mr-row" style={{ gap: 8, paddingBottom: 10 }}>
+        {/* Wraps: Ctrl+Shift+… labels off macOS are wider than ⌘⇧… (MR-133). */}
+        <div className="mr-row" style={{ gap: 8, paddingBottom: 10, flexWrap: "wrap", rowGap: 8 }}>
           {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
           {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => (x ? false : {}))}>{term ? "Back to visual" : "Open in terminal"}</Key>}

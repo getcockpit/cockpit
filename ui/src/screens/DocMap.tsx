@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { keyLabel, modKey } from "../platform";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Key, PickAny } from "../components";
 import { Markdown } from "../components/Markdown";
@@ -78,7 +79,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
   // ⌘↵ does what the primary button says: regenerate with your input, or build when there's none.
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (!(e.metaKey && keyOf(e) === "Enter")) return;
+      if (!(modKey(e) && keyOf(e) === "Enter")) return;
       e.preventDefault();
       if (brief) void resume(); else if (pending > 0) void sendFeedback(true); else if (blocks.length) void build();
     };
@@ -91,7 +92,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
   };
   const clickBlock = (b: Block, i: number, e: React.MouseEvent) => {
     setStep(i + 1);
-    if (e.metaKey) setDeep((d) => ({ ...d, [b.id]: true }));
+    if (modKey(e)) setDeep((d) => ({ ...d, [b.id]: true }));
     if (e.altKey && !threads[b.id]) void discover(b);
   };
 
@@ -155,7 +156,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
               </div>
             </div>
             <div className="mr-row mr-dim" style={{ flexWrap: "wrap", fontSize: 12 }}>
-              <span><b className="mr-mono">click</b> open</span><span><b className="mr-mono">⌘-click</b> go deeper</span><span><b className="mr-mono">⌥-click</b> discover in a side session</span><span><b className="mr-mono">esc</b> up a level</span><span><b className="mr-mono">o</b> overview</span>
+              <span><b className="mr-mono">click</b> open</span><span><b className="mr-mono">{keyLabel("⌘-click")}</b> go deeper</span><span><b className="mr-mono">{keyLabel("⌥-click")}</b> discover in a side session</span><span><b className="mr-mono">esc</b> up a level</span><span><b className="mr-mono">o</b> overview</span>
             </div>
           </section>
 

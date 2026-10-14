@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { keyLabel, modKey } from "../platform";
 
 // Feature usage (MR-83): which buttons, views and shortcuts you actually use, so unused features
 // can go. One capture-phase listener reads the data-mr tags every element already carries; batches
@@ -28,7 +29,7 @@ export function labelOf(el: Element): string {
   const aria = el.getAttribute("aria-label") ?? el.getAttribute("title");
   let text = aria ?? "";
   if (!aria) el.childNodes.forEach((n) => { if (!(n instanceof HTMLElement && n.tagName === "KBD")) text += n.textContent ?? ""; });
-  text = text.replace(/[⌘⌥⇧⌃]+\S*/g, "").replace(/\s+/g, " ").trim().replace(/\d+/g, "#");
+  text = text.replace(/(?:[⌘⌥⇧⌃]+|\b(?:Ctrl|Alt|Shift)[+-])\S*/g, "").replace(/\s+/g, " ").trim().replace(/\d+/g, "#");
   // Long text is content (a session title, a PR), not a feature name.
   return text.length > 40 ? "" : text;
 }
@@ -44,20 +45,21 @@ export function describe(target: Element | null): { name: string; detail: string
   return { name, detail };
 }
 
-/** "⌘⇧K" for shortcuts; null for plain typing. */
+/** "⌘⇧K" for shortcuts; null for plain typing. The command key is ⌘ on every platform (Ctrl off a Mac). */
 export function comboOf(e: { metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; code: string; key: string }, typing: boolean): string | null {
   if (!e.metaKey && !e.ctrlKey) return null;
   const k = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5) : e.key.length === 1 ? e.key.toUpperCase() : e.key;
   if (/^(Meta|Control|Alt|Shift|OS)/.test(e.key) || /^(Meta|Control|Alt|Shift|OS)/.test(e.code)) return null;
   // Copy, paste, undo and select-all while typing are editing, not features.
-  if (typing && e.metaKey && !e.shiftKey && !e.altKey && "CVXZA".includes(k) && k.length === 1) return null;
-  return `${e.ctrlKey ? "⌃" : ""}${e.altKey ? "⌥" : ""}${e.shiftKey ? "⇧" : ""}${e.metaKey ? "⌘" : ""}${k}`;
+  const cmd = modKey(e);
+  if (typing && cmd && !e.shiftKey && !e.altKey && "CVXZA".includes(k) && k.length === 1) return null;
+  return `${e.ctrlKey && !cmd ? "⌃" : ""}${e.altKey ? "⌥" : ""}${e.shiftKey ? "⇧" : ""}${cmd ? "⌘" : ""}${k}`;
 }
 
 export function installUsage(): () => void {
   const onClick = (e: MouseEvent) => {
     const hit = describe(e.target instanceof Element ? e.target : null);
-    if (hit) track("click", hit.name, `${e.type === "contextmenu" ? "right-click " : e.metaKey ? "⌘ " : e.altKey ? "⌥ " : ""}${hit.detail}`.trim());
+    if (hit) track("click", hit.name, `${e.type === "contextmenu" ? "right-click " : modKey(e) ? "⌘ " : e.altKey ? "⌥ " : ""}${hit.detail}`.trim());
   };
   const onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
@@ -108,4 +110,4 @@ export function summarize(rows: UsageRow[]): UsageSummary {
   };
 }
 
-export const usageLabel = (r: UsageRow) => (r.kind === "click" ? (r.detail ? `${r.detail} · ${r.name}` : r.name) : r.kind === "action" ? r.name.replace(/_/g, " ") : r.name);
+export const usageLabel = (r: UsageRow) => keyLabel(r.kind === "click" ? (r.detail ? `${r.detail} · ${r.name}` : r.name) : r.kind === "action" ? r.name.replace(/_/g, " ") : r.name);

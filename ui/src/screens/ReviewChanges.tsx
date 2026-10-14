@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Key } from "../components";
 import { keyOf } from "../components/keys";
+import { modKey } from "../platform";
 import { plural } from "../picker/title";
 import { api } from "../state/store";
 import type { SessionState } from "../state/types";
@@ -36,7 +37,7 @@ export function ReviewChanges({ s, start, onClose }: { s: SessionState; start: s
       if (key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); }
       if (key === "j" && list[idx + 1]) { e.preventDefault(); setPath(list[idx + 1].path); }
       if (key === "k" && list[idx - 1]) { e.preventDefault(); setPath(list[idx - 1].path); }
-      if (key === "Enter" && e.metaKey) { e.preventDefault(); if (notes.length) sendNotes(); else approve(); }
+      if (key === "Enter" && modKey(e)) { e.preventDefault(); if (notes.length) sendNotes(); else approve(); }
     };
     window.addEventListener("keydown", k, true);
     return () => window.removeEventListener("keydown", k, true);

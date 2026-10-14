@@ -17,6 +17,11 @@ permissions:
 env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # In-app updates (MR-136): release builds check GitHub for newer releases, and the bundles they
+  # download are signed with this key (its public half is in tauri.conf.json).
+  MR_RELEASE: "1"
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
 jobs:
   release:
@@ -41,7 +46,7 @@ jobs:
           workspaces: src-tauri
       - run: ./scripts/package.sh
       - run: |
-          gh release upload "$TAG" dist/*.dmg --clobber
+          gh release upload "$TAG" dist/*.dmg dist/Cockpit-macos.app.tar.gz dist/Cockpit-macos.app.tar.gz.sig --clobber
           cp dist/*.dmg Cockpit-macos.dmg && gh release upload "$TAG" Cockpit-macos.dmg --clobber
 
   linux:
@@ -61,14 +66,18 @@ jobs:
       - run: ./scripts/build-helpers.sh
       - run: bun install --frozen-lockfile
         working-directory: ui
-      - run: node ../ui/node_modules/@tauri-apps/cli/tauri.js build --bundles appimage,deb,rpm
+      # rpm versions can't carry a pre-release (v0.1.2-rc1), so test releases skip the .rpm.
+      - run: |
+          bundles=appimage,deb,rpm; case "$TAG" in *-*) bundles=appimage,deb;; esac
+          node ../ui/node_modules/@tauri-apps/cli/tauri.js build --bundles $bundles --config '{"bundle":{"createUpdaterArtifacts":true}}'
         working-directory: src-tauri
         env:
           VITE_MR_PACKAGED: "1"
       - run: |
           b=src-tauri/target/release/bundle
-          gh release upload "$TAG" $b/appimage/*.AppImage $b/deb/*.deb $b/rpm/*.rpm --clobber
-          cp $b/appimage/*.AppImage Cockpit-linux-x86_64.AppImage && gh release upload "$TAG" Cockpit-linux-x86_64.AppImage --clobber
+          gh release upload "$TAG" $b/appimage/*.AppImage $b/deb/*.deb $(ls $b/rpm/*.rpm 2>/dev/null) --clobber
+          cp $b/appimage/*.AppImage Cockpit-linux-x86_64.AppImage && cp $b/appimage/*.AppImage.sig Cockpit-linux-x86_64.AppImage.sig
+          gh release upload "$TAG" Cockpit-linux-x86_64.AppImage Cockpit-linux-x86_64.AppImage.sig --clobber
 
   windows:
     name: Windows (.msi, .exe)
@@ -87,10 +96,26 @@ jobs:
       - run: ./scripts/build-helpers.sh
       - run: bun install --frozen-lockfile
         working-directory: ui
-      - run: node ../ui/node_modules/@tauri-apps/cli/tauri.js build --bundles msi,nsis
+      # MSI versions are numbers only: a test release (v0.1.2-rc1) installs as 0.1.2.0.
+      - run: |
+          v="${TAG#v}"; wix="${v%%-*}"
+          node ../ui/node_modules/@tauri-apps/cli/tauri.js build --bundles msi,nsis --config "{\"bundle\":{\"createUpdaterArtifacts\":true,\"windows\":{\"wix\":{\"version\":\"$wix\"}}}}"
         working-directory: src-tauri
         env:
           VITE_MR_PACKAGED: "1"
       - run: |
           b=src-tauri/target/release/bundle
           gh release upload "$TAG" $b/msi/*.msi $b/nsis/*.exe --clobber
+          cp $b/nsis/*.exe Cockpit-windows-x64-setup.exe && cp $b/nsis/*.exe.sig Cockpit-windows-x64-setup.exe.sig
+          gh release upload "$TAG" Cockpit-windows-x64-setup.exe Cockpit-windows-x64-setup.exe.sig --clobber
+
+  manifest:
+    name: Updater manifest (latest.json)
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          mkdir sigs && gh release download "$TAG" --pattern '*.sig' --dir sigs
+          scripts/release-manifest.sh "$TAG" sigs "$(gh release view "$TAG" --json body -q .body)" > latest.json
+          gh release upload "$TAG" latest.json --clobber
