@@ -99,6 +99,12 @@ fn tag(version: &str) -> String {
     format!("v{version}")
 }
 
+/// Where a release is fetched to in the app repo: its own namespace, so the public repo's tags
+/// never land among (or overwrite) the local repo's own tags.
+fn release_ref(version: &str) -> String {
+    format!("refs/cockpit-releases/{}", tag(version))
+}
+
 /// At startup: settle what the last run started (a swap restart, a merge build), then check now
 /// and every 6 h.
 pub fn on_start(app: &AppHandle) {
@@ -163,10 +169,10 @@ async fn check(app: &AppHandle) {
         Mode::Swap => "available",
         Mode::Merge => {
             let Some(repo) = repo() else { return };
-            let t = tag(&version);
+            let (t, r) = (tag(&version), release_ref(&version));
             let preview = tauri::async_runtime::spawn_blocking(move || {
-                git(&repo, &["fetch", "-q", "--no-tags", RELEASES_REPO, &format!("+refs/tags/{t}:refs/tags/{t}")])?;
-                crate::personal::preview_merge(&repo, &t)
+                git(&repo, &["fetch", "-q", "--no-tags", RELEASES_REPO, &format!("+refs/tags/{t}:{r}")])?;
+                crate::personal::preview_merge(&repo, &r)
             })
             .await
             .unwrap_or_else(|e| Err(e.to_string()));
@@ -263,8 +269,7 @@ async fn swap(app: AppHandle, version: String) -> Result<(), String> {
 
 fn merge(app: &AppHandle, version: &str) -> Result<(), String> {
     let repo = repo().ok_or("can't find your app's repo")?;
-    let t = tag(version);
-    if let Err(e) = crate::personal::merge_release(&repo, &t) {
+    if let Err(e) = crate::personal::merge_release(&repo, &release_ref(version), &tag(version)) {
         fail(app, version, "merge", &e);
         return Err(e);
     }
@@ -281,16 +286,16 @@ fn build(app: &AppHandle, repo: &Path, version: &str) -> Result<(), String> {
 
 /// The plan-first prompt for "Ask Claude for a plan" (decided in the MR-136 doc).
 fn plan_prompt(version: &str, s: &State) -> String {
-    let t = tag(version);
+    let (t, r) = (tag(version), release_ref(version));
     let what = match (&s.failure, &s.preview) {
         (Some((stage, log)), _) => format!("It failed at the {stage} step:\n\n```\n{}\n```", &log[log.len().saturating_sub(3000)..]),
         (None, Some(p)) => format!("Merging it into `mine` conflicts in: {}.", p.conflicts.join(", ")),
         _ => String::new(),
     };
     format!(
-        "Cockpit {version} is released (tag `{t}`) and I run a self-built app with my own changes on the `mine` branch. Bringing the release into it doesn't fit. {what}\n\n\
+        "Cockpit {version} is released (tag `{t}`, fetched into this repo as `{r}`) and I run a self-built app with my own changes on the `mine` branch. Bringing the release into it doesn't fit. {what}\n\n\
         Plan first, change nothing yet: write a working doc (doc_create) with one block per clash — what my change did, what the release changed, and your proposed resolution — plus a question block for anything that's genuinely my call. Stop for my review.\n\n\
-        Once I approve: merge `{t}` into this branch, resolve as agreed, build and test, commit, then call app_update with apply_branch set to this branch."
+        Once I approve: merge `{r}` into this branch, resolve as agreed, build and test, commit, then call app_update with apply_branch set to this branch."
     )
 }
 
@@ -314,7 +319,7 @@ pub fn release_choose(app: AppHandle, choice: String) -> Result<Value, String> {
         }
         "take" => {
             let repo = repo().ok_or("can't find your app's repo")?;
-            let kept = crate::personal::set_aside(&repo, &tag(&version))?;
+            let kept = crate::personal::set_aside(&repo, &release_ref(&version), &tag(&version))?;
             record(&app, "release.set_aside", json!({ "version": version, "branch": kept }));
             build(&app, &repo, &version)?;
             Ok(json!({ "kept": kept }))
@@ -347,6 +352,7 @@ mod tests {
     fn the_plan_prompt_asks_for_a_plan_before_any_change() {
         let s = State { preview: Some(crate::personal::Preview { yours: 2, brings: 5, conflicts: vec!["ui/src/a.tsx".into()] }), ..State::default() };
         let p = plan_prompt("0.2.0", &s);
+        assert!(p.contains("merge `refs/cockpit-releases/v0.2.0`"), "the tag itself is never fetched into refs/tags");
         assert!(p.contains("`v0.2.0`") && p.contains("ui/src/a.tsx"));
         assert!(p.contains("change nothing yet") && p.contains("doc_create") && p.contains("app_update"));
         let s = State { failure: Some(("build".into(), "error[E0425]".into())), ..State::default() };
