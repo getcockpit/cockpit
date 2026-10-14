@@ -31,7 +31,7 @@ import { ViewTabs } from "../components/ViewTabs";
 const REVIEW = new Set<TileSpec["state"]>(["done", "interrupted", "error"]);
 export const inReviewTray = (t: TileSpec) => REVIEW.has(t.state);
 
-export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild, onTimeline }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void }) {
+export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild, onTimeline, onSettings }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -124,6 +124,13 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
           <Count n={review.length} label="to review" onClick={() => jump("mr-review")} />
         </>}
         <span className="mr-grow" />
+        {/* Never ask is on (I109): a red lamp for as long as it is; click for Settings. */}
+        {state.permissionMode === "never" && (
+          <button type="button" data-mr="NeverAskLamp" data-mr-source="never" onClick={onSettings} title="Sessions act without asking, except for high-risk actions. Click to change it in Settings."
+            className="mr-row" style={{ gap: 6, border: 0, padding: "3px 10px", marginRight: 8, font: "inherit", fontWeight: 700, cursor: "pointer", background: "var(--mr-error)", color: "var(--mr-tile)" }}>
+            <span aria-hidden>●</span>Never ask
+          </button>
+        )}
         <Usage label="5-hour" v={state.usage.fiveHour} resets={state.usage.resetsAt} />
         <Usage label="Week" v={state.usage.weekly} resets={state.usage.weeklyResetsAt} />
         <span className="mr-mono" title={!state.sidecar.up ? "Claude Code isn't connected" : state.sidecar.claude ? `Claude Code: ${state.sidecar.claude}` : "Claude Code isn't installed"} style={{ color: !state.sidecar.up ? "var(--mr-error)" : state.sidecar.claude ? "var(--mr-done)" : "var(--mr-needs)" }}>●</span>
