@@ -1,6 +1,7 @@
 import { shortError } from "./ErrorLine";
 import { useEffect, useRef, useState } from "react";
 import { Key } from ".";
+import { keyLabel } from "../platform";
 import { sendsOnEnter, useAutoGrow } from "./autoGrow";
 import { FolderPicker, PinFolder, useWorkFolder } from "./FolderPicker";
 import { promptFor } from "../screens/StartPicker";
@@ -65,7 +66,7 @@ export function QuickStart({ state, workspace, onStarted, onMore }: { state: App
         <button type="button" className="mr-key" onClick={() => onMore("review")}>Review a PR</button>
         <button type="button" className="mr-key" onClick={() => onMore("address")}>Address PR comments</button>
         <span className="mr-grow" />
-        <span><span className="mr-mono">⌘K</span> starts anything, from anywhere</span>
+        <span><span className="mr-mono">{keyLabel("⌘K")}</span> starts anything, from anywhere</span>
       </div>
     </section>
   );

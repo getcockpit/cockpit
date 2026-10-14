@@ -3,6 +3,7 @@ import { ChangeList, NoveltyTag, TierBadge } from "../components/CatalogView";
 import { ChangeDiagram } from "../components/ChangeDiagram";
 import { Key } from "../components";
 import { keyOf } from "../components/keys";
+import { modKey } from "../platform";
 import { plural } from "../picker/title";
 import type { ReviewFlow } from "../state/types";
 
@@ -57,7 +58,7 @@ export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Ov
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest?.("input, textarea") || e.metaKey) return;
+      if ((e.target as HTMLElement)?.closest?.("input, textarea") || modKey(e)) return;
       const key = keyOf(e);
       if (key === "j") { e.preventDefault(); setSel((x) => Math.min(pts.length - 1, x + 1)); }
       if (key === "k") { e.preventDefault(); setSel((x) => Math.max(0, x - 1)); }
