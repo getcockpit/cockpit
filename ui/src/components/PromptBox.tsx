@@ -172,7 +172,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
     if (busy) { toast("Still attaching: one moment"); return; }
     const draftOf = (path: string) => getDrafts(notesKey(path), 1)[0];
     const send = (copies: Record<string, string>, extra: Attachment[]) => {
-      // Pins and drawings on your own images travel as text after the message (MR-142, MR-143),
+      // Pins and drawn marks on your own images travel as text after the message (MR-142, MR-143),
       // and a drawn-on copy goes along as one more image.
       const notes = attachmentNotes(files, draftOf, copies);
       files.forEach((f) => clearDrafts(notesKey(f.path)));
@@ -181,11 +181,11 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
       pastes.current = {};
       back.current = null;
     };
-    const drawn = files.filter((f) => draftOf(f.path).strokes?.length);
+    const drawn = files.filter((f) => draftOf(f.path).ink?.length);
     if (!drawn.length) { send({}, []); return; }
     setBusy((n) => n + 1);
     void Promise.all(drawn.map(async (f) => {
-      const b = await burnIn(f.path, draftOf(f.path).strokes);
+      const b = await burnIn(f.path, draftOf(f.path).ink);
       return b ? { from: f.path, a: await api.attachmentSave(b, `${f.name.replace(/\.[^.]+$/, "")}-drawn.png`) } : null;
     })).then((xs) => {
       const ok = xs.filter((x): x is { from: string; a: Attachment } => !!x);
