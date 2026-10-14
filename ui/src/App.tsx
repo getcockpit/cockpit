@@ -31,6 +31,7 @@ import { useNotify } from "./state/notify";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installUsage, useViews } from "./state/usage";
 import { listenFileDrop } from "./state/fileDrop";
+import { listenSelftest } from "./state/selftestUi";
 
 export default function App() {
   const all = useAppState();
@@ -75,13 +76,17 @@ export default function App() {
   const [docId, setDocIdNow] = useState<string | null>(null);
   // Screen changes morph (MR-67): opening something goes deeper, closing it comes back.
   const setFocus = (id: string | null) => navigate(id ? "deeper" : "back", () => setFocusNow(id));
+  const allRef = useRef(all);
+  allRef.current = all;
+  useEffect(() => listenSelftest((id) => { setWorkspace(allRef.current.sessions[id]?.workspace ?? "personal"); setFocusNow(id); }), []);
   const setDocId = (id: string | null) => navigate(id ? "deeper" : "back", () => setDocIdNow(id));
   // Each workspace remembers where you were (wall, a session or a doc), so switching back is a return, not a restart.
   const views = useRef<Record<string, { focus: string | null; docId: string | null }>>({});
   const [switcher, setSwitcher] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
-  // If the open workspace disappears (deleted), fall back to Personal.
-  useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocusNow(null); setDocIdNow(null); setWorkspace("personal"); } }, [all.workspaces, workspace]);
+  // If the open workspace disappears (deleted), or the remembered one isn't in this log (a fresh
+  // data folder), fall back to Personal. Checked again once the log has loaded.
+  useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocusNow(null); setDocIdNow(null); setWorkspace("personal"); } }, [all.workspaces, workspace, all.lastEventId !== null]);
   const switchTo = (id: string) => {
     if (id === workspace) return;
     views.current[workspace] = { focus, docId };
