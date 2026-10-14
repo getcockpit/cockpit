@@ -21,6 +21,7 @@ import { parseReport, TurnText } from "../components/Turn";
 import { ChangeMap } from "./ChangeMap";
 import { PlanPanel } from "../components/PlanPanel";
 import { BackgroundPanel } from "../components/BackgroundPanel";
+import { GoalStrip } from "../components/GoalStrip";
 import { RunCommand } from "../components/RunCommand";
 import { FileContext } from "../components/FileChip";
 import { CatalogView, viewReplies } from "../components/CatalogView";
@@ -175,6 +176,7 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
               </div>
             </button>
           ))}
+          <GoalStrip s={s} readOnly={elsewhere || !!s.fromDeleted} />
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
           {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} command={term.command} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <FileContext.Provider value={{ session: s.id, cwd: s.cwd }}><RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} commands={s.commands} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider></FileContext.Provider>}
           {/* What this session waits on you for, at the end of the transcript where Focus scrolls to,

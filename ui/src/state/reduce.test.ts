@@ -147,6 +147,17 @@ test("a finished turn with a script still running in the background stays Workin
   expect(pickTile(replay([...base, { ...tasks([]), id: "D4" }]).sessions.s).state).toBe("idle");
 });
 
+test("an active /goal shows until it's met, cleared or the session ends", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 1 });
+  const goal = (id: string, value: Record<string, unknown> | null) => ev(id, "sidecar.sdk", { message: { type: "active_goal", value, uuid: "u", session_id: "x" } });
+  const base = [ev("G1", "ui.session_requested", { prompt: "p", cwd: "/w" }), goal("G2", { condition: "bun test exits 0", iterations: 0, set_at: 5, tokens_at_start: 100 })];
+  expect(replay(base).sessions.s.goal).toEqual({ condition: "bun test exits 0", iterations: 0, setAt: 5, lastReason: null });
+  const notMet = [...base, goal("G3", { condition: "bun test exits 0", iterations: 2, set_at: 5, tokens_at_start: 100, last_reason: "2 tests fail" })];
+  expect(replay(notMet).sessions.s.goal).toMatchObject({ iterations: 2, lastReason: "2 tests fail" });
+  expect(replay([...notMet, goal("G4", null)]).sessions.s.goal).toBeNull();
+  expect(replay([...notMet, ev("G4", "sidecar.session_ended", { ok: true })]).sessions.s.goal).toBeNull();
+});
+
 test("layer 2 catches a question asked without a question mark, and meters the call", () => {
   const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: Date.UTC(2026, 9, 9) });
   const base = [

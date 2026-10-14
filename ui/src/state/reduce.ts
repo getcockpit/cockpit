@@ -36,7 +36,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], owner: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null,
   };
 }
 
@@ -279,6 +279,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.error = p.ok ? null : String(p.reason ?? "session failed");
       s.pending = [];
       s.turnOpen = false;
+      // The goal lives in the run: a resumed session reports it again if Claude Code restores it.
+      s.goal = null;
       s.transcript = settle(s.transcript, ["sending", "queued", "taken"], "lost");
       break;
   }
@@ -300,7 +302,7 @@ function ownedBy(s: SessionState, origin: string | null | undefined): boolean {
 function interrupt(sessions: AppState["sessions"], at: number, which: (s: SessionState) => boolean): AppState["sessions"] {
   const out = { ...sessions };
   for (const [id, s] of Object.entries(sessions)) {
-    if (which(s) && !["ended", "error", "interrupted"].includes(s.status)) out[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", at), pending: [], turnOpen: false, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
+    if (which(s) && !["ended", "error", "interrupted"].includes(s.status)) out[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", at), pending: [], turnOpen: false, goal: null, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
   }
   return out;
 }
@@ -370,6 +372,12 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     s.turnOpen = true;
     s.transcript = [...s.transcript, ...add];
     if (s.status !== "needs_you") s.status = "working";
+    return;
+  }
+  if (type === "active_goal") {
+    // Set, re-checked (not met yet) or cleared (met, /goal clear, an error): the full value each time.
+    const g = m.value as { condition?: unknown; iterations?: unknown; set_at?: unknown; last_reason?: unknown } | null;
+    s.goal = g && typeof g.condition === "string" ? { condition: g.condition, iterations: Number(g.iterations ?? 0), setAt: Number(g.set_at ?? ev.created_at), lastReason: typeof g.last_reason === "string" ? g.last_reason : null } : null;
     return;
   }
   if (type === "user") {
