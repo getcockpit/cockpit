@@ -9,7 +9,7 @@ command -v pinchtab >/dev/null || { echo "pinchtab not found: npm install -g pin
 [ -d "$root/ui/node_modules" ] || (cd "$root/ui" && bun install --frozen-lockfile >/dev/null)
 
 port="${MR_E2E_PORT:-1539}"
-(cd "$root/ui" && exec bunx vite --port "$port" --strictPort --host 127.0.0.1 >/tmp/mr-e2e-vite.log 2>&1) &
+(cd "$root/ui" && exec bun x vite --port "$port" --strictPort --host 127.0.0.1 >/tmp/mr-e2e-vite.log 2>&1) &
 vite=$!
 session=""
 cleanup() {
