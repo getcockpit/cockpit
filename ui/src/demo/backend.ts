@@ -353,6 +353,9 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
 
 export function install(name: string) {
   const sc: Scenario = SCENARIOS[name] ?? SCENARIOS.busy;
+  // Each load starts clean: remembered UI choices (start-picker kind, workspace, folder) would
+  // otherwise carry from one scenario into the next and make it depend on what ran before.
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith("mr.")) localStorage.removeItem(k); } catch { /* no storage */ }
   const base = Date.now() - 40 * 60_000;
   docs = structuredClone(sc.docs);
   for (const [i, e] of sc.events.entries()) {
