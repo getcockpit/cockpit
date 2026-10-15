@@ -172,6 +172,10 @@ describe("overviewKey (decision 40)", () => {
     expect(overviewKey(k("ArrowRight", "ArrowRight"), { dialog: false })).toEqual({ do: "pan", dx: -80, dy: 0 });
     expect(overviewKey(k("ArrowUp", "ArrowUp", { shiftKey: true }), { dialog: false })).toEqual({ do: "pan", dx: 0, dy: 400 });
   });
+  it("/ opens find on the canvas, but not while typing (the find box itself)", () => {
+    expect(overviewKey(k("/", "Slash"), { dialog: false })).toEqual({ do: "find" });
+    expect(overviewKey(k("/", "Slash", {}, { tagName: "INPUT" } as unknown as EventTarget), { dialog: false })).toBeNull();
+  });
   it("Esc goes back to the workspace, unless a dialog owns it", () => {
     expect(overviewKey(k("Escape", "Escape"), { dialog: false })).toEqual({ do: "back" });
     expect(overviewKey(k("Escape", "Escape"), { dialog: true })).toBeNull();

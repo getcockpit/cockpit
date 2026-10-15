@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, farSizes, GRID, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, farSizes, findOnMap, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -322,5 +322,29 @@ describe("Overview text floor", () => {
 describe("Overview grid snap", () => {
   it("rounds a hand-placed spot to the nearest grid line", () => {
     expect([snap(0), snap(7), snap(8), snap(-9), snap(1603)]).toEqual([0, 0, GRID, -GRID, 1600]);
+  });
+});
+
+describe("Overview find", () => {
+  const blk = (id: string, title: string, kind: "session" | "doc" = "session"): OverviewBlock => ({ kind, id, title, lamp: "working", needs: false, status: "", step: null });
+  const area = (workspace: string, name: string, progress: OverviewBlock[], x = 0) =>
+    ({ workspace, name, index: 0, folder: null, counts: { needs: 0, resume: 0, progress: progress.length, review: 0 }, groups: { resume: [], progress, review: [] }, x, y: 0, w: AREA_W, h: areaHeight({ resume: [], progress, review: [] }) });
+  const map = [area("a", "Acme platform", [blk("1", "Fix login redirect"), blk("2", "Login page copy", "doc")]), area("b", "Billing", [blk("3", "Refund flow")], 800)];
+  it("matches every word, case-insensitively, in map order; a workspace name is a hit too", () => {
+    expect(findOnMap(map, "login")).toEqual([{ workspace: "a", block: "session:1" }, { workspace: "a", block: "doc:2" }]);
+    expect(findOnMap(map, "LOGIN fix")).toEqual([{ workspace: "a", block: "session:1" }]);
+    expect(findOnMap(map, "billing")).toEqual([{ workspace: "b", block: null }]);
+    expect(findOnMap(map, "  ")).toEqual([]);
+    expect(findOnMap(map, "nothing like it")).toEqual([]);
+  });
+  it("a hit's rectangle is its block, in its column and row; a name hit is the whole workspace", () => {
+    const a = map[0];
+    expect(hitRect(a, "doc:2")).toMatchObject({ x: PAD, y: HEADER_H + LABEL_H + (BLOCK_H + BLOCK_GAP), h: BLOCK_H });
+    expect(hitRect(map[1], null)).toEqual({ x: 800, y: 0, w: AREA_W, h: map[1].h });
+  });
+  it("a block folded into +N more points at its workspace", () => {
+    const many = area("c", "Crowd", Array.from({ length: 9 }, (_, i) => blk(String(i), `task ${i}`)));
+    expect(hitRect(many, "session:8")).toEqual({ x: 0, y: 0, w: AREA_W, h: many.h });
+    expect(hitRect(many, "session:0").h).toBe(BLOCK_H);
   });
 });

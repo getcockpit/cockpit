@@ -338,4 +338,43 @@ describe("Overview pointer and navigation in a DOM", () => {
     render({ state: { ...busy, overviewLayout: {} } });
     expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').style.left).toBe("0px");
   });
+  it("/ finds on the map: non-matches dim, Enter flies to the hit at 100%, Esc closes and stays on the map", async () => {
+    win.w = 1280; win.h = 800;
+    await open();
+    act(() => observers.forEach((cb) => cb()));
+    for (let i = 0; i < 4; i++) key("-"); // zoomed out first
+    vi.useFakeTimers();
+    key("/");
+    const input = $('[data-mr="OverviewFind"] input') as HTMLInputElement;
+    expect(document.activeElement).not.toBe(input); // not yet: the "/" itself must not be typed into it
+    act(() => { vi.advanceTimersByTime(1); });
+    vi.useRealTimers();
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("");
+    expect(input).toBeTruthy();
+    act(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(input, "fix"); input.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect($('[data-mr="OverviewArea"][data-mr-source="ws_b"]').dataset.dim).toBe("true"); // Client B has no "fix"
+    expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').dataset.dim).toBeUndefined();
+    expect($('[data-mr="OverviewFindCount"]').textContent).toBe("1 of 1");
+    act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    expect(zoom()).toBe("100%");
+    expect($('[data-mr="OverviewBlock"]').dataset.current).toBe("true");
+    act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    expect(host.querySelector('[data-mr="OverviewFind"]')).toBeNull();
+    expect(spies.back).not.toHaveBeenCalled();
+    expect($('[data-mr="OverviewArea"][data-mr-source="ws_b"]').dataset.dim).toBeUndefined();
+  });
+  it("a find hit folded into +N more rings its workspace", async () => {
+    win.w = 1280; win.h = 800;
+    const crowd = replay([
+      ...Array.from({ length: 9 }, (_, i) => [{ ...ev("ui.session_requested", { prompt: `task ${i}`, cwd: "/w", workspace: "personal" }), session_id: `t${i}` }, { ...ev("sidecar.session_started", { sdk_session_id: `sdk${i}`, model: "m" }), session_id: `t${i}` }]).flat(),
+    ]);
+    await open({ state: crowd });
+    act(() => observers.forEach((cb) => cb()));
+    key("/");
+    const input = $('[data-mr="OverviewFind"] input') as HTMLInputElement;
+    act(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(input, "task 8"); input.dispatchEvent(new Event("input", { bubbles: true })); });
+    act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').dataset.current).toBe("true");
+  });
 });
