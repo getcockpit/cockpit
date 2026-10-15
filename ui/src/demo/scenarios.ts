@@ -253,7 +253,38 @@ const signedOutEvents: E[] = [
   { session: "L", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: true, result: "Not logged in · Please run /login" } }, at: 2302 },
 ];
 
+
+// The Overview (decision 40, MR-155): three workspaces with something to resume, in progress and to
+// review in each, plus a clean finish that must not show. ?demo=workspaces
+const inWs = (session: string, prompt: string, workspace: string, at: number): E[] => [...start(session, prompt, { cwd: `/Users/me/code/${workspace}`, workspace }, at)];
+const workspacesEvents: E[] = [
+  ...ready, onboarded,
+  { kind: "ui.workspace_created", payload: { id: "ws_cockpit", name: "Cockpit dev", config_dir: "/demo/ws_cockpit" }, at: 3 },
+  { kind: "ui.workspace_created", payload: { id: "ws_client", name: "Client X", config_dir: "/demo/ws_client" }, at: 4 },
+  // Personal: one waiting on a layout pick, one fixing login, one ready to review, one finished cleanly.
+  ...inWs("P1", "Fix login redirect loop", "personal", 10),
+  todos("P1", 1, [["Reproduce the loop", "Reproducing the loop"], ["Fix the guard", "Fixing the guard"], ["Add a test", "Adding a test"]], 20),
+  ...inWs("P2", "Pick a layout for the settings page", "personal", 30),
+  say("P2", "Two layouts fit. Which one should I build: tabs or one long page?", 60), result("P2", "asked", 61),
+  ...inWs("P3", "Docs sync script", "personal", 70),
+  todos("P3", 2, [["Read the docs folder", "Reading"], ["Write the sync", "Writing"]], 80), tool("P3", "TodoWrite", { todos: [{ content: "Read the docs folder", status: "completed" }, { content: "Write the sync", status: "completed" }] }, 90), result("P3", "Sync script done.", 91),
+  ...inWs("P4", "Bump the lockfile", "personal", 95), result("P4", "Bumped.", 96), { session: "P4", kind: "sidecar.session_ended", payload: { ok: true }, at: 97 },
+  // Cockpit dev: a migration waiting on approval, two running, one interrupted.
+  ...inWs("C1", "Approve the event-log migration", "ws_cockpit", 100),
+  { session: "C1", kind: "sidecar.permission_request", payload: { request_id: "pC1", tool: "Bash", input: { command: "sqlite3 events.sqlite < migrate.sql" }, suggestions: null, decision_reason: null }, at: 140 },
+  ...inWs("C2", "Voice: push to talk", "ws_cockpit", 110), todos("C2", 2, [["Capture", "Capturing"], ["Stream", "Streaming"], ["Transcribe", "Transcribing"], ["Insert", "Inserting"]], 150),
+  ...inWs("C3", "Notify on needs-you", "ws_cockpit", 120), tool("C3", "Bash", { command: "cargo test notify::" }, 160),
+  ...inWs("C4", "Release v0.1.6", "ws_cockpit", 130), todos("C4", 1, [["Bump version", "Bumping"], ["Tag", "Tagging"]], 135), { session: "C4", kind: "sidecar.session_ended", payload: { ok: false, reason: "Claude Code process exited with code 1" }, at: 170 },
+  // Client X: an API spike that stopped with steps open, and a report in progress.
+  ...inWs("X1", "API spike: bulk endpoints", "ws_client", 200), todos("X1", 1, [["Sketch", "Sketching"], ["Benchmark", "Benchmarking"], ["Write up", "Writing up"]], 210), result("X1", "Stopping here.", 220), { session: "X1", kind: "sidecar.session_ended", payload: { ok: true }, at: 221 },
+  ...inWs("X2", "Quarterly usage report", "ws_client", 230), tool("X2", "Read", { file_path: "reports/q3.csv" }, 240),
+].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+
 export const SCENARIOS: Record<string, Scenario> = {
+  workspaces: { events: workspacesEvents, docs: [
+    { ...planDoc, id: "docW1", title: "Overview canvas", session_id: "C2", blocks: decided(planDoc) },
+    { ...planDoc, id: "docW2", title: "Q4 plan", session_id: "X2", blocks: decided(planDoc), shipped_at: Date.now() - 3_600_000 },
+  ] },
   timeline: { events: timelineEvents, docs: [] },
   // The timeline sessions with nothing waiting on you: the grey, calm wall (film, MR-139).
   calm: { events: timelineEvents.filter((e) => e.kind !== "sidecar.permission_request"), docs: [] },

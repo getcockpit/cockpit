@@ -32,6 +32,7 @@ export const initialState: AppState = {
   lastBuildAt: null,
   selfbuild: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
+  overviewLayout: {},
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
@@ -106,7 +107,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     // Its sessions become read-only history in Personal's archive; their Claude history went with the workspace.
     const id = String(p.id), name = String(p.name ?? "workspace");
     const sessions = Object.fromEntries(Object.entries(next.sessions).map(([k, s]) => [k, s.workspace === id ? { ...s, workspace: "personal", archivedAt: s.archivedAt ?? ev.created_at, fromDeleted: name, pending: [], status: s.status === "ended" || s.status === "error" ? s.status : "ended" as const } : s]));
-    return { ...next, sessions, workspaces: next.workspaces.filter((w) => w.id !== id) };
+    const { [id]: _, ...overviewLayout } = next.overviewLayout;
+    return { ...next, sessions, workspaces: next.workspaces.filter((w) => w.id !== id), overviewLayout };
   }
   if (ev.kind === "ui.workspace_folder_set") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, folder: (p.folder as string) ?? null } : w)) };
   if (ev.kind === "ui.workspace_renamed") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, name: String(p.name) } : w)) };
@@ -116,6 +118,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const rank = (id: string) => { const i = order.indexOf(id); return i < 0 ? order.length : i; };
     return { ...next, workspaces: [...next.workspaces].sort((a, b) => rank(a.id) - rank(b.id)) };
   }
+  // A workspace dragged on the Overview canvas (decision 40): its rectangle's top-left, in canvas units.
+  if (ev.kind === "ui.overview_moved") return Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)) ? { ...next, overviewLayout: { ...next.overviewLayout, [String(p.workspace)]: { x: Number(p.x), y: Number(p.y) } } } : next;
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
   if (ev.kind === "ui.cockpit_layer_set") return { ...next, cockpitLayer: p.on === true };
   if (ev.kind === "cockpit.usage") {

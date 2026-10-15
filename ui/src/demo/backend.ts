@@ -350,6 +350,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "workspace_rename": record(null, "ui.workspace_renamed", { id: a.id, name: a.name }); return null;
     case "session_move": record(String(a.session), "ui.session_moved", { from: "personal", to: a.workspace, copied: 1 }); return null;
     case "workspace_reorder": record(null, "ui.workspaces_reordered", { order: a.order }); return null;
+    case "overview_move": record(null, "ui.overview_moved", { workspace: a.workspace, x: Math.round(Number(a.x)), y: Math.round(Number(a.y)) }); return null;
     default: return null;
   }
 }
