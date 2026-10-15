@@ -296,6 +296,8 @@ const flows: Flow[] = [
     await until("needs-you count beside Cockpit dev", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("1 needs you")) throw new Error("no count label"); });
     await ui.css('[data-mr="OverviewArea"] [data-mr="OverviewBlock"] button', 0); // read-only: nothing to answer on the map
     // Fit lays three workspaces out as a grid, so launch lands readable, not at half size in one long row.
+    // Fitted (not the unfitted start), and still readable.
+    await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
     await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 60)) throw new Error(`fit at ${z}%`); });
     for (let i = 0; i < 4; i++) await ui.press("-"); // − zooms out from the keyboard…
     await ui.tags("OverviewLamps", 3); // …far out, each workspace is its name, what needs you and a lamp per item
@@ -308,7 +310,7 @@ const flows: Flow[] = [
     await ui.key("Mod+0");
     await ui.tags("OverviewLamps", 0);
     for (let i = 0; i < 4; i++) await ui.press("-");
-    await ui.click("button", "Zoom to 100%"); // 100% lands on a workspace, even from far out over a gap
+    await ui.click("button", /go to 100%/); // 100% lands on a workspace, even from far out over a gap
     await until("100%", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error("not 100%"); });
     await ui.press("Escape"); // Esc goes back to the workspace you came from
     await ui.tags("OverviewCanvas", 0);
@@ -328,14 +330,14 @@ const flows: Flow[] = [
   { name: "J19 a crowded Overview stays readable", run: async () => {
     await ui.open("workspaces-busy", { overview: true });
     await ui.tags("OverviewArea", 6);
+    await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
     await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 45)) throw new Error(`fit at ${z}%`); });
     await ui.see("button", "Open Approve the Acme deploy"); // what needs you is first, never hidden in +N more
     await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewBlock"]', 5); // 13 in progress: 5 shown…
     await until("+8 more", () => { if (!ui.text('[data-mr="OverviewMore"]').includes("+8 more")) throw new Error("no +N more"); });
     await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewGroup"]', 1); // …and no empty columns beside them
     await until("empty workspace says so", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_e"]').includes("Nothing open")) throw new Error("no empty note"); });
-    for (let i = 0; i < 12; i++) await ui.press("ArrowLeft"); // panned off into empty canvas…
-    for (let i = 0; i < 8; i++) await ui.press("ArrowUp");
+    for (let i = 0; i < 8; i++) await ui.key("Shift+ArrowUp"); // ⇧↑ pans 400 px a step: off into empty canvas, whatever the window size…
     await ui.tags("OverviewLost", 1);
     await ui.click("button", /Back to your workspaces/); // …one button brings everything back
     await ui.tags("OverviewLost", 0);
