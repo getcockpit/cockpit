@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { AREA_GAP, AREA_W, bounds, detail, fit, overview, place, readable, settle, zoomAt } from "./overview";
+import { AREA_GAP, AREA_W, areaHeight, columns, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -159,10 +159,56 @@ describe("Overview drop and zoom text", () => {
       expect(clear).toBe(true);
     }
   });
+  it("prefers a free spot you can see over a nearer one out of view", () => {
+    const drop = { x: 0, y: 60, w: AREA_W, h: 200 };
+    expect(settle(drop, [a])).toEqual({ x: 0, y: 300 + AREA_GAP / 2 }); // below: the nearest
+    // With the view's top edge at y = 0 and nothing visible to the left, the spot below still wins…
+    const view = { x: -100, y: 0, w: 3000, h: 1000 };
+    expect(settle(drop, [a], view)).toEqual({ x: 0, y: 300 + AREA_GAP / 2 });
+    // …but scrolled so that "below" is off screen, it goes to the right, where you can see it.
+    expect(settle(drop, [a], { x: 0, y: -50, w: 3000, h: 400 })).toEqual({ x: AREA_W + AREA_GAP / 2, y: 60 });
+  });
   it("keeps text at least 12 px on screen when zoomed out, never shrinking it below its size", () => {
     expect(readable(14, 1)).toBe(14);
     expect(readable(14, 0.5) * 0.5).toBeCloseTo(12);
     expect(readable(14, 2)).toBe(14);
     expect(readable(14, 0.01)).toBe(14 * 4); // capped, so a far zoom doesn't blow it past the rectangle
+  });
+});
+
+describe("Overview busy columns", () => {
+  const b = (i: number): OverviewBlock => ({ kind: "session", id: `s${i}`, title: `s${i}`, lamp: "working", needs: false, status: "", step: null });
+  const many = (k: number) => Array.from({ length: k }, (_, i) => b(i));
+  it("shows a column whole up to the cap", () => {
+    expect(shown(many(MAX_ROWS))).toEqual({ blocks: many(MAX_ROWS), more: 0 });
+  });
+  it("past the cap keeps the first ones (what needs you sorts first) and counts the rest as +N more", () => {
+    const v = shown(many(12));
+    expect(v.blocks.map((x) => x.id)).toEqual(["s0", "s1", "s2", "s3", "s4"]);
+    expect(v.more).toBe(7);
+    expect(v.blocks.length + 1).toBe(MAX_ROWS); // the "+N more" row takes the last slot
+  });
+  it("a busy workspace is no taller than the cap, so it can't stretch the grid", () => {
+    const groups = { resume: [], progress: many(30), review: [] };
+    expect(areaHeight(groups)).toBe(areaHeight({ resume: [], progress: many(MAX_ROWS), review: [] }));
+    expect(areaHeight(groups) - areaHeight({ resume: [], progress: many(MAX_ROWS - 1), review: [] })).toBe(BLOCK_H + BLOCK_GAP);
+  });
+});
+
+describe("Overview columns", () => {
+  const b = (id: string): OverviewBlock => ({ kind: "session", id, title: id, lamp: "working", needs: false, status: "", step: null });
+  it("draws only the groups with something in them, in Resume / In progress / Review order", () => {
+    expect(columns({ resume: [b("r")], progress: [], review: [b("v")] }).map((c) => c.group)).toEqual(["resume", "review"]);
+    expect(columns({ resume: [], progress: [], review: [] })).toEqual([]);
+  });
+  it("a lone group gets the whole width, so its titles aren't cut to a third", () => {
+    const [one] = columns({ resume: [], progress: [b("p")], review: [] });
+    expect(one).toEqual({ group: "progress", x: PAD, w: AREA_W - PAD * 2 });
+  });
+  it("columns share the width edge to edge with a gap between", () => {
+    const cols = columns({ resume: [b("r")], progress: [b("p")], review: [b("v")] });
+    expect(cols[0].x).toBe(PAD);
+    expect(cols[2].x + cols[2].w).toBeCloseTo(AREA_W - PAD);
+    expect(cols[1].x - (cols[0].x + cols[0].w)).toBeCloseTo(BLOCK_GAP);
   });
 });
