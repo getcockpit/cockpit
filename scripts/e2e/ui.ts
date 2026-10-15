@@ -307,7 +307,8 @@ const flows: Flow[] = [
     await until("needs-you badge stays far out", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("⚠ 1")) throw new Error("no badge"); });
     await ui.key("Mod+0");
     await ui.tags("OverviewLamps", 0);
-    await ui.click("button", "Zoom to 100%"); // the zoom level resets to 100% around the middle
+    for (let i = 0; i < 4; i++) await ui.press("-");
+    await ui.click("button", "Zoom to 100%"); // 100% lands on a workspace, even from far out over a gap
     await until("100%", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error("not 100%"); });
     await ui.press("Escape"); // Esc goes back to the workspace you came from
     await ui.tags("OverviewCanvas", 0);

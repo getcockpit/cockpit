@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { AREA_GAP, AREA_W, areaHeight, columns, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -210,5 +210,18 @@ describe("Overview columns", () => {
     expect(cols[0].x).toBe(PAD);
     expect(cols[2].x + cols[2].w).toBeCloseTo(AREA_W - PAD);
     expect(cols[1].x - (cols[0].x + cols[0].w)).toBeCloseTo(BLOCK_GAP);
+  });
+});
+
+describe("Overview 100%", () => {
+  const a = { id: "a", x: 0, y: 0, w: 720, h: 300 }, b = { id: "b", x: 800, y: 0, w: 720, h: 300 }, c = { id: "c", x: 0, y: 380, w: 720, h: 900 };
+  it("picks the workspace under the middle of the view, else the closest one", () => {
+    expect(nearest([a, b, c], 100, 100)?.id).toBe("a");
+    expect(nearest([a, b, c], 1100, 340)?.id).toBe("b"); // in the empty gap of a 2 × 2 grid: the closest
+    expect(nearest([], 0, 0)).toBeNull();
+  });
+  it("lands at 100% with the workspace centred, or from its top when it's taller than the view", () => {
+    expect(actualSize(b, { w: 1280, h: 700 })).toEqual({ zoom: 1, x: (1280 - 720) / 2 - 800, y: (700 - 300) / 2 });
+    expect(actualSize(c, { w: 1280, h: 700 })).toEqual({ zoom: 1, x: (1280 - 720) / 2, y: 24 - 380 });
   });
 });
