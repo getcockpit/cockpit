@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, farSizes, LABEL_H, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, farSizes, GRID, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -123,6 +123,10 @@ describe("Overview layout", () => {
     expect(moved.overviewLayout).toEqual({ ws_x: { x: 120, y: -40 }, personal: { x: 900, y: 0 } });
     expect(overview(moved, [], moved.overviewLayout).find((a) => a.workspace === "ws_x")).toMatchObject({ x: 120, y: -40 });
     expect(replay([...base, ev("ui.overview_moved", { workspace: "ws_x", x: "nope", y: 1 })]).overviewLayout).toEqual({});
+    // Tidy up forgets every dragged spot: back to the auto grid; a later move pins again.
+    const tidied = replay([...base, ev("ui.overview_moved", { workspace: "ws_x", x: 120, y: -40 }), ev("ui.overview_tidied", {})]);
+    expect(tidied.overviewLayout).toEqual({});
+    expect(replay([...base, ev("ui.overview_tidied", {}), ev("ui.overview_moved", { workspace: "ws_x", x: 16, y: 32 })]).overviewLayout).toEqual({ ws_x: { x: 16, y: 32 } });
     const gone = replay([...base, ev("ui.overview_moved", { workspace: "ws_x", x: 1, y: 1 }), ev("ui.workspace_deleted", { id: "ws_x", name: "X" })]);
     expect(gone.overviewLayout).toEqual({});
   });
@@ -312,5 +316,11 @@ describe("Overview text floor", () => {
   });
   it("status lines near 100% never read under 12 px (a fit often lands at 90-99%)", () => {
     for (const z of [0.9, 0.93, 0.99, 1, 1.5]) expect(readable(12, z, 12) * z).toBeGreaterThanOrEqual(12 - 1e-9);
+  });
+});
+
+describe("Overview grid snap", () => {
+  it("rounds a hand-placed spot to the nearest grid line", () => {
+    expect([snap(0), snap(7), snap(8), snap(-9), snap(1603)]).toEqual([0, 0, GRID, -GRID, 1600]);
   });
 });

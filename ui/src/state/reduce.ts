@@ -119,6 +119,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     return { ...next, workspaces: [...next.workspaces].sort((a, b) => rank(a.id) - rank(b.id)) };
   }
   // A workspace dragged on the Overview canvas (decision 40): its rectangle's top-left, in canvas units.
+  if (ev.kind === "ui.overview_tidied") return { ...next, overviewLayout: {} };
   if (ev.kind === "ui.overview_moved") return Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)) ? { ...next, overviewLayout: { ...next.overviewLayout, [String(p.workspace)]: { x: Number(p.x), y: Number(p.y) } } } : next;
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
   if (ev.kind === "ui.cockpit_layer_set") return { ...next, cockpitLayer: p.on === true };

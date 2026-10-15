@@ -5,7 +5,7 @@ import { LABEL as STATE_LABEL, StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { isTyping, overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -220,7 +220,8 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     setTimeout(() => (suppressClick.current = false), 0);
     if (d.kind !== "move" || !d.ws) return;
     // It never lands on top of another workspace: nudged to the nearest free spot beside it.
-    const moved = areas.find((a) => a.workspace === d.ws);
+    const found = areas.find((a) => a.workspace === d.ws);
+    const moved = found && { ...found, x: snap(found.x), y: snap(found.y) }; // on the grid, so neighbours line up
     const spot = moved ? settle(moved, areas.filter((a) => a.workspace !== d.ws), { x: -cam.x / cam.zoom, y: -cam.y / cam.zoom, w: size.w / cam.zoom, h: Math.max(1, size.h - BAR_H) / cam.zoom }) : null;
     if (moved && spot) {
       setHeld((h) => ({ ...h, [moved.workspace]: spot }));
@@ -230,6 +231,29 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     }
     // The moved one, plus any still auto-placed: their spots are now fixed too, so nothing jumps later.
     for (const a of areas) if (a.workspace === d.ws || !state.overviewLayout[a.workspace]) void invoke("overview_move", { workspace: a.workspace, ...(a.workspace === d.ws && spot ? spot : { x: a.x, y: a.y }) }).catch(() => {});
+  };
+  // Tidy up: every hand-placed spot is forgotten and the workspaces go back to the auto grid, the
+  // camera following them. Undo, for a few seconds, puts each one back where it was.
+  const pinned = Object.keys(state.overviewLayout).length > 0;
+  const [undoTidy, setUndoTidy] = useState<Layout | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(undoTimer.current), []);
+  const tidy = () => {
+    const before = { ...state.overviewLayout };
+    following = true;
+    setHeld({});
+    void invoke("overview_tidy").catch(() => {});
+    setUndoTidy(before);
+    clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndoTidy(null), 8000);
+  };
+  const untidy = () => {
+    const before = undoTidy;
+    if (!before) return;
+    setUndoTidy(null);
+    clearTimeout(undoTimer.current);
+    following = true;
+    for (const [workspace, p] of Object.entries(before)) void invoke("overview_move", { workspace, x: p.x, y: p.y }).catch(() => {});
   };
   const click = (fn: () => void) => (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -299,6 +323,9 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       <div className="mr-row mr-dim mr-grow" data-mr="OverviewHint" style={{ minWidth: 0, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         <span className="mr-ellipsis">Scroll, drag empty space or Space-drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it</span>
       </div>
+      {undoTidy
+        ? <button type="button" className="mr-key" data-mr="OverviewUndoTidy" data-mr-source="overview" onClick={untidy} title="Put the workspaces back where you had them">Undo tidy</button>
+        : pinned && <button type="button" className="mr-key" data-mr="OverviewTidy" data-mr-source="overview" onClick={tidy} title="Put every workspace back in the automatic grid">Tidy up</button>}
       <div className="mr-row" data-mr="OverviewZoom" style={{ flex: "none", gap: 4 }}>
         <button type="button" className="mr-key" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
         <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label={`Zoom ${Math.round(cam.zoom * 100)}%: go to 100%`} title="Zoom to 100%" onClick={toActual}
