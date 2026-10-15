@@ -5,7 +5,7 @@ import { StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -81,24 +81,27 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     const el = view.current;
     if (!el) return;
     const at = (e: { clientX: number; clientY: number }) => { const r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top] as const; };
+    let scale = 1, pinching = false;
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (e.ctrlKey || e.metaKey) { const [px, py] = at(e); byHand((c) => zoomAt(c, px, py, Math.exp(-e.deltaY * 0.01))); }
-      else byHand((c) => ({ ...c, x: c.x - e.deltaX, y: c.y - e.deltaY }));
+      const [px, py] = at(e);
+      byHand((c) => wheelCam(c, e, px, py, pinching));
     };
-    let scale = 1;
-    const gStart = (e: Event) => { e.preventDefault(); scale = 1; };
+    const gStart = (e: Event) => { e.preventDefault(); scale = 1; pinching = true; };
     const gChange = (e: Event) => {
       e.preventDefault();
       const g = e as Event & { scale: number; clientX: number; clientY: number };
       const [px, py] = at(g);
-      byHand((c) => zoomAt(c, px, py, g.scale / scale));
+      const prev = scale;
+      byHand((c) => pinchCam(c, g.scale, prev, px, py));
       scale = g.scale;
     };
+    const gEnd = (e: Event) => { e.preventDefault(); pinching = false; };
     el.addEventListener("wheel", wheel, { passive: false });
     el.addEventListener("gesturestart", gStart);
     el.addEventListener("gesturechange", gChange);
-    return () => { el.removeEventListener("wheel", wheel); el.removeEventListener("gesturestart", gStart); el.removeEventListener("gesturechange", gChange); };
+    el.addEventListener("gestureend", gEnd);
+    return () => { el.removeEventListener("wheel", wheel); el.removeEventListener("gesturestart", gStart); el.removeEventListener("gesturechange", gChange); el.removeEventListener("gestureend", gEnd); };
   }, []);
 
   // + / − zoom around the middle, arrows pan.

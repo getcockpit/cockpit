@@ -218,6 +218,25 @@ export const detail = (zoom: number): "far" | "middle" | "close" => (zoom < 0.45
  *  against the zoom (up to `cap` times its size) instead of shrinking into an unreadable smear. */
 export const readable = (size: number, zoom: number, min = 12, cap = 4) => Math.min(size * cap, Math.max(size, min / zoom));
 
+/** A wheel event's move of the camera. Pinch (ctrl+wheel in Chromium) and ⌘-scroll zoom around the
+ *  cursor; anything else pans. A mouse notch is ~100 px of deltaY and a trackpad pinch a few px per
+ *  event, so the step is clamped: a notch is one gentle zoom step, not a 2.7× jump. Line-mode deltas
+ *  (Firefox, some mice) count as 16 px a line. While a WebKit pinch gesture is live it does the zooming,
+ *  so a ctrl+wheel that comes with it is dropped instead of zooming twice. */
+export function wheelCam(cam: { x: number; y: number; zoom: number }, e: { deltaX: number; deltaY: number; deltaMode?: number; ctrlKey: boolean; metaKey: boolean }, px: number, py: number, gesture = false) {
+  const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+  const dx = e.deltaX * k, dy = e.deltaY * k;
+  if (e.ctrlKey || e.metaKey) {
+    if (gesture) return cam;
+    return zoomAt(cam, px, py, Math.exp(-Math.max(-30, Math.min(30, dy)) * 0.01));
+  }
+  return { ...cam, x: cam.x - dx, y: cam.y - dy };
+}
+
+/** A WebKit pinch step: gesture scale is cumulative since gesturestart, so zoom by its change. */
+export const pinchCam = (cam: { x: number; y: number; zoom: number }, scale: number, prev: number, px: number, py: number) =>
+  prev > 0 && scale > 0 ? zoomAt(cam, px, py, scale / prev) : cam;
+
 /** Zoom around a point (the cursor) so what's under it stays put. */
 export function zoomAt(cam: { x: number; y: number; zoom: number }, px: number, py: number, factor: number) {
   const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * factor));
