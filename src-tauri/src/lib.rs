@@ -142,6 +142,7 @@ pub fn run() {
             personal::personal_revert,
             terminal::term_open,
             terminal::term_write,
+            terminal::term_close,
             terminal::term_resize,
             notify::notify,
             voice::voice_start,
