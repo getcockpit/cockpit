@@ -4,6 +4,22 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-16
+
+### Added
+- **Overview** (⌘0, or the Overview button in the tab bar): every workspace on one canvas, each session and doc as a block in Resume, In progress or Review. Launch lands on it when you have more than one workspace. Scroll or drag empty space to pan; pinch, ⌘-scroll or +/− to zoom; ⌘0 fits everything. Far out each workspace shows its name, what needs you and a lamp per item; closer in, titles and then status and plan step.
+- Drag a workspace (from anywhere on it) to arrange the map; it snaps to a grid and never lands on another one, and the canvas pans when you drag to an edge. **Tidy up** puts everything back in the automatic grid, with an Undo.
+- Find on the map: press **/** and type; what doesn't match fades, Enter flies to each hit.
+- Coming back to the Overview, what changed while you were away is marked (●), by block and by workspace, and the bar says how many changed and finished. What you had on screen doesn't count.
+- Keyboard: arrows pan, Space-drag or the middle button pan anywhere, Tab moves the camera to what it focuses, Esc goes back to the workspace you came from. Screen readers hear each workspace's counts and each block's status.
+- Drag a session onto a workspace tab to move it there.
+- Review: an **Approve on my behalf** tickbox next to Publish, off by default.
+- Review skips a pull request with nothing new since your last review, and says so, with **Review anyway**.
+- **/mcp → Add server**: name, URL or command, headers or env, and a scope; it attaches to the running session.
+
+### Fixed
+- In a session, whatever is scrolled into view (Tab, find, a jump) stops below the sticky header instead of behind it.
+
 ## [0.1.5] - 2026-10-15
 
 ### Added
