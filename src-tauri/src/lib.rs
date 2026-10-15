@@ -90,6 +90,7 @@ pub fn run() {
             sidecar::session_commands,
             sidecar::session_mcp_status,
             sidecar::session_mcp_action,
+            sidecar::session_mcp_add,
             sidecar::models_refresh,
             sidecar::session_stop,
             sidecar::permission_respond,

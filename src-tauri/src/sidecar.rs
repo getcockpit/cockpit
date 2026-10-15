@@ -596,6 +596,42 @@ pub fn session_mcp_action(app: AppHandle, state: State<'_, Sidecar>, session: St
     sidecar_send(state, serde_json::json!({ "type": "mcp_action", "session": session, "server": server, "action": action }))
 }
 
+/// Adds an MCP server from /mcp: the sidecar saves it with `claude mcp add-json` in `scope`, then
+/// attaches it to the running session. The log keeps the name, scope and transport, never the
+/// config itself (headers and env often hold tokens). The answer arrives as `sidecar.mcp_status`.
+#[tauri::command]
+pub fn session_mcp_add(app: AppHandle, state: State<'_, Sidecar>, session: String, server: String, scope: String, config: serde_json::Value) -> Result<(), String> {
+    let transport = check_mcp_add(&server, &scope, &config)?;
+    if !state.live.lock().unwrap().contains(&session) {
+        return Err("this session isn't running: resume it to add an MCP server".into());
+    }
+    crate::eventlog::record(&app, Some(&session), "ui.mcp_action", &serde_json::json!({ "server": server, "action": "add", "scope": scope, "transport": transport }), None);
+    sidecar_send(state, serde_json::json!({ "type": "mcp_add", "session": session, "server": server, "scope": scope, "config": config }))
+}
+
+/// What `claude mcp add-json` would refuse, caught before anything is logged or sent. Returns the transport.
+fn check_mcp_add(server: &str, scope: &str, config: &serde_json::Value) -> Result<String, String> {
+    if server.is_empty() || !server.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("a server name takes letters, digits, - and _".into());
+    }
+    if server == "mr" {
+        return Err("mr is Cockpit's own server: pick another name".into());
+    }
+    if !["local", "project", "user"].contains(&scope) {
+        return Err(format!("unknown scope: {scope}"));
+    }
+    let transport = config.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    let key = match transport {
+        "stdio" => "command",
+        "http" | "sse" => "url",
+        _ => return Err(format!("unknown transport: {transport}")),
+    };
+    if config.get(key).and_then(|v| v.as_str()).map_or(true, |v| v.trim().is_empty()) {
+        return Err(format!("a {transport} server needs a {key}"));
+    }
+    Ok(transport.to_string())
+}
+
 #[tauri::command]
 pub fn session_interrupt(app: AppHandle, state: State<'_, Sidecar>, session: String) -> Result<(), String> {
     if !state.live.lock().unwrap().contains(&session) {
@@ -680,7 +716,21 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prompt, auto_allows, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
+    use super::{append_prompt, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
+
+    #[test]
+    fn mcp_add_checks_name_scope_and_transport() {
+        let http = serde_json::json!({ "type": "http", "url": "https://x/mcp" });
+        assert_eq!(check_mcp_add("web", "user", &http).unwrap(), "http");
+        assert_eq!(check_mcp_add("fs_1", "local", &serde_json::json!({ "type": "stdio", "command": "npx", "args": ["-y", "fs"] })).unwrap(), "stdio");
+        assert!(check_mcp_add("", "local", &http).is_err());
+        assert!(check_mcp_add("a b", "local", &http).is_err());
+        assert!(check_mcp_add("mr", "local", &http).is_err());
+        assert!(check_mcp_add("web", "global", &http).is_err());
+        assert!(check_mcp_add("web", "local", &serde_json::json!({ "type": "ws", "url": "x" })).is_err());
+        assert!(check_mcp_add("web", "local", &serde_json::json!({ "type": "sse", "url": " " })).is_err());
+        assert!(check_mcp_add("web", "local", &serde_json::json!({ "type": "stdio" })).is_err());
+    }
     use serde_json::json;
 
     #[test]

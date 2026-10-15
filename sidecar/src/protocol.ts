@@ -16,7 +16,10 @@ export type ToolSpec = { name: string; description: string; params: Record<strin
 export type CommandRow = { name: string; description: string; hint: string; aliases: string[]; builtin: boolean; skill: boolean; terminal: boolean };
 // One MCP server as /mcp would show it (mcpServerStatus).
 export type McpServer = { name: string; status: string; source: string | null; scope: string | null; error: string | null; version: string | null; url: string | null; tools: string[] };
-export type McpAction = "reconnect" | "enable" | "disable";
+export type McpAction = "reconnect" | "enable" | "disable" | "add";
+// A server to add from /mcp: what `claude mcp add-json` takes. Saved in scope, then attached to the running session.
+export type McpScope = "local" | "project" | "user";
+export type McpAddConfig = { type: "stdio"; command: string; args?: string[]; env?: Record<string, string> } | { type: "http" | "sse"; url: string; headers?: Record<string, string> };
 // A file sent with a message: pasted (saved under the data folder), dropped or picked. Images and
 // PDFs go to Claude as content blocks; anything else by path, for Claude to read.
 export type Attachment = { path: string; name: string; mime: string };
@@ -38,7 +41,8 @@ export type Inbound =
   | { type: "tool_result"; session: string; call_id: string; text: string; is_error?: boolean }
   | { type: "commands"; session: string }
   | { type: "mcp_status"; session: string }
-  | { type: "mcp_action"; session: string; server: string; action: McpAction }
+  | { type: "mcp_action"; session: string; server: string; action: Exclude<McpAction, "add"> }
+  | { type: "mcp_add"; session: string; server: string; scope: McpScope; config: McpAddConfig }
   | { type: "limits"; env?: Record<string, string> }
   | { type: "models"; env?: Record<string, string> }
   | { type: "oneshot"; id: string; prompt: string; system: string; model?: string; env?: Record<string, string> };
