@@ -104,9 +104,11 @@ export function pickTile(s: SessionState): TileSpec {
   const modelSaysWaiting = !!kind && kind.layer === "model" && kind.p >= 0.6 && ["question", "plan", "blocked"].includes(kind.label);
   const askedInProse = s.status === "idle" && lastItem?.kind === "text" && (asksUser(lastItem.text) || modelSaysWaiting);
   const flowStep = flowWaiting(s);
+  // Claude Code refused the turn because its login ran out (MR-153): only you can sign it back in.
+  const signedOut = !!s.signedOut && (s.status === "idle" || s.status === "ended");
   const running = s.status === "idle" && s.backgroundTasks.length > 0 && !askedInProse && !flowStep ? s.backgroundTasks : null;
   const state: TileSpec["state"] =
-    s.status === "needs_you" || askedInProse || flowStep ? "needs_you"
+    s.status === "needs_you" || askedInProse || flowStep || signedOut ? "needs_you"
     : s.status === "error" ? "error"
     : s.status === "ended" ? "done"
     : s.status === "starting" ? "starting"
@@ -123,6 +125,7 @@ export function pickTile(s: SessionState): TileSpec {
   const planOpen = state === "idle" && total > 0 && done < total;
   const ask = s.pending[0];
   const doing = s.status === "interrupted" ? "Stopped when the app closed. Resume continues the same conversation."
+    : signedOut ? "Claude Code's sign-in expired. Sign in to send your message again."
     : flowStep ? flowStep
     : askedInProse && lastItem?.kind === "text" ? `Asks: ${proseQuestion(lastItem.text).slice(0, 120)}`
     : running ? `Running: ${running[0].description || "a background task"}${running.length > 1 ? ` (+${running.length - 1} more)` : ""}`
