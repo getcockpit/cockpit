@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, revealBy, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -251,5 +251,36 @@ describe("Overview lost in empty canvas", () => {
     expect(anyInView([r], { x: -800, y: 0, zoom: 1 }, view)).toBe(false);
     expect(anyInView([r], { x: 0, y: 700, zoom: 1 }, view)).toBe(false);
     expect(anyInView([r], { x: 1100, y: 0, zoom: 0.5 }, view)).toBe(false);
+  });
+});
+
+describe("Overview wheel and pinch", () => {
+  const cam = { x: 0, y: 0, zoom: 1 };
+  const w = (deltaX: number, deltaY: number, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; deltaMode: number }> = {}) => ({ deltaX, deltaY, ctrlKey: false, metaKey: false, ...mods });
+  it("a plain wheel or two-finger scroll pans, both ways", () => {
+    expect(wheelCam(cam, w(30, 200), 0, 0)).toEqual({ x: -30, y: -200, zoom: 1 });
+  });
+  it("line-mode wheels pan by 16 px a line", () => {
+    expect(wheelCam(cam, w(0, 3, { deltaMode: 1 }), 0, 0).y).toBe(-48);
+  });
+  it("a trackpad pinch (ctrl+wheel, small deltas) zooms smoothly around the cursor", () => {
+    const z = wheelCam(cam, w(0, -5, { ctrlKey: true }), 400, 300);
+    expect(z.zoom).toBeCloseTo(Math.exp(0.05));
+    expect((400 - z.x) / z.zoom).toBeCloseTo(400); // the point under the cursor stays put
+  });
+  it("one ⌘-scroll mouse notch is one gentle step, not a 2.7× jump", () => {
+    const z = wheelCam(cam, w(0, -100, { metaKey: true }), 0, 0);
+    expect(z.zoom).toBeCloseTo(Math.exp(0.3));
+    expect(wheelCam(cam, w(0, 100, { metaKey: true }), 0, 0).zoom).toBeCloseTo(Math.exp(-0.3));
+  });
+  it("while a WebKit pinch gesture is live, a ctrl+wheel with it doesn't zoom a second time", () => {
+    expect(wheelCam(cam, w(0, -5, { ctrlKey: true }), 0, 0, true)).toBe(cam);
+  });
+  it("WebKit pinch zooms by the change in the gesture's cumulative scale", () => {
+    // The bug this replaces read the new scale for both, so every step was 1× and pinch did nothing.
+    let c = cam, prev = 1;
+    for (const s of [1.1, 1.3, 1.5]) { c = pinchCam(c, s, prev, 0, 0); prev = s; }
+    expect(c.zoom).toBeCloseTo(1.5);
+    expect(pinchCam(cam, 0, 1, 0, 0)).toBe(cam);
   });
 });
