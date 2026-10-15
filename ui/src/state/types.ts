@@ -59,6 +59,7 @@ export type ReviewFlow = {
   current: number | null;
   noted: string[];
   published?: boolean; // you pressed Publish; the flow is over
+  unchanged?: { pr?: string; title?: string; last_review_at?: string; last_review_state?: string; checked?: string }; // nothing new since your last review: skipped
   approved?: boolean; // ...with "Approve on my behalf" ticked
   publish?: { comments?: { severity: string; at?: string; text: string; suggestion?: string }[]; verdict?: string; dropped?: number; note?: string };
 };
