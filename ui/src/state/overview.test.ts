@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { AREA_GAP, AREA_W, bounds, detail, fit, overview, place, readable, settle, zoomAt } from "./overview";
+import { AREA_GAP, AREA_W, areaHeight, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -173,5 +173,24 @@ describe("Overview drop and zoom text", () => {
     expect(readable(14, 0.5) * 0.5).toBeCloseTo(12);
     expect(readable(14, 2)).toBe(14);
     expect(readable(14, 0.01)).toBe(14 * 4); // capped, so a far zoom doesn't blow it past the rectangle
+  });
+});
+
+describe("Overview busy columns", () => {
+  const b = (i: number): OverviewBlock => ({ kind: "session", id: `s${i}`, title: `s${i}`, lamp: "working", needs: false, status: "", step: null });
+  const many = (k: number) => Array.from({ length: k }, (_, i) => b(i));
+  it("shows a column whole up to the cap", () => {
+    expect(shown(many(MAX_ROWS))).toEqual({ blocks: many(MAX_ROWS), more: 0 });
+  });
+  it("past the cap keeps the first ones (what needs you sorts first) and counts the rest as +N more", () => {
+    const v = shown(many(12));
+    expect(v.blocks.map((x) => x.id)).toEqual(["s0", "s1", "s2", "s3", "s4"]);
+    expect(v.more).toBe(7);
+    expect(v.blocks.length + 1).toBe(MAX_ROWS); // the "+N more" row takes the last slot
+  });
+  it("a busy workspace is no taller than the cap, so it can't stretch the grid", () => {
+    const groups = { resume: [], progress: many(30), review: [] };
+    expect(areaHeight(groups)).toBe(areaHeight({ resume: [], progress: many(MAX_ROWS), review: [] }));
+    expect(areaHeight(groups) - areaHeight({ resume: [], progress: many(MAX_ROWS - 1), review: [] })).toBe(BLOCK_H + BLOCK_GAP);
   });
 });
