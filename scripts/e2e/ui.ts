@@ -54,7 +54,10 @@ const ui = {
   async clickUntil(role: string, name: string | RegExp, within: string | undefined, tag: string) {
     await until(`${tag} after clicking ${role} "${name}"`, () => {
       if (ui.count(`[data-mr="${tag}"]`) > 0) return;
-      pt("click", ui.find(role, name, within).ref);
+      // Into view first: half under a sticky header, a click lands on the header instead.
+      const ref = ui.find(role, name, within).ref;
+      pt("scrollintoview", ref);
+      pt("click", ref);
       throw new Error("not open yet");
     }, 8000);
   },
@@ -800,8 +803,7 @@ const flows: Flow[] = [
   { name: "Keys: lightbox ← / → page, 0 fits, Esc closes", run: async () => {
     await ui.open("view");
     await ui.click("button", "Open Where are we on the settings refactor?");
-    await ui.click("button", "Open inline image");
-    await ui.tags("Lightbox", 1);
+    await ui.clickUntil("button", "Open inline image", '[data-mr="ImageGallery"]', "Lightbox");
     await ui.css('[data-mr="LightboxIndex"][data-mr-source="0"]', 1);
     await ui.key("ArrowRight");
     await ui.css('[data-mr="LightboxIndex"][data-mr-source="1"]', 1);
