@@ -176,13 +176,14 @@ export type Seen = Record<string, string>;
 const seenKey = (ws: string, b: OverviewBlock) => `${ws}|${b.kind}:${b.id}`;
 const sigOf = (b: OverviewBlock) => b.sig ?? `${b.lamp}|${b.status}`;
 /** Sessions that were on the map when you left and have since finished (ended cleanly or archived). */
-export function finishedSince(seen: Seen | null, areas: Pick<OverviewArea, "workspace" | "groups">[], sessions: Record<string, Pick<SessionState, "status" | "archivedAt">>): number {
+export function finishedSince(seen: Seen | null, areas: Pick<OverviewArea, "workspace" | "groups">[], sessions: Record<string, Pick<SessionState, "status" | "archivedAt" | "fromDeleted">>): number {
   if (!seen) return 0;
   const now = new Set(Object.keys(snapshot(areas)));
   return Object.keys(seen).filter((k) => {
     if (now.has(k)) return false;
     const m = /\|session:(.+)$/.exec(k), s = m && sessions[m[1]];
-    return !!s && (s.status === "ended" || !!s.archivedAt);
+    // Gone with a deleted workspace isn't finished: that's you clearing it away, not work getting done.
+    return !!s && !s.fromDeleted && (s.status === "ended" || !!s.archivedAt);
   }).length;
 }
 export function snapshot(areas: Pick<OverviewArea, "workspace" | "groups">[]): Seen {

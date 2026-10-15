@@ -553,4 +553,18 @@ describe("Overview pointer and navigation in a DOM", () => {
     expect(tag("open1")).toBeUndefined();
     expect(tag("behind")).toBe("updated");
   });
+  it("opening find steps the canvas down when the top row would sit under the box", async () => {
+    win.w = 1280; win.h = 800;
+    await open();
+    act(() => observers.forEach((cb) => cb()));
+    key("ArrowDown"); key("ArrowDown"); // the top row now near the top edge, where the box opens
+    const before = onScreen("personal").y;
+    expect(before).toBeLessThan(64 + 8);
+    key("/");
+    expect(onScreen("personal").y).toBeGreaterThanOrEqual(64 + 8 - 0.5);
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    const y = onScreen("personal").y;
+    key("/"); // with room already, opening it leaves the canvas alone
+    expect(onScreen("personal").y).toBe(y);
+  });
 });

@@ -161,7 +161,15 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     // Focused a tick later, not on mount: the "/" that opened it must not land in the box.
     // With find open, Esc closes find wherever the focus is; it never also leaves the Overview.
     if (k.do === "back" && find !== null) { closeFind(); return; }
-    if (k.do === "find") { setFind((f) => f ?? ""); setTimeout(() => findInput.current?.focus(), 0); }
+    if (k.do === "find") {
+      // Opening it: if the top row sits where the box will be, the canvas steps down to make room.
+      if (find === null && size.w) {
+        const c = lastCam ?? cam, tops = areas.map((a) => a.y * c.zoom + c.y).filter((t) => t < size.h - BAR_H && t > -c.zoom * 2000);
+        const top = tops.length ? Math.min(...tops) : Infinity;
+        if (top < FIND_H + 8) { following = false; glideTo((x) => ({ ...x, y: x.y + (FIND_H + 8 - top) })); }
+      }
+      setFind((f) => f ?? ""); setTimeout(() => findInput.current?.focus(), 0);
+    }
     else if (k.do === "back") onBack();
     else if (k.do === "zoom") zoomBy(k.by);
     else { following = false; glideTo((c) => ({ ...c, x: c.x + k.dx, y: c.y + k.dy })); }
@@ -425,7 +433,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
         : pinned && <button type="button" className="mr-key" data-mr="OverviewTidy" data-mr-source="overview" onClick={tidy} title="Put every workspace back in the automatic grid">Tidy up</button>}
       <div className="mr-row" data-mr="OverviewZoom" data-mr-source="overview" style={{ flex: "none", gap: 4 }}>
         <button type="button" className="mr-key" data-mr="OverviewZoomOut" data-mr-source="overview" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
-        <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label={`Zoom ${Math.round(cam.zoom * 100)}%: go to 100%`} title="Zoom to 100%" onClick={toActual}
+        <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" data-mr-source="overview" aria-label={`Zoom ${Math.round(cam.zoom * 100)}%: go to 100%`} title="Zoom to 100%" onClick={toActual}
           style={{ minWidth: 48, minHeight: 36, textAlign: "center", fontSize: 12, border: 0, background: "transparent", cursor: "pointer", color: "inherit" }}>{Math.round(cam.zoom * 100)}%</button>
         <button type="button" className="mr-key" data-mr="OverviewZoomIn" data-mr-source="overview" aria-label="Zoom in" title="Zoom in (+)" disabled={cam.zoom >= MAX_ZOOM - 1e-6} onClick={() => zoomBy(1.25)}>+</button>
         <button type="button" className="mr-key" data-mr="OverviewFitAll" data-mr-source="overview" onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Fit all</button>
