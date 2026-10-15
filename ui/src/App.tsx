@@ -18,7 +18,7 @@ import { Focus } from "./screens/Focus";
 import { StartPicker } from "./screens/StartPicker";
 import { DocMap } from "./screens/DocMap";
 import { Wall } from "./screens/Wall";
-import { markWorkspaceSeen, Overview } from "./screens/Overview";
+import { markWorkspaceSeen, Overview, seenScope } from "./screens/Overview";
 import { Timeline } from "./screens/Timeline";
 import { GodMode } from "./screens/GodMode";
 import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
@@ -103,9 +103,13 @@ export default function App() {
   // Screen changes morph (MR-67): opening something goes deeper, closing it comes back.
   // Leaving a view: what was on screen isn't news on the Overview later. The Wall shows the whole
   // workspace; a session or a doc only itself (a session changing behind another one still counts).
+  // The Wall counts as looked at only after a moment on screen (seenScope): Esc then ⌘0 passes through.
+  const wallSince = useRef(Date.now());
+  const onWall = !overview && !focus && !docId;
+  useEffect(() => { if (onWall) wallSince.current = Date.now(); }, [onWall, workspace]);
   const leaveView = () => {
-    if (overview) return;
-    markWorkspaceSeen(all, allDocs, workspace, docId ? [`doc:${docId}`] : focus ? [`session:${focus}`] : undefined);
+    const scope = seenScope({ overview: !!overview, focus, docId, wallSince: wallSince.current, now: Date.now() });
+    if (scope !== "none") markWorkspaceSeen(all, allDocs, workspace, scope === "all" ? undefined : scope);
   };
   const setFocus = (id: string | null) => { leaveView(); navigate(id ? "deeper" : "back", () => setFocusNow(id)); };
   const allRef = useRef(all);

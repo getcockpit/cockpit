@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { replay } from "../state/reduce";
 import type { MrEvent } from "../state/types";
-import { countLabels, findCount, sinceLabel, LAMP, lamps, markFor, Overview, said, statusFor } from "./Overview";
+import { countLabels, findCount, seenScope, sinceLabel, WALL_SEEN_MS, LAMP, lamps, markFor, Overview, said, statusFor } from "./Overview";
 import type { OverviewArea, OverviewBlock } from "../state/overview";
 
 const block = (id: string, needs = false): OverviewBlock => ({ kind: "session", id, title: id, lamp: needs ? "needs_you" : "working", needs, status: "", step: null });
@@ -47,6 +47,21 @@ describe("Overview block lines", () => {
   it("keeps both when they say different things, and docs never get a session mark", () => {
     expect([markFor(b("working", "Bash: cargo test")), statusFor(b("working", "Bash: cargo test"))]).toEqual([true, "Bash: cargo test"]);
     expect(markFor(b("review", "Ready to build", "doc"))).toBe(false);
+  });
+});
+
+describe("Overview: what leaving a view marks as seen", () => {
+  const at = (o: Partial<Parameters<typeof seenScope>[0]>) => seenScope({ overview: false, focus: null, docId: null, wallSince: 0, now: 10_000, ...o });
+  it("a session or a doc: just itself", () => {
+    expect(at({ focus: "s1" })).toEqual(["session:s1"]);
+    expect(at({ docId: "d1", focus: "s1" })).toEqual(["doc:d1"]);
+  });
+  it("the Wall: the whole workspace once it was on screen a moment; passing through (Esc then ⌘0) marks nothing", () => {
+    expect(at({ wallSince: 10_000 - WALL_SEEN_MS })).toBe("all");
+    expect(at({ wallSince: 10_000 - 400 })).toBe("none");
+  });
+  it("the Overview itself: nothing", () => {
+    expect(at({ overview: true })).toBe("none");
   });
 });
 
