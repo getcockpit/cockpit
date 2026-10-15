@@ -211,4 +211,40 @@ describe("Overview pointer and navigation in a DOM", () => {
     render({ state: { ...busy, overviewLayout: { ws_b: { x: parseFloat(b.style.left), y: parseFloat(b.style.top) } } } });
     expect({ left: area().style.left, top: area().style.top }).toEqual(dropped);
   });
+  it("Space-drag pans even right after a mouse click focused a button, and doesn't press that button", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockClear();
+    await open();
+    const out = $('[aria-label="Zoom out"]');
+    click(out); out.focus(); // Chromium focuses a clicked button (not :focus-visible)
+    vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, sel: string) { return sel === ":focus-visible" ? false : Element.prototype.closest.call(this, sel) === this; });
+    const z = zoom(), before = camera();
+    act(() => { out.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true })); });
+    dragFrom($('[data-mr="OverviewArea"]'), 0, 80);
+    const up = new KeyboardEvent("keyup", { key: " ", code: "Space", bubbles: true, cancelable: true });
+    act(() => { out.dispatchEvent(up); });
+    expect(camera()).not.toBe(before); // panned
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("overview_move", expect.anything()); // not moved and saved
+    expect(up.defaultPrevented).toBe(true); // the focused button isn't pressed on the way up
+    expect(zoom()).toBe(z);
+  });
+  it("a button focused from the keyboard keeps its Space", async () => {
+    await open();
+    const out = $('[aria-label="Zoom out"]');
+    out.focus();
+    vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, sel: string) { return sel === ":focus-visible" ? true : Element.prototype.closest.call(this, sel) === this; });
+    const down = new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true });
+    act(() => { out.dispatchEvent(down); });
+    expect(down.defaultPrevented).toBe(false);
+  });
+  it("zooming across a detail level keeps keyboard focus on that workspace", async () => {
+    win.w = 1280; win.h = 800;
+    await open();
+    act(() => observers.forEach((cb) => cb()));
+    for (let i = 0; i < 12 && $('[data-mr="OverviewCanvas"]').dataset.zoom !== "far"; i++) key("-");
+    const far = $('[aria-label^="Zoom to workspace Client B"]');
+    act(() => far.focus());
+    for (let i = 0; i < 12 && $('[data-mr="OverviewCanvas"]').dataset.zoom === "far"; i++) key("+");
+    expect(document.activeElement).toBe($('[data-mr="OverviewHeader"][data-mr-source="ws_b"]'));
+  });
 });
