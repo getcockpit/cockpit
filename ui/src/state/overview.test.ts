@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, farSizes, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -282,5 +282,19 @@ describe("Overview wheel and pinch", () => {
     for (const s of [1.1, 1.3, 1.5]) { c = pinchCam(c, s, prev, 0, 0); prev = s; }
     expect(c.zoom).toBeCloseTo(1.5);
     expect(pinchCam(cam, 0, 1, 0, 0)).toBe(cam);
+  });
+});
+
+describe("Overview far view sizes", () => {
+  const ONE_ROW = 180; // the shortest workspace: one row of blocks
+  it("at the furthest zoom a one-row workspace keeps a 12 px name and 8 px lamps, all inside it", () => {
+    const f = farSizes(ONE_ROW, MIN_ZOOM);
+    expect(f.name * MIN_ZOOM).toBeGreaterThanOrEqual(12);
+    expect(f.lamp * MIN_ZOOM).toBeGreaterThanOrEqual(8); // was ~5 px with a fixed share of the height
+    expect(f.note * MIN_ZOOM).toBeGreaterThanOrEqual(8);
+    expect(f.pad * 2 + f.name * 1.1 + f.gap + f.lamp).toBeLessThanOrEqual(ONE_ROW + 1e-9);
+  });
+  it("with room to spare, lamps stay a steady 10 px on screen", () => {
+    expect(farSizes(1200, 0.3).lamp * 0.3).toBeCloseTo(10);
   });
 });

@@ -157,3 +157,6 @@ textarea.mr-input { display: block; padding: 10px 12px; line-height: 1.4; resize
 .mr-ov-cam button:focus-visible { outline: calc(2px / var(--mr-ov-z, 1)) solid var(--mr-selected); outline-offset: calc(-2px / var(--mr-ov-z, 1)); }
 .mr-ov-cam[data-glide] { transition: transform 220ms var(--mr-ease); }
 @media (prefers-reduced-motion: reduce) { .mr-ov-cam[data-glide] { transition: none; } }
+/* A session's transcript scrolls under its sticky header: whatever is scrolled into view (Tab focus,
+   find, a jump to a message) stops below the header instead of hiding behind it. */
+.mr-focus-root :where(*) { scroll-margin-top: var(--mr-focus-head, 0px); }

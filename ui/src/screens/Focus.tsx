@@ -130,13 +130,16 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   const [headH, setHeadH] = useState(0);
   useEffect(() => {
     if (!head.current) return;
+    // Measured once now too: a ResizeObserver can wait for the first painted frame (a background
+    // window draws none), and until then scrolling into view would stop under the header.
+    setHeadH(Math.ceil(head.current.getBoundingClientRect().height));
     const ro = new ResizeObserver(([e]) => setHeadH(Math.ceil(e.target.getBoundingClientRect().height)));
     ro.observe(head.current);
     return () => ro.disconnect();
   }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", ["--mr-focus-head" as string]: `${headH + 16}px` }}>
+    <div className="mr-focus-root" style={{ display: "flex", flexDirection: "column", minHeight: "100%", ["--mr-focus-head" as string]: `${headH + 16}px` }}>
       {/* Sticky: the transcript scrolls under it, so state and actions are always in reach. */}
       <header ref={head} className="mr-band" style={{ padding: "12px 24px 0", display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 0, zIndex: 5 }}>
         <div className="mr-row" style={{ gap: 14 }}>
