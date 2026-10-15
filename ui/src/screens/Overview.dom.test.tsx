@@ -535,4 +535,22 @@ describe("Overview pointer and navigation in a DOM", () => {
     expect($('[data-mr="OverviewChanged"]').textContent).toBe("1 changed since you last looked");
     expect($('[data-mr="OverviewHeader"][data-mr-source="ws_b"]').getAttribute("aria-label")).toMatch(/1 changed since you last looked$/);
   });
+  it("in a session, only that session counts as seen: another one changing behind it keeps its news", async () => {
+    const two = (asks: boolean) => replay([
+      { ...ev("ui.session_requested", { prompt: "The one I had open", cwd: "/w", workspace: "personal" }), session_id: "open1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "a", model: "m" }), session_id: "open1" },
+      { ...ev("ui.session_requested", { prompt: "The one behind it", cwd: "/w", workspace: "personal" }), session_id: "behind" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "b", model: "m" }), session_id: "behind" },
+      ...(asks ? [{ ...ev("sidecar.permission_request", { request_id: "q1", tool: "Bash", input: {} }), session_id: "open1" }, { ...ev("sidecar.permission_request", { request_id: "q2", tool: "Bash", input: {} }), session_id: "behind" }] : []),
+    ]);
+    await open({ state: two(false) });
+    act(() => root!.unmount()); host.remove();
+    const after = two(true);
+    const { markWorkspaceSeen } = await import("./Overview");
+    markWorkspaceSeen(after, [], "personal", ["session:open1"]); // left the session you had open
+    await open({ state: after }, false);
+    const tag = (id: string) => host.querySelector<HTMLElement>(`[data-mr="OverviewBlock"][data-mr-source="${id}"]`)?.dataset.change;
+    expect(tag("open1")).toBeUndefined();
+    expect(tag("behind")).toBe("updated");
+  });
 });
