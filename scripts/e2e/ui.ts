@@ -299,6 +299,11 @@ const flows: Flow[] = [
     await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 60)) throw new Error(`fit at ${z}%`); });
     for (let i = 0; i < 4; i++) await ui.press("-"); // − zooms out from the keyboard…
     await ui.tags("OverviewLamps", 3); // …far out, each workspace is its name, what needs you and a lamp per item
+    await ui.click("button", "Zoom to workspace Client X"); // far out, a click zooms into the workspace…
+    await ui.tags("OverviewLamps", 0);
+    await ui.see("button", "Open Quarterly usage report"); // …close enough to read, still on the map
+    for (let i = 0; i < 4; i++) await ui.press("-");
+    await ui.tags("OverviewLamps", 3);
     await until("needs-you badge stays far out", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("⚠ 1")) throw new Error("no badge"); });
     await ui.key("Mod+0");
     await ui.tags("OverviewLamps", 0);
