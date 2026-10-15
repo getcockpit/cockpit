@@ -5,6 +5,7 @@ import { autoReviewDefault, contextFill, elsewhere, initialState, introOpen, rep
 import { dedupe } from "./store";
 import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
+import { needsQueue } from "../picker/queue";
 import type { MrEvent } from "./types";
 
 // Builds the event-log rows the Rust core would have stored for the real MR-2 probe session.
@@ -663,6 +664,18 @@ describe("attachments", () => {
   });
 });
 
+test("moving a session puts it in the other workspace, and a resume keeps it there", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: Number(id.slice(1)) });
+  const st = replay([
+    e("M1", "ui.workspace_created", { id: "ws_a", name: "Client A", config_dir: "/d" }),
+    e("M2", "ui.session_requested", { prompt: "p", cwd: "/w" }, "s1"),
+    e("M3", "ui.session_moved", { from: "personal", to: "ws_a", copied: 1 }, "s1"),
+    e("M4", "ui.session_requested", { prompt: "go on", cwd: "/w", resume: "x", workspace: "ws_a" }, "s1"),
+  ]);
+  expect(st.sessions.s1.workspace).toBe("ws_a");
+  expect(st.order).toEqual(["s1"]);
+});
+
 describe("expired sign-in (MR-153)", () => {
   let n = 0;
   const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `L${String(++n).padStart(3, "0")}`, session_id: "S", kind, payload, anchor: null, created_at: n });
@@ -681,6 +694,12 @@ describe("expired sign-in (MR-153)", () => {
 
   it("falls back to continuing when the very first turn was refused", () => {
     expect(replay([...start, ...refused()]).sessions.S.signedOut).toEqual({ retry: "Continue where you left off." });
+  });
+
+  it("waits in the needs-you queue, and the tile says so", () => {
+    const s = replay([...start, ev("ui.message_sent", { text: "go" }), ...refused()]).sessions.S;
+    expect(needsQueue([s], []).map((q) => q.kind)).toEqual(["signin"]);
+    expect(pickTile(s).state).toBe("needs_you");
   });
 
   it("clears once Claude answers again", () => {

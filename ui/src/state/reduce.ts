@@ -238,6 +238,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     case "session.titled":
       s.autoTitle = String(p.title ?? "").trim() || s.autoTitle;
       break;
+    case "ui.session_moved":
+      s.workspace = String(p.to ?? s.workspace); // its conversation went with it (MR-154)
+      break;
     case "ui.session_renamed":
       s.name = String(p.name ?? "").trim() || null; // an empty name hands the title back to Claude
       break;
