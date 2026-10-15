@@ -211,26 +211,30 @@ describe("Overview pointer and navigation in a DOM", () => {
     render({ state: { ...busy, overviewLayout: { ws_b: { x: parseFloat(b.style.left), y: parseFloat(b.style.top) } } } });
     expect({ left: area().style.left, top: area().style.top }).toEqual(dropped);
   });
-  it("Space-drag pans even right after a mouse click focused a button, and doesn't press that button", async () => {
+  it("Space-drag pans even after a press on the map left a button focused (Chromium), and doesn't press it", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     vi.mocked(invoke).mockClear();
     await open();
-    const out = $('[aria-label="Zoom out"]');
-    click(out); out.focus(); // Chromium focuses a clicked button (not :focus-visible)
-    vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, sel: string) { return sel === ":focus-visible" ? false : Element.prototype.closest.call(this, sel) === this; });
+    const block = $('[data-mr="OverviewBlock"]');
+    ptr(block, "pointerdown", 100, 100); ptr(block, "pointerup", 100, 100); // a plain press: Chromium focuses the button
+    act(() => block.focus());
+    // …and makes it match :focus-visible as soon as a key is down, so that can't tell press from Tab.
+    vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, sel: string) { return sel === ":focus-visible" ? true : Element.prototype.closest.call(this, sel) === this; });
     const z = zoom(), before = camera();
-    act(() => { out.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true })); });
+    act(() => { block.dispatchEvent(new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true })); });
     dragFrom($('[data-mr="OverviewArea"]'), 0, 80);
     const up = new KeyboardEvent("keyup", { key: " ", code: "Space", bubbles: true, cancelable: true });
-    act(() => { out.dispatchEvent(up); });
+    act(() => { block.dispatchEvent(up); });
     expect(camera()).not.toBe(before); // panned
-    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("overview_move", expect.anything()); // not moved and saved
-    expect(up.defaultPrevented).toBe(true); // the focused button isn't pressed on the way up
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("overview_move", expect.anything()); // nothing moved or saved
+    expect(up.defaultPrevented).toBe(true); // the focused button isn't pressed
     expect(zoom()).toBe(z);
   });
-  it("a button focused from the keyboard keeps its Space", async () => {
+  it("a button reached with Tab keeps its Space, even after an earlier press on the map", async () => {
     await open();
     const out = $('[aria-label="Zoom out"]');
+    ptr($('[data-mr="OverviewBlock"]'), "pointerdown", 100, 100); ptr($('[data-mr="OverviewBlock"]'), "pointerup", 100, 100);
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })); }); // Tab: focus by keyboard now
     out.focus();
     vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, sel: string) { return sel === ":focus-visible" ? true : Element.prototype.closest.call(this, sel) === this; });
     const down = new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true });
@@ -365,7 +369,7 @@ describe("Overview pointer and navigation in a DOM", () => {
     expect(spies.back).not.toHaveBeenCalled();
     expect($('[data-mr="OverviewArea"][data-mr-source="ws_b"]').dataset.dim).toBeUndefined();
   });
-  it("a find hit folded into +N more rings its workspace", async () => {
+  it("a find hit folded into +N more rings that row", async () => {
     win.w = 1280; win.h = 800;
     const crowd = replay([
       ...Array.from({ length: 9 }, (_, i) => [{ ...ev("ui.session_requested", { prompt: `task ${i}`, cwd: "/w", workspace: "personal" }), session_id: `t${i}` }, { ...ev("sidecar.session_started", { sdk_session_id: `sdk${i}`, model: "m" }), session_id: `t${i}` }]).flat(),
@@ -376,7 +380,8 @@ describe("Overview pointer and navigation in a DOM", () => {
     const input = $('[data-mr="OverviewFind"] input') as HTMLInputElement;
     act(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(input, "task 8"); input.dispatchEvent(new Event("input", { bubbles: true })); });
     act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
-    expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').dataset.current).toBe("true");
+    expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').dataset.current).toBeUndefined();
+    expect($('[data-mr="OverviewMore"]').dataset.current).toBe("true"); // the "+N more" row it's folded into
   });
   // Find helpers for the audit fixes below.
   const typeFind = (q: string) => {

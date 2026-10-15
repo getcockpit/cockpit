@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, farSizes, findOnMap, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, farSizes, findOnMap, foldedIn, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -342,9 +342,11 @@ describe("Overview find", () => {
     expect(hitRect(a, "doc:2")).toMatchObject({ x: PAD, y: HEADER_H + LABEL_H + (BLOCK_H + BLOCK_GAP), h: BLOCK_H });
     expect(hitRect(map[1], null)).toEqual({ x: 800, y: 0, w: AREA_W, h: map[1].h });
   });
-  it("a block folded into +N more points at its workspace", () => {
+  it("a block folded into +N more points at that row, the one thing lit there, not the whole workspace", () => {
     const many = area("c", "Crowd", Array.from({ length: 9 }, (_, i) => blk(String(i), `task ${i}`)));
-    expect(hitRect(many, "session:8")).toEqual({ x: 0, y: 0, w: AREA_W, h: many.h });
+    expect(hitRect(many, "session:8")).toEqual({ x: PAD, y: HEADER_H + LABEL_H + (MAX_ROWS - 1) * (BLOCK_H + BLOCK_GAP), w: AREA_W - PAD * 2, h: BLOCK_H });
     expect(hitRect(many, "session:0").h).toBe(BLOCK_H);
+    expect(foldedIn(many, "session:8")).toBe("progress");
+    expect(foldedIn(many, "session:0")).toBeNull();
   });
 });
