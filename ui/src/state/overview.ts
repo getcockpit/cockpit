@@ -134,16 +134,28 @@ export function findOnMap(areas: Pick<OverviewArea, "workspace" | "name" | "grou
   ]);
 }
 
-/** Where a find hit sits on the canvas: its block, or the whole workspace for a name hit or a block
- *  folded into "+N more". */
+/** Where a find hit sits on the canvas: its block; for a block folded into "+N more", that row (the
+ *  one thing lit there); for a workspace name, the whole workspace. */
 export function hitRect(a: OverviewArea, block: string | null): { x: number; y: number; w: number; h: number } {
   const whole = { x: a.x, y: a.y, w: a.w, h: a.h };
   if (!block) return whole;
+  const row = (c: { x: number; w: number }, i: number) => ({ x: a.x + c.x, y: a.y + HEADER_H + LABEL_H + i * (BLOCK_H + BLOCK_GAP), w: c.w, h: BLOCK_H });
   for (const c of columns(a.groups)) {
-    const i = shown(a.groups[c.group]).blocks.findIndex((b) => `${b.kind}:${b.id}` === block);
-    if (i >= 0) return { x: a.x + c.x, y: a.y + HEADER_H + LABEL_H + i * (BLOCK_H + BLOCK_GAP), w: c.w, h: BLOCK_H };
+    const all = a.groups[c.group], v = shown(all);
+    const i = v.blocks.findIndex((b) => `${b.kind}:${b.id}` === block);
+    if (i >= 0) return row(c, i);
+    if (v.more && all.some((b) => `${b.kind}:${b.id}` === block)) return row(c, v.blocks.length);
   }
   return whole;
+}
+
+/** The "+N more" group a folded block sits in, if it is folded. */
+export function foldedIn(a: Pick<OverviewArea, "groups">, block: string): OverviewGroup | null {
+  for (const g of GROUPS) {
+    const v = shown(a.groups[g]);
+    if (v.more && a.groups[g].slice(v.blocks.length).some((b) => `${b.kind}:${b.id}` === block)) return g;
+  }
+  return null;
 }
 
 /** Hand-placed spots land on a 16-unit grid, so workspaces put side by side line up. */
