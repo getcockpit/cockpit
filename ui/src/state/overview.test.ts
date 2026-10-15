@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, changedSince, finishedSince, sessionSig, snapshot, farSizes, findOnMap, foldedIn, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, roomForFind, changedSince, finishedSince, sessionSig, snapshot, farSizes, findOnMap, foldedIn, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -394,5 +394,20 @@ describe("Overview since you last looked: what counts as a change", () => {
     expect(finishedSince(null, areas, {})).toBe(0);
     // Sessions that left because their workspace was deleted aren't "finished".
     expect(finishedSince({ "w|session:del": "x" }, areas, { del: { status: "ended", archivedAt: 5, fromDeleted: true } } as never)).toBe(0);
+  });
+});
+
+describe("Overview room for the find box", () => {
+  const box = { left: 400, right: 860, bottom: 72 };
+  const cam = { x: 0, y: 0, zoom: 1 };
+  it("steps down just enough for a workspace top under the box", () => {
+    expect(roomForFind([{ x: 300, y: 20, w: 720, h: 300 }], cam, box)).toBe(52);
+  });
+  it("leaves alone a row whose top is above the screen (you're reading further down it)", () => {
+    expect(roomForFind([{ x: 300, y: -339, w: 720, h: 900 }], cam, box)).toBe(0);
+  });
+  it("ignores workspaces off to the side of the box, and never steps more than the box", () => {
+    expect(roomForFind([{ x: 0, y: 10, w: 300, h: 200 }], cam, box)).toBe(0);
+    expect(roomForFind([{ x: 300, y: 0, w: 720, h: 300 }], cam, box)).toBe(72);
   });
 });

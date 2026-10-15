@@ -557,8 +557,9 @@ describe("Overview pointer and navigation in a DOM", () => {
     win.w = 1280; win.h = 800;
     await open();
     act(() => observers.forEach((cb) => cb()));
-    key("ArrowDown"); key("ArrowDown"); // the top row now near the top edge, where the box opens
+    key("ArrowDown"); // the top row's top now just under the top edge, where the box opens
     const before = onScreen("personal").y;
+    expect(before).toBeGreaterThanOrEqual(0);
     expect(before).toBeLessThan(64 + 8);
     key("/");
     expect(onScreen("personal").y).toBeGreaterThanOrEqual(64 + 8 - 0.5);
@@ -566,5 +567,16 @@ describe("Overview pointer and navigation in a DOM", () => {
     const y = onScreen("personal").y;
     key("/"); // with room already, opening it leaves the canvas alone
     expect(onScreen("personal").y).toBe(y);
+  });
+  it("opening find while reading further down a tall workspace doesn't move the canvas", async () => {
+    win.w = 1280; win.h = 800;
+    await open();
+    act(() => observers.forEach((cb) => cb()));
+    for (let i = 0; i < 4; i++) key("+");
+    for (let i = 0; i < 6; i++) key("ArrowDown"); // the top row's top is now above the screen
+    expect(onScreen("personal").y).toBeLessThan(0);
+    const cam0 = camera();
+    key("/");
+    expect(camera()).toBe(cam0);
   });
 });

@@ -5,7 +5,7 @@ import { LABEL as STATE_LABEL, StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, findOnMap, hitRect, foldedIn, snapshot, changedSince, finishedSince, type Layout, type OverviewGroup, type Seen, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, findOnMap, hitRect, foldedIn, roomForFind, snapshot, changedSince, finishedSince, type Layout, type OverviewGroup, type Seen, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { isTyping, overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -162,11 +162,10 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     // With find open, Esc closes find wherever the focus is; it never also leaves the Overview.
     if (k.do === "back" && find !== null) { closeFind(); return; }
     if (k.do === "find") {
-      // Opening it: if the top row sits where the box will be, the canvas steps down to make room.
+      // Opening it: a workspace top under where the box will be steps the canvas down, just enough.
       if (find === null && size.w) {
-        const c = lastCam ?? cam, tops = areas.map((a) => a.y * c.zoom + c.y).filter((t) => t < size.h - BAR_H && t > -c.zoom * 2000);
-        const top = tops.length ? Math.min(...tops) : Infinity;
-        if (top < FIND_H + 8) { following = false; glideTo((x) => ({ ...x, y: x.y + (FIND_H + 8 - top) })); }
+        const step = roomForFind(areas, lastCam ?? cam, { left: size.w / 2 - 230, right: size.w / 2 + 230, bottom: FIND_H + 8 });
+        if (step > 0) { following = false; glideTo((x) => ({ ...x, y: x.y + step })); }
       }
       setFind((f) => f ?? ""); setTimeout(() => findInput.current?.focus(), 0);
     }

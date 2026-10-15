@@ -202,6 +202,19 @@ export function changedSince(seen: Seen | null, areas: Pick<OverviewArea, "works
   return out;
 }
 
+/** How far (screen px) to step the canvas down so the find box doesn't cover a workspace's top: only
+ *  workspaces whose top edge is in the band under the box and that overlap it across count. A row whose
+ *  top is already above the screen needs no room (you're reading further down it), and the step is
+ *  never more than the box's height. */
+export function roomForFind(areas: Rect[], cam: { x: number; y: number; zoom: number }, box: { left: number; right: number; bottom: number }): number {
+  let need = 0;
+  for (const a of areas) {
+    const top = a.y * cam.zoom + cam.y, left = a.x * cam.zoom + cam.x, right = left + a.w * cam.zoom;
+    if (top >= 0 && top < box.bottom && right > box.left && left < box.right) need = Math.max(need, box.bottom - top);
+  }
+  return Math.min(need, box.bottom);
+}
+
 /** Hand-placed spots land on a 16-unit grid, so workspaces put side by side line up. */
 export const GRID = 16;
 export const snap = (v: number, step = GRID) => Math.round(v / step) * step;
