@@ -53,7 +53,8 @@ describe("Overview render", () => {
     for (const b of blocks) expect(b).not.toContain("<button");
   });
   it("every zoom control is a labelled button", () => {
-    for (const l of ["Zoom out", "Zoom in", "Zoom to 100%"]) expect(html).toContain(`aria-label="${l}"`);
+    for (const l of ["Zoom out", "Zoom in", "Zoom 100%: go to 100%"]) expect(html).toContain(`aria-label="${l}"`);
+    expect(html).toMatch(/data-mr="OverviewCanvas"[^>]*role="region"[^>]*aria-label="Overview of every workspace/); // a screen reader knows where it is and which keys work
     expect(html).toContain(`data-mr="OverviewBar"`); // its own band: the map never shows through it
   });
   it("draws the needs-you edge from CSS, so an inline shadow can't swallow the hover ring", () => {
