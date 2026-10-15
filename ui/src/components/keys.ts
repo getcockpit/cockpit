@@ -47,18 +47,20 @@ export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "foc
 export type OverviewKey = { do: "zoom"; by: number } | { do: "pan"; dx: number; dy: number } | { do: "back" };
 
 /** The Overview canvas's own keys (decision 40): + and − zoom around the middle, arrows pan (⇧ pans
- *  further), Esc goes back to the workspace you came from. Never while typing, with an overlay open,
- *  or with ⌘/⌃ held (⌘0 and friends stay the app's). */
-export function overviewKey(e: KeyEv, at: { dialog: boolean }): OverviewKey | null {
-  if (at.dialog || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return null;
-  const k = keyOf(e), step = e.shiftKey ? 400 : 80;
-  if (k === "Escape") return { do: "back" };
-  if (k === "+" || k === "=") return { do: "zoom", by: 1.25 };
-  if (k === "-" || k === "_") return { do: "zoom", by: 1 / 1.25 };
-  if (k === "ArrowLeft") return { do: "pan", dx: step, dy: 0 };
-  if (k === "ArrowRight") return { do: "pan", dx: -step, dy: 0 };
-  if (k === "ArrowUp") return { do: "pan", dx: 0, dy: step };
-  if (k === "ArrowDown") return { do: "pan", dx: 0, dy: -step };
+ *  further), Esc goes back to the workspace you came from. Never while typing, with an overlay or a
+ *  menu open, when something already handled the key (god mode's Esc), or with ⌘/⌃ held (⌘0 and
+ *  friends stay the app's). + and − are read from the character, not the key's place: on a German
+ *  layout "-" sits where US keyboards have "/". */
+export function overviewKey(e: KeyEv & { defaultPrevented?: boolean }, at: { dialog: boolean; menu?: boolean }): OverviewKey | null {
+  if (at.dialog || at.menu || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return null;
+  const step = e.shiftKey ? 400 : 80;
+  if (e.key === "Escape") return { do: "back" };
+  if (e.key === "+" || e.key === "=") return { do: "zoom", by: 1.25 };
+  if (e.key === "-" || e.key === "_") return { do: "zoom", by: 1 / 1.25 };
+  if (e.key === "ArrowLeft") return { do: "pan", dx: step, dy: 0 };
+  if (e.key === "ArrowRight") return { do: "pan", dx: -step, dy: 0 };
+  if (e.key === "ArrowUp") return { do: "pan", dx: 0, dy: step };
+  if (e.key === "ArrowDown") return { do: "pan", dx: 0, dy: -step };
   return null;
 }
 
