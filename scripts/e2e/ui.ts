@@ -890,6 +890,22 @@ const flows: Flow[] = [
     await ui.tags("McpPanel", 0);
     await ui.tags("SessionName", 1);
   } },
+  { name: "/mcp: Add server saves one and lists it", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.fill("Message this session", "/mcp");
+    pt("press", ui.find("textbox", "Message this session").ref, "Enter");
+    await ui.click("button", "Add server");
+    await ui.tags("McpAddServer", 1);
+    await ui.click("button", "Add", "[data-mr=McpAddServer]");
+    await ui.seeText("Name: letters, digits"); // nothing typed: says what's missing, sends nothing
+    await ui.fill("Server name", "web");
+    await ui.fill("Server URL", "https://mcp.example.com/mcp");
+    await ui.click("button", "Add", "[data-mr=McpAddServer]");
+    await ui.seeText("✓ Added web");
+    await ui.tags("McpAddServer", 0);
+    await ui.css('[data-mr="McpServer"][data-mr-source="web"]', 1);
+  } },
   { name: "Keys: picker ↓ / Enter pick a PR to address", run: async () => {
     await ui.open("busy");
     await ui.key("Mod+k");

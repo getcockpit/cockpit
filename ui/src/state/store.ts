@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "./listen";
 import { initialState, reduce, replay } from "./reduce";
 import type { AppState, Attachment, MrEvent, PermissionMode } from "./types";
+import type { McpAddConfig, McpScope } from "../components/mcpAdd";
 
 export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string };
 
@@ -124,6 +125,8 @@ export const api = {
   // @ mentions (MR-108): the files and folders in a session's folder, folders ending in /.
   paths: (cwd: string) => invoke<string[]>("session_paths", { cwd }),
   mcpAction: (session: string, server: string, action: "reconnect" | "enable" | "disable") => invoke("session_mcp_action", { session, server, action }),
+  // Saved with `claude mcp add-json` in scope, then attached to the running session.
+  mcpAdd: (session: string, server: string, scope: McpScope, config: McpAddConfig) => invoke("session_mcp_add", { session, server, scope, config }),
   // A command from a reply's Run button (MR-85): runs in the session's folder, listed in its side panel.
   run: (session: string, cwd: string, command: string) => {
     window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Running: ${command.length > 60 ? `${command.slice(0, 57)}…` : command}` }));
