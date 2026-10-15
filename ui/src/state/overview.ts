@@ -73,6 +73,14 @@ export function docGroup(d: Doc, sessions: Record<string, SessionState>): Overvi
 export const docsIn = (docs: Doc[], sessions: Record<string, SessionState>, ws: string) =>
   docs.filter((d) => (d.session_id ? sessions[d.session_id]?.workspace === ws : ws === "personal"));
 
+/** The columns a workspace draws: only groups with something in them, sharing the width, so a lone
+ *  busy group gets room for its titles instead of a third of it beside two empty headings. */
+export function columns(groups: Record<OverviewGroup, OverviewBlock[]>): { group: OverviewGroup; x: number; w: number }[] {
+  const used = GROUPS.filter((g) => groups[g].length);
+  const w = (AREA_W - PAD * 2 - BLOCK_GAP * (used.length - 1)) / Math.max(1, used.length);
+  return used.map((group, i) => ({ group, x: PAD + i * (w + BLOCK_GAP), w }));
+}
+
 /** A column shows at most this many rows; past that the last row says "+N more" (one busy workspace
  *  shouldn't stretch the whole grid and push its neighbours out of a fit). */
 export const MAX_ROWS = 6;
