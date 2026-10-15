@@ -102,3 +102,113 @@ describe("Overview input in a DOM", () => {
     expect(host.querySelector('[data-mr="OverviewCanvas"]')!.hasAttribute("data-fitted")).toBe(true);
   });
 });
+
+// Pointer and navigation fixes from the independent audit (MR-157 pass 11).
+describe("Overview pointer and navigation in a DOM", () => {
+  const busy = replay([
+    ev("ui.workspace_created", { id: "ws_b", name: "Client B", config_dir: "/x" }),
+    { ...ev("ui.session_requested", { prompt: "Fix login", cwd: "/w", workspace: "personal" }), session_id: "s1" },
+    { ...ev("sidecar.session_started", { sdk_session_id: "sdk", model: "m" }), session_id: "s1" },
+  ]);
+  type Props = { fitSignal?: number; state?: typeof busy };
+  const spies = { back: vi.fn(), ws: vi.fn(), session: vi.fn() };
+  let Overview: typeof import("./Overview").Overview;
+  const render = (p: Props = {}) => act(() => root!.render(<Overview state={p.state ?? busy} docs={[]} fitSignal={p.fitSignal ?? 0} onBack={spies.back} onOpenWorkspace={spies.ws} onOpenSession={spies.session} onOpenDoc={() => {}} />));
+  async function open(p: Props = {}, fresh = true) {
+    if (fresh) { vi.resetModules(); Overview = (await import("./Overview")).Overview; }
+    host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
+    render(p);
+  }
+  const $ = (css: string) => host.querySelector<HTMLElement>(css)!;
+  const camera = () => $(".mr-ov-cam").style.transform;
+  const zoom = () => $('[data-mr="OverviewZoomLevel"]').textContent;
+  // happy-dom's PointerEvent drops most of its init: set what the handlers read on the event itself.
+  const ptr = (el: Element, type: string, x: number, y: number, button = 0) => act(() => {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(e, { clientX: { value: x }, clientY: { value: y }, button: { value: button }, pointerId: { value: 1 } });
+    el.dispatchEvent(e);
+  });
+  const dragFrom = (el: Element, dx: number, dy: number, button = 0) => { ptr(el, "pointerdown", 100, 100, button); ptr(el, "pointermove", 100 + dx / 2, 100 + dy / 2, button); ptr(el, "pointermove", 100 + dx, 100 + dy, button); ptr(el, "pointerup", 100 + dx, 100 + dy, button); };
+  const key = (k: string, type = "keydown") => act(() => { window.dispatchEvent(new KeyboardEvent(type, { key: k, code: k === " " ? "Space" : k, bubbles: true })); });
+  const click = (el: Element) => act(() => { el.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+  afterEach(() => { spies.back.mockReset(); spies.ws.mockReset(); spies.session.mockReset(); vi.restoreAllMocks(); });
+
+  it("a drag that starts on a block moves its workspace and opens nothing", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await open();
+    const block = $('[data-mr="OverviewBlock"]');
+    dragFrom(block, 120, 0);
+    click(block);
+    expect(spies.session).not.toHaveBeenCalled();
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("overview_move", expect.objectContaining({ workspace: "personal" }));
+    click(block); // the next real click goes through
+    expect(spies.session).toHaveBeenCalledWith("personal", "s1");
+  });
+  it("with Space held or the middle button, a drag over a workspace pans instead of moving it", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockClear();
+    await open();
+    const area = $('[data-mr="OverviewArea"]');
+    const before = camera();
+    key(" ");
+    dragFrom(area, 0, 80);
+    key(" ", "keyup");
+    const afterSpace = camera();
+    expect(afterSpace).not.toBe(before);
+    dragFrom(area, 60, 0, 1);
+    expect(camera()).not.toBe(afterSpace);
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith("overview_move", expect.anything());
+  });
+  it("the second click of a double-click on a far-out workspace doesn't open it", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    win.w = 1280; win.h = 800;
+    await open();
+    act(() => observers.forEach((cb) => cb()));
+    for (let i = 0; i < 12 && $('[data-mr="OverviewCanvas"]').dataset.zoom !== "far"; i++) key("-");
+    expect($('[data-mr="OverviewCanvas"]').dataset.zoom).toBe("far");
+    click($('[aria-label^="Zoom to workspace Personal"]'));
+    expect($('[data-mr="OverviewCanvas"]').dataset.zoom).not.toBe("far");
+    click($('[aria-label^="Open workspace Personal"]'));
+    expect(spies.ws).not.toHaveBeenCalled();
+    now += 500;
+    click($('[aria-label^="Open workspace Personal"]'));
+    expect(spies.ws).toHaveBeenCalledWith("personal");
+  });
+  it("coming back after a fit request returns to where you left it; a new request fits again", async () => {
+    win.w = 1280; win.h = 800;
+    await open({ fitSignal: 1 });
+    act(() => observers.forEach((cb) => cb()));
+    const fitted = zoom();
+    key("+");
+    const mine = zoom();
+    expect(mine).not.toBe(fitted);
+    act(() => root!.unmount()); host.remove();
+    await open({ fitSignal: 1 }, false); // same module: the remembered camera
+    act(() => observers.forEach((cb) => cb()));
+    expect(zoom()).toBe(mine);
+    render({ fitSignal: 2 });
+    expect(zoom()).toBe(fitted);
+  });
+  it("Esc that closes a right-click menu doesn't also leave the Overview", async () => {
+    await open();
+    const menu = document.createElement("div");
+    menu.setAttribute("data-mr-menu", "");
+    document.body.appendChild(menu);
+    key("Escape");
+    expect(spies.back).not.toHaveBeenCalled();
+    menu.remove();
+    key("Escape");
+    expect(spies.back).toHaveBeenCalledOnce();
+  });
+  it("a dropped workspace stays put while the other workspaces' spots replay in first", async () => {
+    await open();
+    const area = () => $('[data-mr="OverviewArea"][data-mr-source="personal"]');
+    dragFrom(area(), 1600, 0); // far right: free canvas, so no nudge
+    const dropped = { left: area().style.left, top: area().style.top };
+    // Only Client B's event has come back so far.
+    const b = $('[data-mr="OverviewArea"][data-mr-source="ws_b"]');
+    render({ state: { ...busy, overviewLayout: { ws_b: { x: parseFloat(b.style.left), y: parseFloat(b.style.top) } } } });
+    expect({ left: area().style.left, top: area().style.top }).toEqual(dropped);
+  });
+});

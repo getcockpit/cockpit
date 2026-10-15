@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { replay } from "../state/reduce";
 import type { MrEvent } from "../state/types";
-import { countLabels, LAMP, lamps, Overview } from "./Overview";
+import { countLabels, LAMP, lamps, Overview, said } from "./Overview";
 import type { OverviewArea, OverviewBlock } from "../state/overview";
 
 const block = (id: string, needs = false): OverviewBlock => ({ kind: "session", id, title: id, lamp: needs ? "needs_you" : "working", needs, status: "", step: null });
@@ -21,6 +21,13 @@ describe("Overview labels (decision 40)", () => {
   it("the far view's lamp strip shows every open item, what needs you first", () => {
     const a = { groups: { resume: [block("r")], progress: [block("p"), block("ask", true)], review: [block("v")] } } as unknown as OverviewArea;
     expect(lamps(a).map((b) => b.id)).toEqual(["ask", "r", "p", "v"]);
+  });
+});
+
+describe("Overview screen-reader labels", () => {
+  it("a workspace's label carries its counts, needs you first", () => {
+    expect(said({ counts: { needs: 1, resume: 0, progress: 13, review: 0 } })).toBe(", 1 needs you, 13 in progress");
+    expect(said({ counts: { needs: 0, resume: 0, progress: 0, review: 0 } })).toBe("");
   });
 });
 
@@ -46,6 +53,8 @@ describe("Overview render", () => {
   });
   it("gives every block its full title as a tooltip, since the tile truncates it", () => {
     expect(html).toMatch(/data-mr="OverviewBlock"[^>]*title="Fix the login redirect loop on Safari/);
+    expect(html).toMatch(/aria-label="Open Fix the login redirect loop on Safari[^"]*, [A-Z][^"]+"/); // and its status, for a screen reader
+    expect(html).toContain('aria-label="Open workspace Client B, 1 in progress"');
   });
   it("has no button inside a block: the map is read-only", () => {
     const blocks = html.split('data-mr="OverviewBlock"').slice(1).map((b) => b.slice(0, b.indexOf("</button>")));
