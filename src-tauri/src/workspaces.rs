@@ -95,6 +95,14 @@ pub fn overview_move(app: AppHandle, workspace: String, x: f64, y: f64) -> Resul
     Ok(())
 }
 
+/// "Tidy up" on the Overview (MR-157): forget every dragged spot, so the workspaces go back to the
+/// auto grid. Undo re-sends the old spots as `overview_move`s.
+#[tauri::command]
+pub fn overview_tidy(app: AppHandle) -> Result<(), String> {
+    crate::eventlog::record(&app, None, "ui.overview_tidied", &serde_json::json!({}), None);
+    Ok(())
+}
+
 /// Pins the folder new sessions in this workspace start in (MR-65); `None` unpins, so the picker
 /// falls back to the last folder a session started in there.
 #[tauri::command(async)]
