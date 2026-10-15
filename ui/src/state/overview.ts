@@ -73,8 +73,16 @@ export function docGroup(d: Doc, sessions: Record<string, SessionState>): Overvi
 export const docsIn = (docs: Doc[], sessions: Record<string, SessionState>, ws: string) =>
   docs.filter((d) => (d.session_id ? sessions[d.session_id]?.workspace === ws : ws === "personal"));
 
+/** A column shows at most this many rows; past that the last row says "+N more" (one busy workspace
+ *  shouldn't stretch the whole grid and push its neighbours out of a fit). */
+export const MAX_ROWS = 6;
+export function shown(blocks: OverviewBlock[]): { blocks: OverviewBlock[]; more: number } {
+  if (blocks.length <= MAX_ROWS) return { blocks, more: 0 };
+  return { blocks: blocks.slice(0, MAX_ROWS - 1), more: blocks.length - (MAX_ROWS - 1) };
+}
+
 export function areaHeight(groups: Record<OverviewGroup, OverviewBlock[]>): number {
-  const rows = Math.max(1, ...GROUPS.map((g) => groups[g].length));
+  const rows = Math.min(MAX_ROWS, Math.max(1, ...GROUPS.map((g) => groups[g].length)));
   return HEADER_H + LABEL_H + rows * (BLOCK_H + BLOCK_GAP) + PAD;
 }
 

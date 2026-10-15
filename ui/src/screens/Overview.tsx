@@ -4,7 +4,7 @@ import { keyLabel } from "../platform";
 import { StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
-import { bounds, COL_W, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, zoomAt, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, COL_W, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -58,6 +58,8 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   useLayoutEffect(() => { if (size.w && (!lastCam || fitSignal)) fitNow(!!lastCam); }, [fitSignal, size.w > 0]);
   // While it follows, keep it fitted; not while a rectangle is being dragged (the camera would chase it).
   useLayoutEffect(() => { if (following && size.w && !drag.current) fitNow(false); }, [size.w, size.h, boxKey]);
+  // Far out a click zooms into that workspace (close enough to read it) instead of leaving the map.
+  const zoomTo = (a: OverviewArea) => { following = false; glideTo(fit(a, { w: size.w, h: Math.max(1, size.h - BAR_H) })); };
   const zoomBy = (by: number) => { following = false; glideTo((c) => zoomAt(c, size.w / 2, size.h / 2, by)); };
 
   // Wheel: pan in any direction; pinch (ctrl+wheel in Chromium) or ⌘-scroll zooms. WebKit's trackpad
@@ -170,6 +172,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
         {areas.map((a) => <Area key={a.workspace} a={a} level={level} zoom={cam.zoom} lifted={moving === a.workspace}
           onDown={(e) => down(e, a.workspace)}
           onOpen={click(() => onOpenWorkspace(a.workspace))}
+          onZoomTo={click(() => zoomTo(a))}
           onBlock={(b) => click(() => (b.kind === "session" ? onOpenSession(a.workspace, b.id) : onOpenDoc(a.workspace, b.id)))} />)}
       </div>
       <div className="mr-row mr-dim" data-mr="OverviewHint" style={{ position: "absolute", left: 12, bottom: 10, right: 280, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -200,19 +203,19 @@ export function countLabels(c: OverviewArea["counts"], short = false): { key: st
 /** Every block's lamp in reading order, for the far view's strip: what needs you first. */
 export const lamps = (a: OverviewArea): OverviewBlock[] => GROUPS.flatMap((g) => a.groups[g]).sort((x, y) => Number(y.needs) - Number(x.needs));
 
-type AreaProps = { a: OverviewArea; level: "far" | "middle" | "close"; zoom: number; lifted: boolean; onDown: (e: React.PointerEvent) => void; onOpen: (e: React.MouseEvent) => void; onBlock: (b: OverviewBlock) => (e: React.MouseEvent) => void };
+type AreaProps = { a: OverviewArea; level: "far" | "middle" | "close"; zoom: number; lifted: boolean; onDown: (e: React.PointerEvent) => void; onOpen: (e: React.MouseEvent) => void; onZoomTo: (e: React.MouseEvent) => void; onBlock: (b: OverviewBlock) => (e: React.MouseEvent) => void };
 
-function Area({ a, level, zoom, lifted, onDown, onOpen, onBlock }: AreaProps) {
+function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: AreaProps) {
   const empty = GROUPS.every((g) => !a.groups[g].length);
   const far = level === "far", close = level === "close";
   const labels = countLabels(a.counts, !close);
   const nameSize = readable(20, zoom, 14);
   const countSize = readable(13, zoom, 11);
   return (
-    <div data-mr="OverviewArea" data-mr-source={a.workspace} data-mr-name={a.name} data-needs={a.counts.needs ? "" : undefined} className="mr-ov-area" onClick={onOpen} onPointerDown={onDown}
-      title={`${a.name}${a.folder ? ` · starts in ${a.folder}` : ""}\nClick to open · drag to move`}
+    <div data-mr="OverviewArea" data-mr-source={a.workspace} data-mr-name={a.name} data-needs={a.counts.needs ? "" : undefined} className="mr-ov-area" onClick={far ? onZoomTo : onOpen} onPointerDown={onDown}
+      title={`${a.name}${a.folder ? ` · starts in ${a.folder}` : ""}\n${far ? "Click to zoom in" : "Click to open"} · drag to move`}
       style={{ position: "absolute", left: a.x, top: a.y, width: a.w, height: a.h, overflow: "hidden", background: "var(--mr-band)", pointerEvents: "auto", cursor: lifted ? "grabbing" : "pointer", touchAction: "none", boxShadow: a.counts.needs ? "inset 4px 0 0 var(--mr-needs)" : undefined, outline: lifted ? `${3 / zoom}px solid var(--mr-selected)` : undefined, zIndex: lifted ? 1 : undefined }}>
-      {far ? <Far a={a} zoom={zoom} onOpen={onOpen} /> : <>
+      {far ? <Far a={a} zoom={zoom} onOpen={onZoomTo} /> : <>
         <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Open workspace ${a.name}`} onClick={onOpen}
           className="mr-row" style={{ width: "100%", height: HEADER_H, alignItems: "center", gap: 10, padding: `0 ${PAD}px`, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
           <strong className="mr-ellipsis" style={{ fontSize: nameSize, lineHeight: 1.1, minWidth: 0, flexShrink: 1 }}>{a.name}</strong>
@@ -229,7 +232,12 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onBlock }: AreaProps) {
             <div key={g} data-mr="OverviewGroup" data-mr-source={`${a.workspace}:${g}`} style={{ position: "absolute", left: PAD + i * (COL_W + BLOCK_GAP), top: HEADER_H, width: COL_W, display: "flex", flexDirection: "column", gap: BLOCK_GAP }}>
               <span className="mr-dim mr-ellipsis" style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 10), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
               {a.groups[g].length
-                ? a.groups[g].map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} onClick={onBlock(b)} />)
+                ? (() => { const v = shown(a.groups[g]); return <>
+                    {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} onClick={onBlock(b)} />)}
+                    {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen} onPointerDown={(e) => e.stopPropagation()}
+                      aria-label={`${v.more} more in ${GROUP_LABEL[g]}: open workspace ${a.name}`}
+                      style={{ height: BLOCK_H, border: 0, font: "inherit", fontWeight: 600, fontSize: readable(14, zoom, 12), cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink-2)" }}>+{v.more} more</button>}
+                  </>; })()
                 : <span aria-hidden="true" style={{ height: BLOCK_H, boxShadow: "inset 0 0 0 1px var(--mr-well)" }} />}
             </div>
           ))}
@@ -245,7 +253,7 @@ function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: R
   const pad = Math.min(12 / zoom, a.h * 0.1);
   const all = lamps(a);
   return (
-    <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Open workspace ${a.name}`} onClick={onOpen}
+    <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Zoom to workspace ${a.name}`} onClick={onOpen}
       style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: lamp * 0.6, padding: pad, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
       <span className="mr-row" style={{ gap: name * 0.4, maxWidth: "100%", alignItems: "center" }}>
         <strong className="mr-ellipsis" style={{ fontSize: name, lineHeight: 1.1, minWidth: 0 }}>{a.name}</strong>
