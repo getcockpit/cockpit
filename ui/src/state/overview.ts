@@ -172,6 +172,17 @@ export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs:
   return built.map((a) => ({ ...a, ...at[a.workspace] }));
 }
 
+/** The rectangle closest to a canvas point (0 if it's inside one), for zooming to 100% onto something. */
+export function nearest<T extends Rect>(areas: T[], px: number, py: number): T | null {
+  const d = (a: Rect) => Math.hypot(Math.max(a.x - px, 0, px - (a.x + a.w)), Math.max(a.y - py, 0, py - (a.y + a.h)));
+  return areas.reduce<T | null>((best, a) => (!best || d(a) < d(best) ? a : best), null);
+}
+
+/** 100% onto a rectangle: centred across, and down too if it fits; a taller one shows from its top. */
+export function actualSize(a: Rect, view: { w: number; h: number }, margin = 24): { x: number; y: number; zoom: number } {
+  return { zoom: 1, x: (view.w - a.w) / 2 - a.x, y: a.h + margin * 2 <= view.h ? (view.h - a.h) / 2 - a.y : margin - a.y };
+}
+
 /** The box around every area, for ⌘0 fit-all. */
 export function bounds(areas: Pick<OverviewArea, "x" | "y" | "w" | "h">[]): { x: number; y: number; w: number; h: number } {
   if (!areas.length) return { x: 0, y: 0, w: AREA_W, h: HEADER_H };
