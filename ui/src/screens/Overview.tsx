@@ -5,7 +5,7 @@ import { StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { isTyping, overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -339,15 +339,12 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
 
 /** Far out: the name, what needs you, and one lamp per open item, sized to stay legible over the rectangle. */
 function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: React.MouseEvent) => void }) {
-  // Capped by the rectangle's height so it all fits; a one-row workspace (180 tall) still gets a name
-  // of 12 px at the furthest zoom.
-  const name = Math.min(readable(20, zoom, 14, 8), a.h * 0.45);
-  const lamp = Math.min(10 / zoom, a.h * 0.2);
-  const pad = Math.min(12 / zoom, a.h * 0.06);
+  // Sized to the rectangle's height (farSizes): the name first, the lamps take what's left.
+  const { name, lamp, pad, gap, note } = farSizes(a.h, zoom);
   const all = lamps(a);
   return (
     <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Zoom to workspace ${a.name}${said(a)}`} onClick={onOpen}
-      style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "flex-start", gap: lamp * 0.6, padding: pad, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
+      style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "flex-start", gap, padding: pad, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
       {/* The name gets the whole width; what needs you leads the lamp row instead of crowding it. */}
       <strong className="mr-ellipsis" style={{ fontSize: name, lineHeight: 1.1, maxWidth: "100%" }}>{a.name}</strong>
       {all.length
@@ -356,7 +353,7 @@ function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: R
               style={{ flex: "none", fontSize: lamp * 1.1, lineHeight: 1, fontWeight: 700, padding: `${lamp * 0.1}px ${lamp * 0.25}px`, marginRight: lamp * 0.3, background: "var(--mr-needs)" }}>⚠ {a.counts.needs}</span>}
             {all.map((b) => <span key={`${b.kind}:${b.id}`} data-s={b.lamp} style={{ width: lamp, height: lamp, ...lampStyle(b.lamp) }} />)}
           </span>
-        : <span className="mr-dim" style={{ fontSize: lamp * 1.1, lineHeight: 1 }}>Nothing open</span>}
+        : <span className="mr-dim" style={{ fontSize: note, lineHeight: 1 }}>Nothing open</span>}
     </button>
   );
 }
