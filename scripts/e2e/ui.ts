@@ -172,6 +172,17 @@ const flows: Flow[] = [
     await ui.tags("SnippetPager", 1);
     await ui.see("button", "space Next snippet");
   } },
+  { name: "J8 publish a review and approve it on my behalf", run: async () => {
+    await ui.open("review");
+    await ui.click("button", "↵ Continue review");
+    for (const n of [2, 3]) { await ui.key(" "); await ui.seeText(`Snippet ${n} of 3`); }
+    await ui.key(" "); // finish the walkthrough: the review is ready to publish
+    await ui.see("button", "⌘↵ Publish as one review");
+    await ui.click("checkbox", "Approve on my behalf");
+    await ui.see("button", "⌘↵ Publish and approve");
+    await ui.click("button", "⌘↵ Publish and approve");
+    await ui.seeText("✓ Published · approved");
+  } },
   { name: "J8 step into a waiting address flow", run: async () => {
     await ui.open("address");
     await ui.click("button", "↵ Continue");
