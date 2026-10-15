@@ -4,7 +4,7 @@
 
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type { MrEvent } from "../state/types";
+import type { McpServer, MrEvent } from "../state/types";
 import type { Doc } from "../state/docs";
 import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
@@ -258,6 +258,14 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       later(900, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp, done: { server, action, ok, ...(ok ? {} : { error: "connection refused (localhost:4100)" }) } }));
       return null;
     }
+    case "session_mcp_add": {
+      const server = String(a.server), config = a.config as { type: string; url?: string };
+      record(String(a.session), "ui.mcp_action", { server, action: "add", scope: a.scope, transport: config.type });
+      const ok = !demoMcp.some((m) => m.name === server);
+      if (ok) demoMcp.push({ name: server, status: "connected", source: "dynamic", scope: null, error: null, version: null, url: config.url ?? null, tools: ["search", "fetch"] });
+      later(900, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp, done: { server, action: "add", ok, ...(ok ? {} : { error: `MCP server ${server} already exists in local config` }) } }));
+      return null;
+    }
     // A drawn-on copy (MR-143): the demo has no disk, so it only names where the core would put it.
     case "attachment_save": { const n = drawnN++; return { path: `/Users/me/Library/Application Support/Cockpit/attachments/demo${n}-drawn.png`, name: `drawn-${n}.png`, mime: "image/png", size: a instanceof Uint8Array ? a.length : 0 }; }
     case "models_refresh": record(null, "sidecar.models", { models: DEMO_MODELS }); return null;
@@ -387,7 +395,7 @@ const DEMO_COMMANDS = [
   { name: "agent-skills:test", description: "Run TDD workflow: write failing tests, implement, verify", hint: "", aliases: [], builtin: false, skill: true, terminal: false },
   { name: "pinchtab", description: "Browser automation through PinchTab", hint: "", aliases: [], builtin: false, skill: true, terminal: false },
 ];
-const demoMcp = [
+const demoMcp: McpServer[] = [
   { name: "claude.ai Slack", status: "connected", source: "claudeai", scope: "claudeai", error: null, version: "1.4.0", url: null, tools: ["slack_send_message", "slack_read_channel", "slack_search_public", "slack_read_thread"] },
   { name: "claude.ai Gmail", status: "needs-auth", source: "claudeai", scope: "claudeai", error: null, version: null, url: null, tools: [] },
   { name: "linear", status: "failed", source: "user", scope: "user", error: "connection refused (localhost:4100)", version: null, url: "http://localhost:4100/mcp", tools: [] },
