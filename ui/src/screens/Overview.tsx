@@ -5,7 +5,7 @@ import { LABEL as STATE_LABEL, StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, findOnMap, hitRect, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { isTyping, overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -123,7 +123,9 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     const k = overviewKey(e, { dialog: !!document.querySelector('[role="dialog"]'), menu: !!document.querySelector("[data-mr-menu]") });
     if (!k) return;
     e.preventDefault();
-    if (k.do === "back") onBack();
+    // Focused a tick later, not on mount: the "/" that opened it must not land in the box.
+    if (k.do === "find") { setFind((f) => f ?? ""); setTimeout(() => findInput.current?.focus(), 0); }
+    else if (k.do === "back") onBack();
     else if (k.do === "zoom") zoomBy(k.by);
     else { following = false; glideTo((c) => ({ ...c, x: c.x + k.dx, y: c.y + k.dy })); }
   };
@@ -232,6 +234,25 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     // The moved one, plus any still auto-placed: their spots are now fixed too, so nothing jumps later.
     for (const a of areas) if (a.workspace === d.ws || !state.overviewLayout[a.workspace]) void invoke("overview_move", { workspace: a.workspace, ...(a.workspace === d.ws && spot ? spot : { x: a.x, y: a.y }) }).catch(() => {});
   };
+  // Find on the canvas (/): matches stay lit and the rest dims; Enter flies to the next one, ⇧Enter
+  // the one before, Esc closes. The camera lands at 100% on the hit, or on its workspace.
+  const [find, setFind] = useState<string | null>(null);
+  const [hitAt, setHitAt] = useState(0);
+  const findInput = useRef<HTMLInputElement>(null);
+  const flown = useRef(false); // the first Enter after typing goes to the first match, later ones step
+  const hits = useMemo(() => (find ? findOnMap(areas, find) : []), [areas, find]);
+  const current = hits.length ? hits[((hitAt % hits.length) + hits.length) % hits.length] : null;
+  const flyTo = (i: number) => {
+    if (!hits.length) return;
+    const h = hits[((i % hits.length) + hits.length) % hits.length], a = areas.find((x) => x.workspace === h.workspace);
+    if (!a) return;
+    setHitAt(i);
+    following = false;
+    const r = hitRect(a, h.block), vh = Math.max(1, size.h - BAR_H), z = Math.max(1, Math.min((lastCam ?? cam).zoom, 1.5));
+    glideTo({ zoom: z, x: size.w / 2 - (r.x + r.w / 2) * z, y: vh / 2 - (r.y + r.h / 2) * z });
+  };
+  const closeFind = () => { setFind(null); setHitAt(0); flown.current = false; };
+  const lit = (ws: string, block: string | null) => !find?.trim() || hits.some((h) => h.workspace === ws && (block === null ? true : h.block === block));
   // Tidy up: every hand-placed spot is forgotten and the workspaces go back to the auto grid, the
   // camera following them. Undo, for a few seconds, puts each one back where it was.
   const pinned = Object.keys(state.overviewLayout).length > 0;
@@ -301,15 +322,30 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   }, [level]);
   const moving = drag.current?.kind === "move" ? drag.current.ws : null;
   return (
-    <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} data-fitted={following && lastCam ? "" : undefined} role="region" aria-roledescription="canvas" aria-label="Overview of every workspace. Plus and minus zoom, arrows pan, Escape goes back." onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl} onFocus={focused} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }}
+    <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} data-fitted={following && lastCam ? "" : undefined} role="region" aria-roledescription="canvas" aria-label="Overview of every workspace. Plus and minus zoom, arrows pan, slash finds, Escape goes back." onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl} onFocus={focused} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }}
       style={{ position: "relative", height: "100%", overflow: "hidden", background: "var(--mr-base)", touchAction: "none", cursor: drag.current?.kind === "pan" ? "grabbing" : space.current ? "grab" : "default" }}>
       <div className="mr-ov-cam" data-glide={glide || undefined} style={{ ["--mr-ov-z" as string]: cam.zoom, position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`, pointerEvents: "none" }}>
         {areas.map((a) => <Area key={a.workspace} a={a} level={level} zoom={cam.zoom} lifted={moving === a.workspace}
+          dim={!lit(a.workspace, null)} dimBlock={(key) => !!find?.trim() && !lit(a.workspace, key)} current={current?.workspace === a.workspace ? current.block ?? "" : null}
           onDown={(e) => down(e, a.workspace)}
           onOpen={click(() => onOpenWorkspace(a.workspace))}
           onZoomTo={click(() => zoomTo(a))}
           onBlock={(b) => click(() => (b.kind === "session" ? onOpenSession(a.workspace, b.id) : onOpenDoc(a.workspace, b.id)))} />)}
       </div>
+      {find !== null && (
+        <div className="mr-row" data-mr="OverviewFind" data-mr-source="overview" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+          style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", gap: 8, padding: "6px 8px", background: "var(--mr-tile)", boxShadow: "0 0 0 1px var(--mr-well)", zIndex: 2 }}>
+          <input ref={findInput} className="mr-input" aria-label="Find on the map" placeholder="Find a session, doc or workspace" value={find}
+            onChange={(e) => { setFind(e.target.value); setHitAt(0); flown.current = false; }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeFind(); }
+              else if (e.key === "Enter") { e.preventDefault(); flyTo(!flown.current ? hitAt : hitAt + (e.shiftKey ? -1 : 1)); flown.current = true; }
+            }}
+            style={{ width: 280, flex: "none", minHeight: 32, background: "var(--mr-well)" }} />
+          <span className="mr-mono mr-dim" data-mr="OverviewFindCount" style={{ fontSize: 12, minWidth: 64 }}>{find.trim() ? (hits.length ? `${(((hitAt % hits.length) + hits.length) % hits.length) + 1} of ${hits.length}` : "No match") : ""}</span>
+          <button type="button" className="mr-key" aria-label="Close find" onClick={closeFind}>esc</button>
+        </div>
+      )}
       {/* Panned off into empty canvas: say so, and offer the way back. */}
       {size.w > 0 && areas.length > 0 && !anyInView(areas, cam, { w: size.w, h: size.h - BAR_H }) && (
         <div data-mr="OverviewLost" style={{ display: "flex", flexDirection: "column", position: "absolute", left: 0, right: 0, top: 0, bottom: BAR_H, alignItems: "center", justifyContent: "center", gap: 10, pointerEvents: "none" }}>
@@ -321,7 +357,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       <div className="mr-row" data-mr="OverviewBar" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
         style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: BAR_H, padding: "0 12px", gap: 12, background: "var(--mr-base)", boxShadow: "0 -1px 0 var(--mr-well)" }}>
       <div className="mr-row mr-dim mr-grow" data-mr="OverviewHint" style={{ minWidth: 0, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        <span className="mr-ellipsis">Scroll, drag empty space or Space-drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it</span>
+        <span className="mr-ellipsis">Scroll, drag empty space or Space-drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it · / to find</span>
       </div>
       {undoTidy
         ? <button type="button" className="mr-key" data-mr="OverviewUndoTidy" data-mr-source="overview" onClick={untidy} title="Put the workspaces back where you had them">Undo tidy</button>
@@ -361,16 +397,20 @@ export const said = (a: Pick<OverviewArea, "counts">) => countLabels(a.counts).m
 /** Every block's lamp in reading order, for the far view's strip: what needs you first. */
 export const lamps = (a: OverviewArea): OverviewBlock[] => GROUPS.flatMap((g) => a.groups[g]).sort((x, y) => Number(y.needs) - Number(x.needs));
 
-type AreaProps = { a: OverviewArea; level: "far" | "middle" | "close"; zoom: number; lifted: boolean; onDown: (e: React.PointerEvent) => void; onOpen: (e: React.MouseEvent) => void; onZoomTo: (e: React.MouseEvent) => void; onBlock: (b: OverviewBlock) => (e: React.MouseEvent) => void };
+type AreaProps = { a: OverviewArea; level: "far" | "middle" | "close"; zoom: number; lifted: boolean; dim: boolean; dimBlock: (key: string) => boolean; current: string | null; onDown: (e: React.PointerEvent) => void; onOpen: (e: React.MouseEvent) => void; onZoomTo: (e: React.MouseEvent) => void; onBlock: (b: OverviewBlock) => (e: React.MouseEvent) => void };
 
-function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: AreaProps) {
+function Area({ a, level, zoom, lifted, dim, dimBlock, current, onDown, onOpen, onZoomTo, onBlock }: AreaProps) {
   const empty = GROUPS.every((g) => !a.groups[g].length);
   const far = level === "far", close = level === "close";
   const labels = countLabels(a.counts, !close);
+  // The find hit you're on: its block is ringed; a name hit, a hit folded into "+N more" or any hit far
+  // out (no blocks drawn) rings the whole workspace.
+  const drawn = (key: string) => !far && GROUPS.some((g) => shown(a.groups[g]).blocks.some((b) => `${b.kind}:${b.id}` === key));
+  const ringed = current !== null && (current === "" || !drawn(current));
   const nameSize = readable(20, zoom, 14);
   const countSize = readable(13, zoom, 12);
   return (
-    <div data-mr="OverviewArea" data-mr-source={a.workspace} data-mr-name={a.name} data-needs={a.counts.needs ? "" : undefined} className="mr-ov-area" onClick={far ? onZoomTo : onOpen} onPointerDown={onDown}
+    <div data-mr="OverviewArea" data-mr-source={a.workspace} data-mr-name={a.name} data-needs={a.counts.needs ? "" : undefined} className="mr-ov-area" data-dim={dim || undefined} data-current={ringed || undefined} onClick={far ? onZoomTo : onOpen} onPointerDown={onDown}
       title={`${a.name}${a.folder ? ` · starts in ${a.folder}` : ""}\n${far ? "Click to zoom in" : "Click to open"} · drag to move`}
       style={{ position: "absolute", left: a.x, top: a.y, width: a.w, height: a.h, overflow: "hidden", background: "var(--mr-band)", pointerEvents: "auto", cursor: lifted ? "grabbing" : "inherit", touchAction: "none", outline: lifted ? `${3 / zoom}px solid var(--mr-selected)` : undefined, zIndex: lifted ? 1 : undefined }}>
       {far ? <Far a={a} zoom={zoom} onOpen={onZoomTo} /> : <>
@@ -390,7 +430,7 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
             <div key={g} data-mr="OverviewGroup" data-mr-source={`${a.workspace}:${g}`} style={{ position: "absolute", left: x, top: HEADER_H, width: w, display: "flex", flexDirection: "column", gap: BLOCK_GAP }}>
               <span className="mr-dim mr-ellipsis" style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 12), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
               {(() => { const v = shown(a.groups[g]); return <>
-                    {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} onClick={onBlock(b)} />)}
+                    {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} dim={dimBlock(`${b.kind}:${b.id}`)} current={current === `${b.kind}:${b.id}`} onClick={onBlock(b)} />)}
                     {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen}
                       aria-label={`${v.more} more in ${GROUP_LABEL[g]}: open workspace ${a.name}`}
                       style={{ height: BLOCK_H, border: 0, font: "inherit", fontWeight: 600, fontSize: readable(14, zoom, 12), cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink-2)" }}>+{v.more} more</button>}
@@ -430,10 +470,10 @@ export const markFor = (b: OverviewBlock) => b.kind === "session" && !(b.lamp ==
  *  "Interrupted Interrupted"): any state, checked against the mark's own words. */
 export const statusFor = (b: OverviewBlock) => (markFor(b) && b.status === STATE_LABEL[b.lamp] ? "" : b.status);
 
-function Block({ b, close, zoom, onClick }: { b: OverviewBlock; close: boolean; zoom: number; onClick: (e: React.MouseEvent) => void }) {
+function Block({ b, close, zoom, dim, current, onClick }: { b: OverviewBlock; close: boolean; zoom: number; dim?: boolean; current?: boolean; onClick: (e: React.MouseEvent) => void }) {
   const tip = [b.kind === "doc" ? `Doc: ${b.title}` : b.title, b.status, b.step && b.step !== b.status ? b.step : null].filter(Boolean).join("\n");
   return (
-    <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} aria-label={`Open ${b.title}, ${b.status}`} title={tip} onClick={onClick}
+    <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} data-dim={dim || undefined} data-current={current || undefined} aria-label={`Open ${b.title}, ${b.status}`} title={tip} onClick={onClick}
       style={{ height: BLOCK_H, display: "flex", gap: 8, padding: close ? "6px 10px 6px 0" : "2px 10px 2px 0", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
       <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp, true) }} />
       <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2, justifyContent: close ? undefined : "center" }}>
