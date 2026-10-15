@@ -509,9 +509,9 @@ describe("Overview pointer and navigation in a DOM", () => {
     ]);
     await open({ state: later }, false);
     act(() => observers.forEach((cb) => cb()));
-    expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("✦ 1 changed"); // a word, not a "+ 1"
+    expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("● 1 changed"); // a word and a dot, not a "+ 1"
     for (let i = 0; i < 12 && $('[data-mr="OverviewCanvas"]').dataset.zoom !== "far"; i++) key("-");
-    expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("✦ 1");
+    expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("● 1");
   });
   it("what you did inside a workspace isn't reported back as news; what happened elsewhere is", async () => {
     const both = (personalAsks: boolean, bAsks: boolean) => replay([
