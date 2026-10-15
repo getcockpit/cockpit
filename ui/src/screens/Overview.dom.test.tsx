@@ -355,8 +355,9 @@ describe("Overview pointer and navigation in a DOM", () => {
     act(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(input, "fix"); input.dispatchEvent(new Event("input", { bubbles: true })); });
     expect($('[data-mr="OverviewArea"][data-mr-source="ws_b"]').dataset.dim).toBe("true"); // Client B has no "fix"
     expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').dataset.dim).toBeUndefined();
-    expect($('[data-mr="OverviewFindCount"]').textContent).toBe("1 of 1");
+    expect($('[data-mr="OverviewFindCount"]').textContent).toBe("1 found");
     act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
+    expect($('[data-mr="OverviewFindCount"]').textContent).toBe("1 of 1");
     expect(zoom()).toBe("100%");
     expect($('[data-mr="OverviewBlock"]').dataset.current).toBe("true");
     act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
@@ -376,5 +377,77 @@ describe("Overview pointer and navigation in a DOM", () => {
     act(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(input, "task 8"); input.dispatchEvent(new Event("input", { bubbles: true })); });
     act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
     expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').dataset.current).toBe("true");
+  });
+  // Find helpers for the audit fixes below.
+  const typeFind = (q: string) => {
+    key("/");
+    const input = $('[data-mr="OverviewFind"] input') as HTMLInputElement;
+    act(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!; set.call(input, q); input.dispatchEvent(new Event("input", { bubbles: true })); });
+    return input;
+  };
+  const enter = (input: HTMLInputElement, shiftKey = false) => act(() => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey, bubbles: true })); });
+  it("Esc with find open closes find, wherever the focus is, and never leaves the Overview", async () => {
+    await open();
+    const input = typeFind("fix");
+    act(() => input.blur()); // focus left the box (a click on the canvas or the bar)
+    key("Escape");
+    expect(host.querySelector('[data-mr="OverviewFind"]')).toBeNull();
+    expect(spies.back).not.toHaveBeenCalled();
+    key("Escape"); // find closed: now Esc goes back
+    expect(spies.back).toHaveBeenCalledOnce();
+  });
+  it("a faded workspace fades once: its blocks aren't faded a second time inside it", async () => {
+    const withB = replay([
+      ev("ui.workspace_created", { id: "ws_b", name: "Client B", config_dir: "/x" }),
+      { ...ev("ui.session_requested", { prompt: "Fix login", cwd: "/w", workspace: "personal" }), session_id: "s1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "sdk", model: "m" }), session_id: "s1" },
+      { ...ev("ui.session_requested", { prompt: "Quarterly report", cwd: "/w", workspace: "ws_b" }), session_id: "s2" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "sdk2", model: "m" }), session_id: "s2" },
+    ]);
+    await open({ state: withB });
+    typeFind("fix"); // Personal has the hit; Client B has none
+    const b = $('[data-mr="OverviewArea"][data-mr-source="ws_b"]');
+    expect(b.dataset.dim).toBe("true");
+    expect(b.querySelector('[data-mr="OverviewBlock"]')).not.toBeNull();
+    expect(b.querySelector('[data-mr="OverviewBlock"][data-dim]')).toBeNull();
+  });
+  it("a drag after Tidy up takes Undo away, so Undo can't throw the new arrangement away", async () => {
+    await open({ state: { ...busy, overviewLayout: { personal: { x: 1600, y: 0 } } } });
+    click($('[data-mr="OverviewTidy"]'));
+    render({ state: { ...busy, overviewLayout: {} } });
+    expect(host.querySelector('[data-mr="OverviewUndoTidy"]')).not.toBeNull();
+    dragFrom($('[data-mr="OverviewArea"][data-mr-source="ws_b"]'), 1600, 0);
+    expect(host.querySelector('[data-mr="OverviewUndoTidy"]')).toBeNull();
+  });
+  it("⇧Enter first goes to the last hit; the ring stays on the same item when the hit list changes", async () => {
+    const two = replay([
+      { ...ev("ui.session_requested", { prompt: "alpha task", cwd: "/w", workspace: "personal" }), session_id: "a1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "s1", model: "m" }), session_id: "a1" },
+      { ...ev("ui.session_requested", { prompt: "beta task", cwd: "/w", workspace: "personal" }), session_id: "b1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "s2", model: "m" }), session_id: "b1" },
+    ]);
+    await open({ state: two });
+    const input = typeFind("task");
+    expect($('[data-mr="OverviewFindCount"]').textContent).toBe("2 found");
+    enter(input, true);
+    expect($('[data-mr="OverviewFindCount"]').textContent).toBe("2 of 2");
+    const ringed = () => host.querySelector<HTMLElement>('[data-mr="OverviewBlock"][data-current]')?.dataset.mrSource;
+    const was = ringed();
+    // A new hit appears ahead of it in the list: the ring stays on the same session.
+    const three = replay([
+      { ...ev("ui.session_requested", { prompt: "aardvark task", cwd: "/w", workspace: "personal" }), session_id: "z0" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "s0", model: "m" }), session_id: "z0" },
+      ...[two].flatMap(() => []),
+    ]);
+    render({ state: { ...two, sessions: { z0: three.sessions.z0, ...two.sessions } } });
+    expect(ringed()).toBe(was);
+  });
+  it("the find box is a search landmark and its count is announced", async () => {
+    await open();
+    typeFind("fix");
+    expect($('[data-mr="OverviewFind"]').getAttribute("role")).toBe("search");
+    const count = $('[data-mr="OverviewFindCount"]');
+    expect([count.getAttribute("role"), count.getAttribute("aria-live")]).toEqual(["status", "polite"]);
+    expect($('[data-mr="OverviewFindInput"]').getAttribute("aria-describedby")).toBe(count.id);
   });
 });

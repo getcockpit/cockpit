@@ -124,6 +124,8 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     if (!k) return;
     e.preventDefault();
     // Focused a tick later, not on mount: the "/" that opened it must not land in the box.
+    // With find open, Esc closes find wherever the focus is; it never also leaves the Overview.
+    if (k.do === "back" && find !== null) { closeFind(); return; }
     if (k.do === "find") { setFind((f) => f ?? ""); setTimeout(() => findInput.current?.focus(), 0); }
     else if (k.do === "back") onBack();
     else if (k.do === "zoom") zoomBy(k.by);
@@ -221,6 +223,8 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     suppressClick.current = true;
     setTimeout(() => (suppressClick.current = false), 0);
     if (d.kind !== "move" || !d.ws) return;
+    // A new arrangement: "Undo tidy" would throw it away, so it's gone.
+    setUndoTidy(null); clearTimeout(undoTimer.current);
     // It never lands on top of another workspace: nudged to the nearest free spot beside it.
     const found = areas.find((a) => a.workspace === d.ws);
     const moved = found && { ...found, x: snap(found.x), y: snap(found.y) }; // on the grid, so neighbours line up
@@ -237,22 +241,32 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   // Find on the canvas (/): matches stay lit and the rest dims; Enter flies to the next one, ⇧Enter
   // the one before, Esc closes. The camera lands at 100% on the hit, or on its workspace.
   const [find, setFind] = useState<string | null>(null);
-  const [hitAt, setHitAt] = useState(0);
+  // The hit you're on is remembered by what it is, not its place in the list: a session appearing or
+  // leaving while find is open doesn't move the ring to something else.
+  const [hitKey, setHitKey] = useState<string | null>(null);
   const findInput = useRef<HTMLInputElement>(null);
-  const flown = useRef(false); // the first Enter after typing goes to the first match, later ones step
   const hits = useMemo(() => (find ? findOnMap(areas, find) : []), [areas, find]);
-  const current = hits.length ? hits[((hitAt % hits.length) + hits.length) % hits.length] : null;
-  const flyTo = (i: number) => {
+  const keyOfHit = (h: { workspace: string; block: string | null }) => `${h.workspace}|${h.block ?? ""}`;
+  const at = hitKey === null ? -1 : hits.findIndex((h) => keyOfHit(h) === hitKey);
+  const current = at >= 0 ? hits[at] : null;
+  const FIND_H = 64; // the find box along the top: a hit is centred in the space under it
+  // Enter: the first hit (⇧Enter: the last), then on from the one you're on, wrapping.
+  const flyTo = (dir: 1 | -1) => {
     if (!hits.length) return;
-    const h = hits[((i % hits.length) + hits.length) % hits.length], a = areas.find((x) => x.workspace === h.workspace);
+    const i = at < 0 ? (dir > 0 ? 0 : hits.length - 1) : (at + dir + hits.length) % hits.length;
+    const h = hits[i], a = areas.find((x) => x.workspace === h.workspace);
     if (!a) return;
-    setHitAt(i);
+    setHitKey(keyOfHit(h));
     following = false;
     const r = hitRect(a, h.block), vh = Math.max(1, size.h - BAR_H), z = Math.max(1, Math.min((lastCam ?? cam).zoom, 1.5));
-    glideTo({ zoom: z, x: size.w / 2 - (r.x + r.w / 2) * z, y: vh / 2 - (r.y + r.h / 2) * z });
+    const room = vh - FIND_H;
+    const y = r.h * z + 48 <= room ? FIND_H + (room - r.h * z) / 2 - r.y * z : FIND_H + 24 - r.y * z; // too tall: from its top
+    glideTo({ zoom: z, x: size.w / 2 - (r.x + r.w / 2) * z, y });
   };
-  const closeFind = () => { setFind(null); setHitAt(0); flown.current = false; };
-  const lit = (ws: string, block: string | null) => !find?.trim() || hits.some((h) => h.workspace === ws && (block === null ? true : h.block === block));
+  const closeFind = () => { setFind(null); setHitKey(null); };
+  const finding = !!find?.trim();
+  const hitIn = (ws: string, block: string) => hits.some((h) => h.workspace === ws && h.block === block);
+  const lit = (ws: string) => !finding || hits.some((h) => h.workspace === ws);
   // Tidy up: every hand-placed spot is forgotten and the workspaces go back to the auto grid, the
   // camera following them. Undo, for a few seconds, puts each one back where it was.
   const pinned = Object.keys(state.overviewLayout).length > 0;
@@ -326,24 +340,24 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       style={{ position: "relative", height: "100%", overflow: "hidden", background: "var(--mr-base)", touchAction: "none", cursor: drag.current?.kind === "pan" ? "grabbing" : space.current ? "grab" : "default" }}>
       <div className="mr-ov-cam" data-glide={glide || undefined} style={{ ["--mr-ov-z" as string]: cam.zoom, position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`, pointerEvents: "none" }}>
         {areas.map((a) => <Area key={a.workspace} a={a} level={level} zoom={cam.zoom} lifted={moving === a.workspace}
-          dim={!lit(a.workspace, null)} dimBlock={(key) => !!find?.trim() && !lit(a.workspace, key)} current={current?.workspace === a.workspace ? current.block ?? "" : null}
+          dim={!lit(a.workspace)} finding={finding && lit(a.workspace)} hitIn={(key) => hitIn(a.workspace, key)} current={current?.workspace === a.workspace ? current.block ?? "" : null}
           onDown={(e) => down(e, a.workspace)}
           onOpen={click(() => onOpenWorkspace(a.workspace))}
           onZoomTo={click(() => zoomTo(a))}
           onBlock={(b) => click(() => (b.kind === "session" ? onOpenSession(a.workspace, b.id) : onOpenDoc(a.workspace, b.id)))} />)}
       </div>
       {find !== null && (
-        <div className="mr-row" data-mr="OverviewFind" data-mr-source="overview" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
-          style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", gap: 8, padding: "6px 8px", background: "var(--mr-tile)", boxShadow: "0 0 0 1px var(--mr-well)", zIndex: 2 }}>
-          <input ref={findInput} className="mr-input" aria-label="Find on the map" placeholder="Find a session, doc or workspace" value={find}
-            onChange={(e) => { setFind(e.target.value); setHitAt(0); flown.current = false; }}
+        <div className="mr-row" role="search" data-mr="OverviewFind" data-mr-source="overview" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+          style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", gap: 8, padding: "6px 8px", background: "var(--mr-tile)", zIndex: 2 }}>
+          <input ref={findInput} className="mr-input" data-mr="OverviewFindInput" data-mr-source="overview" aria-label="Find on the map" aria-describedby="mr-ov-find-count" placeholder="Find a session, doc or workspace" value={find}
+            onChange={(e) => { setFind(e.target.value); setHitKey(null); }}
             onKeyDown={(e) => {
               if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeFind(); }
-              else if (e.key === "Enter") { e.preventDefault(); flyTo(!flown.current ? hitAt : hitAt + (e.shiftKey ? -1 : 1)); flown.current = true; }
+              else if (e.key === "Enter") { e.preventDefault(); flyTo(e.shiftKey ? -1 : 1); }
             }}
             style={{ width: 280, flex: "none", minHeight: 32, background: "var(--mr-well)" }} />
-          <span className="mr-mono mr-dim" data-mr="OverviewFindCount" style={{ fontSize: 12, minWidth: 64 }}>{find.trim() ? (hits.length ? `${(((hitAt % hits.length) + hits.length) % hits.length) + 1} of ${hits.length}` : "No match") : ""}</span>
-          <button type="button" className="mr-key" aria-label="Close find" onClick={closeFind}>esc</button>
+          <span id="mr-ov-find-count" role="status" aria-live="polite" className="mr-mono mr-dim" data-mr="OverviewFindCount" data-mr-source="overview" style={{ fontSize: 12, minWidth: 64 }}>{findCount(find, hits.length, at)}</span>
+          <button type="button" className="mr-key" data-mr="OverviewFindClose" data-mr-source="overview" aria-label="Close find" onClick={closeFind}>esc</button>
         </div>
       )}
       {/* Panned off into empty canvas: say so, and offer the way back. */}
@@ -374,6 +388,10 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   );
 }
 
+/** The find box's count: how many hits, then which one you're on once Enter took you there. */
+export const findCount = (query: string, n: number, at: number) =>
+  !query.trim() ? "" : !n ? "No match" : at < 0 ? `${n} found` : `${at + 1} of ${n}`;
+
 /** A button focused from the keyboard (Tab), as opposed to one a mouse click happened to focus. */
 function keyboardFocused(b: Element | null): boolean {
   if (!b) return false;
@@ -397,9 +415,9 @@ export const said = (a: Pick<OverviewArea, "counts">) => countLabels(a.counts).m
 /** Every block's lamp in reading order, for the far view's strip: what needs you first. */
 export const lamps = (a: OverviewArea): OverviewBlock[] => GROUPS.flatMap((g) => a.groups[g]).sort((x, y) => Number(y.needs) - Number(x.needs));
 
-type AreaProps = { a: OverviewArea; level: "far" | "middle" | "close"; zoom: number; lifted: boolean; dim: boolean; dimBlock: (key: string) => boolean; current: string | null; onDown: (e: React.PointerEvent) => void; onOpen: (e: React.MouseEvent) => void; onZoomTo: (e: React.MouseEvent) => void; onBlock: (b: OverviewBlock) => (e: React.MouseEvent) => void };
+type AreaProps = { a: OverviewArea; level: "far" | "middle" | "close"; zoom: number; lifted: boolean; dim: boolean; finding: boolean; hitIn: (key: string) => boolean; current: string | null; onDown: (e: React.PointerEvent) => void; onOpen: (e: React.MouseEvent) => void; onZoomTo: (e: React.MouseEvent) => void; onBlock: (b: OverviewBlock) => (e: React.MouseEvent) => void };
 
-function Area({ a, level, zoom, lifted, dim, dimBlock, current, onDown, onOpen, onZoomTo, onBlock }: AreaProps) {
+function Area({ a, level, zoom, lifted, dim, finding, hitIn, current, onDown, onOpen, onZoomTo, onBlock }: AreaProps) {
   const empty = GROUPS.every((g) => !a.groups[g].length);
   const far = level === "far", close = level === "close";
   const labels = countLabels(a.counts, !close);
@@ -407,6 +425,8 @@ function Area({ a, level, zoom, lifted, dim, dimBlock, current, onDown, onOpen, 
   // out (no blocks drawn) rings the whole workspace.
   const drawn = (key: string) => !far && GROUPS.some((g) => shown(a.groups[g]).blocks.some((b) => `${b.kind}:${b.id}` === key));
   const ringed = current !== null && (current === "" || !drawn(current));
+  // Inside a lit workspace, blocks that aren't hits fade (a faded workspace fades as a whole, once).
+  const dimBlock = (key: string) => finding && !hitIn(key);
   const nameSize = readable(20, zoom, 14);
   const countSize = readable(13, zoom, 12);
   return (
@@ -432,6 +452,7 @@ function Area({ a, level, zoom, lifted, dim, dimBlock, current, onDown, onOpen, 
               {(() => { const v = shown(a.groups[g]); return <>
                     {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} dim={dimBlock(`${b.kind}:${b.id}`)} current={current === `${b.kind}:${b.id}`} onClick={onBlock(b)} />)}
                     {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen}
+                      data-dim={(finding && !a.groups[g].slice(v.blocks.length).some((b) => hitIn(`${b.kind}:${b.id}`))) || undefined}
                       aria-label={`${v.more} more in ${GROUP_LABEL[g]}: open workspace ${a.name}`}
                       style={{ height: BLOCK_H, border: 0, font: "inherit", fontWeight: 600, fontSize: readable(14, zoom, 12), cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink-2)" }}>+{v.more} more</button>}
                   </>; })()}

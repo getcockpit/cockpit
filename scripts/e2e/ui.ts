@@ -359,7 +359,7 @@ const flows: Flow[] = [
     await ui.css('[data-mr="OverviewFind"] input', 1);
     await sleep(100);
     pt("type", 'css:[data-mr="OverviewFind"] input', "refund");
-    await until("one hit", () => { if (ui.text('[data-mr="OverviewFindCount"]').trim() !== "1 of 1") throw new Error(ui.text('[data-mr="OverviewFindCount"]')); });
+    await until("one hit", () => { if (ui.text('[data-mr="OverviewFindCount"]').trim() !== "1 found") throw new Error(ui.text('[data-mr="OverviewFindCount"]')); });
     await ui.css('[data-mr="OverviewArea"][data-dim]', 5); // …everything else fades back…
     await ui.press("Enter"); // …and Enter flies to it
     await ui.css('[data-mr="OverviewBlock"][data-current]', 1);
