@@ -6,7 +6,7 @@ import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
 import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
-import { overviewKey } from "../components/keys";
+import { isTyping, overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
 // open session and doc as its own block. Scroll pans, pinch or ⌘-scroll zooms around the cursor,
@@ -19,6 +19,9 @@ let lastCam: Cam | null = null;
 // Until you pan or zoom yourself, the camera keeps everything in view as the window and the map change.
 let following = true;
 const BAR_H = 44; // the hint and zoom buttons along the bottom
+// The last ⌘0 / Fit all request handled, so coming back to the Overview restores where you left it
+// instead of re-running an old fit (the app's counter only ever grows).
+let fitSeen = 0;
 
 // Every tile state has a lamp you can see (an unmapped one fell back to the pale "off" grey and vanished).
 export const LAMP: Record<TileSpec["state"], string> = { needs_you: "var(--mr-needs)", error: "var(--mr-error)", review: "var(--mr-ink)", working: "var(--mr-ink-3)", idle: "var(--mr-ink-3)", almost: "var(--mr-ink-3)", starting: "var(--mr-ink-3)", done: "var(--mr-done)", interrupted: "var(--mr-ink-2)" };
@@ -49,7 +52,12 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   }, []);
   // Positions while a drag is in flight, and until its event replays back into the layout.
   const [held, setHeld] = useState<Layout>({});
-  useEffect(() => setHeld({}), [state.overviewLayout]);
+  // Each spot is let go once its own event has replayed: a drop sends one event per workspace, and
+  // clearing them all on the first would make the dragged one jump back for a frame.
+  useEffect(() => setHeld((h) => {
+    const left = Object.fromEntries(Object.entries(h).filter(([ws, p]) => { const l = state.overviewLayout[ws]; return !l || Math.abs(l.x - p.x) > 1 || Math.abs(l.y - p.y) > 1; }));
+    return Object.keys(left).length === Object.keys(h).length ? h : left;
+  }), [state.overviewLayout]);
   const aspect = size.w && size.h ? size.w / size.h : undefined;
   const areas = useMemo(() => overview(state, docs, { ...state.overviewLayout, ...held }, aspect), [state, docs, held, aspect]);
   // Fit into the part of the canvas above the zoom bar, so nothing starts hidden under it.
@@ -59,14 +67,17 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   const boxKey = `${box.x},${box.y},${box.w},${box.h}`;
   // The first fit waits for a real size (a hidden window measures 0 × 0); a pan or zoom made before it
   // sets the camera, so it never undoes that.
-  useLayoutEffect(() => { if (size.w && (!lastCam || fitSignal)) fitNow(!!lastCam); }, [fitSignal, size.w > 0]);
+  useLayoutEffect(() => { if (size.w && (!lastCam || fitSignal !== fitSeen)) { fitSeen = fitSignal; fitNow(!!lastCam); } }, [fitSignal, size.w > 0]);
   // While it follows, keep it fitted; not while a rectangle is being dragged (the camera would chase it).
   // A resize refits at once (the window is moving under you); a map change, like a new session, glides.
   useLayoutEffect(() => { if (following && size.w && !drag.current) fitNow(false); }, [size.w, size.h]);
   const firstBox = useRef(true);
   useLayoutEffect(() => { if (firstBox.current) { firstBox.current = false; return; } if (following && size.w && !drag.current) fitNow(true); }, [boxKey]);
   // Far out a click zooms into that workspace (close enough to read it) instead of leaving the map.
-  const zoomTo = (a: OverviewArea) => { following = false; glideTo(fit(a, { w: size.w, h: Math.max(1, size.h - BAR_H) })); };
+  // The second click of a double-click would land on the now-readable workspace and open it: clicks
+  // right after a zoom-in are swallowed.
+  const zoomedAt = useRef(0);
+  const zoomTo = (a: OverviewArea) => { following = false; zoomedAt.current = Date.now(); glideTo(fit(a, { w: size.w, h: Math.max(1, size.h - BAR_H) })); };
   // 100% lands on the workspace nearest the middle of the view, not on whatever gap happens to be there.
   const toActual = () => {
     const vh = Math.max(1, size.h - BAR_H);
@@ -109,7 +120,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   // + / − zoom around the middle, arrows pan.
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => {});
   keyRef.current = (e) => {
-    const k = overviewKey(e, { dialog: !!document.querySelector('[role="dialog"]') });
+    const k = overviewKey(e, { dialog: !!document.querySelector('[role="dialog"]'), menu: !!document.querySelector("[data-mr-menu]") });
     if (!k) return;
     e.preventDefault();
     if (k.do === "back") onBack();
@@ -118,24 +129,45 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   };
   useEffect(() => { const on = (e: KeyboardEvent) => keyRef.current(e); window.addEventListener("keydown", on); return () => window.removeEventListener("keydown", on); }, []);
 
-  // Pointer drags: on the empty canvas they pan; anywhere on a workspace (but its blocks) they move it.
-  const drag = useRef<{ kind: "pan" | "move"; ws?: string; x0: number; y0: number; ox: number; oy: number; moved: boolean; frozen?: Layout } | null>(null);
+  // Space held: any drag pans, even over a workspace (Miro, Figma). A focused button keeps its Space.
+  const space = useRef(false);
+  const [, setSpaceCursor] = useState(false);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key !== " " || e.repeat && space.current) { if (e.key === " " && space.current) e.preventDefault(); return; }
+      const t = e.target as HTMLElement | null;
+      if (isTyping(t) || t?.closest?.("button, [role=dialog], [data-mr-menu]")) return;
+      e.preventDefault(); space.current = true; setSpaceCursor(true);
+    };
+    const up = (e: KeyboardEvent) => { if (e.key === " ") { space.current = false; setSpaceCursor(false); } };
+    const blur = () => { space.current = false; setSpaceCursor(false); };
+    window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", blur);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", blur); };
+  }, []);
+
+  // Pointer drags: on the empty canvas, with the middle button, or with Space held they pan; anywhere
+  // on a workspace (its blocks too) they move it. The pointer is captured only once it has moved, so
+  // a plain click still lands on the block under it; a press that moved never opens anything.
+  const drag = useRef<{ kind: "pan" | "move"; ws?: string; x0: number; y0: number; ox: number; oy: number; moved: boolean; frozen?: Layout; el: Element; id: number } | null>(null);
   const suppressClick = useRef(false);
   const down = (e: React.PointerEvent, ws?: string) => {
-    if (e.button !== 0) return;
-    if (!ws && e.target !== e.currentTarget) return;
+    if (e.button !== 0 && e.button !== 1) return;
+    const pan = e.button === 1 || space.current; // pan wherever the press lands
+    // The canvas itself only takes a plain press on its empty background (a workspace handles its own).
+    if (!ws && !pan && e.target !== e.currentTarget) return;
     if (ws) e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const a = ws ? areas.find((x) => x.workspace === ws) : null;
+    if (e.button === 1) e.preventDefault(); // no autoscroll
+    const a = ws && !pan ? areas.find((x) => x.workspace === ws) : null;
     // Freeze every rectangle where it is, so moving one doesn't shuffle the ones still auto-placed.
-    const frozen = ws ? Object.fromEntries(areas.map((x) => [x.workspace, { x: x.x, y: x.y }])) : undefined;
-    drag.current = { kind: ws ? "move" : "pan", ws, x0: e.clientX, y0: e.clientY, ox: a ? a.x : cam.x, oy: a ? a.y : cam.y, moved: false, frozen };
+    const frozen = a ? Object.fromEntries(areas.map((x) => [x.workspace, { x: x.x, y: x.y }])) : undefined;
+    drag.current = { kind: a ? "move" : "pan", ws: a ? ws : undefined, x0: e.clientX, y0: e.clientY, ox: a ? a.x : cam.x, oy: a ? a.y : cam.y, moved: false, frozen, el: e.currentTarget, id: e.pointerId };
   };
   const move = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
     const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
+    if (!d.moved) try { d.el.setPointerCapture(d.id); } catch { /* the pointer is already gone */ }
     d.moved = true;
     if (d.kind === "pan") byHand((c) => ({ ...c, x: d.ox + dx, y: d.oy + dy }));
     else if (d.ws) { following = false; setHeld({ ...d.frozen, [d.ws]: { x: d.ox + dx / cam.zoom, y: d.oy + dy / cam.zoom } }); }
@@ -163,7 +195,12 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     // The moved one, plus any still auto-placed: their spots are now fixed too, so nothing jumps later.
     for (const a of areas) if (a.workspace === d.ws || !state.overviewLayout[a.workspace]) void invoke("overview_move", { workspace: a.workspace, ...(a.workspace === d.ws && spot ? spot : { x: a.x, y: a.y }) }).catch(() => {});
   };
-  const click = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); if (suppressClick.current) { suppressClick.current = false; return; } fn(); };
+  const click = (fn: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (suppressClick.current) { suppressClick.current = false; return; }
+    if (Date.now() - zoomedAt.current < 450) return;
+    fn();
+  };
   // Double-click the empty canvas to zoom in there.
   const dbl = (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return;
@@ -173,7 +210,8 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   };
 
   // Tabbing to a block or workspace off screen brings it into view. The browser would scroll the
-  // clipped canvas itself instead, and the camera would no longer match what's drawn: undo that, pan.
+  // clipped canvas itself instead (so would find-in-page or scrollIntoView, which onScroll undoes),
+  // and the camera would no longer match what's drawn: undo that, pan.
   const focused = (e: React.FocusEvent) => {
     const el = view.current;
     if (!el) return;
@@ -189,9 +227,9 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   const level = detail(cam.zoom);
   const moving = drag.current?.kind === "move" ? drag.current.ws : null;
   return (
-    <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} data-fitted={following && lastCam ? "" : undefined} role="region" aria-roledescription="canvas" aria-label="Overview of every workspace. Plus and minus zoom, arrows pan, Escape goes back." onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl} onFocus={focused}
-      style={{ position: "relative", height: "100%", overflow: "hidden", background: "var(--mr-base)", touchAction: "none", cursor: drag.current?.kind === "pan" ? "grabbing" : "default" }}>
-      <div className="mr-ov-cam" data-glide={glide || undefined} style={{ position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`, pointerEvents: "none" }}>
+    <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} data-fitted={following && lastCam ? "" : undefined} role="region" aria-roledescription="canvas" aria-label="Overview of every workspace. Plus and minus zoom, arrows pan, Escape goes back." onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl} onFocus={focused} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }}
+      style={{ position: "relative", height: "100%", overflow: "hidden", background: "var(--mr-base)", touchAction: "none", cursor: drag.current?.kind === "pan" ? "grabbing" : space.current ? "grab" : "default" }}>
+      <div className="mr-ov-cam" data-glide={glide || undefined} style={{ ["--mr-ov-z" as string]: cam.zoom, position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`, pointerEvents: "none" }}>
         {areas.map((a) => <Area key={a.workspace} a={a} level={level} zoom={cam.zoom} lifted={moving === a.workspace}
           onDown={(e) => down(e, a.workspace)}
           onOpen={click(() => onOpenWorkspace(a.workspace))}
@@ -209,7 +247,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       <div className="mr-row" data-mr="OverviewBar" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
         style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: BAR_H, padding: "0 12px", gap: 12, background: "var(--mr-base)", boxShadow: "0 -1px 0 var(--mr-well)" }}>
       <div className="mr-row mr-dim mr-grow" data-mr="OverviewHint" style={{ minWidth: 0, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        <span className="mr-ellipsis">Scroll or drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it</span>
+        <span className="mr-ellipsis">Scroll, drag empty space or Space-drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it</span>
       </div>
       <div className="mr-row" data-mr="OverviewZoom" style={{ flex: "none", gap: 4 }}>
         <button type="button" className="mr-key" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
@@ -234,6 +272,9 @@ export function countLabels(c: OverviewArea["counts"], short = false): { key: st
   ].filter((x) => x.n > 0).map(({ key, icon, word, n, needs }) => ({ key, needs, title: `${n} ${word}`, text: short && !needs ? `${icon} ${n}` : `${icon} ${n} ${word}` }));
 }
 
+/** What a screen reader hears after a workspace's name: its counts, needs you first. */
+export const said = (a: Pick<OverviewArea, "counts">) => countLabels(a.counts).map((l) => `, ${l.title}`).join("");
+
 /** Every block's lamp in reading order, for the far view's strip: what needs you first. */
 export const lamps = (a: OverviewArea): OverviewBlock[] => GROUPS.flatMap((g) => a.groups[g]).sort((x, y) => Number(y.needs) - Number(x.needs));
 
@@ -248,9 +289,9 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
   return (
     <div data-mr="OverviewArea" data-mr-source={a.workspace} data-mr-name={a.name} data-needs={a.counts.needs ? "" : undefined} className="mr-ov-area" onClick={far ? onZoomTo : onOpen} onPointerDown={onDown}
       title={`${a.name}${a.folder ? ` · starts in ${a.folder}` : ""}\n${far ? "Click to zoom in" : "Click to open"} · drag to move`}
-      style={{ position: "absolute", left: a.x, top: a.y, width: a.w, height: a.h, overflow: "hidden", background: "var(--mr-band)", pointerEvents: "auto", cursor: lifted ? "grabbing" : "pointer", touchAction: "none", outline: lifted ? `${3 / zoom}px solid var(--mr-selected)` : undefined, zIndex: lifted ? 1 : undefined }}>
+      style={{ position: "absolute", left: a.x, top: a.y, width: a.w, height: a.h, overflow: "hidden", background: "var(--mr-band)", pointerEvents: "auto", cursor: lifted ? "grabbing" : "inherit", touchAction: "none", outline: lifted ? `${3 / zoom}px solid var(--mr-selected)` : undefined, zIndex: lifted ? 1 : undefined }}>
       {far ? <Far a={a} zoom={zoom} onOpen={onZoomTo} /> : <>
-        <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Open workspace ${a.name}`} onClick={onOpen}
+        <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Open workspace ${a.name}${said(a)}`} onClick={onOpen}
           className="mr-row" style={{ width: "100%", height: HEADER_H, alignItems: "center", gap: 10, padding: `0 ${PAD}px`, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
           <strong className="mr-ellipsis" style={{ fontSize: nameSize, lineHeight: 1.1, minWidth: 0, flexShrink: 1 }}>{a.name}</strong>
           {labels.map((l) => (
@@ -267,7 +308,7 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
               <span className="mr-dim mr-ellipsis" style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 10), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
               {(() => { const v = shown(a.groups[g]); return <>
                     {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} onClick={onBlock(b)} />)}
-                    {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen} onPointerDown={(e) => e.stopPropagation()}
+                    {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen}
                       aria-label={`${v.more} more in ${GROUP_LABEL[g]}: open workspace ${a.name}`}
                       style={{ height: BLOCK_H, border: 0, font: "inherit", fontWeight: 600, fontSize: readable(14, zoom, 12), cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink-2)" }}>+{v.more} more</button>}
                   </>; })()}
@@ -280,22 +321,24 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
 
 /** Far out: the name, what needs you, and one lamp per open item, sized to stay legible over the rectangle. */
 function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: React.MouseEvent) => void }) {
-  const name = Math.min(readable(20, zoom, 14, 8), a.h * 0.32);
-  const lamp = Math.min(10 / zoom, a.h * 0.16);
-  const pad = Math.min(12 / zoom, a.h * 0.1);
+  // Capped by the rectangle's height so it all fits; a one-row workspace (180 tall) still gets a name
+  // of 12 px at the furthest zoom.
+  const name = Math.min(readable(20, zoom, 14, 8), a.h * 0.45);
+  const lamp = Math.min(10 / zoom, a.h * 0.2);
+  const pad = Math.min(12 / zoom, a.h * 0.06);
   const all = lamps(a);
   return (
-    <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Zoom to workspace ${a.name}`} onClick={onOpen}
-      style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: lamp * 0.6, padding: pad, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
+    <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Zoom to workspace ${a.name}${said(a)}`} onClick={onOpen}
+      style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "flex-start", gap: lamp * 0.6, padding: pad, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
       {/* The name gets the whole width; what needs you leads the lamp row instead of crowding it. */}
       <strong className="mr-ellipsis" style={{ fontSize: name, lineHeight: 1.1, maxWidth: "100%" }}>{a.name}</strong>
       {all.length
-        ? <span data-mr="OverviewLamps" data-mr-source={a.workspace} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: lamp * 0.4 }}>
+        ? <span data-mr="OverviewLamps" data-mr-source={a.workspace} aria-hidden="true" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: lamp * 0.4 }}>
             {a.counts.needs > 0 && <span data-mr="OverviewCount" data-mr-source={`${a.workspace}:needs`} className="mr-mono" title={`${a.counts.needs} need${a.counts.needs === 1 ? "s" : ""} you`}
               style={{ flex: "none", fontSize: lamp * 1.1, lineHeight: 1, fontWeight: 700, padding: `${lamp * 0.1}px ${lamp * 0.25}px`, marginRight: lamp * 0.3, background: "var(--mr-needs)" }}>⚠ {a.counts.needs}</span>}
             {all.map((b) => <span key={`${b.kind}:${b.id}`} data-s={b.lamp} style={{ width: lamp, height: lamp, ...lampStyle(b.lamp) }} />)}
           </span>
-        : <span className="mr-dim" style={{ fontSize: name * 0.75 }}>Nothing open</span>}
+        : <span className="mr-dim" style={{ fontSize: lamp * 1.1, lineHeight: 1 }}>Nothing open</span>}
     </button>
   );
 }
@@ -303,7 +346,7 @@ function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: R
 function Block({ b, close, zoom, onClick }: { b: OverviewBlock; close: boolean; zoom: number; onClick: (e: React.MouseEvent) => void }) {
   const tip = [b.kind === "doc" ? `Doc: ${b.title}` : b.title, b.status, b.step && b.step !== b.status ? b.step : null].filter(Boolean).join("\n");
   return (
-    <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} aria-label={`Open ${b.title}`} title={tip} onClick={onClick} onPointerDown={(e) => e.stopPropagation()}
+    <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} aria-label={`Open ${b.title}, ${b.status}`} title={tip} onClick={onClick}
       style={{ height: BLOCK_H, display: "flex", gap: 8, padding: "8px 10px 8px 0", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
       <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp, true) }} />
       <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2, justifyContent: close ? undefined : "center" }}>

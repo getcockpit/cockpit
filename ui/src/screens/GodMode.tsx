@@ -49,7 +49,8 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
       setMenu({ x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 190), t, origin: el! });
     };
     const close = (e: Event) => { if (!(e.target as HTMLElement | null)?.closest?.("[data-mr-menu]")) setMenu(null); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(null); };
+    // Handled: the screen under the menu (the Overview's Esc = back) must not act on it too.
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && document.querySelector("[data-mr-menu]")) { e.preventDefault(); setMenu(null); } };
     // "Report a bug" without pointing (Settings, the wall footer, an error panel): mark the screen.
     const report = (e: Event) => { const el = (e as CustomEvent<HTMLElement | undefined>).detail ?? document.body; onOpen(); setHover(null); setMarked(anyTarget(el)); };
     window.addEventListener("mr:report", report);
