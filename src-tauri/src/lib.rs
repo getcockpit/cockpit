@@ -83,6 +83,7 @@ pub fn run() {
             sidecar::sidecar_send,
             sidecar::session_start,
             sidecar::session_send,
+            sidecar::session_retry_signed_in,
             sidecar::session_interrupt,
             sidecar::session_set_model,
             sidecar::permission_mode_set,

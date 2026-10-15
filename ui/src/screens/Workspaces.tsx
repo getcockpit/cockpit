@@ -91,7 +91,7 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
     settle.current = { id: drag.id, left: drag.slots[drag.from].left + drag.dx };
     if (order.join(" ") !== base.join(" ")) { setHeld(order); void invoke("workspace_reorder", { order }); }
   };
-  const loggedOut = (ws: string) => Object.values(state.sessions).some((s) => s.workspace === ws && /not logged in|\/login/i.test(s.error ?? "") );
+  const loggedOut = (ws: string) => Object.values(state.sessions).some((s) => s.workspace === ws && !s.archivedAt && (!!s.signedOut || /not logged in|\/login/i.test(s.error ?? "")));
   const create = async () => {
     if (!name.trim()) return;
     const id = await invoke<string>("workspace_create", { name: name.trim() });
