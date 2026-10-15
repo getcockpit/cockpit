@@ -306,4 +306,36 @@ describe("Overview pointer and navigation in a DOM", () => {
       ptr(area, "pointerup", 640, 900);
     } finally { vi.useRealTimers(); }
   });
+  it("a dropped workspace lands on the 16-unit grid", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockClear();
+    await open();
+    dragFrom($('[data-mr="OverviewArea"][data-mr-source="personal"]'), 1603, 7); // far right: free canvas, no nudge
+    const call = vi.mocked(invoke).mock.calls.find(([c, a]) => c === "overview_move" && (a as { workspace: string }).workspace === "personal")!;
+    const { x, y } = call[1] as { x: number; y: number };
+    expect([x % 16, y % 16]).toEqual([0, 0]);
+  });
+  it("Tidy up shows once something was placed by hand, forgets the layout, and Undo puts it back", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    vi.mocked(invoke).mockClear();
+    await open();
+    expect(host.querySelector('[data-mr="OverviewTidy"]')).toBeNull(); // nothing placed: nothing to tidy
+    const placed = { ...busy, overviewLayout: { personal: { x: 1600, y: 0 }, ws_b: { x: 0, y: 400 } } };
+    render({ state: placed });
+    click($('[data-mr="OverviewTidy"]'));
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("overview_tidy");
+    render({ state: { ...busy, overviewLayout: {} } }); // the tidy event replayed
+    expect(host.querySelector('[data-mr="OverviewTidy"]')).toBeNull();
+    click($('[data-mr="OverviewUndoTidy"]'));
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("overview_move", { workspace: "personal", x: 1600, y: 0 });
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("overview_move", { workspace: "ws_b", x: 0, y: 400 });
+    expect(host.querySelector('[data-mr="OverviewUndoTidy"]')).toBeNull();
+  });
+  it("after Tidy up the workspaces are back in the auto grid, not held where they were dragged", async () => {
+    await open({ state: { ...busy, overviewLayout: { personal: { x: 1600, y: 0 } } } });
+    expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').style.left).toBe("1600px");
+    click($('[data-mr="OverviewTidy"]'));
+    render({ state: { ...busy, overviewLayout: {} } });
+    expect($('[data-mr="OverviewArea"][data-mr-source="personal"]').style.left).toBe("0px");
+  });
 });

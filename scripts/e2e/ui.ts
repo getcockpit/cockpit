@@ -358,6 +358,22 @@ const flows: Flow[] = [
     await ui.tags("OverviewCanvas", 0);
     await ui.see("button", /Acme task 12/);
   } },
+  { name: "J19 drag a workspace, tidy the map up, undo it", run: async () => {
+    await ui.open("workspaces", { overview: true });
+    await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
+    await ui.css('[data-mr="OverviewTidy"]', 0); // nothing placed by hand: nothing to tidy
+    const box = (css: string) => Object.fromEntries([...pt("box", `css:${css}`).matchAll(/(\w+):(-?[\d.]+)/g)].map(([, k, v]) => [k, Number(v)]));
+    const h = box('[data-mr="OverviewHeader"][data-mr-source="ws_client"]');
+    const x = h.x + h.width - 30, y = h.y + h.height / 2; // the header's empty right end
+    pt("mouse", "down", "--x", String(x), "--y", String(y));
+    pt("mouse", "move", String(x + 10), String(y));
+    pt("mouse", "move", String(x + 300), String(y + 40));
+    pt("mouse", "up", "--x", String(x + 300), "--y", String(y + 40));
+    await ui.tags("OverviewCanvas", 1); // a drag opens nothing
+    await ui.click("button", "Tidy up");
+    await ui.click("button", "Undo tidy");
+    await ui.see("button", "Tidy up"); // the hand-placed layout is back
+  } },
   { name: "J18 move a session to another workspace", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
