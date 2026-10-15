@@ -183,6 +183,15 @@ export function actualSize(a: Rect, view: { w: number; h: number }, margin = 24)
   return { zoom: 1, x: (view.w - a.w) / 2 - a.x, y: a.h + margin * 2 <= view.h ? (view.h - a.h) / 2 - a.y : margin - a.y };
 }
 
+/** How far to pan (screen px) so a canvas rectangle is in view with a margin; 0, 0 when it already is.
+ *  `view` is the visible screen box (the canvas minus the bottom bar). */
+export function revealBy(r: Rect, cam: { x: number; y: number; zoom: number }, view: { w: number; h: number }, m = 24): { dx: number; dy: number } {
+  const L = r.x * cam.zoom + cam.x, T = r.y * cam.zoom + cam.y, R = L + r.w * cam.zoom, B = T + r.h * cam.zoom;
+  // Too big to fit: show its top-left corner.
+  const axis = (lo: number, hi: number, size: number) => (lo < m ? m - lo : hi > size - m ? Math.max(size - m - hi, m - lo) : 0);
+  return { dx: axis(L, R, view.w), dy: axis(T, B, view.h) };
+}
+
 /** The box around every area, for ⌘0 fit-all. */
 export function bounds(areas: Pick<OverviewArea, "x" | "y" | "w" | "h">[]): { x: number; y: number; w: number; h: number } {
   if (!areas.length) return { x: 0, y: 0, w: AREA_W, h: HEADER_H };

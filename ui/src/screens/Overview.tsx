@@ -5,7 +5,7 @@ import { StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -149,7 +149,12 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     // It never lands on top of another workspace: nudged to the nearest free spot beside it.
     const moved = areas.find((a) => a.workspace === d.ws);
     const spot = moved ? settle(moved, areas.filter((a) => a.workspace !== d.ws), { x: -cam.x / cam.zoom, y: -cam.y / cam.zoom, w: size.w / cam.zoom, h: size.h / cam.zoom }) : null;
-    if (moved && spot) setHeld((h) => ({ ...h, [moved.workspace]: spot }));
+    if (moved && spot) {
+      setHeld((h) => ({ ...h, [moved.workspace]: spot }));
+      // Nowhere free in sight: it goes off screen, so the camera follows it there.
+      const { dx, dy } = revealBy({ ...moved, ...spot }, cam, { w: size.w, h: Math.max(1, size.h - BAR_H) });
+      if (dx || dy) glideTo((c) => ({ ...c, x: c.x + dx, y: c.y + dy }));
+    }
     // The moved one, plus any still auto-placed: their spots are now fixed too, so nothing jumps later.
     for (const a of areas) if (a.workspace === d.ws || !state.overviewLayout[a.workspace]) void invoke("overview_move", { workspace: a.workspace, ...(a.workspace === d.ws && spot ? spot : { x: a.x, y: a.y }) }).catch(() => {});
   };

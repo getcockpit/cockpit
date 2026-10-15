@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, revealBy, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -223,5 +223,20 @@ describe("Overview 100%", () => {
   it("lands at 100% with the workspace centred, or from its top when it's taller than the view", () => {
     expect(actualSize(b, { w: 1280, h: 700 })).toEqual({ zoom: 1, x: (1280 - 720) / 2 - 800, y: (700 - 300) / 2 });
     expect(actualSize(c, { w: 1280, h: 700 })).toEqual({ zoom: 1, x: (1280 - 720) / 2, y: 24 - 380 });
+  });
+});
+
+describe("Overview reveal", () => {
+  const view = { w: 1000, h: 600 };
+  it("leaves the camera alone when the rectangle is in view", () => {
+    expect(revealBy({ x: 100, y: 100, w: 200, h: 100 }, { x: 0, y: 0, zoom: 1 }, view)).toEqual({ dx: 0, dy: 0 });
+  });
+  it("pans just enough to bring an off-screen rectangle in, with a margin", () => {
+    expect(revealBy({ x: 100, y: -80, w: 200, h: 100 }, { x: 0, y: 0, zoom: 1 }, view)).toEqual({ dx: 0, dy: 104 });
+    expect(revealBy({ x: 900, y: 100, w: 200, h: 100 }, { x: 0, y: 0, zoom: 1 }, view)).toEqual({ dx: -124, dy: 0 });
+  });
+  it("works in canvas units at any zoom, and shows the top-left of one too big to fit", () => {
+    expect(revealBy({ x: -100, y: 0, w: 100, h: 100 }, { x: 0, y: 50, zoom: 0.5 }, view)).toEqual({ dx: 74, dy: 0 });
+    expect(revealBy({ x: 0, y: 700, w: 100, h: 2000 }, { x: 50, y: 0, zoom: 1 }, view).dy).toBe(24 - 700);
   });
 });
