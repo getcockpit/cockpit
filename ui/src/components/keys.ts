@@ -44,6 +44,22 @@ export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "foc
   return null;
 }
 
+export type OverviewKey = { do: "zoom"; by: number } | { do: "pan"; dx: number; dy: number };
+
+/** The Overview canvas's own keys (decision 40): + and − zoom around the middle, arrows pan (⇧ pans
+ *  further). Never while typing, with an overlay open, or with ⌘/⌃ held (⌘0 and friends stay the app's). */
+export function overviewKey(e: KeyEv, at: { dialog: boolean }): OverviewKey | null {
+  if (at.dialog || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return null;
+  const k = keyOf(e), step = e.shiftKey ? 400 : 80;
+  if (k === "+" || k === "=") return { do: "zoom", by: 1.25 };
+  if (k === "-" || k === "_") return { do: "zoom", by: 1 / 1.25 };
+  if (k === "ArrowLeft") return { do: "pan", dx: step, dy: 0 };
+  if (k === "ArrowRight") return { do: "pan", dx: -step, dy: 0 };
+  if (k === "ArrowUp") return { do: "pan", dx: 0, dy: step };
+  if (k === "ArrowDown") return { do: "pan", dx: 0, dy: -step };
+  return null;
+}
+
 export type FocusKey =
   | { do: "back" | "blur" | "interrupt" | "done" | "raw" | "model" | "catchUp" | "terminal" }
   | { do: "reply"; index: number };

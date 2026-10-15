@@ -143,3 +143,10 @@ textarea.mr-input { display: block; padding: 10px 12px; line-height: 1.4; resize
 .mr-view-block:hover .mr-view-actions, .mr-view-actions:focus-within { opacity: 1; }
 /* A message box with files dragged over it: they land here when let go. */
 .mr-input[data-mr-drop] { box-shadow: inset 0 0 0 2px var(--mr-selected); background: var(--mr-well); }
+/* The Overview canvas (decision 40): blocks and rectangles answer the pointer; the camera glides on
+   buttons and keys, never under a wheel or a drag. */
+.mr-ov-block:hover { filter: brightness(0.96); }
+.mr-ov-area:hover { box-shadow: inset 0 0 0 2px var(--mr-ink-3); }
+.mr-ov-area[data-needs]:hover { box-shadow: inset 4px 0 0 var(--mr-needs), inset 0 0 0 2px var(--mr-ink-3); }
+.mr-ov-cam[data-glide] { transition: transform 220ms var(--mr-ease); }
+@media (prefers-reduced-motion: reduce) { .mr-ov-cam[data-glide] { transition: none; } }
