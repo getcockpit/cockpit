@@ -24,6 +24,17 @@ let seenAtLeave: Seen | null = null;
 /** What you just had in front of you isn't news when you come back to the Overview: call it on the way
  *  out of a view. The Wall shows the whole workspace (`only` omitted); a session or a doc shows just
  *  itself (`only`: ["session:<id>"] or ["doc:<id>"]), so the rest of the workspace keeps its news. */
+/** What leaving a view marks as seen: nothing on the Overview; a session or doc just itself; the Wall
+ *  the whole workspace, but only once it has been on screen a moment (WALL_SEEN_MS). Passing through
+ *  it, Esc then ⌘0, isn't looking at it. */
+export const WALL_SEEN_MS = 1500;
+export function seenScope(at: { overview: boolean; focus: string | null; docId: string | null; wallSince: number; now: number }): "none" | "all" | string[] {
+  if (at.overview) return "none";
+  if (at.docId) return [`doc:${at.docId}`];
+  if (at.focus) return [`session:${at.focus}`];
+  return at.now - at.wallSince >= WALL_SEEN_MS ? "all" : "none";
+}
+
 export function markWorkspaceSeen(state: AppState, docs: Doc[], workspace: string, only?: string[]) {
   if (!seenAtLeave) return;
   const now = snapshot(overview(state, docs, {}).filter((a) => a.workspace === workspace));
@@ -481,7 +492,7 @@ function Area({ a, level, zoom, lifted, changes, dim, finding, hitIn, current, o
               style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: l.needs ? "var(--mr-needs)" : undefined, color: l.needs ? "var(--mr-ink)" : "var(--mr-ink-2)" }}>{l.text}</span>
           ))}
           {changedHere.length > 0 && <span data-mr="OverviewAreaChanged" data-mr-source={a.workspace} className="mr-mono" title={`${changedHere.length} changed since you last looked`}
-            style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>✦ {changedHere.length}{close ? " changed" : ""}</span>}
+            style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>● {changedHere.length}{close ? " changed" : ""}</span>}
           <span className="mr-grow" />
           {close && a.index < 9 && <kbd className="mr-mono mr-dim" style={{ fontSize: readable(12, zoom, 12) }}>{keyLabel(`⌘${a.index + 1}`)}</kbd>}
         </button>
@@ -496,7 +507,7 @@ function Area({ a, level, zoom, lifted, changes, dim, finding, hitIn, current, o
                       data-dim={(finding && !a.groups[g].slice(v.blocks.length).some((b) => hitIn(`${b.kind}:${b.id}`))) || undefined}
                       data-current={(!far && folded === g) || undefined}
                       aria-label={`${v.more} more in ${GROUP_LABEL[g]}${foldedChanged(g, v.blocks.length) ? `, ${foldedChanged(g, v.blocks.length)} changed since you last looked` : ""}: open workspace ${a.name}`}
-                      style={{ height: BLOCK_H, border: 0, font: "inherit", fontWeight: 600, fontSize: readable(14, zoom, 12), cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink-2)" }}>+{v.more} more{foldedChanged(g, v.blocks.length) ? ` · ✦ ${foldedChanged(g, v.blocks.length)}` : ""}</button>}
+                      style={{ height: BLOCK_H, border: 0, font: "inherit", fontWeight: 600, fontSize: readable(14, zoom, 12), cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink-2)" }}>+{v.more} more{foldedChanged(g, v.blocks.length) ? ` · ● ${foldedChanged(g, v.blocks.length)}` : ""}</button>}
                   </>; })()}
             </div>
           ))}
@@ -519,7 +530,7 @@ function Far({ a, zoom, changed, onOpen }: { a: OverviewArea; zoom: number; chan
         ? <span data-mr="OverviewLamps" data-mr-source={a.workspace} aria-hidden="true" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: lamp * 0.4 }}>
             {a.counts.needs > 0 && <span data-mr="OverviewCount" data-mr-source={`${a.workspace}:needs`} className="mr-mono" title={`${a.counts.needs} need${a.counts.needs === 1 ? "s" : ""} you`}
               style={{ flex: "none", fontSize: lamp * 1.1, lineHeight: 1, fontWeight: 700, padding: `${lamp * 0.1}px ${lamp * 0.25}px`, marginRight: lamp * 0.3, background: "var(--mr-needs)" }}>⚠ {a.counts.needs}</span>}
-            {changed > 0 && <span data-mr="OverviewAreaChanged" data-mr-source={a.workspace} className="mr-mono" style={{ flex: "none", fontSize: lamp * 1.1, lineHeight: 1, fontWeight: 700, padding: `${lamp * 0.1}px ${lamp * 0.25}px`, marginRight: lamp * 0.3, background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>✦ {changed}</span>}
+            {changed > 0 && <span data-mr="OverviewAreaChanged" data-mr-source={a.workspace} className="mr-mono" style={{ flex: "none", fontSize: lamp * 1.1, lineHeight: 1, fontWeight: 700, padding: `${lamp * 0.1}px ${lamp * 0.25}px`, marginRight: lamp * 0.3, background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>● {changed}</span>}
             {all.map((b) => <span key={`${b.kind}:${b.id}`} data-s={b.lamp} style={{ width: lamp, height: lamp, ...lampStyle(b.lamp) }} />)}
           </span>
         : <span className="mr-dim" style={{ fontSize: note, lineHeight: 1 }}>Nothing open</span>}
