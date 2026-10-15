@@ -5,7 +5,7 @@ import { StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -193,6 +193,13 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
           onZoomTo={click(() => zoomTo(a))}
           onBlock={(b) => click(() => (b.kind === "session" ? onOpenSession(a.workspace, b.id) : onOpenDoc(a.workspace, b.id)))} />)}
       </div>
+      {/* Panned off into empty canvas: say so, and offer the way back. */}
+      {size.w > 0 && areas.length > 0 && !anyInView(areas, cam, { w: size.w, h: size.h - BAR_H }) && (
+        <div data-mr="OverviewLost" style={{ display: "flex", flexDirection: "column", position: "absolute", left: 0, right: 0, top: 0, bottom: BAR_H, alignItems: "center", justifyContent: "center", gap: 10, pointerEvents: "none" }}>
+          <span className="mr-dim">Nothing here</span>
+          <button type="button" className="mr-key" data-tone="primary" style={{ pointerEvents: "auto" }} onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Back to your workspaces</button>
+        </div>
+      )}
       {/* The bottom strip: its own band, so the map never shows through the hint and the zoom buttons. */}
       <div className="mr-row" data-mr="OverviewBar" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
         style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: BAR_H, padding: "0 12px", gap: 12, background: "var(--mr-base)", boxShadow: "0 -1px 0 var(--mr-well)" }}>
