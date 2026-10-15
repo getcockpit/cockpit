@@ -21,9 +21,6 @@ let following = true;
 // What the map looked like when you last left it, so coming back can say what moved meanwhile.
 let seenAtLeave: Seen | null = null;
 
-/** What you just had in front of you isn't news when you come back to the Overview: call it on the way
- *  out of a view. The Wall shows the whole workspace (`only` omitted); a session or a doc shows just
- *  itself (`only`: ["session:<id>"] or ["doc:<id>"]), so the rest of the workspace keeps its news. */
 /** What leaving a view marks as seen: nothing on the Overview; a session or doc just itself; the Wall
  *  the whole workspace, but only once it has been on screen a moment (WALL_SEEN_MS). Passing through
  *  it, Esc then ⌘0, isn't looking at it. */
@@ -35,6 +32,9 @@ export function seenScope(at: { overview: boolean; focus: string | null; docId: 
   return at.now - at.wallSince >= WALL_SEEN_MS ? "all" : "none";
 }
 
+/** What you just had in front of you isn't news when you come back to the Overview: call it on the way
+ *  out of a view. The Wall shows the whole workspace (`only` omitted); a session or a doc shows just
+ *  itself (`only`: ["session:<id>"] or ["doc:<id>"]), so the rest of the workspace keeps its news. */
 export function markWorkspaceSeen(state: AppState, docs: Doc[], workspace: string, only?: string[]) {
   if (!seenAtLeave) return;
   const now = snapshot(overview(state, docs, {}).filter((a) => a.workspace === workspace));
