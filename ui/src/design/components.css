@@ -148,7 +148,10 @@ textarea.mr-input { display: block; padding: 10px 12px; line-height: 1.4; resize
 .mr-ov-block:hover { filter: brightness(0.93); }
 /* Needs-you edge lives here, not inline, so the hover ring can add to it (an inline shadow beat :hover). */
 .mr-ov-area[data-needs] { box-shadow: inset 4px 0 0 var(--mr-needs); }
-.mr-ov-area:hover { box-shadow: inset 0 0 0 2px var(--mr-ink-3); }
-.mr-ov-area[data-needs]:hover { box-shadow: inset 4px 0 0 var(--mr-needs), inset 0 0 0 2px var(--mr-ink-3); }
+/* Rings are drawn inside (the rectangle clips anything outside) and divided by the zoom (--mr-ov-z on
+   the camera), so they stay 2 px on screen at any zoom instead of thinning to nothing far out. */
+.mr-ov-area:hover { box-shadow: inset 0 0 0 calc(2px / var(--mr-ov-z, 1)) var(--mr-ink-3); }
+.mr-ov-area[data-needs]:hover { box-shadow: inset calc(4px / var(--mr-ov-z, 1)) 0 0 var(--mr-needs), inset 0 0 0 calc(2px / var(--mr-ov-z, 1)) var(--mr-ink-3); }
+.mr-ov-cam button:focus-visible { outline: calc(2px / var(--mr-ov-z, 1)) solid var(--mr-selected); outline-offset: calc(-2px / var(--mr-ov-z, 1)); }
 .mr-ov-cam[data-glide] { transition: transform 220ms var(--mr-ease); }
 @media (prefers-reduced-motion: reduce) { .mr-ov-cam[data-glide] { transition: none; } }

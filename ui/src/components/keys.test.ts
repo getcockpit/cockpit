@@ -176,6 +176,15 @@ describe("overviewKey (decision 40)", () => {
     expect(overviewKey(k("Escape", "Escape"), { dialog: false })).toEqual({ do: "back" });
     expect(overviewKey(k("Escape", "Escape"), { dialog: true })).toBeNull();
   });
+  it("leaves a key alone once something handled it, or while a menu is open (Esc closes the menu, not the Overview)", () => {
+    expect(overviewKey({ ...k("Escape", "Escape"), defaultPrevented: true }, { dialog: false })).toBeNull();
+    expect(overviewKey(k("Escape", "Escape"), { dialog: false, menu: true })).toBeNull();
+    expect(overviewKey(k("ArrowUp", "ArrowUp"), { dialog: false, menu: true })).toBeNull();
+  });
+  it("reads − and + from the character, so a German layout's \"-\" (on the Slash key) zooms out", () => {
+    expect(overviewKey(k("-", "Slash"), { dialog: false })).toEqual({ do: "zoom", by: 0.8 });
+    expect(overviewKey(k("+", "BracketRight"), { dialog: false })).toEqual({ do: "zoom", by: 1.25 });
+  });
   it("leaves ⌘ combos, typing and open dialogs alone", () => {
     expect(overviewKey(k("=", "Equal", { metaKey: true }), { dialog: false })).toBeNull();
     expect(overviewKey(k("-", "Minus"), { dialog: true })).toBeNull();

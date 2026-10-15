@@ -295,13 +295,19 @@ const flows: Flow[] = [
     await ui.gone("button", "Open Bump the lockfile");
     await until("needs-you count beside Cockpit dev", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("1 needs you")) throw new Error("no count label"); });
     await ui.css('[data-mr="OverviewArea"] [data-mr="OverviewBlock"] button', 0); // read-only: nothing to answer on the map
+    await ui.rightClick("button", "Open Voice: push to talk"); // Esc closes the right-click menu…
+    await ui.css("[data-mr-menu]", 1);
+    await ui.press("Escape");
+    await ui.css("[data-mr-menu]", 0);
+    await ui.tags("OverviewCanvas", 1); // …and only the menu: still on the Overview
     // Fit lays three workspaces out as a grid, so launch lands readable, not at half size in one long row.
     // Fitted (not the unfitted start), and still readable.
     await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
     await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 60)) throw new Error(`fit at ${z}%`); });
     for (let i = 0; i < 4; i++) await ui.press("-"); // − zooms out from the keyboard…
     await ui.tags("OverviewLamps", 3); // …far out, each workspace is its name, what needs you and a lamp per item
-    await ui.click("button", "Zoom to workspace Client X"); // far out, a click zooms into the workspace…
+    await until("double-click Client X", () => pt("dblclick", ui.find("button", "Zoom to workspace Client X").ref)); // far out, even a double-click only zooms in…
+    await ui.tags("OverviewCanvas", 1);
     await ui.tags("OverviewLamps", 0);
     await ui.see("button", "Open Quarterly usage report"); // …close enough to read, still on the map
     for (let i = 0; i < 4; i++) await ui.press("-");
@@ -320,6 +326,10 @@ const flows: Flow[] = [
     await ui.tags("SessionName", 1);
     await ui.key("Mod+0");
     await ui.tags("OverviewCanvas", 1);
+    // Coming back is a return: the camera is where you left it (100%), not refitted by an old ⌘0…
+    await until("camera restored", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error(ui.text('[data-mr="OverviewZoomLevel"]')); });
+    await ui.key("Mod+0"); // …and ⌘0 on the Overview fits everything again
+    await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
     await ui.click("button", "Open workspace Client X");
     await ui.tags("OverviewCanvas", 0);
     await ui.see("button", "Open Quarterly usage report");
