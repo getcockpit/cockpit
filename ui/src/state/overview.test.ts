@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, changedSince, snapshot, farSizes, findOnMap, foldedIn, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, changedSince, finishedSince, sessionSig, snapshot, farSizes, findOnMap, foldedIn, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -364,5 +364,33 @@ describe("Overview since you last looked", () => {
   });
   it("nothing changed, nothing marked", () => {
     expect(changedSince(snapshot(before), before)).toEqual({});
+  });
+});
+
+describe("Overview since you last looked: what counts as a change", () => {
+  const s = (pending: string[] = [], n = 3) => ({ pending: pending.map((requestId) => ({ kind: "permission", requestId })) as never, transcript: Array.from({ length: n }) as never });
+  it("a running session's tool line churning is not a change; its plan step moving is", () => {
+    expect(sessionSig(s(), "working", "Bash: cargo test", "Step 2")).toBe(sessionSig(s(), "almost", "Read q3.csv", "Step 2"));
+    expect(sessionSig(s(), "working", "Bash", "Step 2")).not.toBe(sessionSig(s(), "working", "Bash", "Step 3"));
+  });
+  it("a new question after the one you answered is a change, though it still says Needs you", () => {
+    expect(sessionSig(s(["p1"]), "needs_you", "Needs you", null)).not.toBe(sessionSig(s(["p2"]), "needs_you", "Needs you", null));
+    expect(sessionSig(s([], 5), "needs_you", "Needs you", null)).not.toBe(sessionSig(s([], 9), "needs_you", "Needs you", null)); // asked in prose
+  });
+  it("another turn that ended back in review is a change; sitting in review isn't", () => {
+    expect(sessionSig(s([], 9), "review", "x", null)).toBe(sessionSig(s([], 9), "review", "x", null));
+    expect(sessionSig(s([], 9), "review", "x", null)).not.toBe(sessionSig(s([], 14), "review", "x", null));
+  });
+  it("the comparison uses that signature: a churning tool line isn't 'updated', a new ask is", () => {
+    const b = (status: string, sig: string): OverviewBlock => ({ kind: "session", id: "x", title: "x", lamp: "working", needs: false, status, step: "Step 2", sig });
+    const map = (blk: OverviewBlock) => [{ workspace: "w", groups: { resume: [], progress: [blk], review: [] } }];
+    expect(changedSince(snapshot(map(b("Bash: cargo test", "run:Step 2"))), map(b("Read q3.csv", "run:Step 2")))).toEqual({});
+    expect(changedSince(snapshot(map(b("Needs you", "ask:p1"))), map(b("Needs you", "ask:p2")))).toEqual({ "w|session:x": "updated" });
+  });
+  it("counts sessions that left the map because they finished, not ones that are just gone", () => {
+    const seen = { "w|session:done": "x", "w|session:arch": "x", "w|session:gone": "x", "w|session:still": "x" };
+    const areas = [{ workspace: "w", groups: { resume: [], progress: [{ kind: "session", id: "still", title: "", lamp: "working", needs: false, status: "", step: null } as OverviewBlock], review: [] } }];
+    expect(finishedSince(seen, areas, { done: { status: "ended", archivedAt: null }, arch: { status: "idle", archivedAt: 5 }, still: { status: "idle", archivedAt: null } } as never)).toBe(2);
+    expect(finishedSince(null, areas, {})).toBe(0);
   });
 });
