@@ -152,6 +152,7 @@ pub fn run() {
             workspaces::workspace_reorder,
             workspaces::workspace_set_folder,
             workspaces::workspace_delete,
+            sidecar::session_move,
             workspaces::workspace_sign_in,
             docs::doc_feedback,
             brief::brief_start,
