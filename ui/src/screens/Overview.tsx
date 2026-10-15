@@ -5,7 +5,7 @@ import { LABEL as STATE_LABEL, StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, findOnMap, hitRect, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, findOnMap, hitRect, foldedIn, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { isTyping, overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -133,6 +133,16 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   };
   useEffect(() => { const on = (e: KeyboardEvent) => keyRef.current(e); window.addEventListener("keydown", on); return () => window.removeEventListener("keydown", on); }, []);
 
+  // Where the focus came from: a press on the map (a mouse focuses what it clicks in Chromium) or the
+  // keyboard. Chromium makes a clicked button match :focus-visible as soon as any key is pressed, so
+  // that can't tell them apart; this can.
+  const pressed = useRef(false);
+  useEffect(() => {
+    const press = () => { pressed.current = true; };
+    const nav = (e: KeyboardEvent) => { if (e.key === "Tab" || e.key.startsWith("Arrow")) pressed.current = false; };
+    window.addEventListener("pointerdown", press, true); window.addEventListener("keydown", nav, true);
+    return () => { window.removeEventListener("pointerdown", press, true); window.removeEventListener("keydown", nav, true); };
+  }, []);
   // Space held: any drag pans, even over a workspace (Miro, Figma). Only a button focused from the
   // keyboard keeps its Space; Chromium focuses a button on every mouse click, and that one mustn't
   // turn Space-drag into moving (and saving) a workspace. Taken, Space is cancelled on the way up
@@ -143,7 +153,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     const down = (e: KeyboardEvent) => {
       if (e.key !== " " || e.repeat && space.current) { if (e.key === " " && space.current) e.preventDefault(); return; }
       const t = e.target as HTMLElement | null;
-      if (isTyping(t) || t?.closest?.("[role=dialog], [data-mr-menu]") || keyboardFocused(t?.closest?.("button") ?? null)) return;
+      if (isTyping(t) || t?.closest?.("[role=dialog], [data-mr-menu]") || (t?.closest?.("button") && !pressed.current)) return;
       e.preventDefault(); space.current = true; setSpaceCursor(true);
     };
     const up = (e: KeyboardEvent) => { if (e.key === " " && space.current) { e.preventDefault(); space.current = false; setSpaceCursor(false); } };
@@ -362,26 +372,26 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       )}
       {/* Panned off into empty canvas: say so, and offer the way back. */}
       {size.w > 0 && areas.length > 0 && !anyInView(areas, cam, { w: size.w, h: size.h - BAR_H }) && (
-        <div data-mr="OverviewLost" style={{ display: "flex", flexDirection: "column", position: "absolute", left: 0, right: 0, top: 0, bottom: BAR_H, alignItems: "center", justifyContent: "center", gap: 10, pointerEvents: "none" }}>
-          <span className="mr-dim">Nothing here</span>
-          <button type="button" className="mr-key" data-tone="primary" style={{ pointerEvents: "auto" }} onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Back to your workspaces</button>
+        <div data-mr="OverviewLost" data-mr-source="overview" style={{ display: "flex", flexDirection: "column", position: "absolute", left: 0, right: 0, top: 0, bottom: BAR_H, alignItems: "center", justifyContent: "center", gap: 10, pointerEvents: "none" }}>
+          <span className="mr-dim" data-mr="OverviewNothingHere" data-mr-source="overview">Nothing here</span>
+          <button type="button" className="mr-key" data-mr="OverviewBack" data-mr-source="overview" data-tone="primary" style={{ pointerEvents: "auto" }} onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Back to your workspaces</button>
         </div>
       )}
       {/* The bottom strip: its own band, so the map never shows through the hint and the zoom buttons. */}
-      <div className="mr-row" data-mr="OverviewBar" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
-        style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: BAR_H, padding: "0 12px", gap: 12, background: "var(--mr-base)", boxShadow: "0 -1px 0 var(--mr-well)" }}>
-      <div className="mr-row mr-dim mr-grow" data-mr="OverviewHint" style={{ minWidth: 0, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div className="mr-row" data-mr="OverviewBar" data-mr-source="overview" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+        style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: BAR_H, padding: "0 12px", gap: 12, background: "var(--mr-base)" }}>
+      <div className="mr-row mr-dim mr-grow" data-mr="OverviewHint" data-mr-source="overview" style={{ minWidth: 0, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         <span className="mr-ellipsis">Scroll, drag empty space or Space-drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it · / to find</span>
       </div>
       {undoTidy
         ? <button type="button" className="mr-key" data-mr="OverviewUndoTidy" data-mr-source="overview" onClick={untidy} title="Put the workspaces back where you had them">Undo tidy</button>
         : pinned && <button type="button" className="mr-key" data-mr="OverviewTidy" data-mr-source="overview" onClick={tidy} title="Put every workspace back in the automatic grid">Tidy up</button>}
-      <div className="mr-row" data-mr="OverviewZoom" style={{ flex: "none", gap: 4 }}>
-        <button type="button" className="mr-key" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
+      <div className="mr-row" data-mr="OverviewZoom" data-mr-source="overview" style={{ flex: "none", gap: 4 }}>
+        <button type="button" className="mr-key" data-mr="OverviewZoomOut" data-mr-source="overview" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
         <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label={`Zoom ${Math.round(cam.zoom * 100)}%: go to 100%`} title="Zoom to 100%" onClick={toActual}
           style={{ minWidth: 48, minHeight: 36, textAlign: "center", fontSize: 12, border: 0, background: "transparent", cursor: "pointer", color: "inherit" }}>{Math.round(cam.zoom * 100)}%</button>
-        <button type="button" className="mr-key" aria-label="Zoom in" title="Zoom in (+)" disabled={cam.zoom >= MAX_ZOOM - 1e-6} onClick={() => zoomBy(1.25)}>+</button>
-        <button type="button" className="mr-key" onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Fit all</button>
+        <button type="button" className="mr-key" data-mr="OverviewZoomIn" data-mr-source="overview" aria-label="Zoom in" title="Zoom in (+)" disabled={cam.zoom >= MAX_ZOOM - 1e-6} onClick={() => zoomBy(1.25)}>+</button>
+        <button type="button" className="mr-key" data-mr="OverviewFitAll" data-mr-source="overview" onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Fit all</button>
       </div>
       </div>
     </div>
@@ -391,12 +401,6 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
 /** The find box's count: how many hits, then which one you're on once Enter took you there. */
 export const findCount = (query: string, n: number, at: number) =>
   !query.trim() ? "" : !n ? "No match" : at < 0 ? `${n} found` : `${at + 1} of ${n}`;
-
-/** A button focused from the keyboard (Tab), as opposed to one a mouse click happened to focus. */
-function keyboardFocused(b: Element | null): boolean {
-  if (!b) return false;
-  try { return b.matches(":focus-visible"); } catch { return true; }
-}
 
 /** The count labels beside a workspace's name: zero counts hidden, needs you in amber. `short` drops the
  *  words (zoomed out, where the column headings already say them). */
@@ -424,7 +428,9 @@ function Area({ a, level, zoom, lifted, dim, finding, hitIn, current, onDown, on
   // The find hit you're on: its block is ringed; a name hit, a hit folded into "+N more" or any hit far
   // out (no blocks drawn) rings the whole workspace.
   const drawn = (key: string) => !far && GROUPS.some((g) => shown(a.groups[g]).blocks.some((b) => `${b.kind}:${b.id}` === key));
-  const ringed = current !== null && (current === "" || !drawn(current));
+  // A hit folded into "+N more" rings that row; far out (no blocks drawn) the workspace.
+  const folded = current ? foldedIn(a, current) : null;
+  const ringed = current !== null && (current === "" || far || (!drawn(current) && !folded));
   // Inside a lit workspace, blocks that aren't hits fade (a faded workspace fades as a whole, once).
   const dimBlock = (key: string) => finding && !hitIn(key);
   const nameSize = readable(20, zoom, 14);
@@ -448,11 +454,12 @@ function Area({ a, level, zoom, lifted, dim, finding, hitIn, current, onDown, on
           ? <span className="mr-dim" style={{ position: "absolute", left: PAD, top: HEADER_H, fontSize: readable(14, zoom, 12) }}>Nothing open</span>
           : columns(a.groups).map(({ group: g, x, w }) => (
             <div key={g} data-mr="OverviewGroup" data-mr-source={`${a.workspace}:${g}`} style={{ position: "absolute", left: x, top: HEADER_H, width: w, display: "flex", flexDirection: "column", gap: BLOCK_GAP }}>
-              <span className="mr-dim mr-ellipsis" style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 12), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
+              <span className="mr-dim mr-ellipsis" data-mr="OverviewGroupLabel" data-mr-source={`${a.workspace}:${g}`} style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 12), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
               {(() => { const v = shown(a.groups[g]); return <>
                     {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} dim={dimBlock(`${b.kind}:${b.id}`)} current={current === `${b.kind}:${b.id}`} onClick={onBlock(b)} />)}
                     {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen}
                       data-dim={(finding && !a.groups[g].slice(v.blocks.length).some((b) => hitIn(`${b.kind}:${b.id}`))) || undefined}
+                      data-current={(!far && folded === g) || undefined}
                       aria-label={`${v.more} more in ${GROUP_LABEL[g]}: open workspace ${a.name}`}
                       style={{ height: BLOCK_H, border: 0, font: "inherit", fontWeight: 600, fontSize: readable(14, zoom, 12), cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink-2)" }}>+{v.more} more</button>}
                   </>; })()}
