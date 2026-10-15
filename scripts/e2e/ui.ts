@@ -334,6 +334,11 @@ const flows: Flow[] = [
     await until("+8 more", () => { if (!ui.text('[data-mr="OverviewMore"]').includes("+8 more")) throw new Error("no +N more"); });
     await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewGroup"]', 1); // …and no empty columns beside them
     await until("empty workspace says so", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_e"]').includes("Nothing open")) throw new Error("no empty note"); });
+    for (let i = 0; i < 12; i++) await ui.press("ArrowLeft"); // panned off into empty canvas…
+    for (let i = 0; i < 8; i++) await ui.press("ArrowUp");
+    await ui.tags("OverviewLost", 1);
+    await ui.click("button", /Back to your workspaces/); // …one button brings everything back
+    await ui.tags("OverviewLost", 0);
     await ui.click("button", "8 more in In progress: open workspace Acme platform"); // +N more opens the workspace
     await ui.tags("OverviewCanvas", 0);
     await ui.see("button", /Acme task 12/);

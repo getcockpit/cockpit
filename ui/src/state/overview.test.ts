@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, revealBy, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, revealBy, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -238,5 +238,18 @@ describe("Overview reveal", () => {
   it("works in canvas units at any zoom, and shows the top-left of one too big to fit", () => {
     expect(revealBy({ x: -100, y: 0, w: 100, h: 100 }, { x: 0, y: 50, zoom: 0.5 }, view)).toEqual({ dx: 74, dy: 0 });
     expect(revealBy({ x: 0, y: 700, w: 100, h: 2000 }, { x: 50, y: 0, zoom: 1 }, view).dy).toBe(24 - 700);
+  });
+});
+
+describe("Overview lost in empty canvas", () => {
+  const r = { x: 0, y: 0, w: 720, h: 300 }, view = { w: 1000, h: 600 };
+  it("sees a rectangle that is on screen, even partly", () => {
+    expect(anyInView([r], { x: 0, y: 0, zoom: 1 }, view)).toBe(true);
+    expect(anyInView([r], { x: -700, y: 0, zoom: 1 }, view)).toBe(true);
+  });
+  it("knows when you've panned off into nothing", () => {
+    expect(anyInView([r], { x: -800, y: 0, zoom: 1 }, view)).toBe(false);
+    expect(anyInView([r], { x: 0, y: 700, zoom: 1 }, view)).toBe(false);
+    expect(anyInView([r], { x: 1100, y: 0, zoom: 0.5 }, view)).toBe(false);
   });
 });
