@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { keyLabel } from "../platform";
-import { StateMark } from "../components";
+import { LABEL as STATE_LABEL, StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
@@ -159,7 +159,9 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     if (!d || d.kind !== "move" || !d.ws || !d.moved || !r) return;
     setHeld({ ...d.frozen, [d.ws]: { x: (d.px - r.left - c.x) / c.zoom - d.gx, y: (d.py - r.top - c.y) / c.zoom - d.gy } });
   };
-  useEffect(holdUnderCursor, [cam]);
+  // Before paint: each camera step must draw the held workspace already back under the cursor, not
+  // one frame carried along with the canvas (a flicker during edge pan).
+  useLayoutEffect(holdUnderCursor, [cam]);
   // Near an edge while moving a workspace, the canvas pans that way so it can go further than one screen.
   const edgePan = useRef<ReturnType<typeof setInterval> | null>(null);
   const edge = useRef({ x: 0, y: 0 });
@@ -396,8 +398,9 @@ function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: R
 /** A block's state word, unless its status line already says it better: "Ended with 2 steps open" is
  *  not "Interrupted". Docs carry their stage in the status. */
 export const markFor = (b: OverviewBlock) => b.kind === "session" && !(b.lamp === "interrupted" && b.status.startsWith("Ended"));
-/** A block's status line, unless it only repeats the mark beside it ("Needs you Needs you"). */
-export const statusFor = (b: OverviewBlock) => (markFor(b) && b.lamp === "needs_you" && b.status === "Needs you" ? "" : b.status);
+/** A block's status line, unless it only repeats the mark beside it ("Needs you Needs you",
+ *  "Interrupted Interrupted"): any state, checked against the mark's own words. */
+export const statusFor = (b: OverviewBlock) => (markFor(b) && b.status === STATE_LABEL[b.lamp] ? "" : b.status);
 
 function Block({ b, close, zoom, onClick }: { b: OverviewBlock; close: boolean; zoom: number; onClick: (e: React.MouseEvent) => void }) {
   const tip = [b.kind === "doc" ? `Doc: ${b.title}` : b.title, b.status, b.step && b.step !== b.status ? b.step : null].filter(Boolean).join("\n");

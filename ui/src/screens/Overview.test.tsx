@@ -40,7 +40,9 @@ describe("Overview block lines", () => {
   it("doesn't call a session that ended with steps open Interrupted", () => {
     expect(markFor(b("interrupted", "Ended with 2 steps open"))).toBe(false);
     expect(statusFor(b("interrupted", "Ended with 2 steps open"))).toBe("Ended with 2 steps open");
-    expect(markFor(b("interrupted", "Interrupted"))).toBe(true); // a real interruption keeps its mark
+    expect(markFor(b("interrupted", "Interrupted"))).toBe(true); // a real interruption keeps its mark…
+    expect(statusFor(b("interrupted", "Interrupted"))).toBe(""); // …said once, not "Interrupted Interrupted"
+    expect(statusFor(b("idle", "Waiting"))).toBe(""); // any state that only repeats its mark
   });
   it("keeps both when they say different things, and docs never get a session mark", () => {
     expect([markFor(b("working", "Bash: cargo test")), statusFor(b("working", "Bash: cargo test"))]).toEqual([true, "Bash: cargo test"]);
