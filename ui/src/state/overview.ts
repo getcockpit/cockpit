@@ -78,21 +78,52 @@ export function areaHeight(groups: Record<OverviewGroup, OverviewBlock[]>): numb
   return HEADER_H + LABEL_H + rows * (BLOCK_H + BLOCK_GAP) + PAD;
 }
 
-/** Remembered spots first; every workspace without one lands in the first free spot to the right. */
-export function place(sizes: { workspace: string; w: number; h: number }[], layout: Layout): Record<string, { x: number; y: number }> {
+/** Remembered spots first. Workspaces without one are packed as a grid to the right of them, with as
+ *  many columns as make the whole grid largest in a viewport of this aspect (width / height). */
+export function place(sizes: { workspace: string; w: number; h: number }[], layout: Layout, aspect = 16 / 10): Record<string, { x: number; y: number }> {
   const out: Record<string, { x: number; y: number }> = {};
   let right = -AREA_GAP;
   for (const s of sizes) { const p = layout[s.workspace]; if (p) { out[s.workspace] = p; right = Math.max(right, p.x + s.w); } }
   const top = Object.values(out).reduce((m, p) => Math.min(m, p.y), Infinity);
-  for (const s of sizes) {
-    if (out[s.workspace]) continue;
-    out[s.workspace] = { x: right + AREA_GAP, y: Number.isFinite(top) ? top : 0 };
-    right += AREA_GAP + s.w;
+  const free = sizes.filter((s) => !out[s.workspace]);
+  if (!free.length) return out;
+  const x0 = right + AREA_GAP, y0 = Number.isFinite(top) ? top : 0;
+  const rows = (cols: number) => Array.from({ length: Math.ceil(free.length / cols) }, (_, r) => free.slice(r * cols, r * cols + cols));
+  const size = (cols: number) => {
+    const rs = rows(cols);
+    return { w: Math.max(...rs.map((r) => r.reduce((t, s) => t + s.w, 0) + (r.length - 1) * AREA_GAP)), h: rs.reduce((t, r) => t + Math.max(...r.map((s) => s.h)), 0) + (rs.length - 1) * AREA_GAP };
+  };
+  // The scale the grid would get in the viewport; the widest grid wins a tie (fewer rows to scan).
+  let best = 1, bestScale = 0;
+  for (let cols = 1; cols <= free.length; cols++) { const g = size(cols); const k = Math.min(aspect / g.w, 1 / g.h); if (k >= bestScale) { best = cols; bestScale = k; } }
+  let y = y0;
+  for (const r of rows(best)) {
+    let x = x0;
+    for (const s of r) { out[s.workspace] = { x, y }; x += s.w + AREA_GAP; }
+    y += Math.max(...r.map((s) => s.h)) + AREA_GAP;
   }
   return out;
 }
 
-export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs: Doc[], layout: Layout): OverviewArea[] {
+type Rect = { x: number; y: number; w: number; h: number };
+const overlaps = (a: Rect, b: Rect, gap: number) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+
+/** Where a dropped rectangle lands: where you let go, unless that covers another workspace; then the
+ *  nearest spot beside one of them that covers nothing (a map you can't read under a pile is no map). */
+export function settle(drop: Rect, others: Rect[], gap = AREA_GAP / 2): { x: number; y: number } {
+  const free = (r: Rect) => !others.some((o) => overlaps(r, o, gap - 1));
+  if (free(drop)) return { x: drop.x, y: drop.y };
+  const spots: { x: number; y: number }[] = [];
+  for (const o of others) {
+    spots.push({ x: o.x - drop.w - gap, y: drop.y }, { x: o.x + o.w + gap, y: drop.y }, { x: drop.x, y: o.y - drop.h - gap }, { x: drop.x, y: o.y + o.h + gap });
+  }
+  const ok = spots.filter((p) => free({ ...drop, ...p })).sort((a, b) => Math.hypot(a.x - drop.x, a.y - drop.y) - Math.hypot(b.x - drop.x, b.y - drop.y));
+  if (ok.length) return ok[0];
+  // Boxed in on every side: below everything.
+  return { x: drop.x, y: Math.max(...others.map((o) => o.y + o.h)) + gap };
+}
+
+export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs: Doc[], layout: Layout, aspect?: number): OverviewArea[] {
   const built = state.workspaces.map((w, index) => {
     const sessions = Object.values(state.sessions).filter((s) => s.workspace === w.id);
     const wsDocs = docsIn(docs, state.sessions, w.id);
@@ -118,7 +149,7 @@ export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs:
     const counts: Counts = { needs: needsQueue(sessions, wsDocs).length, resume: groups.resume.length, progress: groups.progress.length, review: groups.review.length };
     return { workspace: w.id, name: w.name, index, folder: w.folder, counts, groups, w: AREA_W, h: areaHeight(groups) };
   });
-  const at = place(built, layout);
+  const at = place(built, layout, aspect);
   return built.map((a) => ({ ...a, ...at[a.workspace] }));
 }
 
@@ -138,6 +169,10 @@ export function fit(box: { x: number; y: number; w: number; h: number }, view: {
 export const MIN_ZOOM = 0.15, MAX_ZOOM = 2;
 /** Semantic zoom: far shows names and counts, middle a lamp and title per block, close adds status and plan step. */
 export const detail = (zoom: number): "far" | "middle" | "close" => (zoom < 0.45 ? "far" : zoom < 0.9 ? "middle" : "close");
+
+/** A font size in canvas px that never reads smaller than `min` screen px: zoomed out, text grows
+ *  against the zoom (up to `cap` times its size) instead of shrinking into an unreadable smear. */
+export const readable = (size: number, zoom: number, min = 12, cap = 4) => Math.min(size * cap, Math.max(size, min / zoom));
 
 /** Zoom around a point (the cursor) so what's under it stays put. */
 export function zoomAt(cam: { x: number; y: number; zoom: number }, px: number, py: number, factor: number) {
