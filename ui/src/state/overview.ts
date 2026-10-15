@@ -237,6 +237,17 @@ export function wheelCam(cam: { x: number; y: number; zoom: number }, e: { delta
 export const pinchCam = (cam: { x: number; y: number; zoom: number }, scale: number, prev: number, px: number, py: number) =>
   prev > 0 && scale > 0 ? zoomAt(cam, px, py, scale / prev) : cam;
 
+/** The far view's sizes (canvas px) inside a rectangle `h` tall: the name first (12 px on screen if it
+ *  can), then the lamps and "Nothing open" take what's left of the height instead of a fixed share, so
+ *  a one-row workspace still shows 8 px lamps at the furthest zoom. Everything fits inside `h`. */
+export function farSizes(h: number, zoom: number): { name: number; lamp: number; pad: number; gap: number; note: number } {
+  const pad = Math.min(12 / zoom, h * 0.06);
+  const name = Math.min(readable(20, zoom, 14, 8), h * 0.45);
+  const room = Math.max(0, h - pad * 2 - name * 1.1);
+  const lamp = Math.min(10 / zoom, room / 1.25);
+  return { pad, name, lamp, gap: lamp * 0.25, note: Math.min(12 / zoom, room / 1.25) };
+}
+
 /** Zoom around a point (the cursor) so what's under it stays put. */
 export function zoomAt(cam: { x: number; y: number; zoom: number }, px: number, py: number, factor: number) {
   const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * factor));
