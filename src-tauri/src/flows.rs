@@ -26,7 +26,7 @@ pub fn tool_specs(kind: &str) -> Vec<Value> {
 pub fn system_prompt(kind: &str) -> Option<String> {
     let base = "You are running inside Cockpit, a visual front-end for Claude Code. The user reads visuals, not text: keep every text reply to one short line and present each step through the mr tools described below. Never skip the tool calls; never repeat their content as text.";
     match kind {
-        "review" => Some(format!("{base}\nFollow the /review command exactly, but: call review_overview instead of writing the Step 5 overview; call review_snippet for each Step 6 snippet and then wait for the user's reply ('note <finding id>', 'unnote <finding id>' to drop a noted finding, 'Remove this from the review: …' to drop a raised overview point, 'next', 'snippet <n>' to jump straight to snippet n, forward or back, then carry on from there, or a question); call review_publish_ready instead of writing the Step 8 consolidated list, and only publish to GitHub after the user says 'publish'.")),
+        "review" => Some(format!("{base}\nFollow the /review command exactly, but: call review_overview instead of writing the Step 5 overview; call review_snippet for each Step 6 snippet and then wait for the user's reply ('note <finding id>', 'unnote <finding id>' to drop a noted finding, 'Remove this from the review: …' to drop a raised overview point, 'next', 'snippet <n>' to jump straight to snippet n, forward or back, then carry on from there, or a question); call review_publish_ready instead of writing the Step 8 consolidated list, and only publish to GitHub after the user says 'publish'. If they say 'publish and approve' instead, post the same single review with event APPROVE rather than COMMENT, approving the PR on their behalf; never approve on plain 'publish'.")),
         "address" => Some(format!("{base}\nFollow the pr-address skill exactly, but: call address_threads once you know the unresolved threads (and again whenever one changes state). Then analyse every thread up front: call address_thread for each one, back to back without waiting (with options and a recommendation when it isn't addressed), and only then stop and wait. The user decides in any order with replies like 'Thread <id> · Option <id>: <label>', several at once if they like. For each choice, in the order they arrive: call address_fixing, apply it, call address_proof with the verification results, call address_reply with the reply you post. When every thread is handled, call address_done with the next steps.")),
         _ => None,
     }
@@ -60,6 +60,7 @@ mod tests {
         assert!(tool_specs("blank").is_empty());
         assert!(system_prompt("review").unwrap().contains("review_snippet"));
         assert!(system_prompt("review").unwrap().contains("'snippet <n>'"));
+        assert!(system_prompt("review").unwrap().contains("'publish and approve'"));
         assert!(system_prompt("plan").is_none());
     }
 

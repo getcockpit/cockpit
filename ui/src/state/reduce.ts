@@ -228,7 +228,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       break;
     case "ui.message_sent":
       s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending", ...attached(p) }];
-      if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
+      if (s.review?.publish && /^publish( and approve)?$/.test(String(p.text).trim())) s.review = { ...s.review, published: true, approved: String(p.text).trim() === "publish and approve" };
       s.status = "working";
       break;
     case "ui.run_started":
