@@ -18,7 +18,7 @@ import { Focus } from "./screens/Focus";
 import { StartPicker } from "./screens/StartPicker";
 import { DocMap } from "./screens/DocMap";
 import { Wall } from "./screens/Wall";
-import { Overview } from "./screens/Overview";
+import { markWorkspaceSeen, Overview } from "./screens/Overview";
 import { Timeline } from "./screens/Timeline";
 import { GodMode } from "./screens/GodMode";
 import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
@@ -117,7 +117,9 @@ export default function App() {
   const movedTo = focus ? all.sessions[focus]?.workspace : undefined;
   useEffect(() => { if (movedTo && movedTo !== workspace) { views.current[workspace] = { focus: null, docId: null }; setWorkspace(movedTo); } }, [movedTo]);
   // From the Overview this goes into the workspace, landing where you left it (I36).
+  // Leaving a workspace for another or for the Overview: what you saw there isn't news later.
   const switchTo = (id: string) => {
+    if (!overview && id !== workspace) markWorkspaceSeen(all, allDocs, workspace);
     if (id === workspace) { if (overview) navigate("deeper", () => setOverviewNow(false)); return; }
     views.current[workspace] = { focus, docId };
     const back = views.current[id] ?? { focus: null, docId: null };
@@ -133,7 +135,7 @@ export default function App() {
     if (ws !== workspace) views.current[workspace] = { focus, docId };
     navigate("deeper", () => { setWorkspace(ws); setFocusNow(session); setDocIdNow(doc); setOverviewNow(false); });
   };
-  const toOverview = () => { if (overview) setFitSignal((n) => n + 1); else navigate("back", () => setOverviewNow(true)); };
+  const toOverview = () => { if (overview) setFitSignal((n) => n + 1); else { markWorkspaceSeen(all, allDocs, workspace); navigate("back", () => setOverviewNow(true)); } };
   const [picker, setPicker] = useState(false);
   const [god, setGod] = useState(false);
   const [builds, setBuilds] = useState<string | null>(null); // worktree to build, "" = app repo

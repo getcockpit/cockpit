@@ -509,8 +509,30 @@ describe("Overview pointer and navigation in a DOM", () => {
     ]);
     await open({ state: later }, false);
     act(() => observers.forEach((cb) => cb()));
-    expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("✦ 1");
+    expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("✦ 1 changed"); // a word, not a "+ 1"
     for (let i = 0; i < 12 && $('[data-mr="OverviewCanvas"]').dataset.zoom !== "far"; i++) key("-");
     expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("✦ 1");
+  });
+  it("what you did inside a workspace isn't reported back as news; what happened elsewhere is", async () => {
+    const both = (personalAsks: boolean, bAsks: boolean) => replay([
+      ev("ui.workspace_created", { id: "ws_b", name: "Client B", config_dir: "/x" }),
+      { ...ev("ui.session_requested", { prompt: "Mine", cwd: "/w", workspace: "personal" }), session_id: "m1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "a", model: "m" }), session_id: "m1" },
+      ...(personalAsks ? [{ ...ev("sidecar.permission_request", { request_id: "pm", tool: "Bash", input: {} }), session_id: "m1" }] : []),
+      { ...ev("ui.session_requested", { prompt: "Theirs", cwd: "/w", workspace: "ws_b" }), session_id: "t1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "b", model: "m" }), session_id: "t1" },
+      ...(bAsks ? [{ ...ev("sidecar.permission_request", { request_id: "pt", tool: "Bash", input: {} }), session_id: "t1" }] : []),
+    ]);
+    await open({ state: both(false, false) });
+    act(() => root!.unmount()); host.remove(); // into Personal…
+    const after = both(true, true); // …where your session moved on while you watched; Client B's moved on its own
+    const { markWorkspaceSeen } = await import("./Overview");
+    markWorkspaceSeen(after, [], "personal"); // on the way out of Personal
+    await open({ state: after }, false);
+    const tag = (id: string) => host.querySelector<HTMLElement>(`[data-mr="OverviewBlock"][data-mr-source="${id}"]`)?.dataset.change;
+    expect(tag("m1")).toBeUndefined();
+    expect(tag("t1")).toBe("updated");
+    expect($('[data-mr="OverviewChanged"]').textContent).toBe("1 changed since you last looked");
+    expect($('[data-mr="OverviewHeader"][data-mr-source="ws_b"]').getAttribute("aria-label")).toMatch(/1 changed since you last looked$/);
   });
 });
