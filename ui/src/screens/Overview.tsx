@@ -167,11 +167,12 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   const edge = useRef({ x: 0, y: 0 });
   const stopEdgePan = () => { if (edgePan.current) clearInterval(edgePan.current); edgePan.current = null; edge.current = { x: 0, y: 0 }; };
   useEffect(() => stopEdgePan, []);
+  // Past an edge counts too (the pointer is captured): flinging a workspace out of the window keeps going.
   const steerEdgePan = (px: number, py: number) => {
     const r = view.current?.getBoundingClientRect();
     if (!r) return;
     const E = 40, V = 14, bottom = r.bottom - BAR_H;
-    const v = { x: px < r.left + E ? V : px > r.right - E ? -V : 0, y: py < r.top + E ? V : py > bottom - E && py < r.bottom ? -V : 0 };
+    const v = { x: px < r.left + E ? V : px > r.right - E ? -V : 0, y: py < r.top + E ? V : py > bottom - E ? -V : 0 };
     edge.current = v;
     if (!v.x && !v.y) { stopEdgePan(); return; }
     if (edgePan.current) return;
