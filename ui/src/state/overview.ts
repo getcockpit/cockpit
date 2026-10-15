@@ -109,15 +109,18 @@ type Rect = { x: number; y: number; w: number; h: number };
 const overlaps = (a: Rect, b: Rect, gap: number) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
 
 /** Where a dropped rectangle lands: where you let go, unless that covers another workspace; then the
- *  nearest spot beside one of them that covers nothing (a map you can't read under a pile is no map). */
-export function settle(drop: Rect, others: Rect[], gap = AREA_GAP / 2): { x: number; y: number } {
+ *  nearest spot beside one of them that covers nothing (a map you can't read under a pile is no map),
+ *  preferring spots inside `view` (the visible canvas) so it never lands out of sight. */
+export function settle(drop: Rect, others: Rect[], view?: Rect, gap = AREA_GAP / 2): { x: number; y: number } {
   const free = (r: Rect) => !others.some((o) => overlaps(r, o, gap - 1));
   if (free(drop)) return { x: drop.x, y: drop.y };
   const spots: { x: number; y: number }[] = [];
   for (const o of others) {
     spots.push({ x: o.x - drop.w - gap, y: drop.y }, { x: o.x + o.w + gap, y: drop.y }, { x: drop.x, y: o.y - drop.h - gap }, { x: drop.x, y: o.y + o.h + gap });
   }
-  const ok = spots.filter((p) => free({ ...drop, ...p })).sort((a, b) => Math.hypot(a.x - drop.x, a.y - drop.y) - Math.hypot(b.x - drop.x, b.y - drop.y));
+  const seen = (p: { x: number; y: number }) => !view || (p.x >= view.x && p.y >= view.y && p.x + drop.w <= view.x + view.w && p.y + drop.h <= view.y + view.h);
+  const dist = (p: { x: number; y: number }) => Math.hypot(p.x - drop.x, p.y - drop.y);
+  const ok = spots.filter((p) => free({ ...drop, ...p })).sort((a, b) => Number(seen(b)) - Number(seen(a)) || dist(a) - dist(b));
   if (ok.length) return ok[0];
   // Boxed in on every side: below everything.
   return { x: drop.x, y: Math.max(...others.map((o) => o.y + o.h)) + gap };

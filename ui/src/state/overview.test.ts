@@ -159,6 +159,15 @@ describe("Overview drop and zoom text", () => {
       expect(clear).toBe(true);
     }
   });
+  it("prefers a free spot you can see over a nearer one out of view", () => {
+    const drop = { x: 0, y: 60, w: AREA_W, h: 200 };
+    expect(settle(drop, [a])).toEqual({ x: 0, y: 300 + AREA_GAP / 2 }); // below: the nearest
+    // With the view's top edge at y = 0 and nothing visible to the left, the spot below still wins…
+    const view = { x: -100, y: 0, w: 3000, h: 1000 };
+    expect(settle(drop, [a], view)).toEqual({ x: 0, y: 300 + AREA_GAP / 2 });
+    // …but scrolled so that "below" is off screen, it goes to the right, where you can see it.
+    expect(settle(drop, [a], { x: 0, y: -50, w: 3000, h: 400 })).toEqual({ x: AREA_W + AREA_GAP / 2, y: 60 });
+  });
   it("keeps text at least 12 px on screen when zoomed out, never shrinking it below its size", () => {
     expect(readable(14, 1)).toBe(14);
     expect(readable(14, 0.5) * 0.5).toBeCloseTo(12);

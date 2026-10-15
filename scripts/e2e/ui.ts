@@ -302,6 +302,12 @@ const flows: Flow[] = [
     await until("needs-you badge stays far out", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("⚠ 1")) throw new Error("no badge"); });
     await ui.key("Mod+0");
     await ui.tags("OverviewLamps", 0);
+    await ui.click("button", "Zoom to 100%"); // the zoom level resets to 100% around the middle
+    await until("100%", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error("not 100%"); });
+    await ui.press("Escape"); // Esc goes back to the workspace you came from
+    await ui.tags("OverviewCanvas", 0);
+    await ui.key("Mod+0");
+    await ui.tags("OverviewCanvas", 1);
     await ui.click("button", "Open Approve the event-log migration");
     await ui.tags("SessionName", 1);
     await ui.key("Mod+0");

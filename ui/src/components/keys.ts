@@ -44,13 +44,15 @@ export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "foc
   return null;
 }
 
-export type OverviewKey = { do: "zoom"; by: number } | { do: "pan"; dx: number; dy: number };
+export type OverviewKey = { do: "zoom"; by: number } | { do: "pan"; dx: number; dy: number } | { do: "back" };
 
 /** The Overview canvas's own keys (decision 40): + and − zoom around the middle, arrows pan (⇧ pans
- *  further). Never while typing, with an overlay open, or with ⌘/⌃ held (⌘0 and friends stay the app's). */
+ *  further), Esc goes back to the workspace you came from. Never while typing, with an overlay open,
+ *  or with ⌘/⌃ held (⌘0 and friends stay the app's). */
 export function overviewKey(e: KeyEv, at: { dialog: boolean }): OverviewKey | null {
   if (at.dialog || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return null;
   const k = keyOf(e), step = e.shiftKey ? 400 : 80;
+  if (k === "Escape") return { do: "back" };
   if (k === "+" || k === "=") return { do: "zoom", by: 1.25 };
   if (k === "-" || k === "_") return { do: "zoom", by: 1 / 1.25 };
   if (k === "ArrowLeft") return { do: "pan", dx: step, dy: 0 };

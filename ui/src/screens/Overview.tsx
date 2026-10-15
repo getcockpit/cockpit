@@ -17,12 +17,15 @@ type Cam = { x: number; y: number; zoom: number };
 let lastCam: Cam | null = null;
 // Until you pan or zoom yourself, the camera keeps everything in view as the window and the map change.
 let following = true;
+const BAR_H = 44; // the hint and zoom buttons along the bottom
 
 const LAMP: Record<string, string> = { needs_you: "var(--mr-needs)", error: "var(--mr-error)", review: "var(--mr-ink)", working: "var(--mr-ink-3)", almost: "var(--mr-ink-3)", starting: "var(--mr-ink-3)" };
 // Stopped work waiting for a resume reads as an empty lamp: nothing is running there.
-const lampStyle = (s: string): React.CSSProperties => (s === "interrupted" ? { boxShadow: "inset 0 0 0 2px var(--mr-ink-2)" } : { background: LAMP[s] ?? "var(--mr-lamp-off)" });
+// On a block's thin edge that's a dashed bar; on the far view's squares, a hollow one.
+const lampStyle = (s: string, bar = false): React.CSSProperties => (s !== "interrupted" ? { background: LAMP[s] ?? "var(--mr-lamp-off)" }
+  : bar ? { background: "repeating-linear-gradient(var(--mr-ink-2) 0 6px, transparent 6px 10px)" } : { boxShadow: "inset 0 0 0 2px var(--mr-ink-2)" });
 
-export function Overview({ state, docs, fitSignal, onOpenWorkspace, onOpenSession, onOpenDoc }: { state: AppState; docs: Doc[]; fitSignal: number; onOpenWorkspace: (ws: string) => void; onOpenSession: (ws: string, id: string) => void; onOpenDoc: (ws: string, id: string) => void }) {
+export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOpenSession, onOpenDoc }: { state: AppState; docs: Doc[]; fitSignal: number; onBack: () => void; onOpenWorkspace: (ws: string) => void; onOpenSession: (ws: string, id: string) => void; onOpenDoc: (ws: string, id: string) => void }) {
   const view = useRef<HTMLDivElement>(null);
   const [cam, setCamNow] = useState<Cam>(lastCam ?? { x: 0, y: 0, zoom: 1 });
   const setCam = (c: Cam | ((c: Cam) => Cam)) => setCamNow((prev) => (lastCam = typeof c === "function" ? c(prev) : c));
@@ -47,7 +50,8 @@ export function Overview({ state, docs, fitSignal, onOpenWorkspace, onOpenSessio
   useEffect(() => setHeld({}), [state.overviewLayout]);
   const aspect = size.w && size.h ? size.w / size.h : undefined;
   const areas = useMemo(() => overview(state, docs, { ...state.overviewLayout, ...held }, aspect), [state, docs, held, aspect]);
-  const fitNow = (smooth: boolean) => { if (!size.w) return; following = true; (smooth ? glideTo : setCam)(fit(bounds(areas), size)); };
+  // Fit into the part of the canvas above the zoom bar, so nothing starts hidden under it.
+  const fitNow = (smooth: boolean) => { if (!size.w) return; following = true; (smooth ? glideTo : setCam)(fit(bounds(areas), { w: size.w, h: Math.max(1, size.h - BAR_H) })); };
   const fitAll = () => fitNow(true);
   const box = bounds(areas);
   const boxKey = `${box.x},${box.y},${box.w},${box.h}`;
@@ -88,7 +92,8 @@ export function Overview({ state, docs, fitSignal, onOpenWorkspace, onOpenSessio
     const k = overviewKey(e, { dialog: !!document.querySelector('[role="dialog"]') });
     if (!k) return;
     e.preventDefault();
-    if (k.do === "zoom") zoomBy(k.by);
+    if (k.do === "back") onBack();
+    else if (k.do === "zoom") zoomBy(k.by);
     else { following = false; glideTo((c) => ({ ...c, x: c.x + k.dx, y: c.y + k.dy })); }
   };
   useEffect(() => { const on = (e: KeyboardEvent) => keyRef.current(e); window.addEventListener("keydown", on); return () => window.removeEventListener("keydown", on); }, []);
@@ -128,7 +133,7 @@ export function Overview({ state, docs, fitSignal, onOpenWorkspace, onOpenSessio
     if (d.kind !== "move" || !d.ws) return;
     // It never lands on top of another workspace: nudged to the nearest free spot beside it.
     const moved = areas.find((a) => a.workspace === d.ws);
-    const spot = moved ? settle(moved, areas.filter((a) => a.workspace !== d.ws)) : null;
+    const spot = moved ? settle(moved, areas.filter((a) => a.workspace !== d.ws), { x: -cam.x / cam.zoom, y: -cam.y / cam.zoom, w: size.w / cam.zoom, h: size.h / cam.zoom }) : null;
     if (moved && spot) setHeld((h) => ({ ...h, [moved.workspace]: spot }));
     // The moved one, plus any still auto-placed: their spots are now fixed too, so nothing jumps later.
     for (const a of areas) if (a.workspace === d.ws || !state.overviewLayout[a.workspace]) void invoke("overview_move", { workspace: a.workspace, ...(a.workspace === d.ws && spot ? spot : { x: a.x, y: a.y }) }).catch(() => {});
@@ -142,10 +147,24 @@ export function Overview({ state, docs, fitSignal, onOpenWorkspace, onOpenSessio
     glideTo((c) => zoomAt(c, e.clientX - r.left, e.clientY - r.top, 2));
   };
 
+  // Tabbing to a block or workspace off screen brings it into view. The browser would scroll the
+  // clipped canvas itself instead, and the camera would no longer match what's drawn: undo that, pan.
+  const focused = (e: React.FocusEvent) => {
+    const el = view.current;
+    if (!el) return;
+    el.scrollLeft = 0; el.scrollTop = 0;
+    // Only keyboard focus: a click on a half-hidden block must land on it, not chase a moving camera.
+    if (!(e.target as HTMLElement).matches(":focus-visible")) return;
+    const v = el.getBoundingClientRect(), r = (e.target as HTMLElement).getBoundingClientRect(), m = 24, mb = 64; // the zoom bar sits along the bottom
+    const dx = r.left < v.left + m ? v.left + m - r.left : r.right > v.right - m ? Math.max(v.right - m - r.right, v.left + m - r.left) : 0;
+    const dy = r.top < v.top + m ? v.top + m - r.top : r.bottom > v.bottom - mb ? Math.max(v.bottom - mb - r.bottom, v.top + m - r.top) : 0;
+    if (dx || dy) { following = false; glideTo((c) => ({ ...c, x: c.x + dx, y: c.y + dy })); }
+  };
+
   const level = detail(cam.zoom);
   const moving = drag.current?.kind === "move" ? drag.current.ws : null;
   return (
-    <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl}
+    <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl} onFocus={focused}
       style={{ position: "relative", height: "100%", overflow: "hidden", background: "var(--mr-base)", touchAction: "none", cursor: drag.current?.kind === "pan" ? "grabbing" : "default" }}>
       <div className="mr-ov-cam" data-glide={glide || undefined} style={{ position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`, pointerEvents: "none" }}>
         {areas.map((a) => <Area key={a.workspace} a={a} level={level} zoom={cam.zoom} lifted={moving === a.workspace}
@@ -158,7 +177,8 @@ export function Overview({ state, docs, fitSignal, onOpenWorkspace, onOpenSessio
       </div>
       <div className="mr-row" data-mr="OverviewZoom" style={{ position: "absolute", right: 12, bottom: 8, gap: 4 }}>
         <button type="button" className="mr-key" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
-        <span className="mr-mono mr-dim" data-mr="OverviewZoomLevel" style={{ minWidth: 44, textAlign: "center", fontSize: 12 }}>{Math.round(cam.zoom * 100)}%</span>
+        <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label="Zoom to 100%" title="Zoom to 100%" onClick={() => zoomBy(1 / cam.zoom)}
+          style={{ minWidth: 48, minHeight: 36, textAlign: "center", fontSize: 12, border: 0, background: "transparent", cursor: "pointer", color: "inherit" }}>{Math.round(cam.zoom * 100)}%</button>
         <button type="button" className="mr-key" aria-label="Zoom in" title="Zoom in (+)" disabled={cam.zoom >= MAX_ZOOM - 1e-6} onClick={() => zoomBy(1.25)}>+</button>
         <button type="button" className="mr-key" onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Fit all</button>
       </div>
@@ -246,7 +266,7 @@ function Block({ b, close, zoom, onClick }: { b: OverviewBlock; close: boolean; 
   return (
     <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} aria-label={`Open ${b.title}`} title={tip} onClick={onClick} onPointerDown={(e) => e.stopPropagation()}
       style={{ height: BLOCK_H, display: "flex", gap: 8, padding: "8px 10px 8px 0", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
-      <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp) }} />
+      <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp, true) }} />
       <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2, justifyContent: close ? undefined : "center" }}>
         <span className="mr-ellipsis" style={{ fontWeight: 600, fontSize: readable(14, zoom, 12), lineHeight: 1.2 }}>{b.kind === "doc" && <span className="mr-mono mr-dim" style={{ fontWeight: 400, fontSize: "0.85em" }}>doc · </span>}{b.title}</span>
         {close
