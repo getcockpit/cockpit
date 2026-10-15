@@ -192,6 +192,11 @@ export function revealBy(r: Rect, cam: { x: number; y: number; zoom: number }, v
   return { dx: axis(L, R, view.w), dy: axis(T, B, view.h) };
 }
 
+/** Whether any rectangle shows in the visible screen box (panned off into empty canvas, none does). */
+export function anyInView(areas: Rect[], cam: { x: number; y: number; zoom: number }, view: { w: number; h: number }): boolean {
+  return areas.some((r) => { const L = r.x * cam.zoom + cam.x, T = r.y * cam.zoom + cam.y; return L < view.w && L + r.w * cam.zoom > 0 && T < view.h && T + r.h * cam.zoom > 0; });
+}
+
 /** The box around every area, for ⌘0 fit-all. */
 export function bounds(areas: Pick<OverviewArea, "x" | "y" | "w" | "h">[]): { x: number; y: number; w: number; h: number } {
   if (!areas.length) return { x: 0, y: 0, w: AREA_W, h: HEADER_H };
