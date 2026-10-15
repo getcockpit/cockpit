@@ -521,7 +521,47 @@ fn resume_info(app: &AppHandle, session: &str) -> Option<(String, String, String
     let req = evs.iter().find(|e| e.kind == "ui.session_requested")?;
     let sdk = evs.iter().rev().find(|e| e.kind == "sidecar.session_started")?.payload["sdk_session_id"].as_str()?.to_owned();
     let p = &req.payload;
-    Some((p["worktree"].as_str().or(p["cwd"].as_str())?.to_owned(), p["kind"].as_str().unwrap_or("blank").to_owned(), p["workspace"].as_str().unwrap_or(crate::workspaces::PERSONAL).to_owned(), sdk))
+    Some((p["worktree"].as_str().or(p["cwd"].as_str())?.to_owned(), p["kind"].as_str().unwrap_or("blank").to_owned(), crate::workspaces::workspace_in(&evs), sdk))
+}
+
+/// Moves a session to another workspace (MR-154): copies its Claude conversation into that
+/// workspace's Claude folder, so it resumes there with that workspace's sign-in and memory, and
+/// logs `ui.session_moved`. A session waiting for you is stopped first; one mid-turn can't move.
+#[tauri::command(async)]
+pub fn session_move(app: AppHandle, session: String, workspace: String) -> Result<(), String> {
+    let from = crate::workspaces::workspace_of(&app, &session);
+    if from == workspace {
+        return Ok(());
+    }
+    let target = crate::workspaces::claude_home(&app, &workspace)?;
+    if workspace != crate::workspaces::PERSONAL && !target.is_dir() {
+        return Err("that workspace doesn't exist any more".into());
+    }
+    if crate::instances::owned_elsewhere(&app, &session).is_some() {
+        return Err(ELSEWHERE.into());
+    }
+    let state = app.state::<Sidecar>();
+    if state.live.lock().unwrap().contains(&session) {
+        if !state.idle.lock().unwrap().contains(&session) {
+            return Err("it's working: wait for its turn to end, or interrupt it, then move it".into());
+        }
+        sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": session }))?;
+        // Wait for it to end, so its transcript is complete before it's copied.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while state.live.lock().unwrap().contains(&session) {
+            if std::time::Instant::now() > deadline {
+                return Err("it didn't stop in time; try again".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+    let sdk = resume_info(&app, &session).map(|(_, _, _, sdk)| sdk);
+    let copied = match &sdk {
+        Some(id) => crate::workspaces::copy_transcript(&crate::workspaces::claude_home(&app, &from)?, &target, id)?,
+        None => 0,
+    };
+    crate::eventlog::record(&app, Some(&session), "ui.session_moved", &serde_json::json!({ "from": from, "to": workspace, "copied": copied }), None);
+    Ok(())
 }
 
 /// Asks a running session for its slash commands and skills (the / menu); the answer arrives as `sidecar.commands`.
