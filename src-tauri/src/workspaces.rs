@@ -146,13 +146,70 @@ pub fn workspace_sign_in(app: AppHandle, id: String, cols: u16, rows: u16) -> Re
     Ok(key)
 }
 
-/// Which workspace a session belongs to, from its request in the log (default: personal).
+/// Which workspace a session belongs to, from the log: where it was last moved to (MR-154), else
+/// where it was requested (default: personal).
 pub fn workspace_of(app: &AppHandle, session: &str) -> String {
-    app.state::<crate::eventlog::EventLog>()
-        .list(Some(session), None, 50)
-        .ok()
-        .and_then(|evs| evs.into_iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["workspace"].as_str().map(str::to_owned)))
-        .unwrap_or_else(|| PERSONAL.into())
+    let evs = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).unwrap_or_default();
+    workspace_in(&evs)
+}
+
+pub fn workspace_in(evs: &[crate::eventlog::Event]) -> String {
+    evs.iter()
+        .rev()
+        .find_map(|e| match e.kind.as_str() {
+            "ui.session_moved" => e.payload["to"].as_str(),
+            "ui.session_requested" => Some(e.payload["workspace"].as_str().unwrap_or(PERSONAL)),
+            _ => None,
+        })
+        .unwrap_or(PERSONAL)
+        .to_owned()
+}
+
+/// Claude Code's own folder for a workspace: its config folder, or the normal one for Personal.
+pub fn claude_home(app: &AppHandle, workspace: &str) -> Result<PathBuf, String> {
+    if let Some(dir) = config_dir(app, workspace) {
+        return Ok(dir);
+    }
+    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) {
+        return Ok(PathBuf::from(dir));
+    }
+    Ok(PathBuf::from(std::env::var("HOME").map_err(|e| e.to_string())?).join(".claude"))
+}
+
+/// Copies one conversation's transcript (`projects/<folder>/<sdk>.jsonl`, plus its `<sdk>/` folder
+/// of subagent and tool output) from one Claude folder to another, so `--resume` finds it there.
+/// The source keeps its copy. Returns how many transcripts it copied (0: nothing to copy yet).
+pub fn copy_transcript(from: &Path, to: &Path, sdk: &str) -> Result<usize, String> {
+    if sdk.is_empty() || sdk.contains(['/', '\\']) || sdk.contains("..") {
+        return Err("bad session id".into());
+    }
+    let Ok(dirs) = std::fs::read_dir(from.join("projects")) else { return Ok(0) };
+    let mut copied = 0;
+    for dir in dirs.flatten() {
+        let file = dir.path().join(format!("{sdk}.jsonl"));
+        if !file.is_file() {
+            continue;
+        }
+        let dest = to.join("projects").join(dir.file_name());
+        std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+        std::fs::copy(&file, dest.join(format!("{sdk}.jsonl"))).map_err(|e| format!("couldn't copy the conversation: {e}"))?;
+        let extra = dir.path().join(sdk);
+        if extra.is_dir() {
+            copy_tree(&extra, &dest.join(sdk)).map_err(|e| format!("couldn't copy the conversation: {e}"))?;
+        }
+        copied += 1;
+    }
+    Ok(copied)
+}
+
+fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for e in std::fs::read_dir(src)? {
+        let e = e?;
+        let (from, to) = (e.path(), dst.join(e.file_name()));
+        if e.file_type()?.is_dir() { copy_tree(&from, &to)? } else { std::fs::copy(&from, &to).map(|_| ())? }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -176,6 +233,40 @@ mod tests {
         assert!(!ws.join("history.jsonl").exists());
         // Idempotent.
         prepare_config_dir(&ws, &home).unwrap();
+    }
+
+    #[test]
+    fn moving_copies_the_conversation_into_the_other_claude_folder() {
+        let root = std::env::temp_dir().join(format!("mr-move-{}", ulid::Ulid::new()));
+        let (from, to) = (root.join("a"), root.join("b"));
+        let proj = from.join("projects/-Users-x-repo");
+        std::fs::create_dir_all(proj.join("abc/subagents")).unwrap();
+        std::fs::write(proj.join("abc.jsonl"), "turns").unwrap();
+        std::fs::write(proj.join("abc/subagents/agent-1.jsonl"), "sub").unwrap();
+        std::fs::write(proj.join("other.jsonl"), "not this one").unwrap();
+        assert_eq!(copy_transcript(&from, &to, "abc").unwrap(), 1);
+        let dest = to.join("projects/-Users-x-repo");
+        assert_eq!(std::fs::read_to_string(dest.join("abc.jsonl")).unwrap(), "turns");
+        assert_eq!(std::fs::read_to_string(dest.join("abc/subagents/agent-1.jsonl")).unwrap(), "sub");
+        assert!(!dest.join("other.jsonl").exists());
+        assert!(proj.join("abc.jsonl").exists(), "the source keeps its copy");
+        assert_eq!(copy_transcript(&from, &to, "missing").unwrap(), 0);
+        assert_eq!(copy_transcript(&root.join("nowhere"), &to, "abc").unwrap(), 0);
+        assert!(copy_transcript(&from, &to, "../abc").is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_last_move_decides_the_workspace() {
+        let ev = |kind: &str, payload: serde_json::Value| crate::eventlog::Event { id: String::new(), session_id: Some("s".into()), kind: kind.into(), payload, anchor: None, created_at: 0, origin: None };
+        let mut evs = vec![ev("ui.session_requested", serde_json::json!({ "workspace": "ws_a" }))];
+        assert_eq!(workspace_in(&evs), "ws_a");
+        evs.push(ev("ui.session_moved", serde_json::json!({ "from": "ws_a", "to": "personal" })));
+        evs.push(ev("sidecar.sdk", serde_json::json!({})));
+        assert_eq!(workspace_in(&evs), "personal");
+        evs.push(ev("ui.session_requested", serde_json::json!({ "workspace": "personal", "resume": "x" })));
+        assert_eq!(workspace_in(&evs), "personal");
+        assert_eq!(workspace_in(&[]), PERSONAL);
     }
 
     #[test]

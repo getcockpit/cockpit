@@ -276,6 +276,43 @@ const flows: Flow[] = [
     await ui.click("button", "Personal");
     await ui.see("button", "4 need you");
   } },
+  { name: "J18 move a session to another workspace", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.tags("MoveWorkspace", 1);
+    await ui.click("button", "Personal", '[data-mr="MoveWorkspace"]');
+    await ui.click("menuitem", "Client A");
+    await until("the session says Client A", () => { if (!ui.text('[data-mr="MoveWorkspace"] button').includes("Client A")) throw new Error("not moved"); });
+    await ui.key("Escape"); // the app followed it: this is Client A's wall
+    await ui.see("button", "Ready to review Refactor the settings schema");
+    await ui.see("button", "Open Migrate the client's billing to Stripe Tax");
+    await ui.click("button", "Personal");
+    await ui.gone("button", "Ready to review Refactor the settings schema");
+  } },
+  { name: "J18 drag a session onto a workspace tab to move it", run: async () => {
+    await ui.open("busy");
+    const centre = (css: string) => {
+      const b = Object.fromEntries([...pt("box", `css:${css}`).matchAll(/(\w+):(-?[\d.]+)/g)].map(([, k, v]) => [k, Number(v)]));
+      return ["--x", String(b.x + b.width / 2), "--y", String(b.y + b.height / 2)];
+    };
+    const row = '[data-mr="ReviewRow"]';
+    pt("scrollintoview", `css:${row}`);
+    const from = centre(row), to = centre('[data-mr="WorkspaceTab"][data-mr-source="ws_client"]');
+    pt("mouse", "move", ...from);
+    pt("mouse", "down", ...from);
+    pt("mouse", "move", "--x", String(Number(from[1]) + 20), "--y", from[3]);
+    await ui.tags("SessionDragGhost", 1);
+    pt("mouse", "move", ...to);
+    await ui.css('[data-mr="WorkspaceTab"][data-mr-drop="on"][data-mr-source="ws_client"]', 1);
+    pt("mouse", "up", ...to);
+    await ui.tags("SessionDragGhost", 0);
+    await ui.gone("button", "Ready to review Refactor the settings schema");
+    await ui.tags("SessionName", 0); // a drag isn't a click: the wall stays
+    await ui.click("button", "Client A");
+    await ui.see("button", "Ready to review Refactor the settings schema");
+    await ui.click("button", "Ready to review Refactor the settings schema"); // a press still opens it
+    await ui.tags("SessionName", 1);
+  } },
   { name: "Errors light the error lamp", run: async () => {
     await ui.open("broken");
     await ui.see("button", "1 error");
@@ -818,6 +855,13 @@ const flows: Flow[] = [
     await ui.click("button", "Already signed in");
     await ui.seeText("Got it: now run the whole suite");
     await ui.tags("SignedOut", 0);
+  } },
+  { name: "J3 Expired sign-in waits in the needs-you queue", run: async () => {
+    await ui.open("signedout");
+    await ui.tags("SignInWaiting", 1);
+    await ui.see("button", "1 need you");
+    await ui.click("button", "Already signed in", '[data-mr="SignInWaiting"]');
+    await ui.tags("SignInWaiting", 0);
   } },
   { name: "Keys: ⌘T toggles a session's terminal", run: async () => {
     await ui.open("busy");

@@ -111,6 +111,24 @@ export function FlowRow({ s, what, selected, onOpen }: { s: SessionState; what: 
   );
 }
 
+// Claude Code's login ran out (MR-153): sign in from the session (Claude's own /login), or send the
+// refused message again if you already signed in elsewhere.
+export function SignInRow({ s, selected, onOpen }: { s: SessionState; selected?: boolean; onOpen: () => void }) {
+  return (
+    <div className="mr-qrow" data-mr="SignInWaiting" data-mr-source={s.id} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
+      <div className="mr-flag" />
+      <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
+          <span className="mr-row" style={{ gap: 6 }}><strong className="mr-ink2">Sign-in expired</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{sessionTitle(s)}</span></span>
+          <span className="mr-ask">Claude Code's sign-in ran out. Sign in to send your message again.</span>
+        </span>
+        <button type="button" className="mr-key" onClick={() => void api.retrySignedIn(s.id, s.signedOut?.retry ?? "")}>Already signed in · send again</button>
+        <Key k="↵" tone="primary" onClick={onOpen}>Sign in…</Key>
+      </div>
+    </div>
+  );
+}
+
 // A god-mode fix that's ready (J14): apply it to your app right here, or look at it first.
 export function FixRow({ s, selected, onOpen }: { s: SessionState; selected?: boolean; onOpen: () => void }) {
   const [state, setState] = useState<"" | "applying" | string>("");
