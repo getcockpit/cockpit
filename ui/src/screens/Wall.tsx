@@ -15,7 +15,7 @@ import { api } from "../state/store";
 import { cached } from "../state/cache";
 import { loadPrs as fetchPrs, PRS_TTL, startCwd } from "../state/prs";
 import type { AppState, SessionState, Todo } from "../state/types";
-import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow } from "./AskRow";
+import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow, SignInRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
 import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
@@ -31,7 +31,7 @@ import { ViewTabs } from "../components/ViewTabs";
 const REVIEW = new Set<TileSpec["state"]>(["review", "done", "interrupted", "error"]);
 export const inReviewTray = (t: TileSpec) => REVIEW.has(t.state);
 
-export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onOpenDoc, onStart, onBuild, onTimeline, onSettings }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
+export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onSignIn, onOpenDoc, onStart, onBuild, onTimeline, onSettings }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onSignIn?: (s: SessionState) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -106,11 +106,11 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
       else if (cur.kind === "prose" && /^[1-9]$/.test(k) && cur.options[Number(k) - 1]) { e.preventDefault(); void api.send(cur.s.id, cur.options[Number(k) - 1]); }
       else if (cur.kind === "prose" && k === "r") { e.preventDefault(); (document.querySelector(`[data-reply="${cur.s.id}"]`) as HTMLInputElement | null)?.focus(); }
       else if (cur.kind === "doc" && /^[1-9]$/.test(k)) { const o = (cur.b.data?.options ?? [])[Number(k) - 1]; if (o) { e.preventDefault(); (document.querySelector(`[data-mr-source="${cur.d.id}:${cur.b.id}"] [data-option="${Number(k) - 1}"]`) as HTMLButtonElement | null)?.click(); } }
-      else if (k === "Enter") { e.preventDefault(); if (cur.kind === "doc") onOpenDoc(cur.d.id); else onOpen(cur.s.id); }
+      else if (k === "Enter") { e.preventDefault(); if (cur.kind === "doc") onOpenDoc(cur.d.id); else if (cur.kind === "signin" && onSignIn) onSignIn(cur.s); else onOpen(cur.s.id); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [queue, suggestions, rows, sel, onOpen, onOpenDoc]);
+  }, [queue, suggestions, rows, sel, onOpen, onOpenDoc, onSignIn]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
@@ -146,6 +146,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
             {queue.length > 0 && <div className="mr-queue">
               {queue.map((q, i) =>
                 q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
+                : q.kind === "signin" ? <SignInRow key={q.key} s={q.s} selected={i === sel} onOpen={() => (onSignIn ? onSignIn(q.s) : onOpen(q.s.id))} />
                 : q.kind === "fix" ? <FixRow key={q.key} s={q.s} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "flow" ? <FlowRow key={q.key} s={q.s} what={q.what} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "prose" ? <ProseRow key={q.key} s={q.s} question={q.question} options={q.options} selected={i === sel} onOpen={() => onOpen(q.s.id)} />

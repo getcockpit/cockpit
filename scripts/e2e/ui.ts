@@ -819,6 +819,13 @@ const flows: Flow[] = [
     await ui.seeText("Got it: now run the whole suite");
     await ui.tags("SignedOut", 0);
   } },
+  { name: "J3 Expired sign-in waits in the needs-you queue", run: async () => {
+    await ui.open("signedout");
+    await ui.tags("SignInWaiting", 1);
+    await ui.see("button", "1 need you");
+    await ui.click("button", "Already signed in", '[data-mr="SignInWaiting"]');
+    await ui.tags("SignInWaiting", 0);
+  } },
   { name: "Keys: ⌘T toggles a session's terminal", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
