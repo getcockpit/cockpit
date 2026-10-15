@@ -237,7 +237,7 @@ export default function App() {
       <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>
       {godmode}{voice}<Presence show={!!intro}>{intro}</Presence>{permPrompt}
     </>;
-  if (overview) return shell(<ErrorBoundary key="overview" name="overview"><div className="mr-zoom-in" style={{ height: "100%" }}><Overview state={all} docs={allDocs} fitSignal={fitSignal} onOpenWorkspace={switchTo} onOpenSession={(ws, id) => openIn(ws, id, null)} onOpenDoc={(ws, id) => openIn(ws, null, id)} /></div></ErrorBoundary>, overlays);
+  if (overview) return shell(<ErrorBoundary key="overview" name="overview"><div className="mr-zoom-in" style={{ height: "100%" }}><Overview state={all} docs={allDocs} fitSignal={fitSignal} onBack={() => switchTo(workspace)} onOpenWorkspace={switchTo} onOpenSession={(ws, id) => openIn(ws, id, null)} onOpenDoc={(ws, id) => openIn(ws, null, id)} /></div></ErrorBoundary>, overlays);
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;
