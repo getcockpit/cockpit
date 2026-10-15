@@ -473,5 +473,44 @@ describe("Overview pointer and navigation in a DOM", () => {
     expect(tag("s2")).toBe("new");
     expect($('[data-mr="OverviewChanged"]').textContent).toBe("2 changed since you last looked");
     expect($('[data-mr="OverviewBlock"][data-mr-source="s2"]').getAttribute("aria-label")).toMatch(/new since you last looked$/);
+    // The title leaves room for the tag in the corner instead of running under it.
+    const right = (id: string) => parseFloat($(`[data-mr="OverviewBlock"][data-mr-source="${id}"]`).style.paddingRight);
+    expect(right("s2")).toBeGreaterThan(50);
+  });
+  it("tags stand for what moved while you were away: changes you watch happen don't pile on", async () => {
+    const base = replay([
+      { ...ev("ui.session_requested", { prompt: "Fix login", cwd: "/w", workspace: "personal" }), session_id: "s1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "sdk", model: "m" }), session_id: "s1" },
+    ]);
+    await open({ state: base });
+    act(() => root!.unmount()); host.remove();
+    await open({ state: base }, false); // back, nothing moved: quiet
+    expect(host.querySelector('[data-mr="OverviewChange"]')).toBeNull();
+    // Now, while you watch, it starts asking.
+    const asking = replay([
+      { ...ev("ui.session_requested", { prompt: "Fix login", cwd: "/w", workspace: "personal" }), session_id: "s1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "sdk", model: "m" }), session_id: "s1" },
+      { ...ev("sidecar.permission_request", { request_id: "p9", tool: "Bash", input: { command: "ls" } }), session_id: "s1" },
+    ]);
+    render({ state: asking });
+    expect(host.querySelector('[data-mr="OverviewChange"]')).toBeNull();
+    expect(host.querySelector('[data-mr="OverviewChanged"]')).toBeNull();
+  });
+  it("a workspace with changes says so by its name, also far out where no tags are drawn", async () => {
+    win.w = 1280; win.h = 800;
+    await open();
+    act(() => root!.unmount()); host.remove();
+    const later = replay([
+      ev("ui.workspace_created", { id: "ws_b", name: "Client B", config_dir: "/x" }),
+      { ...ev("ui.session_requested", { prompt: "Fix login", cwd: "/w", workspace: "personal" }), session_id: "s1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "sdk", model: "m" }), session_id: "s1" },
+      { ...ev("ui.session_requested", { prompt: "Brand new job", cwd: "/w", workspace: "ws_b" }), session_id: "s2" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "sdk2", model: "m" }), session_id: "s2" },
+    ]);
+    await open({ state: later }, false);
+    act(() => observers.forEach((cb) => cb()));
+    expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("✦ 1");
+    for (let i = 0; i < 12 && $('[data-mr="OverviewCanvas"]').dataset.zoom !== "far"; i++) key("-");
+    expect($('[data-mr="OverviewAreaChanged"][data-mr-source="ws_b"]').textContent).toBe("✦ 1");
   });
 });

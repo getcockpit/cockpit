@@ -20,6 +20,8 @@ export type OverviewBlock = {
   needs: boolean;
   status: string; // one line, shown at close zoom
   step: string | null; // the plan step in progress, if any (close zoom)
+  // What "changed since you last looked" compares: the state that matters, not the live tool line.
+  sig?: string;
 };
 
 export type Counts = { needs: number; resume: number; progress: number; review: number };
@@ -50,6 +52,17 @@ function status(s: SessionState, tile: TileSpec): string {
   if (s.status === "interrupted") return "Interrupted";
   if (s.status === "ended") { const open = s.todos.filter((t) => t.status !== "completed").length; return `Ended with ${open} step${open === 1 ? "" : "s"} open`; }
   return tile.state === "review" || tile.state === "idle" ? tile.step : tile.doing;
+}
+
+/** A session's "since you last looked" signature. Needs you: which ask (a new question after the one
+ *  you answered counts). Running: the plan step, not the tool line that changes every few seconds.
+ *  Waiting for review: how far the transcript got (another turn that ended in review counts). Stopped:
+ *  its state and status line, which don't churn. */
+export function sessionSig(s: Pick<SessionState, "pending" | "transcript">, lamp: string, status: string, step: string | null): string {
+  if (lamp === "needs_you") return `ask:${s.pending[0]?.requestId ?? `said:${s.transcript.length}`}`;
+  if (lamp === "working" || lamp === "almost" || lamp === "starting") return `run:${step ?? ""}`;
+  if (lamp === "review" || lamp === "idle") return `rev:${s.transcript.length}`;
+  return `${lamp}|${status}`;
 }
 
 /** Where an open session belongs, or null once it's done (ended cleanly with its plan finished). */
@@ -161,8 +174,19 @@ export function foldedIn(a: Pick<OverviewArea, "groups">, block: string): Overvi
 /** What each block looked like when you last left the Overview: its lamp and status line. */
 export type Seen = Record<string, string>;
 const seenKey = (ws: string, b: OverviewBlock) => `${ws}|${b.kind}:${b.id}`;
+const sigOf = (b: OverviewBlock) => b.sig ?? `${b.lamp}|${b.status}`;
+/** Sessions that were on the map when you left and have since finished (ended cleanly or archived). */
+export function finishedSince(seen: Seen | null, areas: Pick<OverviewArea, "workspace" | "groups">[], sessions: Record<string, Pick<SessionState, "status" | "archivedAt">>): number {
+  if (!seen) return 0;
+  const now = new Set(Object.keys(snapshot(areas)));
+  return Object.keys(seen).filter((k) => {
+    if (now.has(k)) return false;
+    const m = /\|session:(.+)$/.exec(k), s = m && sessions[m[1]];
+    return !!s && (s.status === "ended" || !!s.archivedAt);
+  }).length;
+}
 export function snapshot(areas: Pick<OverviewArea, "workspace" | "groups">[]): Seen {
-  return Object.fromEntries(areas.flatMap((a) => GROUPS.flatMap((g) => a.groups[g].map((b) => [seenKey(a.workspace, b), `${b.lamp}|${b.status}`]))));
+  return Object.fromEntries(areas.flatMap((a) => GROUPS.flatMap((g) => a.groups[g].map((b) => [seenKey(a.workspace, b), sigOf(b)]))));
 }
 /** Since you last looked: blocks that weren't on the map ("new") or whose lamp or status moved ("updated").
  *  Nothing on the first visit (no snapshot yet): everything would be new, which says nothing. */
@@ -172,7 +196,7 @@ export function changedSince(seen: Seen | null, areas: Pick<OverviewArea, "works
   for (const a of areas) for (const g of GROUPS) for (const b of a.groups[g]) {
     const k = seenKey(a.workspace, b), was = seen[k];
     if (was === undefined) out[k] = "new";
-    else if (was !== `${b.lamp}|${b.status}`) out[k] = "updated";
+    else if (was !== sigOf(b)) out[k] = "updated";
   }
   return out;
 }
@@ -214,7 +238,7 @@ export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs:
       const needs = tile.state === "needs_you";
       // Ended with steps still open isn't done: it shows as stopped, like an interrupted one.
       const lamp = s.status === "ended" && !needs ? "interrupted" : tile.state;
-      groups[g].push({ kind: "session", id: s.id, title: sessionTitle(s), lamp, needs, status: status(s, tile), step: step(s) });
+      groups[g].push({ kind: "session", id: s.id, title: sessionTitle(s), lamp, needs, status: status(s, tile), step: step(s), sig: sessionSig(s, lamp, status(s, tile), step(s)) });
     }
     for (const d of wsDocs) {
       const g = docGroup(d, state.sessions);
