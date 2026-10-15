@@ -10,7 +10,7 @@ import { editCard, isCard, isCheck } from "../picker/logCards";
 import { CheckList, EditSnippet, StepSummary } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
-import type { Attachment, CommandRow, Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
+import type { AppState, Attachment, CommandRow, Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
 import { docApi, isOpenQuestion, type Doc } from "../state/docs";
 import { AskRow, DocQuestionRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
@@ -28,6 +28,7 @@ import { Mark } from "../components/Turn";
 import { useTick } from "../components/Now";
 import { ago } from "../picker/now";
 import { LiveTrack } from "../components/Now";
+import { MoveWorkspace } from "../components/MoveWorkspace";
 import { ReviewChanges } from "./ReviewChanges";
 import { ModelPicker } from "../components/ModelPicker";
 import { ContextMeter } from "../components/ContextMeter";
@@ -44,7 +45,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, elsewhere = false }: { s: SessionState; models: ModelRow[]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
+export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, elsewhere = false }: { s: SessionState; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -158,6 +159,7 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
           <span className="mr-grow" />
           <ContextMeter s={s} compactWindow={compactWindow} running={running} />
+          {!s.fromDeleted && !elsewhere && <MoveWorkspace s={s} workspaces={workspaces} running={running} />}
           {!s.fromDeleted && <ModelPicker s={s} models={models} />}
           {running && <Key k="⌘." onClick={() => void api.interrupt(s.id)}>Interrupt</Key>}
           {s.archivedAt

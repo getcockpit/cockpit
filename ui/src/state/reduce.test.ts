@@ -664,6 +664,18 @@ describe("attachments", () => {
   });
 });
 
+test("moving a session puts it in the other workspace, and a resume keeps it there", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: Number(id.slice(1)) });
+  const st = replay([
+    e("M1", "ui.workspace_created", { id: "ws_a", name: "Client A", config_dir: "/d" }),
+    e("M2", "ui.session_requested", { prompt: "p", cwd: "/w" }, "s1"),
+    e("M3", "ui.session_moved", { from: "personal", to: "ws_a", copied: 1 }, "s1"),
+    e("M4", "ui.session_requested", { prompt: "go on", cwd: "/w", resume: "x", workspace: "ws_a" }, "s1"),
+  ]);
+  expect(st.sessions.s1.workspace).toBe("ws_a");
+  expect(st.order).toEqual(["s1"]);
+});
+
 describe("expired sign-in (MR-153)", () => {
   let n = 0;
   const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `L${String(++n).padStart(3, "0")}`, session_id: "S", kind, payload, anchor: null, created_at: n });

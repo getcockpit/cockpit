@@ -102,6 +102,9 @@ export default function App() {
   // If the open workspace disappears (deleted), or the remembered one isn't in this log (a fresh
   // data folder), fall back to Personal. Checked again once the log has loaded.
   useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocusNow(null); setDocIdNow(null); setWorkspace("personal"); } }, [all.workspaces, workspace, all.lastEventId !== null]);
+  // The open session moved to another workspace (MR-154): follow it there.
+  const movedTo = focus ? all.sessions[focus]?.workspace : undefined;
+  useEffect(() => { if (movedTo && movedTo !== workspace) { views.current[workspace] = { focus: null, docId: null }; setWorkspace(movedTo); } }, [movedTo]);
   const switchTo = (id: string) => {
     if (id === workspace) return;
     views.current[workspace] = { focus, docId };
@@ -216,7 +219,7 @@ export default function App() {
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} onSignIn={(then) => { afterSignIn.current = then; setSignIn(focused.workspace); }} /></div>}</ErrorBoundary>, overlays);
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} workspaces={state.workspaces} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} onSignIn={(then) => { afterSignIn.current = then; setSignIn(focused.workspace); }} /></div>}</ErrorBoundary>, overlays);
   if (wallView === "timeline") return shell(<ErrorBoundary key="timeline" name="timeline"><Timeline state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onWall={() => setWallView("wall")} /></ErrorBoundary>, overlays);
   return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onSettings={() => setSettings(true)} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onSignIn={(s) => { setFocus(s.id); afterSignIn.current = () => void api.retrySignedIn(s.id, s.signedOut?.retry ?? ""); setSignIn(s.workspace); }} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
 }
