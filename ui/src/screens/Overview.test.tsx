@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { replay } from "../state/reduce";
 import type { MrEvent } from "../state/types";
-import { countLabels, LAMP, lamps, markFor, Overview, said, statusFor } from "./Overview";
+import { countLabels, findCount, LAMP, lamps, markFor, Overview, said, statusFor } from "./Overview";
 import type { OverviewArea, OverviewBlock } from "../state/overview";
 
 const block = (id: string, needs = false): OverviewBlock => ({ kind: "session", id, title: id, lamp: needs ? "needs_you" : "working", needs, status: "", step: null });
@@ -47,6 +47,12 @@ describe("Overview block lines", () => {
   it("keeps both when they say different things, and docs never get a session mark", () => {
     expect([markFor(b("working", "Bash: cargo test")), statusFor(b("working", "Bash: cargo test"))]).toEqual([true, "Bash: cargo test"]);
     expect(markFor(b("review", "Ready to build", "doc"))).toBe(false);
+  });
+});
+
+describe("Overview find count", () => {
+  it("says how many, then which one you're on", () => {
+    expect([findCount("", 3, -1), findCount("x", 0, -1), findCount("x", 3, -1), findCount("x", 3, 1)]).toEqual(["", "No match", "3 found", "2 of 3"]);
   });
 });
 
