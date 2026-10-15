@@ -290,4 +290,20 @@ describe("Overview pointer and navigation in a DOM", () => {
       ptr(area, "pointerup", 640, at.y + 20);
     } finally { vi.useRealTimers(); }
   });
+  it("dragged out past the bottom of the window, the canvas keeps panning, like on the other edges", async () => {
+    vi.useFakeTimers();
+    try {
+      win.w = 1280; win.h = 800;
+      await open();
+      act(() => observers.forEach((cb) => cb()));
+      const area = $('[data-mr="OverviewArea"][data-mr-source="personal"]');
+      const at = onScreen("personal");
+      ptr(area, "pointerdown", at.x + 30, at.y + 20); ptr(area, "pointermove", at.x + 60, at.y + 20);
+      ptr(area, "pointermove", 640, 900); // below the window (800 tall): the pointer is captured
+      const cam0 = camera();
+      act(() => { vi.advanceTimersByTime(160); });
+      expect(camera()).not.toBe(cam0);
+      ptr(area, "pointerup", 640, 900);
+    } finally { vi.useRealTimers(); }
+  });
 });
