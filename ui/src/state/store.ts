@@ -129,6 +129,8 @@ export const api = {
   },
   runStop: (session: string, runId: string) => invoke("run_stop", { session, runId }),
   stop: (session: string) => invoke("session_stop", { session }),
+  /** Into another workspace, conversation and all (MR-154). */
+  move: (session: string, workspace: string) => invoke("session_move", { session, workspace }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
   log: (kind: string, payload: Record<string, unknown>, sessionId?: string, anchor?: string) => invoke("event_append", { sessionId, kind, payload, anchor }),
 };
