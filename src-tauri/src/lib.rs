@@ -150,6 +150,7 @@ pub fn run() {
             workspaces::workspace_create,
             workspaces::workspace_rename,
             workspaces::workspace_reorder,
+            workspaces::overview_move,
             workspaces::workspace_set_folder,
             workspaces::workspace_delete,
             sidecar::session_move,

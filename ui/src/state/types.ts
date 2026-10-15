@@ -175,6 +175,7 @@ export type AppState = {
   lastBuildAt: number | null; // last successful self-build
   selfbuild: { id: string; branch: string; sha: string; phase: "building" | "ready" } | null; // the latest self-build until relaunched or dismissed
   update: UpdateState;
+  overviewLayout: Record<string, { x: number; y: number }>; // where each workspace sits on the Overview canvas (decision 40)
 };
 
 export type PermissionMode = "auto" | "acceptEdits" | "default" | "never";

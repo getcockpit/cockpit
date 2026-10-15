@@ -32,10 +32,11 @@ async function until<T>(what: string, check: () => T, ms = 5000): Promise<T> {
 }
 
 const ui = {
-  async open(demo: string) {
+  async open(demo: string, opts: { overview?: boolean } = {}) {
     // motion=off: a headless tab draws no frames, so entry animations would leave tiles at opacity 0,
-    // which PinchTab's click treats as hidden.
-    pt("nav", `${BASE}/?demo=${demo}&motion=off`, "--block-images");
+    // which PinchTab's click treats as hidden. landing=wall: flows start on the Wall, not the
+    // Overview a launch with several workspaces lands on (decision 40), unless they test that.
+    pt("nav", `${BASE}/?demo=${demo}&motion=off${opts.overview ? "" : "&landing=wall"}`, "--block-images");
     await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); });
   },
   count: (css: string) => Number(pt("count", css).trim()),
@@ -275,6 +276,24 @@ const flows: Flow[] = [
     await ui.see("button", "1 need you");
     await ui.click("button", "Personal");
     await ui.see("button", "4 need you");
+  } },
+  { name: "J19 see every workspace on the Overview and pick where to go", run: async () => {
+    await ui.open("workspaces", { overview: true });
+    await ui.tags("OverviewArea", 3); // launch lands on the canvas
+    await ui.tags("OverviewBlock", 11); // a clean finish (Bump the lockfile) is gone
+    await ui.gone("button", "Open Bump the lockfile");
+    await until("needs-you count beside Cockpit dev", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("1 needs you")) throw new Error("no count label"); });
+    await ui.css('[data-mr="OverviewArea"] [data-mr="OverviewBlock"] button', 0); // read-only: nothing to answer on the map
+    await ui.click("button", "Open Approve the event-log migration");
+    await ui.tags("SessionName", 1);
+    await ui.key("Mod+0");
+    await ui.tags("OverviewCanvas", 1);
+    await ui.click("button", "Open workspace Client X");
+    await ui.tags("OverviewCanvas", 0);
+    await ui.see("button", "Open Quarterly usage report");
+    await ui.click("button", /^Overview/);
+    await ui.click("button", "Open Overview canvas");
+    await ui.tags("DocBlock", some);
   } },
   { name: "J18 move a session to another workspace", run: async () => {
     await ui.open("busy");

@@ -70,6 +70,14 @@ describe("app-wide shortcuts", () => {
       expect(appKey(ev("1", { ...mod, shiftKey: true }), wall)).toBeNull();
       expect(appKey(ev("1", mod), { ...wall, dialog: true })).toBeNull();
     });
+    it(`${name}0 opens the Overview of every workspace, unless a dialog is open`, () => {
+      setMac(mac);
+      expect(appKey(ev("0", mod), wall)).toEqual({ do: "overview" });
+      expect(appKey(ev("0", mod), { ...wall, screen: "focus" })).toEqual({ do: "overview" });
+      expect(appKey(ev("0", { ...mod, shiftKey: true }), wall)).toBeNull();
+      expect(appKey(ev("0", mod), { ...wall, dialog: true })).toBeNull();
+      expect(appKey(ev("0"), wall)).toBeNull();
+    });
     it(`${name} overlays still open from a text field and over a dialog`, () => {
       setMac(mac);
       const busy = { ...wall, screen: "focus" as const, dialog: true };
