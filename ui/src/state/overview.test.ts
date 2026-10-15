@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, farSizes, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, farSizes, LABEL_H, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -263,6 +263,12 @@ describe("Overview wheel and pinch", () => {
   it("line-mode wheels pan by 16 px a line", () => {
     expect(wheelCam(cam, w(0, 3, { deltaMode: 1 }), 0, 0).y).toBe(-48);
   });
+  it("a trackpad pinch (ctrl+wheel, small deltas) is never clamped: the zoom tracks the fingers 1:1", () => {
+    // Chromium sends a pinch as ctrl+wheel with deltaY ≈ −100·ln(scale): a few px an event.
+    let c = cam;
+    for (let i = 0; i < 20; i++) c = wheelCam(c, w(0, -100 * Math.log(1.02), { ctrlKey: true }), 0, 0);
+    expect(c.zoom).toBeCloseTo(1.02 ** 20);
+  });
   it("a trackpad pinch (ctrl+wheel, small deltas) zooms smoothly around the cursor", () => {
     const z = wheelCam(cam, w(0, -5, { ctrlKey: true }), 400, 300);
     expect(z.zoom).toBeCloseTo(Math.exp(0.05));
@@ -270,8 +276,8 @@ describe("Overview wheel and pinch", () => {
   });
   it("one ⌘-scroll mouse notch is one gentle step, not a 2.7× jump", () => {
     const z = wheelCam(cam, w(0, -100, { metaKey: true }), 0, 0);
-    expect(z.zoom).toBeCloseTo(Math.exp(0.3));
-    expect(wheelCam(cam, w(0, 100, { metaKey: true }), 0, 0).zoom).toBeCloseTo(Math.exp(-0.3));
+    expect(z.zoom).toBeCloseTo(Math.exp(0.15)); // 1.16×, near tldraw / Excalidraw's ~1.1× and the +/− step
+    expect(wheelCam(cam, w(0, 100, { metaKey: true }), 0, 0).zoom).toBeCloseTo(Math.exp(-0.15));
   });
   it("while a WebKit pinch gesture is live, a ctrl+wheel with it doesn't zoom a second time", () => {
     expect(wheelCam(cam, w(0, -5, { ctrlKey: true }), 0, 0, true)).toBe(cam);
@@ -296,5 +302,15 @@ describe("Overview far view sizes", () => {
   });
   it("with room to spare, lamps stay a steady 10 px on screen", () => {
     expect(farSizes(1200, 0.3).lamp * 0.3).toBeCloseTo(10);
+  });
+});
+
+describe("Overview text floor", () => {
+  it("a column heading fits 12 px on screen right down to the far threshold", () => {
+    const z = 0.45; // below this the far view takes over
+    expect(Math.min(readable(12, z, 12), LABEL_H - BLOCK_GAP) * z).toBeGreaterThanOrEqual(12 - 0.01);
+  });
+  it("status lines near 100% never read under 12 px (a fit often lands at 90-99%)", () => {
+    for (const z of [0.9, 0.93, 0.99, 1, 1.5]) expect(readable(12, z, 12) * z).toBeGreaterThanOrEqual(12 - 1e-9);
   });
 });

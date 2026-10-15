@@ -151,7 +151,33 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   // Pointer drags: on the empty canvas, with the middle button, or with Space held they pan; anywhere
   // on a workspace (its blocks too) they move it. The pointer is captured only once it has moved, so
   // a plain click still lands on the block under it; a press that moved never opens anything.
-  const drag = useRef<{ kind: "pan" | "move"; ws?: string; x0: number; y0: number; ox: number; oy: number; moved: boolean; frozen?: Layout; el: Element; id: number } | null>(null);
+  // A moved workspace is held by the canvas point you grabbed (gx, gy), not by screen deltas, so it
+  // stays under the cursor while the camera pans or zooms mid-drag (wheel, pinch, keys, edge pan).
+  const drag = useRef<{ kind: "pan" | "move"; ws?: string; x0: number; y0: number; ox: number; oy: number; gx: number; gy: number; px: number; py: number; moved: boolean; frozen?: Layout; el: Element; id: number } | null>(null);
+  const holdUnderCursor = () => {
+    const d = drag.current, c = lastCam ?? cam, r = view.current?.getBoundingClientRect();
+    if (!d || d.kind !== "move" || !d.ws || !d.moved || !r) return;
+    setHeld({ ...d.frozen, [d.ws]: { x: (d.px - r.left - c.x) / c.zoom - d.gx, y: (d.py - r.top - c.y) / c.zoom - d.gy } });
+  };
+  useEffect(holdUnderCursor, [cam]);
+  // Near an edge while moving a workspace, the canvas pans that way so it can go further than one screen.
+  const edgePan = useRef<ReturnType<typeof setInterval> | null>(null);
+  const edge = useRef({ x: 0, y: 0 });
+  const stopEdgePan = () => { if (edgePan.current) clearInterval(edgePan.current); edgePan.current = null; edge.current = { x: 0, y: 0 }; };
+  useEffect(() => stopEdgePan, []);
+  const steerEdgePan = (px: number, py: number) => {
+    const r = view.current?.getBoundingClientRect();
+    if (!r) return;
+    const E = 40, V = 14, bottom = r.bottom - BAR_H;
+    const v = { x: px < r.left + E ? V : px > r.right - E ? -V : 0, y: py < r.top + E ? V : py > bottom - E && py < r.bottom ? -V : 0 };
+    edge.current = v;
+    if (!v.x && !v.y) { stopEdgePan(); return; }
+    if (edgePan.current) return;
+    edgePan.current = setInterval(() => {
+      const c = lastCam ?? cam, n = { ...c, x: c.x + edge.current.x, y: c.y + edge.current.y };
+      lastCam = n; following = false; setGlide(false); setCam(n);
+    }, 16);
+  };
   const suppressClick = useRef(false);
   const down = (e: React.PointerEvent, ws?: string) => {
     if (e.button !== 0 && e.button !== 1) return;
@@ -163,7 +189,9 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     const a = ws && !pan ? areas.find((x) => x.workspace === ws) : null;
     // Freeze every rectangle where it is, so moving one doesn't shuffle the ones still auto-placed.
     const frozen = a ? Object.fromEntries(areas.map((x) => [x.workspace, { x: x.x, y: x.y }])) : undefined;
-    drag.current = { kind: a ? "move" : "pan", ws: a ? ws : undefined, x0: e.clientX, y0: e.clientY, ox: a ? a.x : cam.x, oy: a ? a.y : cam.y, moved: false, frozen, el: e.currentTarget, id: e.pointerId };
+    const r = view.current?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    const gx = a ? (e.clientX - r.left - cam.x) / cam.zoom - a.x : 0, gy = a ? (e.clientY - r.top - cam.y) / cam.zoom - a.y : 0;
+    drag.current = { kind: a ? "move" : "pan", ws: a ? ws : undefined, x0: e.clientX, y0: e.clientY, ox: a ? a.x : cam.x, oy: a ? a.y : cam.y, gx, gy, px: e.clientX, py: e.clientY, moved: false, frozen, el: e.currentTarget, id: e.pointerId };
   };
   const move = (e: React.PointerEvent) => {
     const d = drag.current;
@@ -172,13 +200,15 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     if (!d.moved && Math.hypot(dx, dy) < 4) return;
     if (!d.moved) try { d.el.setPointerCapture(d.id); } catch { /* the pointer is already gone */ }
     d.moved = true;
+    d.px = e.clientX; d.py = e.clientY;
     if (d.kind === "pan") byHand((c) => ({ ...c, x: d.ox + dx, y: d.oy + dy }));
-    else if (d.ws) { following = false; setHeld({ ...d.frozen, [d.ws]: { x: d.ox + dx / cam.zoom, y: d.oy + dy / cam.zoom } }); }
+    else if (d.ws) { following = false; holdUnderCursor(); steerEdgePan(e.clientX, e.clientY); }
   };
   const [, rerender] = useState(0);
   const up = () => {
     const d = drag.current;
     drag.current = null;
+    stopEdgePan();
     if (!d) return;
     rerender((n) => n + 1); // the grab cursor and the lifted outline go with the drag
     if (!d.moved) return;
@@ -188,7 +218,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     if (d.kind !== "move" || !d.ws) return;
     // It never lands on top of another workspace: nudged to the nearest free spot beside it.
     const moved = areas.find((a) => a.workspace === d.ws);
-    const spot = moved ? settle(moved, areas.filter((a) => a.workspace !== d.ws), { x: -cam.x / cam.zoom, y: -cam.y / cam.zoom, w: size.w / cam.zoom, h: size.h / cam.zoom }) : null;
+    const spot = moved ? settle(moved, areas.filter((a) => a.workspace !== d.ws), { x: -cam.x / cam.zoom, y: -cam.y / cam.zoom, w: size.w / cam.zoom, h: Math.max(1, size.h - BAR_H) / cam.zoom }) : null;
     if (moved && spot) {
       setHeld((h) => ({ ...h, [moved.workspace]: spot }));
       // Nowhere free in sight: it goes off screen, so the camera follows it there.
@@ -222,9 +252,14 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
     el.scrollLeft = 0; el.scrollTop = 0;
     // Only keyboard focus: a click on a half-hidden block must land on it, not chase a moving camera.
     if (!(e.target as HTMLElement).matches(":focus-visible")) return;
-    const v = el.getBoundingClientRect(), r = (e.target as HTMLElement).getBoundingClientRect(), m = 24, mb = 64; // the zoom bar sits along the bottom
-    const dx = r.left < v.left + m ? v.left + m - r.left : r.right > v.right - m ? Math.max(v.right - m - r.right, v.left + m - r.left) : 0;
-    const dy = r.top < v.top + m ? v.top + m - r.top : r.bottom > v.bottom - mb ? Math.max(v.bottom - mb - r.bottom, v.top + m - r.top) : 0;
+    // Measured in canvas units against the camera's target, not the screen: Tab pressed again while
+    // the last glide is still running would otherwise read a half-moved layer and land off screen.
+    const t = e.target as HTMLElement, layer = el.querySelector(".mr-ov-cam");
+    if (!layer) return;
+    const L = layer.getBoundingClientRect(), r = t.getBoundingClientRect(), k = t.offsetWidth ? r.width / t.offsetWidth : 1;
+    const rect = { x: (r.left - L.left) / k, y: (r.top - L.top) / k, w: t.offsetWidth, h: t.offsetHeight };
+    const target = lastCam ?? cam;
+    const { dx, dy } = revealBy(rect, target, { w: size.w, h: Math.max(1, size.h - BAR_H) });
     if (dx || dy) { following = false; glideTo((c) => ({ ...c, x: c.x + dx, y: c.y + dy })); }
   };
 
@@ -303,7 +338,7 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
   const far = level === "far", close = level === "close";
   const labels = countLabels(a.counts, !close);
   const nameSize = readable(20, zoom, 14);
-  const countSize = readable(13, zoom, 11);
+  const countSize = readable(13, zoom, 12);
   return (
     <div data-mr="OverviewArea" data-mr-source={a.workspace} data-mr-name={a.name} data-needs={a.counts.needs ? "" : undefined} className="mr-ov-area" onClick={far ? onZoomTo : onOpen} onPointerDown={onDown}
       title={`${a.name}${a.folder ? ` · starts in ${a.folder}` : ""}\n${far ? "Click to zoom in" : "Click to open"} · drag to move`}
@@ -317,13 +352,13 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
               style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: l.needs ? "var(--mr-needs)" : undefined, color: l.needs ? "var(--mr-ink)" : "var(--mr-ink-2)" }}>{l.text}</span>
           ))}
           <span className="mr-grow" />
-          {close && a.index < 9 && <kbd className="mr-mono mr-dim" style={{ fontSize: 11 }}>{keyLabel(`⌘${a.index + 1}`)}</kbd>}
+          {close && a.index < 9 && <kbd className="mr-mono mr-dim" style={{ fontSize: readable(12, zoom, 12) }}>{keyLabel(`⌘${a.index + 1}`)}</kbd>}
         </button>
         {empty
           ? <span className="mr-dim" style={{ position: "absolute", left: PAD, top: HEADER_H, fontSize: readable(14, zoom, 12) }}>Nothing open</span>
           : columns(a.groups).map(({ group: g, x, w }) => (
             <div key={g} data-mr="OverviewGroup" data-mr-source={`${a.workspace}:${g}`} style={{ position: "absolute", left: x, top: HEADER_H, width: w, display: "flex", flexDirection: "column", gap: BLOCK_GAP }}>
-              <span className="mr-dim mr-ellipsis" style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 10), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
+              <span className="mr-dim mr-ellipsis" style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 12), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
               {(() => { const v = shown(a.groups[g]); return <>
                     {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} onClick={onBlock(b)} />)}
                     {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen}
@@ -358,18 +393,28 @@ function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: R
   );
 }
 
+/** A block's state word, unless its status line already says it better: "Ended with 2 steps open" is
+ *  not "Interrupted". Docs carry their stage in the status. */
+export const markFor = (b: OverviewBlock) => b.kind === "session" && !(b.lamp === "interrupted" && b.status.startsWith("Ended"));
+/** A block's status line, unless it only repeats the mark beside it ("Needs you Needs you"). */
+export const statusFor = (b: OverviewBlock) => (markFor(b) && b.lamp === "needs_you" && b.status === "Needs you" ? "" : b.status);
+
 function Block({ b, close, zoom, onClick }: { b: OverviewBlock; close: boolean; zoom: number; onClick: (e: React.MouseEvent) => void }) {
   const tip = [b.kind === "doc" ? `Doc: ${b.title}` : b.title, b.status, b.step && b.step !== b.status ? b.step : null].filter(Boolean).join("\n");
   return (
     <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} aria-label={`Open ${b.title}, ${b.status}`} title={tip} onClick={onClick}
-      style={{ height: BLOCK_H, display: "flex", gap: 8, padding: "8px 10px 8px 0", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
+      style={{ height: BLOCK_H, display: "flex", gap: 8, padding: close ? "6px 10px 6px 0" : "2px 10px 2px 0", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
       <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp, true) }} />
       <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2, justifyContent: close ? undefined : "center" }}>
-        <span className="mr-ellipsis" style={{ fontWeight: 600, fontSize: readable(14, zoom, 12), lineHeight: 1.2 }}>{b.kind === "doc" && <span className="mr-mono mr-dim" style={{ fontWeight: 400, fontSize: "0.85em" }}>doc · </span>}{b.title}</span>
+        {/* Up close one line, with status and step under it; at middle zoom the title alone gets two
+            lines, so a narrow column still shows most of it. A doc is marked by a glyph there. */}
+        <span className={close ? "mr-ellipsis" : undefined} style={{ fontWeight: 600, fontSize: readable(14, zoom, 12), lineHeight: 1.15, ...(close ? {} : { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }) }}>
+          {b.kind === "doc" && (close ? <span className="mr-mono mr-dim" style={{ fontWeight: 400, fontSize: "0.85em" }}>doc · </span> : <span className="mr-dim" aria-hidden="true" style={{ fontWeight: 400 }}>▤ </span>)}{b.title}
+        </span>
         {close
           ? <>
-              <span className="mr-ellipsis" style={{ fontSize: 12 }}>{b.kind === "session" ? <StateMark s={b.lamp} /> : null} <span className="mr-ink2">{b.status}</span></span>
-              {b.step && b.step !== b.status && <span className="mr-ellipsis mr-dim" style={{ fontSize: 12 }}>{b.step}</span>}
+              <span className="mr-ellipsis" style={{ fontSize: readable(12, zoom, 12), lineHeight: 1.15 }}>{markFor(b) && <><StateMark s={b.lamp} /> </>}{statusFor(b) && <span className="mr-ink2">{statusFor(b)}</span>}</span>
+              {b.step && b.step !== b.status && <span className="mr-ellipsis mr-dim" style={{ fontSize: readable(12, zoom, 12), lineHeight: 1.15 }}>{b.step}</span>}
             </>
           : null}
       </span>
