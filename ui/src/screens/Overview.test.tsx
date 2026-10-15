@@ -54,5 +54,6 @@ describe("Overview render", () => {
   });
   it("every zoom control is a labelled button", () => {
     for (const l of ["Zoom out", "Zoom in", "Zoom to 100%"]) expect(html).toContain(`aria-label="${l}"`);
+    expect(html).toContain(`data-mr="OverviewBar"`); // its own band: the map never shows through it
   });
 });
