@@ -284,6 +284,13 @@ const flows: Flow[] = [
     await ui.gone("button", "Open Bump the lockfile");
     await until("needs-you count beside Cockpit dev", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("1 needs you")) throw new Error("no count label"); });
     await ui.css('[data-mr="OverviewArea"] [data-mr="OverviewBlock"] button', 0); // read-only: nothing to answer on the map
+    // Fit lays three workspaces out as a grid, so launch lands readable, not at half size in one long row.
+    await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 60)) throw new Error(`fit at ${z}%`); });
+    for (let i = 0; i < 4; i++) await ui.press("-"); // − zooms out from the keyboard…
+    await ui.tags("OverviewLamps", 3); // …far out, each workspace is its name, what needs you and a lamp per item
+    await until("needs-you badge stays far out", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("⚠ 1")) throw new Error("no badge"); });
+    await ui.key("Mod+0");
+    await ui.tags("OverviewLamps", 0);
     await ui.click("button", "Open Approve the event-log migration");
     await ui.tags("SessionName", 1);
     await ui.key("Mod+0");
