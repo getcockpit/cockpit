@@ -129,17 +129,20 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   };
   useEffect(() => { const on = (e: KeyboardEvent) => keyRef.current(e); window.addEventListener("keydown", on); return () => window.removeEventListener("keydown", on); }, []);
 
-  // Space held: any drag pans, even over a workspace (Miro, Figma). A focused button keeps its Space.
+  // Space held: any drag pans, even over a workspace (Miro, Figma). Only a button focused from the
+  // keyboard keeps its Space; Chromium focuses a button on every mouse click, and that one mustn't
+  // turn Space-drag into moving (and saving) a workspace. Taken, Space is cancelled on the way up
+  // too, so the clicked button isn't pressed.
   const space = useRef(false);
   const [, setSpaceCursor] = useState(false);
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key !== " " || e.repeat && space.current) { if (e.key === " " && space.current) e.preventDefault(); return; }
       const t = e.target as HTMLElement | null;
-      if (isTyping(t) || t?.closest?.("button, [role=dialog], [data-mr-menu]")) return;
+      if (isTyping(t) || t?.closest?.("[role=dialog], [data-mr-menu]") || keyboardFocused(t?.closest?.("button") ?? null)) return;
       e.preventDefault(); space.current = true; setSpaceCursor(true);
     };
-    const up = (e: KeyboardEvent) => { if (e.key === " ") { space.current = false; setSpaceCursor(false); } };
+    const up = (e: KeyboardEvent) => { if (e.key === " " && space.current) { e.preventDefault(); space.current = false; setSpaceCursor(false); } };
     const blur = () => { space.current = false; setSpaceCursor(false); };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", blur);
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", blur); };
@@ -215,6 +218,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   const focused = (e: React.FocusEvent) => {
     const el = view.current;
     if (!el) return;
+    focusWs.current = (e.target as HTMLElement).closest?.('[data-mr="OverviewArea"]')?.getAttribute("data-mr-source") ?? null;
     el.scrollLeft = 0; el.scrollTop = 0;
     // Only keyboard focus: a click on a half-hidden block must land on it, not chase a moving camera.
     if (!(e.target as HTMLElement).matches(":focus-visible")) return;
@@ -225,6 +229,14 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   };
 
   const level = detail(cam.zoom);
+  // Zooming across a detail level swaps a workspace's far button for its header and blocks (and back):
+  // keyboard focus that was on the old one moves to the new header, instead of falling to the page.
+  const focusWs = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const ws = focusWs.current;
+    if (!ws || (document.activeElement && document.activeElement !== document.body)) return;
+    view.current?.querySelector<HTMLElement>(`[data-mr="OverviewHeader"][data-mr-source="${CSS.escape(ws)}"]`)?.focus({ preventScroll: true });
+  }, [level]);
   const moving = drag.current?.kind === "move" ? drag.current.ws : null;
   return (
     <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} data-fitted={following && lastCam ? "" : undefined} role="region" aria-roledescription="canvas" aria-label="Overview of every workspace. Plus and minus zoom, arrows pan, Escape goes back." onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl} onFocus={focused} onScroll={(e) => { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; }}
@@ -259,6 +271,12 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       </div>
     </div>
   );
+}
+
+/** A button focused from the keyboard (Tab), as opposed to one a mouse click happened to focus. */
+function keyboardFocused(b: Element | null): boolean {
+  if (!b) return false;
+  try { return b.matches(":focus-visible"); } catch { return true; }
 }
 
 /** The count labels beside a workspace's name: zero counts hidden, needs you in amber. `short` drops the
