@@ -37,7 +37,8 @@ export type OverviewArea = {
 export type Layout = Record<string, { x: number; y: number }>;
 
 // Canvas units (CSS px at zoom 1). Heights are computed, not measured, so layout is pure and testable.
-export const AREA_W = 720, HEADER_H = 64, LABEL_H = 28, BLOCK_H = 64, BLOCK_GAP = 8, PAD = 16, AREA_GAP = 80;
+// LABEL_H leaves a column heading room for 12 px on screen down to the far threshold (0.45).
+export const AREA_W = 720, HEADER_H = 64, LABEL_H = 36, BLOCK_H = 64, BLOCK_GAP = 8, PAD = 16, AREA_GAP = 80;
 export const COL_W = (AREA_W - PAD * 2 - BLOCK_GAP * 2) / 3;
 
 const step = (s: SessionState) => { const t = s.todos.find((x) => x.status === "in_progress") ?? s.todos.find((x) => x.status === "pending"); return t ? t.activeForm || t.content : null; };
@@ -220,7 +221,7 @@ export const readable = (size: number, zoom: number, min = 12, cap = 4) => Math.
 
 /** A wheel event's move of the camera. Pinch (ctrl+wheel in Chromium) and ⌘-scroll zoom around the
  *  cursor; anything else pans. A mouse notch is ~100 px of deltaY and a trackpad pinch a few px per
- *  event, so the step is clamped: a notch is one gentle zoom step, not a 2.7× jump. Line-mode deltas
+ *  event, so the step is clamped: a notch is one 1.16× step (tldraw and Excalidraw use ~1.1×), not a 2.7× jump. Line-mode deltas
  *  (Firefox, some mice) count as 16 px a line. While a WebKit pinch gesture is live it does the zooming,
  *  so a ctrl+wheel that comes with it is dropped instead of zooming twice. */
 export function wheelCam(cam: { x: number; y: number; zoom: number }, e: { deltaX: number; deltaY: number; deltaMode?: number; ctrlKey: boolean; metaKey: boolean }, px: number, py: number, gesture = false) {
@@ -228,7 +229,7 @@ export function wheelCam(cam: { x: number; y: number; zoom: number }, e: { delta
   const dx = e.deltaX * k, dy = e.deltaY * k;
   if (e.ctrlKey || e.metaKey) {
     if (gesture) return cam;
-    return zoomAt(cam, px, py, Math.exp(-Math.max(-30, Math.min(30, dy)) * 0.01));
+    return zoomAt(cam, px, py, Math.exp(-Math.max(-15, Math.min(15, dy)) * 0.01));
   }
   return { ...cam, x: cam.x - dx, y: cam.y - dy };
 }

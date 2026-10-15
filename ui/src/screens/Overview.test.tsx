@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { replay } from "../state/reduce";
 import type { MrEvent } from "../state/types";
-import { countLabels, LAMP, lamps, Overview, said } from "./Overview";
+import { countLabels, LAMP, lamps, markFor, Overview, said, statusFor } from "./Overview";
 import type { OverviewArea, OverviewBlock } from "../state/overview";
 
 const block = (id: string, needs = false): OverviewBlock => ({ kind: "session", id, title: id, lamp: needs ? "needs_you" : "working", needs, status: "", step: null });
@@ -28,6 +28,23 @@ describe("Overview screen-reader labels", () => {
   it("a workspace's label carries its counts, needs you first", () => {
     expect(said({ counts: { needs: 1, resume: 0, progress: 13, review: 0 } })).toBe(", 1 needs you, 13 in progress");
     expect(said({ counts: { needs: 0, resume: 0, progress: 0, review: 0 } })).toBe("");
+  });
+});
+
+describe("Overview block lines", () => {
+  const b = (lamp: string, status: string, kind: "session" | "doc" = "session") => ({ kind, id: "x", title: "x", lamp, needs: lamp === "needs_you", status, step: null }) as OverviewBlock;
+  it("doesn't say Needs you twice", () => {
+    expect(markFor(b("needs_you", "Needs you"))).toBe(true);
+    expect(statusFor(b("needs_you", "Needs you"))).toBe("");
+  });
+  it("doesn't call a session that ended with steps open Interrupted", () => {
+    expect(markFor(b("interrupted", "Ended with 2 steps open"))).toBe(false);
+    expect(statusFor(b("interrupted", "Ended with 2 steps open"))).toBe("Ended with 2 steps open");
+    expect(markFor(b("interrupted", "Interrupted"))).toBe(true); // a real interruption keeps its mark
+  });
+  it("keeps both when they say different things, and docs never get a session mark", () => {
+    expect([markFor(b("working", "Bash: cargo test")), statusFor(b("working", "Bash: cargo test"))]).toEqual([true, "Bash: cargo test"]);
+    expect(markFor(b("review", "Ready to build", "doc"))).toBe(false);
   });
 });
 

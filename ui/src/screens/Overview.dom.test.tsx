@@ -64,15 +64,15 @@ describe("Overview input in a DOM", () => {
     wheel({ deltaY: -20, ctrlKey: true });
     expect(zoom()).toBe("120%");
     fire("gestureend", { scale: 1.2 });
-    wheel({ deltaY: -20, ctrlKey: true }); // after the gesture, ctrl+wheel (Chromium's pinch) zooms
-    expect(zoom()).toBe(`${Math.round(120 * Math.exp(0.2))}%`);
+    wheel({ deltaY: -10, ctrlKey: true }); // after the gesture, ctrl+wheel (Chromium's pinch) zooms
+    expect(zoom()).toBe(`${Math.round(120 * Math.exp(0.1))}%`);
   });
   it("one ⌘-scroll mouse notch is one gentle step; a plain wheel pans and leaves the zoom", async () => {
     const { zoom, wheel } = await mount();
     wheel({ deltaY: -100, metaKey: true });
-    expect(zoom()).toBe(`${Math.round(100 * Math.exp(0.3))}%`);
+    expect(zoom()).toBe(`${Math.round(100 * Math.exp(0.15))}%`);
     wheel({ deltaY: 300 });
-    expect(zoom()).toBe(`${Math.round(100 * Math.exp(0.3))}%`);
+    expect(zoom()).toBe(`${Math.round(100 * Math.exp(0.15))}%`);
   });
   it("+ and − on the keyboard zoom; Esc goes back", async () => {
     const onBack = vi.fn();
@@ -246,5 +246,48 @@ describe("Overview pointer and navigation in a DOM", () => {
     act(() => far.focus());
     for (let i = 0; i < 12 && $('[data-mr="OverviewCanvas"]').dataset.zoom === "far"; i++) key("+");
     expect(document.activeElement).toBe($('[data-mr="OverviewHeader"][data-mr-source="ws_b"]'));
+  });
+  // Where a workspace sits on screen: its canvas spot through the current camera transform.
+  const onScreen = (ws: string) => {
+    const m = /translate\((-?[\d.e-]+)px, (-?[\d.e-]+)px\) scale\(([\d.e-]+)\)/.exec(camera())!;
+    const [cx, cy, z] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    const a = $(`[data-mr="OverviewArea"][data-mr-source="${ws}"]`);
+    return { x: parseFloat(a.style.left) * z + cx, y: parseFloat(a.style.top) * z + cy };
+  };
+  it("a workspace being dragged stays under the cursor when the wheel scrolls mid-drag", async () => {
+    win.w = 1280; win.h = 800;
+    await open();
+    act(() => observers.forEach((cb) => cb()));
+    const area = $('[data-mr="OverviewArea"][data-mr-source="personal"]');
+    const at = onScreen("personal");
+    const gx = at.x + 30, gy = at.y + 20; // grab 30, 20 into it
+    ptr(area, "pointerdown", gx, gy); ptr(area, "pointermove", gx + 40, gy); ptr(area, "pointermove", gx + 60, gy);
+    const before = onScreen("personal");
+    act(() => { $('[data-mr="OverviewCanvas"]').dispatchEvent(new WheelEvent("wheel", { deltaY: 300, bubbles: true, cancelable: true })); });
+    const after = onScreen("personal");
+    expect(after.x).toBeCloseTo(before.x, 5); // the camera moved, the workspace didn't leave the hand
+    expect(after.y).toBeCloseTo(before.y, 5);
+    ptr(area, "pointerup", gx + 60, gy);
+  });
+  it("held near the edge, a dragged workspace pans the canvas that way and stays in hand", async () => {
+    vi.useFakeTimers();
+    try {
+      win.w = 1280; win.h = 800;
+      await open();
+      act(() => observers.forEach((cb) => cb()));
+      const area = $('[data-mr="OverviewArea"][data-mr-source="personal"]');
+      const at = onScreen("personal");
+      ptr(area, "pointerdown", at.x + 30, at.y + 20); ptr(area, "pointermove", at.x + 60, at.y + 20);
+      ptr(area, "pointermove", 1270, at.y + 20); // within 40 px of the right edge
+      const cam0 = camera(), held0 = onScreen("personal");
+      act(() => { vi.advanceTimersByTime(160); });
+      expect(camera()).not.toBe(cam0); // the canvas scrolled
+      expect(onScreen("personal").x).toBeCloseTo(held0.x, 5); // the workspace stayed under the cursor
+      ptr(area, "pointermove", 640, at.y + 20); // back from the edge: it stops
+      const cam1 = camera();
+      act(() => { vi.advanceTimersByTime(160); });
+      expect(camera()).toBe(cam1);
+      ptr(area, "pointerup", 640, at.y + 20);
+    } finally { vi.useRealTimers(); }
   });
 });
