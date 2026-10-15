@@ -172,6 +172,10 @@ describe("overviewKey (decision 40)", () => {
     expect(overviewKey(k("ArrowRight", "ArrowRight"), { dialog: false })).toEqual({ do: "pan", dx: -80, dy: 0 });
     expect(overviewKey(k("ArrowUp", "ArrowUp", { shiftKey: true }), { dialog: false })).toEqual({ do: "pan", dx: 0, dy: 400 });
   });
+  it("Esc goes back to the workspace, unless a dialog owns it", () => {
+    expect(overviewKey(k("Escape", "Escape"), { dialog: false })).toEqual({ do: "back" });
+    expect(overviewKey(k("Escape", "Escape"), { dialog: true })).toBeNull();
+  });
   it("leaves ⌘ combos, typing and open dialogs alone", () => {
     expect(overviewKey(k("=", "Equal", { metaKey: true }), { dialog: false })).toBeNull();
     expect(overviewKey(k("-", "Minus"), { dialog: true })).toBeNull();
