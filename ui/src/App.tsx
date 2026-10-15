@@ -52,6 +52,8 @@ export default function App() {
   }, [allDocs]);
   const [workspace, setWorkspace] = useState(() => { try { return localStorage.getItem("mr.workspace") ?? "personal"; } catch { return "personal"; } });
   const [signIn, setSignIn] = useState<string | null>(null);
+  // What to do once that sign-in's terminal exits (MR-153: send the refused message again).
+  const afterSignIn = useRef<(() => void) | null>(null);
   const [settings, setSettings] = useState(false);
   // The theme is part of the log (synced, durable); applying it is just a data attribute.
   useEffect(() => { document.documentElement.dataset.theme = all.theme === "control-room" ? "" : all.theme; }, [all.theme]);
@@ -179,8 +181,8 @@ export default function App() {
   const signInPanel = signIn && (
     <div role="dialog" aria-label="Sign in to workspace" className="mr-scrim" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "80px 24px", background: "rgba(21,24,27,.35)", zIndex: 30 }}>
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 900, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10 }}>
-        <div className="mr-row"><strong>Sign in to “{all.workspaces.find((w) => w.id === signIn)?.name}”</strong><span className="mr-grow" /><button type="button" className="mr-key" onClick={() => setSignIn(null)}>Close</button></div>
-        <Suspense fallback={<span className="mr-dim">Opening…</span>}><SignInPane workspace={signIn} onExit={() => setSignIn(null)} /></Suspense>
+        <div className="mr-row"><strong>Sign in to “{all.workspaces.find((w) => w.id === signIn)?.name}”</strong><span className="mr-grow" /><button type="button" className="mr-key" onClick={() => { setSignIn(null); afterSignIn.current = null; }}>Close</button></div>
+        <Suspense fallback={<span className="mr-dim">Opening…</span>}><SignInPane workspace={signIn} onExit={() => { setSignIn(null); void api.refreshLimits(); afterSignIn.current?.(); afterSignIn.current = null; }} /></Suspense>
       </div>
     </div>
   );
@@ -217,7 +219,7 @@ export default function App() {
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} workspaces={state.workspaces} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, overlays);
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} workspaces={state.workspaces} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} onSignIn={(then) => { afterSignIn.current = then; setSignIn(focused.workspace); }} /></div>}</ErrorBoundary>, overlays);
   if (wallView === "timeline") return shell(<ErrorBoundary key="timeline" name="timeline"><Timeline state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onWall={() => setWallView("wall")} /></ErrorBoundary>, overlays);
   return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onSettings={() => setSettings(true)} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
 }

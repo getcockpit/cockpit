@@ -486,6 +486,25 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace), None, attachments).map(|_| ())
 }
 
+/// After signing back in (MR-153): Claude Code may hold on to the expired login, so a live session is
+/// stopped first and the message resumes the same conversation in a fresh process.
+#[tauri::command]
+pub async fn session_retry_signed_in(app: AppHandle, session: String, text: String) -> Result<(), String> {
+    let live = || app.state::<Sidecar>().live.lock().unwrap().contains(&session);
+    if live() {
+        crate::eventlog::record(&app, Some(&session), "ui.relogin_restart", &serde_json::json!({}), None);
+        sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": session }))?;
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while live() {
+            if std::time::Instant::now() > until {
+                return Err("the session didn't stop in time; try again".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+    session_send(app.clone(), app.state::<Sidecar>(), session, text, None)
+}
+
 /// Whether a session can take a turn of Cockpit's asking right now (the catch-up brief): live and
 /// between turns, or ended but resumable here. Mid-turn sessions can't.
 pub fn can_take_turn(app: &AppHandle, session: &str) -> bool {

@@ -822,6 +822,16 @@ const flows: Flow[] = [
     await ui.key("Mod+Shift+b");
     await until("the update started", () => { if (pt("attr", 'css:[data-mr="UpdateBanner"]', "data-mr-source").trim() === before) throw new Error(`still ${before}`); });
   } },
+  // MR-153: an expired sign-in says so, offers Claude's own sign-in, and sends the refused message again.
+  { name: "J4 Expired sign-in: send the refused message again", run: async () => {
+    await ui.open("signedout");
+    await ui.see("button", "sign in");
+    await ui.clickUntil("button", /Fix the flaky export test/, undefined, "SignedOut");
+    await ui.see("button", "Sign in…");
+    await ui.click("button", "Already signed in");
+    await ui.seeText("Got it: now run the whole suite");
+    await ui.tags("SignedOut", 0);
+  } },
   { name: "Keys: ⌘T toggles a session's terminal", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
