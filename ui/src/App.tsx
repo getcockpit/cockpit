@@ -101,11 +101,17 @@ export default function App() {
   }, [all.lastEventId]);
   const [docId, setDocIdNow] = useState<string | null>(null);
   // Screen changes morph (MR-67): opening something goes deeper, closing it comes back.
-  const setFocus = (id: string | null) => navigate(id ? "deeper" : "back", () => setFocusNow(id));
+  // Leaving a view: what was on screen isn't news on the Overview later. The Wall shows the whole
+  // workspace; a session or a doc only itself (a session changing behind another one still counts).
+  const leaveView = () => {
+    if (overview) return;
+    markWorkspaceSeen(all, allDocs, workspace, docId ? [`doc:${docId}`] : focus ? [`session:${focus}`] : undefined);
+  };
+  const setFocus = (id: string | null) => { leaveView(); navigate(id ? "deeper" : "back", () => setFocusNow(id)); };
   const allRef = useRef(all);
   allRef.current = all;
   useEffect(() => listenSelftest((id) => { setOverviewNow(false); setWorkspace(allRef.current.sessions[id]?.workspace ?? "personal"); setFocusNow(id); }), []);
-  const setDocId = (id: string | null) => navigate(id ? "deeper" : "back", () => setDocIdNow(id));
+  const setDocId = (id: string | null) => { leaveView(); navigate(id ? "deeper" : "back", () => setDocIdNow(id)); };
   // Each workspace remembers where you were (wall, a session or a doc), so switching back is a return, not a restart.
   const views = useRef<Record<string, { focus: string | null; docId: string | null }>>({});
   const [switcher, setSwitcher] = useState(false);
@@ -119,7 +125,7 @@ export default function App() {
   // From the Overview this goes into the workspace, landing where you left it (I36).
   // Leaving a workspace for another or for the Overview: what you saw there isn't news later.
   const switchTo = (id: string) => {
-    if (!overview && id !== workspace) markWorkspaceSeen(all, allDocs, workspace);
+    if (id !== workspace) leaveView();
     if (id === workspace) { if (overview) navigate("deeper", () => setOverviewNow(false)); return; }
     views.current[workspace] = { focus, docId };
     const back = views.current[id] ?? { focus: null, docId: null };
@@ -135,7 +141,7 @@ export default function App() {
     if (ws !== workspace) views.current[workspace] = { focus, docId };
     navigate("deeper", () => { setWorkspace(ws); setFocusNow(session); setDocIdNow(doc); setOverviewNow(false); });
   };
-  const toOverview = () => { if (overview) setFitSignal((n) => n + 1); else { markWorkspaceSeen(all, allDocs, workspace); navigate("back", () => setOverviewNow(true)); } };
+  const toOverview = () => { if (overview) setFitSignal((n) => n + 1); else { leaveView(); navigate("back", () => setOverviewNow(true)); } };
   const [picker, setPicker] = useState(false);
   const [god, setGod] = useState(false);
   const [builds, setBuilds] = useState<string | null>(null); // worktree to build, "" = app repo
@@ -157,6 +163,7 @@ export default function App() {
     void w.unminimize().then(() => w.show()).then(() => w.setFocus()).catch(() => {});
     setPicker(false); setArchive(false); setSettings(false); setGod(false); setBuilds(null);
     views.current[workspace] = { focus, docId };
+    leaveView();
     navigate("deeper", () => { setOverviewNow(false); setWorkspace(t.workspace); setDocIdNow(t.doc); setFocusNow(t.session); });
   });
 
