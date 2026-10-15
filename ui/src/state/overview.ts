@@ -122,6 +122,30 @@ export function place(sizes: { workspace: string; w: number; h: number }[], layo
   return out;
 }
 
+/** Find on the canvas: the blocks whose title (or a workspace's name) has every word of the query,
+ *  case-insensitively, in map order (tab order, then Resume / In progress / Review). */
+export function findOnMap(areas: Pick<OverviewArea, "workspace" | "name" | "groups">[], query: string): { workspace: string; block: string | null }[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const hit = (t: string) => { const l = t.toLowerCase(); return words.every((w) => l.includes(w)); };
+  return areas.flatMap((a) => [
+    ...(hit(a.name) ? [{ workspace: a.workspace, block: null }] : []),
+    ...GROUPS.flatMap((g) => a.groups[g]).filter((b) => hit(b.title)).map((b) => ({ workspace: a.workspace, block: `${b.kind}:${b.id}` })),
+  ]);
+}
+
+/** Where a find hit sits on the canvas: its block, or the whole workspace for a name hit or a block
+ *  folded into "+N more". */
+export function hitRect(a: OverviewArea, block: string | null): { x: number; y: number; w: number; h: number } {
+  const whole = { x: a.x, y: a.y, w: a.w, h: a.h };
+  if (!block) return whole;
+  for (const c of columns(a.groups)) {
+    const i = shown(a.groups[c.group]).blocks.findIndex((b) => `${b.kind}:${b.id}` === block);
+    if (i >= 0) return { x: a.x + c.x, y: a.y + HEADER_H + LABEL_H + i * (BLOCK_H + BLOCK_GAP), w: c.w, h: BLOCK_H };
+  }
+  return whole;
+}
+
 /** Hand-placed spots land on a 16-unit grid, so workspaces put side by side line up. */
 export const GRID = 16;
 export const snap = (v: number, step = GRID) => Math.round(v / step) * step;

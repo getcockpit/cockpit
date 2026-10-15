@@ -354,6 +354,20 @@ const flows: Flow[] = [
     await ui.tags("OverviewLost", 1);
     await ui.click("button", /Back to your workspaces/); // …one button brings everything back
     await ui.tags("OverviewLost", 0);
+    await ui.key("Mod+0");
+    await ui.press("/"); // find on the map…
+    await ui.css('[data-mr="OverviewFind"] input', 1);
+    await sleep(100);
+    pt("type", 'css:[data-mr="OverviewFind"] input', "refund");
+    await until("one hit", () => { if (ui.text('[data-mr="OverviewFindCount"]').trim() !== "1 of 1") throw new Error(ui.text('[data-mr="OverviewFindCount"]')); });
+    await ui.css('[data-mr="OverviewArea"][data-dim]', 5); // …everything else fades back…
+    await ui.press("Enter"); // …and Enter flies to it
+    await ui.css('[data-mr="OverviewBlock"][data-current]', 1);
+    await until("100% on the hit", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error("not 100%"); });
+    await ui.press("Escape"); // Esc closes find, not the Overview
+    await ui.css('[data-mr="OverviewFind"]', 0);
+    await ui.tags("OverviewCanvas", 1);
+    await ui.key("Mod+0");
     await ui.click("button", "8 more in In progress: open workspace Acme platform"); // +N more opens the workspace
     await ui.tags("OverviewCanvas", 0);
     await ui.see("button", /Acme task 12/);

@@ -44,7 +44,7 @@ export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "foc
   return null;
 }
 
-export type OverviewKey = { do: "zoom"; by: number } | { do: "pan"; dx: number; dy: number } | { do: "back" };
+export type OverviewKey = { do: "zoom"; by: number } | { do: "pan"; dx: number; dy: number } | { do: "back" } | { do: "find" };
 
 /** The Overview canvas's own keys (decision 40): + and − zoom around the middle, arrows pan (⇧ pans
  *  further), Esc goes back to the workspace you came from. Never while typing, with an overlay or a
@@ -55,6 +55,7 @@ export function overviewKey(e: KeyEv & { defaultPrevented?: boolean }, at: { dia
   if (at.dialog || at.menu || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return null;
   const step = e.shiftKey ? 400 : 80;
   if (e.key === "Escape") return { do: "back" };
+  if (e.key === "/") return { do: "find" }; // find on the canvas
   if (e.key === "+" || e.key === "=") return { do: "zoom", by: 1.25 };
   if (e.key === "-" || e.key === "_") return { do: "zoom", by: 1 / 1.25 };
   if (e.key === "ArrowLeft") return { do: "pan", dx: step, dy: 0 };
