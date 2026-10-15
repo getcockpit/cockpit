@@ -57,6 +57,8 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   const fitAll = () => fitNow(true);
   const box = bounds(areas);
   const boxKey = `${box.x},${box.y},${box.w},${box.h}`;
+  // The first fit waits for a real size (a hidden window measures 0 × 0); a pan or zoom made before it
+  // sets the camera, so it never undoes that.
   useLayoutEffect(() => { if (size.w && (!lastCam || fitSignal)) fitNow(!!lastCam); }, [fitSignal, size.w > 0]);
   // While it follows, keep it fitted; not while a rectangle is being dragged (the camera would chase it).
   // A resize refits at once (the window is moving under you); a map change, like a new session, glides.
@@ -187,7 +189,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   const level = detail(cam.zoom);
   const moving = drag.current?.kind === "move" ? drag.current.ws : null;
   return (
-    <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl} onFocus={focused}
+    <div ref={view} data-mr="OverviewCanvas" data-mr-source="overview" data-zoom={level} data-fitted={following && lastCam ? "" : undefined} role="region" aria-roledescription="canvas" aria-label="Overview of every workspace. Plus and minus zoom, arrows pan, Escape goes back." onPointerDown={(e) => down(e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} onDoubleClick={dbl} onFocus={focused}
       style={{ position: "relative", height: "100%", overflow: "hidden", background: "var(--mr-base)", touchAction: "none", cursor: drag.current?.kind === "pan" ? "grabbing" : "default" }}>
       <div className="mr-ov-cam" data-glide={glide || undefined} style={{ position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`, pointerEvents: "none" }}>
         {areas.map((a) => <Area key={a.workspace} a={a} level={level} zoom={cam.zoom} lifted={moving === a.workspace}
@@ -211,7 +213,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       </div>
       <div className="mr-row" data-mr="OverviewZoom" style={{ flex: "none", gap: 4 }}>
         <button type="button" className="mr-key" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
-        <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label="Zoom to 100%" title="Zoom to 100%" onClick={toActual}
+        <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label={`Zoom ${Math.round(cam.zoom * 100)}%: go to 100%`} title="Zoom to 100%" onClick={toActual}
           style={{ minWidth: 48, minHeight: 36, textAlign: "center", fontSize: 12, border: 0, background: "transparent", cursor: "pointer", color: "inherit" }}>{Math.round(cam.zoom * 100)}%</button>
         <button type="button" className="mr-key" aria-label="Zoom in" title="Zoom in (+)" disabled={cam.zoom >= MAX_ZOOM - 1e-6} onClick={() => zoomBy(1.25)}>+</button>
         <button type="button" className="mr-key" onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Fit all</button>
