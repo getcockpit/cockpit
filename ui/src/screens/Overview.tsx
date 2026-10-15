@@ -20,6 +20,15 @@ let lastCam: Cam | null = null;
 let following = true;
 // What the map looked like when you last left it, so coming back can say what moved meanwhile.
 let seenAtLeave: Seen | null = null;
+
+/** You were just in this workspace (its Wall, a session, a doc): what happened there happened in front
+ *  of you, so it isn't news when you come back to the Overview. Call it on the way out of a workspace. */
+export function markWorkspaceSeen(state: AppState, docs: Doc[], workspace: string) {
+  if (!seenAtLeave) return;
+  const here = overview(state, docs, {}).filter((a) => a.workspace === workspace);
+  const rest = Object.fromEntries(Object.entries(seenAtLeave).filter(([k]) => !k.startsWith(`${workspace}|`)));
+  seenAtLeave = { ...rest, ...snapshot(here) };
+}
 const BAR_H = 44; // the hint and zoom buttons along the bottom
 // The last ⌘0 / Fit all request handled, so coming back to the Overview restores where you left it
 // instead of re-running an old fit (the app's counter only ever grows).
@@ -461,7 +470,7 @@ function Area({ a, level, zoom, lifted, changes, dim, finding, hitIn, current, o
       title={`${a.name}${a.folder ? ` · starts in ${a.folder}` : ""}\n${far ? "Click to zoom in" : "Click to open"} · drag to move`}
       style={{ position: "absolute", left: a.x, top: a.y, width: a.w, height: a.h, overflow: "hidden", background: "var(--mr-band)", pointerEvents: "auto", cursor: lifted ? "grabbing" : "inherit", touchAction: "none", outline: lifted ? `${3 / zoom}px solid var(--mr-selected)` : undefined, zIndex: lifted ? 1 : undefined }}>
       {far ? <Far a={a} zoom={zoom} changed={changedHere.length} onOpen={onZoomTo} /> : <>
-        <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Open workspace ${a.name}${said(a)}`} onClick={onOpen}
+        <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Open workspace ${a.name}${said(a)}${changedHere.length ? `, ${changedHere.length} changed since you last looked` : ""}`} onClick={onOpen}
           className="mr-row" style={{ width: "100%", height: HEADER_H, alignItems: "center", gap: 10, padding: `0 ${PAD}px`, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
           <strong className="mr-ellipsis" style={{ fontSize: nameSize, lineHeight: 1.1, minWidth: 0, flexShrink: 1 }}>{a.name}</strong>
           {labels.map((l) => (
@@ -469,7 +478,7 @@ function Area({ a, level, zoom, lifted, changes, dim, finding, hitIn, current, o
               style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: l.needs ? "var(--mr-needs)" : undefined, color: l.needs ? "var(--mr-ink)" : "var(--mr-ink-2)" }}>{l.text}</span>
           ))}
           {changedHere.length > 0 && <span data-mr="OverviewAreaChanged" data-mr-source={a.workspace} className="mr-mono" title={`${changedHere.length} changed since you last looked`}
-            style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>✦ {changedHere.length}</span>}
+            style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>✦ {changedHere.length} changed</span>}
           <span className="mr-grow" />
           {close && a.index < 9 && <kbd className="mr-mono mr-dim" style={{ fontSize: readable(12, zoom, 12) }}>{keyLabel(`⌘${a.index + 1}`)}</kbd>}
         </button>
@@ -499,7 +508,7 @@ function Far({ a, zoom, changed, onOpen }: { a: OverviewArea; zoom: number; chan
   const { name, lamp, pad, gap, note } = farSizes(a.h, zoom);
   const all = lamps(a);
   return (
-    <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Zoom to workspace ${a.name}${said(a)}`} onClick={onOpen}
+    <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Zoom to workspace ${a.name}${said(a)}${changed ? `, ${changed} changed since you last looked` : ""}`} onClick={onOpen}
       style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "flex-start", gap, padding: pad, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
       {/* The name gets the whole width; what needs you leads the lamp row instead of crowding it. */}
       <strong className="mr-ellipsis" style={{ fontSize: name, lineHeight: 1.1, maxWidth: "100%" }}>{a.name}</strong>
@@ -526,10 +535,10 @@ function Block({ b, close, zoom, change, dim, current, onClick }: { b: OverviewB
   const tip = [b.kind === "doc" ? `Doc: ${b.title}` : b.title, b.status, b.step && b.step !== b.status ? b.step : null].filter(Boolean).join("\n");
   return (
     <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} data-dim={dim || undefined} data-current={current || undefined} data-change={change} aria-label={`Open ${b.title}, ${b.status}${change ? `, ${change} since you last looked` : ""}`} title={tip} onClick={onClick}
-      style={{ position: "relative", height: BLOCK_H, display: "flex", gap: 8, padding: `${close ? 6 : 2}px ${change ? readable(11, zoom, 12) * 4.4 + 14 : 10}px ${close ? 6 : 2}px 0`, border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
+      style={{ position: "relative", height: BLOCK_H, display: "flex", gap: 8, padding: `${close ? 6 : 2}px ${change ? (close ? readable(11, zoom, 12) * 4.4 + 14 : readable(11, zoom, 12) * 1.2 + 14) : 10}px ${close ? 6 : 2}px 0`, border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
       <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp, true) }} />
-      {change && <span data-mr="OverviewChange" data-mr-source={b.id} aria-hidden="true" className="mr-mono"
-        style={{ position: "absolute", top: 0, right: 0, padding: "1px 5px", fontSize: readable(11, zoom, 12), lineHeight: 1.2, fontWeight: 700, background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>{change}</span>}
+      {change && <span data-mr="OverviewChange" data-mr-source={b.id} aria-hidden="true" className="mr-mono" title={`${change} since you last looked`}
+        style={{ position: "absolute", top: 0, right: 0, padding: "1px 5px", fontSize: readable(11, zoom, 12), lineHeight: 1.2, fontWeight: 700, background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>{close ? change : "✦"}</span>}
       <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2, justifyContent: close ? undefined : "center" }}>
         {/* Up close one line, with status and step under it; at middle zoom the title alone gets two
             lines, so a narrow column still shows most of it. A doc is marked by a glyph there. */}
