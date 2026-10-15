@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 struct Term {
     writer: Box<dyn Write + Send>,
     master: Box<dyn portable_pty::MasterPty + Send>,
+    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
 }
 
 #[derive(Default)]
@@ -60,7 +61,8 @@ pub fn open_command_with(
     drop(pty.slave);
     let mut reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
-    terms.terms.lock().unwrap().insert(key.to_owned(), Term { writer, master: pty.master });
+    let killer = child.clone_killer();
+    terms.terms.lock().unwrap().insert(key.to_owned(), Term { writer, master: pty.master, killer });
 
     let (app2, k2) = (app.clone(), key.to_owned());
     std::thread::spawn(move || {
@@ -119,6 +121,17 @@ pub fn term_write(terms: State<'_, Terminals>, session: String, data: String) ->
     let mut map = terms.terms.lock().unwrap();
     let t = map.get_mut(&session).ok_or("no terminal")?;
     t.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// "Back to visual": ends the terminal's claude, which hands the conversation back to the SDK (the
+/// exit handler `term_open` set). Without it the CLI kept the session and the message box stayed gone.
+#[tauri::command]
+pub fn term_close(terms: State<'_, Terminals>, session: String) -> Result<(), String> {
+    let mut map = terms.terms.lock().unwrap();
+    match map.get_mut(&session) {
+        Some(t) => t.killer.kill().map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
 }
 
 #[tauri::command]
