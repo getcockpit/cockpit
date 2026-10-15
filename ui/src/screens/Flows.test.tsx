@@ -25,7 +25,7 @@ test("flow chat keeps typed questions and their answers, not the opening prompt 
   const u = (id: string, text: string): TranscriptItem => ({ kind: "user", id, text, at: 0 });
   const t = (id: string, text: string): TranscriptItem => ({ kind: "text", id, text, at: 0 });
   const chat = flowChat([u("1", "/review https://github.com/a/b/pull/1"), t("2", "overview"), u("3", "ok"), t("4", "snippet 1"),
-    u("5", "why is this lock needed?"), t("6", "Because the cache is shared."), u("7", "note f1"), t("8", "noted"), u("9", "Option 2: Fix it"), u("9b", "Thread t1 · Option A: Stream it"), u("10", "and the retry?")]);
+    u("5", "why is this lock needed?"), t("6", "Because the cache is shared."), u("7", "note f1"), t("8", "noted"), u("9", "Option 2: Fix it"), u("9b", "Thread t1 · Option A: Stream it"), u("9c", "publish and approve"), u("10", "and the retry?")]);
   expect(chat.map((x) => [x.ask.text, x.answer.map((a) => a.kind === "text" && a.text)])).toEqual([["why is this lock needed?", ["Because the cache is shared."]], ["and the retry?", []]]);
 });
 
