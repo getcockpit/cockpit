@@ -22,7 +22,7 @@ Cockpit is a desktop front-end for Claude Code (macOS first; Linux and Windows t
 ./scripts/e2e-ui.sh                  # UI end-to-end: every JTBD flow headless via PinchTab over the demo harness (no Claude); `J4` runs matching flows
 (cd ui && bunx vite --port 1530)    # UX demo harness: http://127.0.0.1:1530/?demo=fresh|empty|busy|archive (no Claude)
 ./scripts/selftest.sh                # end-to-end through the real app + sidecar + claude (uses a little usage)
-./scripts/selftest-{doc,resume,flow,address,terminal,selfbuild,workspace,view,plan,title,update,layer,skip,askfirst,attach}.sh
+./scripts/selftest-{doc,resume,flow,address,terminal,selfbuild,workspace,view,plan,title,update,layer,skip,askfirst,attach,move}.sh
 ```
 
 **Self-tests:**
@@ -105,5 +105,5 @@ React UI (ui/) ──Tauri IPC──▶ Rust core (src-tauri/) ──NDJSON stdi
   | `MR_DEV_LOOP`, `MR_DEV_SLOT` | Set by `dev.sh`: Update is available, and which build slot is running |
 
 - **Scripts and PATH:** scripts and self-builds must work with a minimal GUI PATH. They add cargo, bun and mise paths themselves, and the UI build runs on bun's runtime (`bun --bun`).
-- **Platforms:** macOS is primary; Linux and Windows build in CI. Keep unix-only calls behind `#[cfg(unix)]` / `#[cfg(target_os = "macos")]` with a Windows path, and gate macOS-only tests the same way.
+- **Platforms:** macOS is primary; CI runs `cargo test` on macOS, Linux and Windows, plus the selfbuild self-test on macOS. Keep unix-only calls behind `#[cfg(unix)]` / `#[cfg(target_os = "macos")]` with a Windows path, and gate macOS-only tests the same way.
 - **Releases:** bump `version` in `src-tauri/tauri.conf.json`, push a `vX.Y.Z` tag; `.github/workflows/release.yml` builds and attaches every installer.

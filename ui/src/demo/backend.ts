@@ -262,6 +262,8 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "attachment_save": { const n = drawnN++; return { path: `/Users/me/Library/Application Support/Cockpit/attachments/demo${n}-drawn.png`, name: `drawn-${n}.png`, mime: "image/png", size: a instanceof Uint8Array ? a.length : 0 }; }
     case "models_refresh": record(null, "sidecar.models", { models: DEMO_MODELS }); return null;
     case "session_stop": record(String(a.session), "sidecar.session_ended", { ok: true }); return null;
+    // Signed back in (MR-153): the real core restarts the session first; here the message just goes again.
+    case "session_retry_signed_in": record(String(a.session), "ui.relogin_restart", {}); return handle("session_send", a);
     case "session_changes": return [
       { path: "src/app/routes.ts", added: 24, removed: 9, status: "M", risky: null },
       { path: "src/auth/session.ts", added: 11, removed: 30, status: "M", risky: "auth" },
@@ -346,6 +348,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "workspace_delete": record(null, "ui.workspace_deleted", { id: a.id, name: a.name, stopped: 0, trashed_to: "~/.Trash/…" }); return null;
     case "workspace_set_folder": record(null, "ui.workspace_folder_set", { id: a.id, folder: a.folder ?? null }); return null;
     case "workspace_rename": record(null, "ui.workspace_renamed", { id: a.id, name: a.name }); return null;
+    case "session_move": record(String(a.session), "ui.session_moved", { from: "personal", to: a.workspace, copied: 1 }); return null;
     case "workspace_reorder": record(null, "ui.workspaces_reordered", { order: a.order }); return null;
     default: return null;
   }
@@ -353,6 +356,10 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
 
 export function install(name: string) {
   const sc: Scenario = SCENARIOS[name] ?? SCENARIOS.busy;
+  // Each load starts clean: remembered UI choices (start-picker kind, workspace, folder) would
+  // otherwise carry from one scenario into the next and make it depend on what ran before.
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith("mr.")) localStorage.removeItem(k); } catch { /* no storage */ }
+  if (new URLSearchParams(location.search).get("motion") === "off") document.documentElement.dataset.motion = "off";
   const base = Date.now() - 40 * 60_000;
   docs = structuredClone(sc.docs);
   for (const [i, e] of sc.events.entries()) {

@@ -5,6 +5,7 @@ import { autoReviewDefault, contextFill, elsewhere, initialState, introOpen, rep
 import { dedupe } from "./store";
 import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
+import { needsQueue } from "../picker/queue";
 import type { MrEvent } from "./types";
 
 // Builds the event-log rows the Rust core would have stored for the real MR-2 probe session.
@@ -660,5 +661,49 @@ describe("attachments", () => {
   });
   test("a first prompt without files adds no message", () => {
     expect(replay([ev("ui.session_requested", { cwd: "/r", prompt: "go", kind: "blank" })]).sessions.s1.transcript).toEqual([]);
+  });
+});
+
+test("moving a session puts it in the other workspace, and a resume keeps it there", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>, session: string | null = null): MrEvent => ({ id, session_id: session, kind, payload, anchor: null, created_at: Number(id.slice(1)) });
+  const st = replay([
+    e("M1", "ui.workspace_created", { id: "ws_a", name: "Client A", config_dir: "/d" }),
+    e("M2", "ui.session_requested", { prompt: "p", cwd: "/w" }, "s1"),
+    e("M3", "ui.session_moved", { from: "personal", to: "ws_a", copied: 1 }, "s1"),
+    e("M4", "ui.session_requested", { prompt: "go on", cwd: "/w", resume: "x", workspace: "ws_a" }, "s1"),
+  ]);
+  expect(st.sessions.s1.workspace).toBe("ws_a");
+  expect(st.order).toEqual(["s1"]);
+});
+
+describe("expired sign-in (MR-153)", () => {
+  let n = 0;
+  const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `L${String(++n).padStart(3, "0")}`, session_id: "S", kind, payload, anchor: null, created_at: n });
+  const start = [ev("ui.session_requested", { prompt: "fix it", cwd: "/r" }), ev("sidecar.session_started", { sdk_session_id: "x" })];
+  // What Claude Code sends when its login ran out (copied from a real log).
+  const refused = () => [
+    ev("sidecar.sdk", { message: { type: "assistant", error: "authentication_failed", is_api_error_message: true, message: { content: [{ type: "text", text: "Not logged in · Please run /login" }] } } }),
+    ev("sidecar.sdk", { message: { type: "result", is_error: true, result: "Not logged in · Please run /login" } }),
+  ];
+
+  it("keeps the refused message to send again", () => {
+    const s = replay([...start, ev("ui.message_sent", { text: "now the tests" }), ...refused()]).sessions.S;
+    expect(s.signedOut).toEqual({ retry: "now the tests" });
+    expect(s.error).toBeNull();
+  });
+
+  it("falls back to continuing when the very first turn was refused", () => {
+    expect(replay([...start, ...refused()]).sessions.S.signedOut).toEqual({ retry: "Continue where you left off." });
+  });
+
+  it("waits in the needs-you queue, and the tile says so", () => {
+    const s = replay([...start, ev("ui.message_sent", { text: "go" }), ...refused()]).sessions.S;
+    expect(needsQueue([s], []).map((q) => q.kind)).toEqual(["signin"]);
+    expect(pickTile(s).state).toBe("needs_you");
+  });
+
+  it("clears once Claude answers again", () => {
+    const s = replay([...start, ev("ui.message_sent", { text: "go" }), ...refused(), ev("ui.relogin_restart", {}), ev("sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "On it." }] } } })]).sessions.S;
+    expect(s.signedOut).toBeNull();
   });
 });

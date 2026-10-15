@@ -78,17 +78,29 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-      - name: Git identity (tests make commits)
-        run: git config --global user.name ci && git config --global user.email ci@example.com
+      # Git identity: tests make commits. No CRLF conversion: tests compare file contents byte for byte.
+      - name: Git config for tests
+        run: git config --global user.name ci && git config --global user.email ci@example.com && git config --global core.autocrlf false
       - run: ./scripts/build-helpers.sh
       - name: UI bundle (embedded by the core)
         run: bun install --frozen-lockfile && bun run build
         working-directory: ui
-      - name: Test
-        if: runner.os != 'Windows'
-        run: cargo test
+      - run: cargo test
         working-directory: src-tauri
-      - name: Build
-        if: runner.os == 'Windows'
-        run: cargo build
-        working-directory: src-tauri
+
+  selfbuild:
+    name: Self-build (macOS)
+    # The app builds itself from this checkout and relaunches into the new build (no Claude).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # The self-build runs `cargo tauri build`.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2
+      - run: ./scripts/selftest-selfbuild.sh

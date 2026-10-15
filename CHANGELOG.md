@@ -4,6 +4,26 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-15
+
+### Added
+- When Claude Code's sign-in expires, the session says so instead of a dead "Not logged in" line. **Sign in…** opens Claude's own /login for that workspace and sends your refused message again once you exit; **Already signed in · send again** retries right away. These sessions wait in the needs-you queue, with a notification.
+- Move a session to another workspace from the Focus header: the conversation resumes there under that workspace's sign-in.
+
+### Fixed
+- **Back to visual** brings the message box back after a terminal takeover.
+- Esc closes the model picker and Builds when they were opened by shortcut.
+
+## [0.1.4] - 2026-10-14
+
+### Added
+- Working docs have a lifecycle: each shows Drafting, Ready to build, Building or Shipped on its header and Wall tile. A doc is marked shipped by itself once every branch building it is merged into main; **Mark shipped** covers work built another way. **Done** archives a shipped doc, and **Drop** closes one that won't be built.
+- The Wall offers one-click **Mark done** for shipped docs, and asks you to build or drop a doc that hasn't moved in 3 days.
+- Build sessions end by adding a "What shipped" note to their doc: what was built, where it differed from the plan, and follow-ups.
+
+### Changed
+- A finished session with every plan step ticked off shows ◇ Ready to review instead of ✓ Done; Done is kept for sessions that have ended.
+
 ## [0.1.3] - 2026-10-14
 
 ### Added

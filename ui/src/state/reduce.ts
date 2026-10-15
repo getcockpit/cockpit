@@ -37,7 +37,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null,
   };
 }
 
@@ -238,6 +238,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     case "session.titled":
       s.autoTitle = String(p.title ?? "").trim() || s.autoTitle;
       break;
+    case "ui.session_moved":
+      s.workspace = String(p.to ?? s.workspace); // its conversation went with it (MR-154)
+      break;
     case "ui.session_renamed":
       s.name = String(p.name ?? "").trim() || null; // an empty name hands the title back to Claude
       break;
@@ -369,6 +372,9 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     }
     // Context in use: what this reply read (fresh, cached, newly cached) plus what it wrote. Subagents run their own.
     const u = (m.message as { usage?: Record<string, number> })?.usage;
+    // An expired or missing sign-in comes back as a synthetic reply, not a session error (MR-153).
+    if (m.error === "authentication_failed") s.signedOut = { retry: [...s.transcript].reverse().find((t) => t.kind === "user")?.text || "Continue where you left off." };
+    else if (!m.parent_tool_use_id) s.signedOut = null;
     if (u && !m.parent_tool_use_id) s.context = { ...s.context, used: ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens"].reduce((n, k) => n + Number(u[k] ?? 0), 0) };
     // A new turn starts with whatever was waiting for it.
     if (!s.turnOpen) s.transcript = settle(s.transcript, ["sending", "queued"], "taken");

@@ -12,7 +12,8 @@ export type QueueItem =
   | { kind: "prose"; key: string; s: SessionState; question: string; options: string[]; at: number }
   | { kind: "doc"; key: string; d: Doc; b: Block; at: number }
   | { kind: "flow"; key: string; s: SessionState; what: string; at: number }
-  | { kind: "fix"; key: string; s: SessionState; at: number };
+  | { kind: "fix"; key: string; s: SessionState; at: number }
+  | { kind: "signin"; key: string; s: SessionState; at: number };
 
 /** A session that changes the app itself: a god-mode fix or a restyle (MR-47, MR-50). */
 export const isAppChange = (s: Pick<SessionState, "title">) => /^(God-mode mark|Restyle the app)/.test(s.title);
@@ -86,7 +87,9 @@ export function needsQueue(sessions: SessionState[], docs: Doc[]): QueueItem[] {
     if (s.archivedAt) continue;
     for (const a of s.pending) out.push({ kind: "ask", key: `ask:${a.requestId}`, s, a, at: a.at });
     const flow = s.pending.length ? null : flowWaiting(s);
-    if (!s.pending.length && fixReady(s)) out.push({ kind: "fix", key: `fix:${s.id}`, s, at: s.lastActivity });
+    // Its login ran out (MR-153): nothing else it waits on can move until you sign in.
+    if (!s.pending.length && s.signedOut && (s.status === "idle" || s.status === "ended")) out.push({ kind: "signin", key: `signin:${s.id}`, s, at: s.lastActivity });
+    else if (!s.pending.length && fixReady(s)) out.push({ kind: "fix", key: `fix:${s.id}`, s, at: s.lastActivity });
     else if (flow) out.push({ kind: "flow", key: `flow:${s.id}:${s.transcript.length}`, s, what: flow, at: s.lastActivity });
     else if (!s.pending.length && pickTile(s).state === "needs_you") {
       const last = s.transcript.filter((t) => t.kind === "text" || t.kind === "user").at(-1);

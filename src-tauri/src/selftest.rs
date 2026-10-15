@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer" || v == "attach")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer" || v == "attach" || v == "move")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -37,6 +37,10 @@ fn flow_mode() -> bool {
 
 fn address_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "address")
+}
+
+fn move_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "move")
 }
 
 fn resume_mode() -> bool {
@@ -178,7 +182,7 @@ pub fn run(app: AppHandle) {
             } else if address_mode() {
                 // MR-126: every thread is drawn before the turn stops, not one per turn.
                 "/pr-address 9 — this is a UI test of the address tools, not a real PR: don't look at files, git or GitHub. Pretend PR #9 has three unresolved review threads, t1, t2 and t3, on fetch.ts lines 10, 20 and 30, none addressed yet. Make up a one-line comment and a short code snippet for each.".into()
-            } else if resume_mode() {
+            } else if resume_mode() || move_mode() {
                 "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
             } else if title_mode() {
                 // No tool or format named: the guidance alone should give a title and proposed replies (MR-63).
@@ -275,7 +279,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(500)).await; app.exit(1); });
         }
         Some("sdk") if payload["message"]["type"] == "result" && terminal_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
-            // Take over in a real terminal, then type /exit like a user would.
+            // Take over in a real terminal, then press Back to visual like a user would.
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             let log = app.state::<crate::eventlog::EventLog>();
             let events = log.list(Some(&session), None, 1000).unwrap_or_default();
@@ -286,9 +290,8 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 let r = crate::terminal::term_open(app2.clone(), session.clone(), sdk, cwd, 100, 30, None);
                 if let Err(e) = r { eprintln!("[selftest] term_open failed: {e}"); std::process::exit(1); }
                 std::thread::sleep(Duration::from_secs(8));
-                let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session.clone(), "/exit".into());
-                std::thread::sleep(Duration::from_millis(600));
-                let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session, "\r".into());
+                // "Back to visual": the app ends the CLI itself, which must hand the session back.
+                let _ = crate::terminal::term_close(app2.state::<crate::terminal::Terminals>(), session);
             });
         }
         Some("sdk") if payload["message"]["type"] == "result" && attach_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
@@ -318,6 +321,23 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             crate::eventlog::record(app, Some(&session), "selftest.cap", &serde_json::json!({ "busy_after_turn": busy }), None);
             if busy != 0 { eprintln!("[selftest] an idle session still counts toward the cap ({busy} busy)"); std::process::exit(1); }
             let _ = crate::sidecar::session_stop(app.state::<crate::sidecar::Sidecar>(), session);
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && move_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
+            // MR-154: move the waiting session to a new workspace and back, then resume it: it must
+            // still remember the word. Off this thread: a move waits for the session to end.
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            let app = app.clone();
+            std::thread::spawn(move || {
+                let ws = crate::workspaces::workspace_create(app.clone(), "Moved".into()).expect("workspace");
+                for to in [ws.as_str(), crate::workspaces::PERSONAL] {
+                    if let Err(e) = crate::sidecar::session_move(app.clone(), session.clone(), to.into()) {
+                        eprintln!("[selftest] move to {to} failed: {e}");
+                        std::process::exit(1);
+                    }
+                }
+                let r = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(), None);
+                if let Err(e) = r { eprintln!("[selftest] resume after the move failed: {e}"); std::process::exit(1); }
+            });
         }
         Some("session_ended") if resume_mode() && RESULTS.load(Ordering::SeqCst) == 1 => {
             RESULTS.fetch_add(1, Ordering::SeqCst);

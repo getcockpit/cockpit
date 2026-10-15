@@ -1,7 +1,6 @@
 import { BuildReadyBanner } from "./components/BuildReadyBanner";
 import { RecoveryBanner } from "./components/RecoveryBanner";
-import { keyOf } from "./components/keys";
-import { modKey } from "./platform";
+import { appKey } from "./components/keys";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { needsLayer2 } from "./picker/pick";
 import { DeleteWorkspace, WorkspaceSwitcher, WorkspaceTabs } from "./screens/Workspaces";
@@ -33,6 +32,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installUsage, useViews } from "./state/usage";
 import { listenFileDrop } from "./state/fileDrop";
 import { listenSelftest } from "./state/selftestUi";
+import { DragGhost } from "./components/dragToWorkspace";
 
 export default function App() {
   const all = useAppState();
@@ -53,6 +53,8 @@ export default function App() {
   }, [allDocs]);
   const [workspace, setWorkspace] = useState(() => { try { return localStorage.getItem("mr.workspace") ?? "personal"; } catch { return "personal"; } });
   const [signIn, setSignIn] = useState<string | null>(null);
+  // What to do once that sign-in's terminal exits (MR-153: send the refused message again).
+  const afterSignIn = useRef<(() => void) | null>(null);
   const [settings, setSettings] = useState(false);
   // The theme is part of the log (synced, durable); applying it is just a data attribute.
   useEffect(() => { document.documentElement.dataset.theme = all.theme === "control-room" ? "" : all.theme; }, [all.theme]);
@@ -101,6 +103,9 @@ export default function App() {
   // If the open workspace disappears (deleted), or the remembered one isn't in this log (a fresh
   // data folder), fall back to Personal. Checked again once the log has loaded.
   useEffect(() => { if (all.lastEventId !== null && !all.workspaces.some((w) => w.id === workspace)) { setFocusNow(null); setDocIdNow(null); setWorkspace("personal"); } }, [all.workspaces, workspace, all.lastEventId !== null]);
+  // The open session moved to another workspace (MR-154): follow it there.
+  const movedTo = focus ? all.sessions[focus]?.workspace : undefined;
+  useEffect(() => { if (movedTo && movedTo !== workspace) { views.current[workspace] = { focus: null, docId: null }; setWorkspace(movedTo); } }, [movedTo]);
   const switchTo = (id: string) => {
     if (id === workspace) return;
     views.current[workspace] = { focus, docId };
@@ -137,26 +142,22 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (modKey(e) && keyOf(e) === "k") { e.preventDefault(); setPicker(true); }
-      if (modKey(e) && e.shiftKey && keyOf(e) === "g") { e.preventDefault(); setGod((x) => !x); }
-      if (modKey(e) && keyOf(e) === ",") { e.preventDefault(); setSettings((x) => !x); }
-      if (modKey(e) && e.shiftKey && keyOf(e) === "a") { e.preventDefault(); setArchive((x) => !x); }
-      // ⌘⇧B updates the app from main (decision 27); ⌘⌥⇧B still opens the build history.
-      if (modKey(e) && e.shiftKey && keyOf(e) === "b") { e.preventDefault(); if (e.altKey) setBuilds((x) => (x === null ? "" : null)); else void startUpdate().catch(() => {}); }
-      if (modKey(e) && /^[1-9]$/.test(keyOf(e)) && !e.shiftKey) {
-        const ws = all.workspaces[Number(keyOf(e)) - 1];
-        if (ws && !document.querySelector('[role="dialog"]')) { e.preventDefault(); switchTo(ws.id); }
-      }
-      // ⌃Tab / ⌃⇧Tab cycle workspaces like browser tabs; ⌘J opens the switcher (MR-55).
-      if (e.ctrlKey && keyOf(e) === "Tab" && all.workspaces.length > 1 && !document.querySelector('[role="dialog"]')) {
-        e.preventDefault();
+      const a = appKey(e, { workspaces: all.workspaces.length, screen: docId ? "doc" : focus ? "focus" : "wall", dialog: !!document.querySelector('[role="dialog"]') });
+      if (!a) return;
+      e.preventDefault();
+      if (a.do === "picker") setPicker(true);
+      else if (a.do === "god") setGod((x) => !x);
+      else if (a.do === "settings") setSettings((x) => !x);
+      else if (a.do === "archive") setArchive((x) => !x);
+      else if (a.do === "update") void startUpdate().catch(() => {});
+      else if (a.do === "builds") setBuilds((x) => (x === null ? "" : null));
+      else if (a.do === "workspace") switchTo(all.workspaces[a.index].id);
+      else if (a.do === "cycle") {
         const i = all.workspaces.findIndex((w) => w.id === workspace);
-        switchTo(all.workspaces[(i + (e.shiftKey ? -1 : 1) + all.workspaces.length) % all.workspaces.length].id);
+        switchTo(all.workspaces[(i + a.by + all.workspaces.length) % all.workspaces.length].id);
       }
-      if (modKey(e) && keyOf(e) === "j") { e.preventDefault(); setSwitcher((x) => !x); }
-      // T switches Wall ↔ Timeline, only on those screens and never while typing.
-      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target as HTMLElement)?.isContentEditable;
-      if (keyOf(e) === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing && !focus && !docId && !document.querySelector('[role="dialog"]')) { e.preventDefault(); setWallView(wallView === "wall" ? "timeline" : "wall"); }
+      else if (a.do === "switcher") setSwitcher((x) => !x);
+      else if (a.do === "wallView") setWallView(wallView === "wall" ? "timeline" : "wall");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -181,8 +182,8 @@ export default function App() {
   const signInPanel = signIn && (
     <div role="dialog" aria-label="Sign in to workspace" className="mr-scrim" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "80px 24px", background: "rgba(21,24,27,.35)", zIndex: 30 }}>
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 900, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10 }}>
-        <div className="mr-row"><strong>Sign in to “{all.workspaces.find((w) => w.id === signIn)?.name}”</strong><span className="mr-grow" /><button type="button" className="mr-key" onClick={() => setSignIn(null)}>Close</button></div>
-        <Suspense fallback={<span className="mr-dim">Opening…</span>}><SignInPane workspace={signIn} onExit={() => setSignIn(null)} /></Suspense>
+        <div className="mr-row"><strong>Sign in to “{all.workspaces.find((w) => w.id === signIn)?.name}”</strong><span className="mr-grow" /><button type="button" className="mr-key" onClick={() => { setSignIn(null); afterSignIn.current = null; }}>Close</button></div>
+        <Suspense fallback={<span className="mr-dim">Opening…</span>}><SignInPane workspace={signIn} onExit={() => { setSignIn(null); void api.refreshLimits(); afterSignIn.current?.(); afterSignIn.current = null; }} /></Suspense>
       </div>
     </div>
   );
@@ -206,6 +207,7 @@ export default function App() {
     </div>
   );
   const overlays = <>
+      <DragGhost />
       <Presence show={picker}>{overlay}</Presence>
       <Presence show={builds !== null}>{buildsPanel}</Presence>
       <Presence show={!!signIn}>{signInPanel}</Presence>
@@ -219,7 +221,7 @@ export default function App() {
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} /></div>}</ErrorBoundary>, overlays);
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} workspaces={state.workspaces} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} onSignIn={(then) => { afterSignIn.current = then; setSignIn(focused.workspace); }} /></div>}</ErrorBoundary>, overlays);
   if (wallView === "timeline") return shell(<ErrorBoundary key="timeline" name="timeline"><Timeline state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onWall={() => setWallView("wall")} /></ErrorBoundary>, overlays);
-  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onSettings={() => setSettings(true)} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onSettings={() => setSettings(true)} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onSignIn={(s) => { setFocus(s.id); afterSignIn.current = () => void api.retrySignedIn(s.id, s.signedOut?.retry ?? ""); setSignIn(s.workspace); }} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
 }

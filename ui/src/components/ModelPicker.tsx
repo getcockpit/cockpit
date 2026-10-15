@@ -20,8 +20,11 @@ export function ModelPicker({ s, models }: { s: SessionState; models: ModelRow[]
     if (!open) return;
     if (!models.length) void api.modelsRefresh().catch(() => {});
     const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    // Esc closes it wherever focus is: ⌘⇧M opens it without moving focus inside (MR-152).
+    const esc = (e: KeyboardEvent) => { if (keyOf(e) === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); } };
     document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
+    window.addEventListener("keydown", esc, true);
+    return () => { document.removeEventListener("mousedown", away); window.removeEventListener("keydown", esc, true); };
   }, [open, models.length]);
 
   const set = (change: { model?: string | null; effort?: string | null }) => void api.setModel(s.id, change).catch((e) => window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Not switched: ${String(e).split("\n")[0]}` })));
@@ -39,7 +42,6 @@ export function ModelPicker({ s, models }: { s: SessionState; models: ModelRow[]
       </button>
       {open && (
         <div role="dialog" aria-label="Model and effort" className="mr-pop"
-          onKeyDown={(e) => { if (keyOf(e) === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); } }}
           style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, width: 380, zIndex: 20, background: "var(--mr-tile)", boxShadow: "0 0 0 1px var(--mr-ink-3), 0 8px 24px rgba(21,24,27,.2)", display: "flex", flexDirection: "column", padding: "8px 0" }}>
           <span className="mr-dim" style={{ padding: "0 12px 6px", fontSize: 12 }}>Running: <span className="mr-mono">{s.model ?? "not started yet"}</span></span>
           {s.modelError && <span style={{ padding: "0 12px 6px", fontSize: 12, color: "var(--mr-error)" }} data-mr="ModelError" data-mr-source={s.id}>Not switched: {s.modelError}</span>}

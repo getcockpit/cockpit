@@ -1,5 +1,4 @@
-import { keyOf } from "../components/keys";
-import { modKey } from "../platform";
+import { focusKey } from "../components/keys";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DeliveryMark, Key, StateMark } from "../components";
@@ -11,7 +10,7 @@ import { editCard, isCard, isCheck } from "../picker/logCards";
 import { CheckList, EditSnippet, StepSummary } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
 import { api } from "../state/store";
-import type { Attachment, CommandRow, Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
+import type { AppState, Attachment, CommandRow, Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
 import { docApi, isOpenQuestion, type Doc } from "../state/docs";
 import { AskRow, DocQuestionRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
@@ -29,6 +28,7 @@ import { Mark } from "../components/Turn";
 import { useTick } from "../components/Now";
 import { ago } from "../picker/now";
 import { LiveTrack } from "../components/Now";
+import { MoveWorkspace } from "../components/MoveWorkspace";
 import { ReviewChanges } from "./ReviewChanges";
 import { ModelPicker } from "../components/ModelPicker";
 import { ContextMeter } from "../components/ContextMeter";
@@ -45,7 +45,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, elsewhere = false }: { s: SessionState; models: ModelRow[]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; elsewhere?: boolean }) {
+export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, elsewhere = false }: { s: SessionState; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -58,6 +58,14 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
   const [showRaw, setShowRaw] = useState(false);
   // The terminal takeover; `command`: a slash command it runs first (MR-87: /doctor, /mcp sign-in…).
   const [term, setTerm] = useState<false | { command?: string }>(false);
+  // Back to visual ends the terminal's claude: its exit hands the conversation back to the app,
+  // which brings the message box back. Only hiding the pane left the CLI holding the session.
+  const termOpen = useRef(false);
+  termOpen.current = !!term;
+  const toggleTerminal = () => {
+    if (termOpen.current) { void invoke("term_close", { session: s.id }).catch(() => {}); setTerm(false); }
+    else setTerm({});
+  };
   const [mcpOpen, setMcpOpen] = useState(false);
   const [unknown, setUnknown] = useState<{ msg: string; files: Attachment[] } | null>(null); // a /command this session doesn't know: ask first
   const [reviewing, setReviewing] = useState<string | null>(null); // a file path: the review panel is open
@@ -84,24 +92,18 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-      // Esc goes back even from a text field (the message box keeps focus after sending): an empty
-      // field goes straight back, one with a draft is left first so the draft isn't lost to a stray Esc.
-      // The terminal keeps Esc for itself, and an open dialog closes first.
-      if (keyOf(e) === "Escape" && !e.defaultPrevented && !document.querySelector('[role="dialog"]')) {
-        const el = e.target as HTMLElement;
-        if (el.closest?.(".xterm")) return;
-        e.preventDefault();
-        if (typing && (el as HTMLInputElement).value) { el.blur(); return; }
-        onBack();
-      }
-      if (keyOf(e) === "." && modKey(e) && running) { e.preventDefault(); void api.interrupt(s.id); }
-      if (keyOf(e) === "d" && modKey(e) && e.shiftKey && !s.archivedAt) { e.preventDefault(); onDone(); }
-      if (e.altKey && /^[1-3]$/.test(keyOf(e)) && !running && replies[Number(keyOf(e)) - 1]) { e.preventDefault(); void api.send(s.id, replies[Number(keyOf(e)) - 1]); }
-      if (keyOf(e) === "r" && modKey(e)) { e.preventDefault(); setShowRaw((x) => !x); }
-      if (keyOf(e) === "m" && modKey(e) && e.shiftKey && !s.fromDeleted) { e.preventDefault(); document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click(); }
-      if (keyOf(e) === "u" && modKey(e) && e.shiftKey && !s.fromDeleted) { e.preventDefault(); void catchUp(); }
-      if (keyOf(e) === "t" && modKey(e) && s.sdkSessionId) { e.preventDefault(); setTerm((x) => (x ? false : {})); }
+      const a = focusKey(e, { running, archived: !!s.archivedAt, fromDeleted: !!s.fromDeleted, replies: replies.length, resumable: !!s.sdkSessionId, dialog: !!document.querySelector('[role="dialog"]') });
+      if (!a) return;
+      e.preventDefault();
+      if (a.do === "blur") (e.target as HTMLElement).blur();
+      else if (a.do === "back") onBack();
+      else if (a.do === "interrupt") void api.interrupt(s.id);
+      else if (a.do === "done") onDone();
+      else if (a.do === "reply") void api.send(s.id, replies[a.index]);
+      else if (a.do === "raw") setShowRaw((x) => !x);
+      else if (a.do === "model") document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click();
+      else if (a.do === "catchUp") void catchUp();
+      else if (a.do === "terminal") toggleTerminal();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -151,12 +153,13 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10, flexWrap: "wrap", rowGap: 8 }}>
           {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
-          {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => (x ? false : {}))}>{term ? "Back to visual" : "Open in terminal"}</Key>}
+          {s.sdkSessionId && <Key k="⌘T" onClick={toggleTerminal}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
           <span className="mr-grow" />
           <ContextMeter s={s} compactWindow={compactWindow} running={running} />
+          {!s.fromDeleted && !elsewhere && <MoveWorkspace s={s} workspaces={workspaces} running={running} />}
           {!s.fromDeleted && <ModelPicker s={s} models={models} />}
           {running && <Key k="⌘." onClick={() => void api.interrupt(s.id)}>Interrupt</Key>}
           {s.archivedAt
@@ -177,6 +180,17 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
             </button>
           ))}
           <GoalStrip s={s} readOnly={elsewhere || !!s.fromDeleted} />
+          {/* Sign-in ran out (MR-153): sign in with Claude's own /login, then the refused message goes again. */}
+          {s.signedOut && !elsewhere && !s.fromDeleted && (
+            <div className="mr-qrow" data-mr="SignedOut" data-mr-source={s.id}><div className="mr-flag" style={{ background: "var(--mr-needs)" }} /><div className="mr-qbody">
+              <strong style={{ color: "var(--mr-needs)" }}>Claude Code's sign-in expired</strong>
+              <span>Sign in again and your last message is sent again, in this same conversation.</span>
+              <span className="mr-row" style={{ gap: 8 }}>
+                {onSignIn && <Key tone="primary" onClick={() => onSignIn(() => void api.retrySignedIn(s.id, s.signedOut?.retry ?? ""))}>Sign in…</Key>}
+                <Key onClick={() => void api.retrySignedIn(s.id, s.signedOut?.retry ?? "")}>Already signed in · send again</Key>
+              </span>
+            </div></div>
+          )}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
           {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} command={term.command} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <FileContext.Provider value={{ session: s.id, cwd: s.cwd }}><RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} commands={s.commands} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider></FileContext.Provider>}
           {/* What this session waits on you for, at the end of the transcript where Focus scrolls to,
