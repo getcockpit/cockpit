@@ -57,6 +57,14 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
   const [showRaw, setShowRaw] = useState(false);
   // The terminal takeover; `command`: a slash command it runs first (MR-87: /doctor, /mcp sign-in…).
   const [term, setTerm] = useState<false | { command?: string }>(false);
+  // Back to visual ends the terminal's claude: its exit hands the conversation back to the app,
+  // which brings the message box back. Only hiding the pane left the CLI holding the session.
+  const termOpen = useRef(false);
+  termOpen.current = !!term;
+  const toggleTerminal = () => {
+    if (termOpen.current) { void invoke("term_close", { session: s.id }).catch(() => {}); setTerm(false); }
+    else setTerm({});
+  };
   const [mcpOpen, setMcpOpen] = useState(false);
   const [unknown, setUnknown] = useState<{ msg: string; files: Attachment[] } | null>(null); // a /command this session doesn't know: ask first
   const [reviewing, setReviewing] = useState<string | null>(null); // a file path: the review panel is open
@@ -94,7 +102,7 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
       else if (a.do === "raw") setShowRaw((x) => !x);
       else if (a.do === "model") document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click();
       else if (a.do === "catchUp") void catchUp();
-      else if (a.do === "terminal") setTerm((x) => (x ? false : {}));
+      else if (a.do === "terminal") toggleTerminal();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -144,7 +152,7 @@ export function Focus({ s, models, compactWindow = null, docs, onOpenDoc, onBack
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10, flexWrap: "wrap", rowGap: 8 }}>
           {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
-          {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => (x ? false : {}))}>{term ? "Back to visual" : "Open in terminal"}</Key>}
+          {s.sdkSessionId && <Key k="⌘T" onClick={toggleTerminal}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}

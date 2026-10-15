@@ -14,6 +14,6 @@ db="$data/events.sqlite"
 sqlite3 "$db" "SELECT kind, COUNT(*) FROM events WHERE kind LIKE 'ui.terminal%' OR kind='ui.session_requested' GROUP BY kind ORDER BY MIN(id);"
 need() { [ "$(sqlite3 "$db" "$1")" != "0" ] || { echo "FAILED: $2"; exit 1; }; }
 need "SELECT COUNT(*) FROM events WHERE kind='ui.terminal_opened'" "terminal never opened"
-need "SELECT COUNT(*) FROM events WHERE kind='ui.terminal_closed'" "terminal never closed after /exit"
+need "SELECT COUNT(*) FROM events WHERE kind='ui.terminal_closed'" "terminal never closed after Back to visual"
 need "SELECT COUNT(*) FROM events WHERE kind='ui.session_requested' AND json_extract(payload,'$.resume') IS NOT NULL" "session was not handed back"
 echo "SELFTEST TERMINAL PASSED"
