@@ -5,7 +5,7 @@ import { StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -65,6 +65,14 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   useLayoutEffect(() => { if (firstBox.current) { firstBox.current = false; return; } if (following && size.w && !drag.current) fitNow(true); }, [boxKey]);
   // Far out a click zooms into that workspace (close enough to read it) instead of leaving the map.
   const zoomTo = (a: OverviewArea) => { following = false; glideTo(fit(a, { w: size.w, h: Math.max(1, size.h - BAR_H) })); };
+  // 100% lands on the workspace nearest the middle of the view, not on whatever gap happens to be there.
+  const toActual = () => {
+    const vh = Math.max(1, size.h - BAR_H);
+    const a = nearest(areas, (size.w / 2 - cam.x) / cam.zoom, (vh / 2 - cam.y) / cam.zoom);
+    following = false;
+    if (a) glideTo(actualSize(a, { w: size.w, h: vh }));
+    else zoomBy(1 / cam.zoom);
+  };
   const zoomBy = (by: number) => { following = false; glideTo((c) => zoomAt(c, size.w / 2, (size.h - BAR_H) / 2, by)); };
 
   // Wheel: pan in any direction; pinch (ctrl+wheel in Chromium) or ⌘-scroll zooms. WebKit's trackpad
@@ -188,7 +196,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       </div>
       <div className="mr-row" data-mr="OverviewZoom" style={{ flex: "none", gap: 4 }}>
         <button type="button" className="mr-key" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
-        <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label="Zoom to 100%" title="Zoom to 100%" onClick={() => zoomBy(1 / cam.zoom)}
+        <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label="Zoom to 100%" title="Zoom to 100%" onClick={toActual}
           style={{ minWidth: 48, minHeight: 36, textAlign: "center", fontSize: 12, border: 0, background: "transparent", cursor: "pointer", color: "inherit" }}>{Math.round(cam.zoom * 100)}%</button>
         <button type="button" className="mr-key" aria-label="Zoom in" title="Zoom in (+)" disabled={cam.zoom >= MAX_ZOOM - 1e-6} onClick={() => zoomBy(1.25)}>+</button>
         <button type="button" className="mr-key" onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Fit all</button>
@@ -262,13 +270,12 @@ function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: R
   return (
     <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Zoom to workspace ${a.name}`} onClick={onOpen}
       style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: lamp * 0.6, padding: pad, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>
-      <span className="mr-row" style={{ gap: name * 0.4, maxWidth: "100%", alignItems: "center" }}>
-        <strong className="mr-ellipsis" style={{ fontSize: name, lineHeight: 1.1, minWidth: 0 }}>{a.name}</strong>
-        {a.counts.needs > 0 && <span data-mr="OverviewCount" data-mr-source={`${a.workspace}:needs`} className="mr-mono" title={`${a.counts.needs} need${a.counts.needs === 1 ? "s" : ""} you`}
-          style={{ flex: "none", fontSize: name * 0.75, fontWeight: 700, padding: `0 ${name * 0.25}px`, background: "var(--mr-needs)" }}>⚠ {a.counts.needs}</span>}
-      </span>
+      {/* The name gets the whole width; what needs you leads the lamp row instead of crowding it. */}
+      <strong className="mr-ellipsis" style={{ fontSize: name, lineHeight: 1.1, maxWidth: "100%" }}>{a.name}</strong>
       {all.length
-        ? <span data-mr="OverviewLamps" data-mr-source={a.workspace} style={{ display: "flex", flexWrap: "wrap", gap: lamp * 0.4 }}>
+        ? <span data-mr="OverviewLamps" data-mr-source={a.workspace} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: lamp * 0.4 }}>
+            {a.counts.needs > 0 && <span data-mr="OverviewCount" data-mr-source={`${a.workspace}:needs`} className="mr-mono" title={`${a.counts.needs} need${a.counts.needs === 1 ? "s" : ""} you`}
+              style={{ flex: "none", fontSize: lamp * 1.1, lineHeight: 1, fontWeight: 700, padding: `${lamp * 0.1}px ${lamp * 0.25}px`, marginRight: lamp * 0.3, background: "var(--mr-needs)" }}>⚠ {a.counts.needs}</span>}
             {all.map((b) => <span key={`${b.kind}:${b.id}`} data-s={b.lamp} style={{ width: lamp, height: lamp, ...lampStyle(b.lamp) }} />)}
           </span>
         : <span className="mr-dim" style={{ fontSize: name * 0.75 }}>Nothing open</span>}
