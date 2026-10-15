@@ -144,3 +144,23 @@ test("MCP servers are listed, toggled and reconnected, and a failed action says 
   expect(st[1].servers[0].status).toBe("disabled");
   expect(st[2].done).toMatchObject({ server: "nope", ok: false, error: "no server nope" });
 });
+
+test("adding an MCP server saves it with claude mcp add-json, then attaches it to the running session", async () => {
+  const dir = (await import("node:fs")).mkdtempSync(`${(await import("node:os")).tmpdir()}/mr-mcp-add-`);
+  const claude = `${dir}/claude`, log = `${dir}/args`;
+  // A stand-in claude: logs its args; refuses a server named "taken", as claude does an existing name.
+  await Bun.write(claude, `#!/bin/sh\nprintf '%s\\n' "$@" > "${log}"\n[ "$5" = taken ] && { echo "MCP server taken already exists in local config" >&2; exit 1; }\nexit 0\n`);
+  (await import("node:fs")).chmodSync(claude, 0o755);
+  const config = { type: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer x" } };
+  const out = await run(
+    [{ type: "start", session: "a1", cwd: dir, prompt: "hi" }, { type: "mcp_add", session: "a1", server: "web", scope: "user", config }, { type: "mcp_add", session: "a1", server: "taken", scope: "local", config }],
+    ["ready", "mcp_status", "mcp_status"], 5000, { MR_CLAUDE_PATH: claude },
+  );
+  const st = out.filter((x) => x.type === "mcp_status") as { servers: { name: string; status: string }[]; done?: { server: string; action: string; ok: boolean; error?: string } }[];
+  const added = st.find((x) => x.done?.server === "web")!, refused = st.find((x) => x.done?.server === "taken")!;
+  expect(added.done).toMatchObject({ action: "add", ok: true });
+  expect(added.servers.find((x) => x.name === "web")?.status).toBe("connected");
+  expect(refused.done).toMatchObject({ ok: false, error: "MCP server taken already exists in local config" });
+  expect(refused.servers.find((x) => x.name === "taken")).toBeUndefined();
+  expect(await Bun.file(log).text()).toBe(`mcp\nadd-json\n--scope\nlocal\ntaken\n${JSON.stringify(config)}\n`);
+});
