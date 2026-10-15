@@ -674,3 +674,29 @@ test("moving a session puts it in the other workspace, and a resume keeps it the
   expect(st.sessions.s1.workspace).toBe("ws_a");
   expect(st.order).toEqual(["s1"]);
 });
+
+describe("expired sign-in (MR-153)", () => {
+  let n = 0;
+  const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `L${String(++n).padStart(3, "0")}`, session_id: "S", kind, payload, anchor: null, created_at: n });
+  const start = [ev("ui.session_requested", { prompt: "fix it", cwd: "/r" }), ev("sidecar.session_started", { sdk_session_id: "x" })];
+  // What Claude Code sends when its login ran out (copied from a real log).
+  const refused = () => [
+    ev("sidecar.sdk", { message: { type: "assistant", error: "authentication_failed", is_api_error_message: true, message: { content: [{ type: "text", text: "Not logged in · Please run /login" }] } } }),
+    ev("sidecar.sdk", { message: { type: "result", is_error: true, result: "Not logged in · Please run /login" } }),
+  ];
+
+  it("keeps the refused message to send again", () => {
+    const s = replay([...start, ev("ui.message_sent", { text: "now the tests" }), ...refused()]).sessions.S;
+    expect(s.signedOut).toEqual({ retry: "now the tests" });
+    expect(s.error).toBeNull();
+  });
+
+  it("falls back to continuing when the very first turn was refused", () => {
+    expect(replay([...start, ...refused()]).sessions.S.signedOut).toEqual({ retry: "Continue where you left off." });
+  });
+
+  it("clears once Claude answers again", () => {
+    const s = replay([...start, ev("ui.message_sent", { text: "go" }), ...refused(), ev("ui.relogin_restart", {}), ev("sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "On it." }] } } })]).sessions.S;
+    expect(s.signedOut).toBeNull();
+  });
+});

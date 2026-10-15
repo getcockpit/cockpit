@@ -45,7 +45,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, elsewhere = false }: { s: SessionState; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; elsewhere?: boolean }) {
+export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, elsewhere = false }: { s: SessionState; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -58,6 +58,14 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   const [showRaw, setShowRaw] = useState(false);
   // The terminal takeover; `command`: a slash command it runs first (MR-87: /doctor, /mcp sign-in…).
   const [term, setTerm] = useState<false | { command?: string }>(false);
+  // Back to visual ends the terminal's claude: its exit hands the conversation back to the app,
+  // which brings the message box back. Only hiding the pane left the CLI holding the session.
+  const termOpen = useRef(false);
+  termOpen.current = !!term;
+  const toggleTerminal = () => {
+    if (termOpen.current) { void invoke("term_close", { session: s.id }).catch(() => {}); setTerm(false); }
+    else setTerm({});
+  };
   const [mcpOpen, setMcpOpen] = useState(false);
   const [unknown, setUnknown] = useState<{ msg: string; files: Attachment[] } | null>(null); // a /command this session doesn't know: ask first
   const [reviewing, setReviewing] = useState<string | null>(null); // a file path: the review panel is open
@@ -95,7 +103,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
       else if (a.do === "raw") setShowRaw((x) => !x);
       else if (a.do === "model") document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click();
       else if (a.do === "catchUp") void catchUp();
-      else if (a.do === "terminal") setTerm((x) => (x ? false : {}));
+      else if (a.do === "terminal") toggleTerminal();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -145,7 +153,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10, flexWrap: "wrap", rowGap: 8 }}>
           {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
-          {s.sdkSessionId && <Key k="⌘T" onClick={() => setTerm((x) => (x ? false : {}))}>{term ? "Back to visual" : "Open in terminal"}</Key>}
+          {s.sdkSessionId && <Key k="⌘T" onClick={toggleTerminal}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
@@ -172,6 +180,17 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
             </button>
           ))}
           <GoalStrip s={s} readOnly={elsewhere || !!s.fromDeleted} />
+          {/* Sign-in ran out (MR-153): sign in with Claude's own /login, then the refused message goes again. */}
+          {s.signedOut && !elsewhere && !s.fromDeleted && (
+            <div className="mr-qrow" data-mr="SignedOut" data-mr-source={s.id}><div className="mr-flag" style={{ background: "var(--mr-needs)" }} /><div className="mr-qbody">
+              <strong style={{ color: "var(--mr-needs)" }}>Claude Code's sign-in expired</strong>
+              <span>Sign in again and your last message is sent again, in this same conversation.</span>
+              <span className="mr-row" style={{ gap: 8 }}>
+                {onSignIn && <Key tone="primary" onClick={() => onSignIn(() => void api.retrySignedIn(s.id, s.signedOut?.retry ?? ""))}>Sign in…</Key>}
+                <Key onClick={() => void api.retrySignedIn(s.id, s.signedOut?.retry ?? "")}>Already signed in · send again</Key>
+              </span>
+            </div></div>
+          )}
           {s.error && <div className="mr-qrow"><div className="mr-flag" style={{ background: "var(--mr-error)" }} /><div className="mr-qbody"><strong style={{ color: "var(--mr-error)" }}>✕ Session failed</strong><span>{shortError(s.error)}</span>{s.sdkSessionId && <span className="mr-row" style={{ gap: 8 }}><Key onClick={() => void api.resume(s)}>Resume ↻</Key><details><summary className="mr-dim" style={{ cursor: "pointer" }}>Details</summary><pre className="mr-code" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>{s.error}</pre></details></span>}</div></div>}
           {reviewing ? <ReviewChanges s={s} start={reviewing} onClose={() => setReviewing(null)} /> : term ? <Suspense fallback={<span className="mr-dim">Opening terminal…</span>}><TerminalPane s={s} command={term.command} onExit={() => setTerm(false)} /></Suspense> : !showRaw && s.review ? <ReviewView s={s} /> : !showRaw && s.address ? <AddressView s={s} /> : <FileContext.Provider value={{ session: s.id, cwd: s.cwd }}><RunCommand.Provider value={(c) => void api.run(s.id, s.cwd, c)}><Transcript items={s.transcript} commands={s.commands} plan={s.todos} running={running} raw={showRaw} live={live && !running} onReply={(t) => void api.send(s.id, t)} diagrams={s.diagrams} onDiagram={(t) => void api.diagram(s.id, t.id, t.text)} onDiscover={(what) => void api.start(s.cwd, `Side thread about "${s.title}": ${what}. Explain it briefly and point out anything risky. Don't change anything.`, "blank", false)} /></RunCommand.Provider></FileContext.Provider>}
           {/* What this session waits on you for, at the end of the transcript where Focus scrolls to,

@@ -279,7 +279,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(500)).await; app.exit(1); });
         }
         Some("sdk") if payload["message"]["type"] == "result" && terminal_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
-            // Take over in a real terminal, then type /exit like a user would.
+            // Take over in a real terminal, then press Back to visual like a user would.
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             let log = app.state::<crate::eventlog::EventLog>();
             let events = log.list(Some(&session), None, 1000).unwrap_or_default();
@@ -290,9 +290,8 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 let r = crate::terminal::term_open(app2.clone(), session.clone(), sdk, cwd, 100, 30, None);
                 if let Err(e) = r { eprintln!("[selftest] term_open failed: {e}"); std::process::exit(1); }
                 std::thread::sleep(Duration::from_secs(8));
-                let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session.clone(), "/exit".into());
-                std::thread::sleep(Duration::from_millis(600));
-                let _ = crate::terminal::term_write(app2.state::<crate::terminal::Terminals>(), session, "\r".into());
+                // "Back to visual": the app ends the CLI itself, which must hand the session back.
+                let _ = crate::terminal::term_close(app2.state::<crate::terminal::Terminals>(), session);
             });
         }
         Some("sdk") if payload["message"]["type"] == "result" && attach_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
