@@ -73,8 +73,24 @@ export function docGroup(d: Doc, sessions: Record<string, SessionState>): Overvi
 export const docsIn = (docs: Doc[], sessions: Record<string, SessionState>, ws: string) =>
   docs.filter((d) => (d.session_id ? sessions[d.session_id]?.workspace === ws : ws === "personal"));
 
+/** The columns a workspace draws: only groups with something in them, sharing the width, so a lone
+ *  busy group gets room for its titles instead of a third of it beside two empty headings. */
+export function columns(groups: Record<OverviewGroup, OverviewBlock[]>): { group: OverviewGroup; x: number; w: number }[] {
+  const used = GROUPS.filter((g) => groups[g].length);
+  const w = (AREA_W - PAD * 2 - BLOCK_GAP * (used.length - 1)) / Math.max(1, used.length);
+  return used.map((group, i) => ({ group, x: PAD + i * (w + BLOCK_GAP), w }));
+}
+
+/** A column shows at most this many rows; past that the last row says "+N more" (one busy workspace
+ *  shouldn't stretch the whole grid and push its neighbours out of a fit). */
+export const MAX_ROWS = 6;
+export function shown(blocks: OverviewBlock[]): { blocks: OverviewBlock[]; more: number } {
+  if (blocks.length <= MAX_ROWS) return { blocks, more: 0 };
+  return { blocks: blocks.slice(0, MAX_ROWS - 1), more: blocks.length - (MAX_ROWS - 1) };
+}
+
 export function areaHeight(groups: Record<OverviewGroup, OverviewBlock[]>): number {
-  const rows = Math.max(1, ...GROUPS.map((g) => groups[g].length));
+  const rows = Math.min(MAX_ROWS, Math.max(1, ...GROUPS.map((g) => groups[g].length)));
   return HEADER_H + LABEL_H + rows * (BLOCK_H + BLOCK_GAP) + PAD;
 }
 
@@ -109,15 +125,18 @@ type Rect = { x: number; y: number; w: number; h: number };
 const overlaps = (a: Rect, b: Rect, gap: number) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
 
 /** Where a dropped rectangle lands: where you let go, unless that covers another workspace; then the
- *  nearest spot beside one of them that covers nothing (a map you can't read under a pile is no map). */
-export function settle(drop: Rect, others: Rect[], gap = AREA_GAP / 2): { x: number; y: number } {
+ *  nearest spot beside one of them that covers nothing (a map you can't read under a pile is no map),
+ *  preferring spots inside `view` (the visible canvas) so it never lands out of sight. */
+export function settle(drop: Rect, others: Rect[], view?: Rect, gap = AREA_GAP / 2): { x: number; y: number } {
   const free = (r: Rect) => !others.some((o) => overlaps(r, o, gap - 1));
   if (free(drop)) return { x: drop.x, y: drop.y };
   const spots: { x: number; y: number }[] = [];
   for (const o of others) {
     spots.push({ x: o.x - drop.w - gap, y: drop.y }, { x: o.x + o.w + gap, y: drop.y }, { x: drop.x, y: o.y - drop.h - gap }, { x: drop.x, y: o.y + o.h + gap });
   }
-  const ok = spots.filter((p) => free({ ...drop, ...p })).sort((a, b) => Math.hypot(a.x - drop.x, a.y - drop.y) - Math.hypot(b.x - drop.x, b.y - drop.y));
+  const seen = (p: { x: number; y: number }) => !view || (p.x >= view.x && p.y >= view.y && p.x + drop.w <= view.x + view.w && p.y + drop.h <= view.y + view.h);
+  const dist = (p: { x: number; y: number }) => Math.hypot(p.x - drop.x, p.y - drop.y);
+  const ok = spots.filter((p) => free({ ...drop, ...p })).sort((a, b) => Number(seen(b)) - Number(seen(a)) || dist(a) - dist(b));
   if (ok.length) return ok[0];
   // Boxed in on every side: below everything.
   return { x: drop.x, y: Math.max(...others.map((o) => o.y + o.h)) + gap };

@@ -299,9 +299,20 @@ const flows: Flow[] = [
     await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 60)) throw new Error(`fit at ${z}%`); });
     for (let i = 0; i < 4; i++) await ui.press("-"); // − zooms out from the keyboard…
     await ui.tags("OverviewLamps", 3); // …far out, each workspace is its name, what needs you and a lamp per item
+    await ui.click("button", "Zoom to workspace Client X"); // far out, a click zooms into the workspace…
+    await ui.tags("OverviewLamps", 0);
+    await ui.see("button", "Open Quarterly usage report"); // …close enough to read, still on the map
+    for (let i = 0; i < 4; i++) await ui.press("-");
+    await ui.tags("OverviewLamps", 3);
     await until("needs-you badge stays far out", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("⚠ 1")) throw new Error("no badge"); });
     await ui.key("Mod+0");
     await ui.tags("OverviewLamps", 0);
+    await ui.click("button", "Zoom to 100%"); // the zoom level resets to 100% around the middle
+    await until("100%", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error("not 100%"); });
+    await ui.press("Escape"); // Esc goes back to the workspace you came from
+    await ui.tags("OverviewCanvas", 0);
+    await ui.key("Mod+0");
+    await ui.tags("OverviewCanvas", 1);
     await ui.click("button", "Open Approve the event-log migration");
     await ui.tags("SessionName", 1);
     await ui.key("Mod+0");
@@ -312,6 +323,19 @@ const flows: Flow[] = [
     await ui.click("button", /^Overview/);
     await ui.click("button", "Open Overview canvas");
     await ui.tags("DocBlock", some);
+  } },
+  { name: "J19 a crowded Overview stays readable", run: async () => {
+    await ui.open("workspaces-busy", { overview: true });
+    await ui.tags("OverviewArea", 6);
+    await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 45)) throw new Error(`fit at ${z}%`); });
+    await ui.see("button", "Open Approve the Acme deploy"); // what needs you is first, never hidden in +N more
+    await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewBlock"]', 5); // 13 in progress: 5 shown…
+    await until("+8 more", () => { if (!ui.text('[data-mr="OverviewMore"]').includes("+8 more")) throw new Error("no +N more"); });
+    await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewGroup"]', 1); // …and no empty columns beside them
+    await until("empty workspace says so", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_e"]').includes("Nothing open")) throw new Error("no empty note"); });
+    await ui.click("button", "8 more in In progress: open workspace Acme platform"); // +N more opens the workspace
+    await ui.tags("OverviewCanvas", 0);
+    await ui.see("button", /Acme task 12/);
   } },
   { name: "J18 move a session to another workspace", run: async () => {
     await ui.open("busy");
