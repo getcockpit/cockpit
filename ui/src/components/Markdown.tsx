@@ -11,9 +11,10 @@ export function Markdown({ text }: { text: string }) {
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     if (l.startsWith("```")) {
+      const before = i > 0 ? lines[i - 1] : "";
       const code: string[] = [];
       for (i++; i < lines.length && !lines[i].startsWith("```"); i++) code.push(lines[i]);
-      const cmd = fenceCommand(l.slice(3), code);
+      const cmd = fenceCommand(l.slice(3), code, before);
       out.push(
         <div key={i} style={{ position: "relative" }}>
           <pre className="mr-code" style={{ fontSize: 12, margin: 0 }}>{code.join("\n")}</pre>
