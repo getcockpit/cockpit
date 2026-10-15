@@ -19,13 +19,13 @@ export function isTyping(t: EventTarget | null): boolean {
 }
 
 export type AppKey =
-  | { do: "picker" | "god" | "settings" | "archive" | "update" | "builds" | "switcher" | "wallView" }
+  | { do: "picker" | "god" | "settings" | "archive" | "update" | "builds" | "switcher" | "wallView" | "overview" }
   | { do: "workspace"; index: number }
   | { do: "cycle"; by: 1 | -1 };
 
 /** The app-wide shortcuts (App.tsx), as one decision so each is unit-tested on both platforms.
  *  `dialog`: an overlay owns the keyboard; it blocks workspace switching and T, not ⌘K ⌘, ⌘J etc. */
-export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "focus" | "doc"; dialog: boolean }): AppKey | null {
+export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "focus" | "doc" | "overview"; dialog: boolean }): AppKey | null {
   const k = keyOf(e), mod = modKey(e);
   if (mod && k === "k") return { do: "picker" };
   if (mod && e.shiftKey && k === "g") return { do: "god" };
@@ -33,6 +33,8 @@ export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "foc
   if (mod && e.shiftKey && k === "a") return { do: "archive" };
   // ⌘⇧B updates the app from main (decision 27); ⌘⌥⇧B still opens the build history.
   if (mod && e.shiftKey && k === "b") return { do: e.altKey ? "builds" : "update" };
+  // ⌘0: the Overview of every workspace (decision 40); again on it fits everything in view.
+  if (mod && k === "0" && !e.shiftKey && !e.altKey) return at.dialog ? null : { do: "overview" };
   if (mod && /^[1-9]$/.test(k) && !e.shiftKey) return Number(k) <= at.workspaces && !at.dialog ? { do: "workspace", index: Number(k) - 1 } : null;
   // ⌃Tab / ⌃⇧Tab cycle workspaces like browser tabs; ⌘J opens the switcher (MR-55).
   if (e.ctrlKey && k === "Tab") return at.workspaces > 1 && !at.dialog ? { do: "cycle", by: e.shiftKey ? -1 : 1 } : null;
