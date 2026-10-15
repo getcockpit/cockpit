@@ -85,6 +85,16 @@ pub fn workspace_reorder(app: AppHandle, order: Vec<String>) -> Result<(), Strin
     Ok(())
 }
 
+/// A workspace's rectangle dragged on the Overview canvas (decision 40): its new top-left, in canvas units.
+#[tauri::command]
+pub fn overview_move(app: AppHandle, workspace: String, x: f64, y: f64) -> Result<(), String> {
+    if !x.is_finite() || !y.is_finite() {
+        return Err("not a position".into());
+    }
+    crate::eventlog::record(&app, None, "ui.overview_moved", &serde_json::json!({ "workspace": workspace, "x": x.round(), "y": y.round() }), Some(&format!("workspace:{workspace}")));
+    Ok(())
+}
+
 /// Pins the folder new sessions in this workspace start in (MR-65); `None` unpins, so the picker
 /// falls back to the last folder a session started in there.
 #[tauri::command(async)]
