@@ -242,6 +242,17 @@ const timelineEvents: E[] = [
   { session: "TG", kind: "sidecar.session_ended", payload: { ok: true }, at: 1510 },
 ].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)); // the log is in time order, and the activity buckets rely on it
 
+// MR-153: Claude Code's login ran out mid-session; the refused message waits to go again.
+const signedOutEvents: E[] = [
+  ...ready, onboarded,
+  ...start("L", "Fix the flaky export test", { cwd: "/Users/me/code/shop" }, 10),
+  say("L", "The export test races the clock; pinning the time.", 40),
+  result("L", "Pinned the clock in the export test.", 60),
+  { session: "L", kind: "ui.message_sent", payload: { text: "now run the whole suite" }, at: 2300 },
+  { session: "L", kind: "sidecar.sdk", payload: { message: { type: "assistant", error: "authentication_failed", is_api_error_message: true, message: { content: [{ type: "text", text: "Not logged in · Please run /login" }] } } }, at: 2301 },
+  { session: "L", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: true, result: "Not logged in · Please run /login" } }, at: 2302 },
+];
+
 export const SCENARIOS: Record<string, Scenario> = {
   timeline: { events: timelineEvents, docs: [] },
   // The timeline sessions with nothing waiting on you: the grey, calm wall (film, MR-139).
@@ -258,6 +269,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   neverask: { events: [...ready, { kind: "ui.permission_mode_set", payload: { mode: "never" }, at: 1 }, onboarded], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
+  signedout: { events: signedOutEvents, docs: [] },
   // Doc lifecycle (MR-151): one stalled with open questions, one ready, one building, one shipped. ?demo=doclife
   doclife: { events: busy, docs: [
     { ...planDoc, updated_at: Date.now() - 5 * 86_400_000 },
