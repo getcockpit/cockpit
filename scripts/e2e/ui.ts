@@ -276,6 +276,19 @@ const flows: Flow[] = [
     await ui.click("button", "Personal");
     await ui.see("button", "4 need you");
   } },
+  { name: "J18 move a session to another workspace", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.tags("MoveWorkspace", 1);
+    await ui.click("button", "Personal", '[data-mr="MoveWorkspace"]');
+    await ui.click("menuitem", "Client A");
+    await until("the session says Client A", () => { if (!ui.text('[data-mr="MoveWorkspace"] button').includes("Client A")) throw new Error("not moved"); });
+    await ui.key("Escape"); // the app followed it: this is Client A's wall
+    await ui.see("button", "Ready to review Refactor the settings schema");
+    await ui.see("button", "Open Migrate the client's billing to Stripe Tax");
+    await ui.click("button", "Personal");
+    await ui.gone("button", "Ready to review Refactor the settings schema");
+  } },
   { name: "Errors light the error lamp", run: async () => {
     await ui.open("broken");
     await ui.see("button", "1 error");
