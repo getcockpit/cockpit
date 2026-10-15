@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { FolderPicker } from "../components/FolderPicker";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
+import { useSessionDrag } from "../components/dragToWorkspace";
 
 /** How many things wait on you in one workspace (the same queue the wall shows). */
 export function needsIn(state: AppState, docs: Doc[], ws: string): number {
@@ -22,6 +23,9 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
   const [renaming, setRenaming] = useState<string | null>(null);
   const [folderFor, setFolderFor] = useState<{ id: string; name: string } | null>(null);
   const needs = (ws: string) => needsIn(state, docs, ws);
+  // A session dragged off the wall (MR-156): the tab it would land in lights up.
+  const carried = useSessionDrag();
+  const target = carried?.over && carried.over !== carried.from ? carried.over : null;
   // Drag a tab to reorder (MR-84). Pointer events, not HTML5 drag: the webview's file drop takes those.
   // The tab follows the pointer, the others slide aside to open its slot, and on drop it glides in.
   // Slots are measured once at press, so nothing flickers as tabs shift under the pointer.
@@ -116,12 +120,12 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
             <input autoFocus className="mr-input" style={{ minHeight: 28, width: 160, fontSize: 13 }} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setRenaming(null)} aria-label="Workspace name" />
           </form>
         ) : (
-          <button key={w.id} type="button" data-mr="WorkspaceTab" data-mr-source={w.id} ref={(el) => { if (el) tabs.current.set(w.id, el); else tabs.current.delete(w.id); }}
+          <button key={w.id} type="button" data-mr="WorkspaceTab" data-mr-source={w.id} data-mr-name={w.name} data-mr-drop={target === w.id ? "on" : undefined} ref={(el) => { if (el) tabs.current.set(w.id, el); else tabs.current.delete(w.id); }}
             onClick={() => { if (dragged.current) { dragged.current = false; return; } onSwitch(w.id); }} onDoubleClick={() => { if (w.id !== "personal") { setRenaming(w.id); setName(w.name); } }}
             onPointerDown={(e) => press(e, w.id)} onPointerMove={move} onPointerUp={drop} onPointerCancel={() => setDrag(null)}
-            className="mr-row" style={{ gap: 8, padding: "8px 14px", border: 0, font: "inherit", cursor: drag?.moved ? "grabbing" : "pointer", touchAction: "none", background: on || lifted ? "var(--mr-band)" : "transparent", color: on || lifted ? "var(--mr-ink)" : "var(--mr-well)", fontWeight: on ? 700 : 400,
-              position: "relative", zIndex: lifted ? 1 : undefined, transform: drag?.moved ? `translateX(${shift(w.id)}px)${lifted ? " translateY(-2px)" : ""}` : undefined, transition: drag?.moved && !lifted && !still ? EASE : undefined, boxShadow: lifted ? "inset 0 -3px 0 var(--mr-selected)" : undefined }}
-            title={`${w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}${w.folder ? `\nStarts in ${w.folder}` : ""}\nDrag to reorder`}>
+            className="mr-row" style={{ gap: 8, padding: "8px 14px", border: 0, font: "inherit", cursor: drag?.moved ? "grabbing" : "pointer", touchAction: "none", background: on || lifted || target === w.id ? "var(--mr-band)" : "transparent", color: on || lifted || target === w.id ? "var(--mr-ink)" : "var(--mr-well)", fontWeight: on ? 700 : 400,
+              position: "relative", zIndex: lifted ? 1 : undefined, transform: drag?.moved ? `translateX(${shift(w.id)}px)${lifted ? " translateY(-2px)" : ""}` : undefined, transition: drag?.moved && !lifted && !still ? EASE : undefined, boxShadow: lifted || target === w.id ? "inset 0 -3px 0 var(--mr-selected)" : undefined }}
+            title={`${w.configDir ? `Own Claude memory: ${w.configDir}` : "Uses your normal ~/.claude"}${w.folder ? `\nStarts in ${w.folder}` : ""}\nDrag to reorder; drop a session here to move it`}>
             {w.name}
             {slot(w.id, i) < 9 && <kbd className="mr-mono" style={{ fontSize: 11, opacity: 0.55 }}>{keyLabel(`⌘${slot(w.id, i) + 1}`)}</kbd>}
             {n > 0 && <span className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-needs)", color: "var(--mr-ink)", fontWeight: 700 }}>{n}</span>}

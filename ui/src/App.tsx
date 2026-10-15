@@ -32,6 +32,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { installUsage, useViews } from "./state/usage";
 import { listenFileDrop } from "./state/fileDrop";
 import { listenSelftest } from "./state/selftestUi";
+import { DragGhost } from "./components/dragToWorkspace";
 
 export default function App() {
   const all = useAppState();
@@ -206,6 +207,7 @@ export default function App() {
     </div>
   );
   const overlays = <>
+      <DragGhost />
       <Presence show={picker}>{overlay}</Presence>
       <Presence show={builds !== null}>{buildsPanel}</Presence>
       <Presence show={!!signIn}>{signInPanel}</Presence>
