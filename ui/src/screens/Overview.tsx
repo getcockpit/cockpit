@@ -65,7 +65,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   useLayoutEffect(() => { if (firstBox.current) { firstBox.current = false; return; } if (following && size.w && !drag.current) fitNow(true); }, [boxKey]);
   // Far out a click zooms into that workspace (close enough to read it) instead of leaving the map.
   const zoomTo = (a: OverviewArea) => { following = false; glideTo(fit(a, { w: size.w, h: Math.max(1, size.h - BAR_H) })); };
-  const zoomBy = (by: number) => { following = false; glideTo((c) => zoomAt(c, size.w / 2, size.h / 2, by)); };
+  const zoomBy = (by: number) => { following = false; glideTo((c) => zoomAt(c, size.w / 2, (size.h - BAR_H) / 2, by)); };
 
   // Wheel: pan in any direction; pinch (ctrl+wheel in Chromium) or ⌘-scroll zooms. WebKit's trackpad
   // pinch arrives as gesture events instead. Native listeners: React's wheel handler is passive.
@@ -180,15 +180,19 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
           onZoomTo={click(() => zoomTo(a))}
           onBlock={(b) => click(() => (b.kind === "session" ? onOpenSession(a.workspace, b.id) : onOpenDoc(a.workspace, b.id)))} />)}
       </div>
-      <div className="mr-row mr-dim" data-mr="OverviewHint" style={{ position: "absolute", left: 12, bottom: 10, right: 280, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        <span>Scroll or drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it</span>
+      {/* The bottom strip: its own band, so the map never shows through the hint and the zoom buttons. */}
+      <div className="mr-row" data-mr="OverviewBar" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+        style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: BAR_H, padding: "0 12px", gap: 12, background: "var(--mr-base)", boxShadow: "0 -1px 0 var(--mr-well)" }}>
+      <div className="mr-row mr-dim mr-grow" data-mr="OverviewHint" style={{ minWidth: 0, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <span className="mr-ellipsis">Scroll or drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it</span>
       </div>
-      <div className="mr-row" data-mr="OverviewZoom" style={{ position: "absolute", right: 12, bottom: 8, gap: 4 }}>
+      <div className="mr-row" data-mr="OverviewZoom" style={{ flex: "none", gap: 4 }}>
         <button type="button" className="mr-key" aria-label="Zoom out" title="Zoom out (−)" disabled={cam.zoom <= MIN_ZOOM + 1e-6} onClick={() => zoomBy(1 / 1.25)}>−</button>
         <button type="button" className="mr-mono mr-dim" data-mr="OverviewZoomLevel" aria-label="Zoom to 100%" title="Zoom to 100%" onClick={() => zoomBy(1 / cam.zoom)}
           style={{ minWidth: 48, minHeight: 36, textAlign: "center", fontSize: 12, border: 0, background: "transparent", cursor: "pointer", color: "inherit" }}>{Math.round(cam.zoom * 100)}%</button>
         <button type="button" className="mr-key" aria-label="Zoom in" title="Zoom in (+)" disabled={cam.zoom >= MAX_ZOOM - 1e-6} onClick={() => zoomBy(1.25)}>+</button>
         <button type="button" className="mr-key" onClick={fitAll}><kbd>{keyLabel("⌘0")}</kbd>Fit all</button>
+      </div>
       </div>
     </div>
   );
