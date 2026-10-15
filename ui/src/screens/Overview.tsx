@@ -243,7 +243,7 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
   return (
     <div data-mr="OverviewArea" data-mr-source={a.workspace} data-mr-name={a.name} data-needs={a.counts.needs ? "" : undefined} className="mr-ov-area" onClick={far ? onZoomTo : onOpen} onPointerDown={onDown}
       title={`${a.name}${a.folder ? ` · starts in ${a.folder}` : ""}\n${far ? "Click to zoom in" : "Click to open"} · drag to move`}
-      style={{ position: "absolute", left: a.x, top: a.y, width: a.w, height: a.h, overflow: "hidden", background: "var(--mr-band)", pointerEvents: "auto", cursor: lifted ? "grabbing" : "pointer", touchAction: "none", boxShadow: a.counts.needs ? "inset 4px 0 0 var(--mr-needs)" : undefined, outline: lifted ? `${3 / zoom}px solid var(--mr-selected)` : undefined, zIndex: lifted ? 1 : undefined }}>
+      style={{ position: "absolute", left: a.x, top: a.y, width: a.w, height: a.h, overflow: "hidden", background: "var(--mr-band)", pointerEvents: "auto", cursor: lifted ? "grabbing" : "pointer", touchAction: "none", outline: lifted ? `${3 / zoom}px solid var(--mr-selected)` : undefined, zIndex: lifted ? 1 : undefined }}>
       {far ? <Far a={a} zoom={zoom} onOpen={onZoomTo} /> : <>
         <button type="button" data-mr="OverviewHeader" data-mr-source={a.workspace} aria-label={`Open workspace ${a.name}`} onClick={onOpen}
           className="mr-row" style={{ width: "100%", height: HEADER_H, alignItems: "center", gap: 10, padding: `0 ${PAD}px`, border: 0, background: "transparent", font: "inherit", textAlign: "left", cursor: "inherit", color: "var(--mr-ink)", overflow: "hidden" }}>

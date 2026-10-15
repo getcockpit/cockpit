@@ -56,4 +56,8 @@ describe("Overview render", () => {
     for (const l of ["Zoom out", "Zoom in", "Zoom to 100%"]) expect(html).toContain(`aria-label="${l}"`);
     expect(html).toContain(`data-mr="OverviewBar"`); // its own band: the map never shows through it
   });
+  it("draws the needs-you edge from CSS, so an inline shadow can't swallow the hover ring", () => {
+    const areas = html.split('data-mr="OverviewArea"').slice(1).map((a) => a.slice(0, a.indexOf(">")));
+    for (const a of areas) expect(a).not.toMatch(/box-shadow/);
+  });
 });
