@@ -40,5 +40,10 @@ export const fakeQuery: QueryFn = ({ prompt, options }) => {
   const mcpServerStatus = async () => [...servers].map(([name, x]) => ({ name, status: x.status, source: "claudeai", tools: x.tools }));
   const reconnectMcpServer = async (name: string) => { if (!servers.has(name)) throw new Error(`no server ${name}`); };
   const toggleMcpServer = async (name: string, on: boolean) => { const x = servers.get(name); if (!x) throw new Error(`no server ${name}`); x.status = on ? "connected" : "disabled"; };
-  return Object.assign(it, { interrupt: async () => { interrupted = true; }, close: () => {}, usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET, supportedModels, setModel, applyFlagSettings, setPermissionMode, supportedCommands, mcpServerStatus, reconnectMcpServer, toggleMcpServer });
+  const setMcpServers = async (next: Record<string, { type?: string }>) => {
+    const added = Object.keys(next).filter((n) => n !== "mr" && !servers.has(n));
+    for (const n of added) servers.set(n, next[n].type === "stdio" && n.startsWith("broken") ? { status: "failed", tools: [] } : { status: "connected", tools: [{ name: "ping" }] });
+    return { added, removed: [], errors: Object.fromEntries(added.filter((n) => n.startsWith("broken")).map((n) => [n, "spawn ENOENT"])) };
+  };
+  return Object.assign(it, { interrupt: async () => { interrupted = true; }, close: () => {}, usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET, supportedModels, setModel, applyFlagSettings, setPermissionMode, supportedCommands, mcpServerStatus, reconnectMcpServer, toggleMcpServer, setMcpServers });
 };

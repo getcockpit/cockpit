@@ -21,6 +21,8 @@
 .mr-key { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font-weight: 700; cursor: pointer; transition: filter var(--mr-fast); white-space: nowrap; }
 .mr-key:hover { filter: brightness(0.95); }
 .mr-key:disabled { opacity: .5; cursor: default; }
+/* A one-of choice (the /mcp add form): the picked key is teal, the selected colour. */
+[data-mr="McpAddServer"] .mr-key[aria-pressed="true"] { box-shadow: inset 0 -3px 0 var(--mr-selected); }
 /* Every press answers (MR-58): it visibly sinks, and keyboard focus shows a ring. */
 .mr-key:active:not(:disabled), .mr-link:active, .mr-press:active { transform: translateY(1px); filter: brightness(0.85); }
 .mr-key:focus-visible, .mr-link:focus-visible, button:focus-visible { outline: 2px solid var(--mr-selected); outline-offset: 2px; }
