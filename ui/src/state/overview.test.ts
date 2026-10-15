@@ -392,5 +392,7 @@ describe("Overview since you last looked: what counts as a change", () => {
     const areas = [{ workspace: "w", groups: { resume: [], progress: [{ kind: "session", id: "still", title: "", lamp: "working", needs: false, status: "", step: null } as OverviewBlock], review: [] } }];
     expect(finishedSince(seen, areas, { done: { status: "ended", archivedAt: null }, arch: { status: "idle", archivedAt: 5 }, still: { status: "idle", archivedAt: null } } as never)).toBe(2);
     expect(finishedSince(null, areas, {})).toBe(0);
+    // Sessions that left because their workspace was deleted aren't "finished".
+    expect(finishedSince({ "w|session:del": "x" }, areas, { del: { status: "ended", archivedAt: 5, fromDeleted: true } } as never)).toBe(0);
   });
 });
