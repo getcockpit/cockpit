@@ -122,6 +122,10 @@ export function place(sizes: { workspace: string; w: number; h: number }[], layo
   return out;
 }
 
+/** Hand-placed spots land on a 16-unit grid, so workspaces put side by side line up. */
+export const GRID = 16;
+export const snap = (v: number, step = GRID) => Math.round(v / step) * step;
+
 type Rect = { x: number; y: number; w: number; h: number };
 const overlaps = (a: Rect, b: Rect, gap: number) => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
 
