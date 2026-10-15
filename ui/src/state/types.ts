@@ -59,6 +59,7 @@ export type ReviewFlow = {
   current: number | null;
   noted: string[];
   published?: boolean; // you pressed Publish; the flow is over
+  approved?: boolean; // ...with "Approve on my behalf" ticked
   publish?: { comments?: { severity: string; at?: string; text: string; suggestion?: string }[]; verdict?: string; dropped?: number; note?: string };
 };
 export type AddressThread = { id: string; at?: string; reviewer?: string; short?: string; state?: string };
