@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LiveTrack, planSegs } from "../components/Now";
 import { pointer } from "../components/pointer";
+import { consumeDrag, dragSession } from "../components/dragToWorkspace";
 import { suggest, USAGE_REVIEW, type Suggestion } from "../picker/suggest";
 import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
@@ -202,7 +203,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
             <h2 className="mr-h">Ready to review <span className="mr-dim">{review.length}</span></h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 380px), 1fr))", gap: "var(--mr-gap)" }}>
               {review.map(({ s, tile }) => (
-                <button key={s.id} type="button" className="mr-row" data-mr="ReviewRow" data-mr-source={s.id} onClick={() => onOpen(s.id)} style={{ padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>
+                <button key={s.id} type="button" className="mr-row" data-mr="ReviewRow" data-mr-source={s.id} {...dragSession(s, sessionTitle(s))} onClick={() => { if (!consumeDrag()) onOpen(s.id); }} style={{ padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left", touchAction: "none" }}>
                   <StateMark s={tile.state} />
                   <span className="mr-grow mr-ellipsis">{sessionTitle(s)}</span>
                   {Object.keys(s.files).length > 0 && <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{plural(Object.keys(s.files).length, "file")}</span>}
@@ -248,7 +249,7 @@ export function sideThread(s: SessionState): Promise<string> {
 
 function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; compactWindow: number | null; onOpen: (id: string) => void; onDiscover: () => void }) {
   return (
-    <button type="button" className="mr-tile" data-mr="Tile" data-mr-source={s.id} data-mr-layer="code" data-s={tile.state} onClick={pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })} aria-label={`Open ${s.title}`}>
+    <button type="button" className="mr-tile" data-mr="Tile" data-mr-source={s.id} data-mr-layer="code" data-s={tile.state} {...dragSession(s, sessionTitle(s))} onClick={(e) => { if (!consumeDrag()) pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })(e); }} style={{ touchAction: "none" }} aria-label={`Open ${s.title}`}>
       <div className="mr-flag" />
       <div className="mr-tbody">
         <div className="mr-row" style={{ alignItems: "baseline" }}>
