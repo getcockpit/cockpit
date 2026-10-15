@@ -5,7 +5,7 @@ import { LABEL as STATE_LABEL, StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
 import type { TileSpec } from "../picker/pick";
-import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, findOnMap, hitRect, foldedIn, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, nearest, actualSize, revealBy, anyInView, wheelCam, pinchCam, farSizes, snap, findOnMap, hitRect, foldedIn, snapshot, changedSince, type Layout, type Seen, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { isTyping, overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -18,6 +18,8 @@ type Cam = { x: number; y: number; zoom: number };
 let lastCam: Cam | null = null;
 // Until you pan or zoom yourself, the camera keeps everything in view as the window and the map change.
 let following = true;
+// What the map looked like when you last left it, so coming back can say what moved meanwhile.
+let seenAtLeave: Seen | null = null;
 const BAR_H = 44; // the hint and zoom buttons along the bottom
 // The last ⌘0 / Fit all request handled, so coming back to the Overview restores where you left it
 // instead of re-running an old fit (the app's counter only ever grows).
@@ -60,6 +62,13 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   }), [state.overviewLayout]);
   const aspect = size.w && size.h ? size.w / size.h : undefined;
   const areas = useMemo(() => overview(state, docs, { ...state.overviewLayout, ...held }, aspect), [state, docs, held, aspect]);
+  // Since you last looked: compared with the map as it was when you left (taken on the way out).
+  const seen = useRef(seenAtLeave);
+  const latest = useRef(areas);
+  latest.current = areas;
+  useEffect(() => () => { seenAtLeave = snapshot(latest.current); }, []);
+  const changes = useMemo(() => changedSince(seen.current, areas), [areas]);
+  const changedCount = Object.keys(changes).length;
   // Fit into the part of the canvas above the zoom bar, so nothing starts hidden under it.
   const fitNow = (smooth: boolean) => { if (!size.w) return; following = true; (smooth ? glideTo : setCam)(fit(bounds(areas), { w: size.w, h: Math.max(1, size.h - BAR_H) })); };
   const fitAll = () => fitNow(true);
@@ -350,6 +359,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       style={{ position: "relative", height: "100%", overflow: "hidden", background: "var(--mr-base)", touchAction: "none", cursor: drag.current?.kind === "pan" ? "grabbing" : space.current ? "grab" : "default" }}>
       <div className="mr-ov-cam" data-glide={glide || undefined} style={{ ["--mr-ov-z" as string]: cam.zoom, position: "absolute", left: 0, top: 0, transformOrigin: "0 0", transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})`, pointerEvents: "none" }}>
         {areas.map((a) => <Area key={a.workspace} a={a} level={level} zoom={cam.zoom} lifted={moving === a.workspace}
+          changes={changes}
           dim={!lit(a.workspace)} finding={finding && lit(a.workspace)} hitIn={(key) => hitIn(a.workspace, key)} current={current?.workspace === a.workspace ? current.block ?? "" : null}
           onDown={(e) => down(e, a.workspace)}
           onOpen={click(() => onOpenWorkspace(a.workspace))}
@@ -383,6 +393,7 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
       <div className="mr-row mr-dim mr-grow" data-mr="OverviewHint" data-mr-source="overview" style={{ minWidth: 0, fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         <span className="mr-ellipsis">Scroll, drag empty space or Space-drag to pan · pinch, {keyLabel("⌘")}-scroll or +/− to zoom · drag a workspace to move it · / to find</span>
       </div>
+      {changedCount > 0 && <span className="mr-mono mr-dim" data-mr="OverviewChanged" data-mr-source="overview" style={{ flex: "none", fontSize: 12 }}>{changedCount} changed since you last looked</span>}
       {undoTidy
         ? <button type="button" className="mr-key" data-mr="OverviewUndoTidy" data-mr-source="overview" onClick={untidy} title="Put the workspaces back where you had them">Undo tidy</button>
         : pinned && <button type="button" className="mr-key" data-mr="OverviewTidy" data-mr-source="overview" onClick={tidy} title="Put every workspace back in the automatic grid">Tidy up</button>}
@@ -419,9 +430,9 @@ export const said = (a: Pick<OverviewArea, "counts">) => countLabels(a.counts).m
 /** Every block's lamp in reading order, for the far view's strip: what needs you first. */
 export const lamps = (a: OverviewArea): OverviewBlock[] => GROUPS.flatMap((g) => a.groups[g]).sort((x, y) => Number(y.needs) - Number(x.needs));
 
-type AreaProps = { a: OverviewArea; level: "far" | "middle" | "close"; zoom: number; lifted: boolean; dim: boolean; finding: boolean; hitIn: (key: string) => boolean; current: string | null; onDown: (e: React.PointerEvent) => void; onOpen: (e: React.MouseEvent) => void; onZoomTo: (e: React.MouseEvent) => void; onBlock: (b: OverviewBlock) => (e: React.MouseEvent) => void };
+type AreaProps = { a: OverviewArea; level: "far" | "middle" | "close"; zoom: number; lifted: boolean; changes: Record<string, "new" | "updated">; dim: boolean; finding: boolean; hitIn: (key: string) => boolean; current: string | null; onDown: (e: React.PointerEvent) => void; onOpen: (e: React.MouseEvent) => void; onZoomTo: (e: React.MouseEvent) => void; onBlock: (b: OverviewBlock) => (e: React.MouseEvent) => void };
 
-function Area({ a, level, zoom, lifted, dim, finding, hitIn, current, onDown, onOpen, onZoomTo, onBlock }: AreaProps) {
+function Area({ a, level, zoom, lifted, changes, dim, finding, hitIn, current, onDown, onOpen, onZoomTo, onBlock }: AreaProps) {
   const empty = GROUPS.every((g) => !a.groups[g].length);
   const far = level === "far", close = level === "close";
   const labels = countLabels(a.counts, !close);
@@ -456,7 +467,7 @@ function Area({ a, level, zoom, lifted, dim, finding, hitIn, current, onDown, on
             <div key={g} data-mr="OverviewGroup" data-mr-source={`${a.workspace}:${g}`} style={{ position: "absolute", left: x, top: HEADER_H, width: w, display: "flex", flexDirection: "column", gap: BLOCK_GAP }}>
               <span className="mr-dim mr-ellipsis" data-mr="OverviewGroupLabel" data-mr-source={`${a.workspace}:${g}`} style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 12), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
               {(() => { const v = shown(a.groups[g]); return <>
-                    {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} dim={dimBlock(`${b.kind}:${b.id}`)} current={current === `${b.kind}:${b.id}`} onClick={onBlock(b)} />)}
+                    {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} change={changes[`${a.workspace}|${b.kind}:${b.id}`]} dim={dimBlock(`${b.kind}:${b.id}`)} current={current === `${b.kind}:${b.id}`} onClick={onBlock(b)} />)}
                     {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen}
                       data-dim={(finding && !a.groups[g].slice(v.blocks.length).some((b) => hitIn(`${b.kind}:${b.id}`))) || undefined}
                       data-current={(!far && folded === g) || undefined}
@@ -498,12 +509,14 @@ export const markFor = (b: OverviewBlock) => b.kind === "session" && !(b.lamp ==
  *  "Interrupted Interrupted"): any state, checked against the mark's own words. */
 export const statusFor = (b: OverviewBlock) => (markFor(b) && b.status === STATE_LABEL[b.lamp] ? "" : b.status);
 
-function Block({ b, close, zoom, dim, current, onClick }: { b: OverviewBlock; close: boolean; zoom: number; dim?: boolean; current?: boolean; onClick: (e: React.MouseEvent) => void }) {
+function Block({ b, close, zoom, change, dim, current, onClick }: { b: OverviewBlock; close: boolean; zoom: number; change?: "new" | "updated"; dim?: boolean; current?: boolean; onClick: (e: React.MouseEvent) => void }) {
   const tip = [b.kind === "doc" ? `Doc: ${b.title}` : b.title, b.status, b.step && b.step !== b.status ? b.step : null].filter(Boolean).join("\n");
   return (
-    <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} data-dim={dim || undefined} data-current={current || undefined} aria-label={`Open ${b.title}, ${b.status}`} title={tip} onClick={onClick}
-      style={{ height: BLOCK_H, display: "flex", gap: 8, padding: close ? "6px 10px 6px 0" : "2px 10px 2px 0", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
+    <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} data-dim={dim || undefined} data-current={current || undefined} data-change={change} aria-label={`Open ${b.title}, ${b.status}${change ? `, ${change} since you last looked` : ""}`} title={tip} onClick={onClick}
+      style={{ position: "relative", height: BLOCK_H, display: "flex", gap: 8, padding: close ? "6px 10px 6px 0" : "2px 10px 2px 0", border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
       <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp, true) }} />
+      {change && <span data-mr="OverviewChange" data-mr-source={b.id} aria-hidden="true" className="mr-mono"
+        style={{ position: "absolute", top: 0, right: 0, padding: "1px 5px", fontSize: readable(11, zoom, 12), lineHeight: 1.2, fontWeight: 700, background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>{change}</span>}
       <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2, justifyContent: close ? undefined : "center" }}>
         {/* Up close one line, with status and step under it; at middle zoom the title alone gets two
             lines, so a narrow column still shows most of it. A doc is marked by a glyph there. */}

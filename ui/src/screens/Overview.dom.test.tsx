@@ -455,4 +455,23 @@ describe("Overview pointer and navigation in a DOM", () => {
     expect([count.getAttribute("role"), count.getAttribute("aria-live")]).toEqual(["status", "polite"]);
     expect($('[data-mr="OverviewFindInput"]').getAttribute("aria-describedby")).toBe(count.id);
   });
+  it("coming back, what's new or changed since you left is tagged, and the bar counts it", async () => {
+    await open(); // first visit: nothing tagged
+    expect(host.querySelector('[data-mr="OverviewChange"]')).toBeNull();
+    act(() => root!.unmount()); host.remove(); // leave the Overview
+    const later = replay([
+      ev("ui.workspace_created", { id: "ws_b", name: "Client B", config_dir: "/x" }),
+      { ...ev("ui.session_requested", { prompt: "Fix login", cwd: "/w", workspace: "personal" }), session_id: "s1" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "sdk", model: "m" }), session_id: "s1" },
+      { ...ev("sidecar.permission_request", { request_id: "p1", tool: "Bash", input: { command: "ls" } }), session_id: "s1" },
+      { ...ev("ui.session_requested", { prompt: "Brand new job", cwd: "/w", workspace: "ws_b" }), session_id: "s2" },
+      { ...ev("sidecar.session_started", { sdk_session_id: "sdk2", model: "m" }), session_id: "s2" },
+    ]);
+    await open({ state: later }, false); // same module: it remembers what you saw
+    const tag = (id: string) => host.querySelector<HTMLElement>(`[data-mr="OverviewBlock"][data-mr-source="${id}"]`)?.dataset.change;
+    expect(tag("s1")).toBe("updated"); // started asking for permission meanwhile
+    expect(tag("s2")).toBe("new");
+    expect($('[data-mr="OverviewChanged"]').textContent).toBe("2 changed since you last looked");
+    expect($('[data-mr="OverviewBlock"][data-mr-source="s2"]').getAttribute("aria-label")).toMatch(/new since you last looked$/);
+  });
 });

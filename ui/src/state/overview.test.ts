@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { actualSize, anyInView, farSizes, findOnMap, foldedIn, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { actualSize, anyInView, changedSince, snapshot, farSizes, findOnMap, foldedIn, GRID, hitRect, HEADER_H, LABEL_H, snap, MIN_ZOOM, pinchCam, revealBy, wheelCam, AREA_GAP, AREA_W, areaHeight, columns, nearest, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -348,5 +348,21 @@ describe("Overview find", () => {
     expect(hitRect(many, "session:0").h).toBe(BLOCK_H);
     expect(foldedIn(many, "session:8")).toBe("progress");
     expect(foldedIn(many, "session:0")).toBeNull();
+  });
+});
+
+describe("Overview since you last looked", () => {
+  const blk = (id: string, lamp: string, status: string): OverviewBlock => ({ kind: "session", id, title: id, lamp: lamp as OverviewBlock["lamp"], needs: lamp === "needs_you", status, step: null });
+  const map = (progress: OverviewBlock[]) => [{ workspace: "w", groups: { resume: [], progress, review: [] } }];
+  const before = map([blk("a", "working", "Bash"), blk("b", "working", "Read")]);
+  it("first visit: nothing is marked (everything would be new)", () => {
+    expect(changedSince(null, before)).toEqual({});
+  });
+  it("marks what appeared as new and what moved lamp or status as updated; the rest stays quiet", () => {
+    const after = map([blk("a", "needs_you", "Needs you"), blk("b", "working", "Read"), blk("c", "starting", "Starting")]);
+    expect(changedSince(snapshot(before), after)).toEqual({ "w|session:a": "updated", "w|session:c": "new" });
+  });
+  it("nothing changed, nothing marked", () => {
+    expect(changedSince(snapshot(before), before)).toEqual({});
   });
 });

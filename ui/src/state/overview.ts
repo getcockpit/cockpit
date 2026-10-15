@@ -158,6 +158,25 @@ export function foldedIn(a: Pick<OverviewArea, "groups">, block: string): Overvi
   return null;
 }
 
+/** What each block looked like when you last left the Overview: its lamp and status line. */
+export type Seen = Record<string, string>;
+const seenKey = (ws: string, b: OverviewBlock) => `${ws}|${b.kind}:${b.id}`;
+export function snapshot(areas: Pick<OverviewArea, "workspace" | "groups">[]): Seen {
+  return Object.fromEntries(areas.flatMap((a) => GROUPS.flatMap((g) => a.groups[g].map((b) => [seenKey(a.workspace, b), `${b.lamp}|${b.status}`]))));
+}
+/** Since you last looked: blocks that weren't on the map ("new") or whose lamp or status moved ("updated").
+ *  Nothing on the first visit (no snapshot yet): everything would be new, which says nothing. */
+export function changedSince(seen: Seen | null, areas: Pick<OverviewArea, "workspace" | "groups">[]): Record<string, "new" | "updated"> {
+  if (!seen) return {};
+  const out: Record<string, "new" | "updated"> = {};
+  for (const a of areas) for (const g of GROUPS) for (const b of a.groups[g]) {
+    const k = seenKey(a.workspace, b), was = seen[k];
+    if (was === undefined) out[k] = "new";
+    else if (was !== `${b.lamp}|${b.status}`) out[k] = "updated";
+  }
+  return out;
+}
+
 /** Hand-placed spots land on a 16-unit grid, so workspaces put side by side line up. */
 export const GRID = 16;
 export const snap = (v: number, step = GRID) => Math.round(v / step) * step;
