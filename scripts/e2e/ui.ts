@@ -324,6 +324,19 @@ const flows: Flow[] = [
     await ui.click("button", "Open Overview canvas");
     await ui.tags("DocBlock", some);
   } },
+  { name: "J19 a crowded Overview stays readable", run: async () => {
+    await ui.open("workspaces-busy", { overview: true });
+    await ui.tags("OverviewArea", 6);
+    await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 45)) throw new Error(`fit at ${z}%`); });
+    await ui.see("button", "Open Approve the Acme deploy"); // what needs you is first, never hidden in +N more
+    await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewBlock"]', 5); // 13 in progress: 5 shown…
+    await until("+8 more", () => { if (!ui.text('[data-mr="OverviewMore"]').includes("+8 more")) throw new Error("no +N more"); });
+    await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewGroup"]', 1); // …and no empty columns beside them
+    await until("empty workspace says so", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_e"]').includes("Nothing open")) throw new Error("no empty note"); });
+    await ui.click("button", "8 more in In progress: open workspace Acme platform"); // +N more opens the workspace
+    await ui.tags("OverviewCanvas", 0);
+    await ui.see("button", /Acme task 12/);
+  } },
   { name: "J18 move a session to another workspace", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");

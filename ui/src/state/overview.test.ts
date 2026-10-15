@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replay } from "./reduce";
-import { AREA_GAP, AREA_W, areaHeight, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
+import { AREA_GAP, AREA_W, areaHeight, columns, PAD, BLOCK_GAP, BLOCK_H, bounds, detail, fit, MAX_ROWS, overview, place, readable, settle, shown, zoomAt, type OverviewBlock } from "./overview";
 import type { Doc } from "./docs";
 import type { MrEvent } from "./types";
 
@@ -192,5 +192,23 @@ describe("Overview busy columns", () => {
     const groups = { resume: [], progress: many(30), review: [] };
     expect(areaHeight(groups)).toBe(areaHeight({ resume: [], progress: many(MAX_ROWS), review: [] }));
     expect(areaHeight(groups) - areaHeight({ resume: [], progress: many(MAX_ROWS - 1), review: [] })).toBe(BLOCK_H + BLOCK_GAP);
+  });
+});
+
+describe("Overview columns", () => {
+  const b = (id: string): OverviewBlock => ({ kind: "session", id, title: id, lamp: "working", needs: false, status: "", step: null });
+  it("draws only the groups with something in them, in Resume / In progress / Review order", () => {
+    expect(columns({ resume: [b("r")], progress: [], review: [b("v")] }).map((c) => c.group)).toEqual(["resume", "review"]);
+    expect(columns({ resume: [], progress: [], review: [] })).toEqual([]);
+  });
+  it("a lone group gets the whole width, so its titles aren't cut to a third", () => {
+    const [one] = columns({ resume: [], progress: [b("p")], review: [] });
+    expect(one).toEqual({ group: "progress", x: PAD, w: AREA_W - PAD * 2 });
+  });
+  it("columns share the width edge to edge with a gap between", () => {
+    const cols = columns({ resume: [b("r")], progress: [b("p")], review: [b("v")] });
+    expect(cols[0].x).toBe(PAD);
+    expect(cols[2].x + cols[2].w).toBeCloseTo(AREA_W - PAD);
+    expect(cols[1].x - (cols[0].x + cols[0].w)).toBeCloseTo(BLOCK_GAP);
   });
 });

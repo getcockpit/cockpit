@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { replay } from "../state/reduce";
 import type { MrEvent } from "../state/types";
-import { countLabels, lamps, Overview } from "./Overview";
+import { countLabels, LAMP, lamps, Overview } from "./Overview";
 import type { OverviewArea, OverviewBlock } from "../state/overview";
 
 const block = (id: string, needs = false): OverviewBlock => ({ kind: "session", id, title: id, lamp: needs ? "needs_you" : "working", needs, status: "", step: null });
@@ -21,6 +21,13 @@ describe("Overview labels (decision 40)", () => {
   it("the far view's lamp strip shows every open item, what needs you first", () => {
     const a = { groups: { resume: [block("r")], progress: [block("p"), block("ask", true)], review: [block("v")] } } as unknown as OverviewArea;
     expect(lamps(a).map((b) => b.id)).toEqual(["ask", "r", "p", "v"]);
+  });
+});
+
+describe("Overview lamps", () => {
+  it("every tile state draws a visible lamp, never the pale off grey", () => {
+    const states = ["needs_you", "working", "almost", "idle", "review", "done", "error", "starting", "interrupted"] as const;
+    for (const st of states) expect(LAMP[st]).toMatch(/^var\(--mr-(?!lamp-off)/);
   });
 });
 

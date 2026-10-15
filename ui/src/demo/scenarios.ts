@@ -280,11 +280,27 @@ const workspacesEvents: E[] = [
   ...inWs("X2", "Quarterly usage report", "ws_client", 230), tool("X2", "Read", { file_path: "reports/q3.csv" }, 240),
 ].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
 
+// A crowded Overview (MR-157): six workspaces, one with a dozen sessions running, one empty, one with
+// a very long name. ?demo=workspaces-busy
+const crowdWs = [["ws_a", "Acme platform"], ["ws_b", "Billing"], ["ws_c", "Client work for the very long named enterprise account"], ["ws_d", "Docs"], ["ws_e", "Empty"]];
+const workspacesBusyEvents: E[] = [
+  ...ready, onboarded,
+  ...crowdWs.map(([id, name], i) => ({ kind: "ui.workspace_created", payload: { id, name, config_dir: `/demo/${id}` }, at: 3 + i })),
+  ...Array.from({ length: 12 }, (_, i) => [...inWs(`A${i}`, `Acme task ${i + 1}: migrate service ${i + 1}`, "ws_a", 20 + i * 4), tool(`A${i}`, "Bash", { command: `cargo test svc${i + 1}` }, 22 + i * 4)]).flat(),
+  ...inWs("A_ask", "Approve the Acme deploy", "ws_a", 80),
+  { session: "A_ask", kind: "sidecar.permission_request", payload: { request_id: "pA", tool: "Bash", input: { command: "kubectl apply -f prod.yaml" }, suggestions: null, decision_reason: null }, at: 81 },
+  ...inWs("B1", "Refund flow", "ws_b", 90), tool("B1", "Read", { file_path: "billing/refund.ts" }, 91),
+  ...inWs("C1", "Quarterly review deck for the enterprise account", "ws_c", 100), result("C1", "Draft ready.", 101),
+  ...inWs("D1", "Fix broken links", "ws_d", 110), { session: "D1", kind: "sidecar.session_ended", payload: { ok: false, reason: "exit 1" }, at: 111 },
+  ...inWs("P1", "Personal errand", "personal", 120), tool("P1", "Read", { file_path: "notes.md" }, 121),
+].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+
 export const SCENARIOS: Record<string, Scenario> = {
   workspaces: { events: workspacesEvents, docs: [
     { ...planDoc, id: "docW1", title: "Overview canvas", session_id: "C2", blocks: decided(planDoc) },
     { ...planDoc, id: "docW2", title: "Q4 plan", session_id: "X2", blocks: decided(planDoc), shipped_at: Date.now() - 3_600_000 },
   ] },
+  "workspaces-busy": { events: workspacesBusyEvents, docs: [] },
   timeline: { events: timelineEvents, docs: [] },
   // The timeline sessions with nothing waiting on you: the grey, calm wall (film, MR-139).
   calm: { events: timelineEvents.filter((e) => e.kind !== "sidecar.permission_request"), docs: [] },

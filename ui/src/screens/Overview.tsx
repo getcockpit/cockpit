@@ -4,7 +4,8 @@ import { keyLabel } from "../platform";
 import { StateMark } from "../components";
 import type { Doc } from "../state/docs";
 import type { AppState } from "../state/types";
-import { bounds, COL_W, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
+import type { TileSpec } from "../picker/pick";
+import { bounds, columns, BLOCK_GAP, BLOCK_H, detail, fit, GROUP_LABEL, GROUPS, HEADER_H, LABEL_H, MAX_ZOOM, MIN_ZOOM, overview, PAD, readable, settle, shown, zoomAt, type Layout, type OverviewArea, type OverviewBlock } from "../state/overview";
 import { overviewKey } from "../components/keys";
 
 // The Overview (decision 40, MR-155): a Miro-like canvas with one rectangle per workspace and every
@@ -19,10 +20,11 @@ let lastCam: Cam | null = null;
 let following = true;
 const BAR_H = 44; // the hint and zoom buttons along the bottom
 
-const LAMP: Record<string, string> = { needs_you: "var(--mr-needs)", error: "var(--mr-error)", review: "var(--mr-ink)", working: "var(--mr-ink-3)", almost: "var(--mr-ink-3)", starting: "var(--mr-ink-3)" };
+// Every tile state has a lamp you can see (an unmapped one fell back to the pale "off" grey and vanished).
+export const LAMP: Record<TileSpec["state"], string> = { needs_you: "var(--mr-needs)", error: "var(--mr-error)", review: "var(--mr-ink)", working: "var(--mr-ink-3)", idle: "var(--mr-ink-3)", almost: "var(--mr-ink-3)", starting: "var(--mr-ink-3)", done: "var(--mr-done)", interrupted: "var(--mr-ink-2)" };
 // Stopped work waiting for a resume reads as an empty lamp: nothing is running there.
 // On a block's thin edge that's a dashed bar; on the far view's squares, a hollow one.
-const lampStyle = (s: string, bar = false): React.CSSProperties => (s !== "interrupted" ? { background: LAMP[s] ?? "var(--mr-lamp-off)" }
+const lampStyle = (s: string, bar = false): React.CSSProperties => (s !== "interrupted" ? { background: LAMP[s as TileSpec["state"]] ?? "var(--mr-lamp-off)" }
   : bar ? { background: "repeating-linear-gradient(var(--mr-ink-2) 0 6px, transparent 6px 10px)" } : { boxShadow: "inset 0 0 0 2px var(--mr-ink-2)" });
 
 export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOpenSession, onOpenDoc }: { state: AppState; docs: Doc[]; fitSignal: number; onBack: () => void; onOpenWorkspace: (ws: string) => void; onOpenSession: (ws: string, id: string) => void; onOpenDoc: (ws: string, id: string) => void }) {
@@ -231,17 +233,15 @@ function Area({ a, level, zoom, lifted, onDown, onOpen, onZoomTo, onBlock }: Are
         </button>
         {empty
           ? <span className="mr-dim" style={{ position: "absolute", left: PAD, top: HEADER_H, fontSize: readable(14, zoom, 12) }}>Nothing open</span>
-          : GROUPS.map((g, i) => (
-            <div key={g} data-mr="OverviewGroup" data-mr-source={`${a.workspace}:${g}`} style={{ position: "absolute", left: PAD + i * (COL_W + BLOCK_GAP), top: HEADER_H, width: COL_W, display: "flex", flexDirection: "column", gap: BLOCK_GAP }}>
+          : columns(a.groups).map(({ group: g, x, w }) => (
+            <div key={g} data-mr="OverviewGroup" data-mr-source={`${a.workspace}:${g}`} style={{ position: "absolute", left: x, top: HEADER_H, width: w, display: "flex", flexDirection: "column", gap: BLOCK_GAP }}>
               <span className="mr-dim mr-ellipsis" style={{ height: LABEL_H - BLOCK_GAP, fontSize: Math.min(readable(12, zoom, 10), LABEL_H - BLOCK_GAP), lineHeight: 1, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{GROUP_LABEL[g]}{a.groups[g].length ? ` · ${a.groups[g].length}` : ""}</span>
-              {a.groups[g].length
-                ? (() => { const v = shown(a.groups[g]); return <>
+              {(() => { const v = shown(a.groups[g]); return <>
                     {v.blocks.map((b) => <Block key={`${b.kind}:${b.id}`} b={b} close={close} zoom={zoom} onClick={onBlock(b)} />)}
                     {v.more > 0 && <button type="button" className="mr-ov-block" data-mr="OverviewMore" data-mr-source={`${a.workspace}:${g}`} onClick={onOpen} onPointerDown={(e) => e.stopPropagation()}
                       aria-label={`${v.more} more in ${GROUP_LABEL[g]}: open workspace ${a.name}`}
                       style={{ height: BLOCK_H, border: 0, font: "inherit", fontWeight: 600, fontSize: readable(14, zoom, 12), cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink-2)" }}>+{v.more} more</button>}
-                  </>; })()
-                : <span aria-hidden="true" style={{ height: BLOCK_H, boxShadow: "inset 0 0 0 1px var(--mr-well)" }} />}
+                  </>; })()}
             </div>
           ))}
       </>}
@@ -267,7 +267,7 @@ function Far({ a, zoom, onOpen }: { a: OverviewArea; zoom: number; onOpen: (e: R
         ? <span data-mr="OverviewLamps" data-mr-source={a.workspace} style={{ display: "flex", flexWrap: "wrap", gap: lamp * 0.4 }}>
             {all.map((b) => <span key={`${b.kind}:${b.id}`} data-s={b.lamp} style={{ width: lamp, height: lamp, ...lampStyle(b.lamp) }} />)}
           </span>
-        : <span className="mr-dim" style={{ fontSize: name * 0.6 }}>Nothing open</span>}
+        : <span className="mr-dim" style={{ fontSize: name * 0.75 }}>Nothing open</span>}
     </button>
   );
 }
