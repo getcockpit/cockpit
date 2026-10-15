@@ -5,6 +5,7 @@ import { autoReviewDefault, contextFill, elsewhere, initialState, introOpen, rep
 import { dedupe } from "./store";
 import { pickDecision, pickTile, bashRisk, needsLayer2 } from "../picker/pick";
 import { layout } from "../components/FlowDiagram";
+import { needsQueue } from "../picker/queue";
 import type { MrEvent } from "./types";
 
 // Builds the event-log rows the Rust core would have stored for the real MR-2 probe session.
@@ -693,6 +694,12 @@ describe("expired sign-in (MR-153)", () => {
 
   it("falls back to continuing when the very first turn was refused", () => {
     expect(replay([...start, ...refused()]).sessions.S.signedOut).toEqual({ retry: "Continue where you left off." });
+  });
+
+  it("waits in the needs-you queue, and the tile says so", () => {
+    const s = replay([...start, ev("ui.message_sent", { text: "go" }), ...refused()]).sessions.S;
+    expect(needsQueue([s], []).map((q) => q.kind)).toEqual(["signin"]);
+    expect(pickTile(s).state).toBe("needs_you");
   });
 
   it("clears once Claude answers again", () => {
