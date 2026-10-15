@@ -1,6 +1,6 @@
 import { NO_CLAUDE } from "./claude-path";
 import { userContent } from "./attachments";
-import type { Attachment, CommandRow, Effort, Inbound, McpAction, McpServer, ModelRow, Outbound, PermissionDecision, PermissionMode, ToolSpec } from "./protocol";
+import type { Attachment, CommandRow, Effort, Inbound, McpAction, McpAddConfig, McpScope, McpServer, ModelRow, Outbound, PermissionDecision, PermissionMode, ToolSpec } from "./protocol";
 
 // The slice of the Agent SDK this module needs, so tests can inject a fake.
 export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
@@ -13,6 +13,7 @@ export type QueryFn = (params: { prompt: AsyncIterable<UserMsg>; options: Record
   mcpServerStatus?(): Promise<SdkMcpStatus[]>;
   reconnectMcpServer?(name: string): Promise<void>;
   toggleMcpServer?(name: string, enabled: boolean): Promise<void>;
+  setMcpServers?(servers: Record<string, unknown>): Promise<{ added: string[]; removed: string[]; errors: Record<string, string> }>;
   setPermissionMode?(mode: PermissionMode): Promise<void>;
 };
 type SdkMcpStatus = { name: string; status: string; source?: string; scope?: string; error?: string; serverInfo?: { version: string }; config?: { url?: string }; tools?: { name: string }[] };
@@ -39,7 +40,9 @@ class Inbox implements AsyncIterable<UserMsg> {
   }
 }
 
-type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; init: { skills: string[]; terminal: string[] }; switching: Promise<void>; pending: Map<string, (d: PermissionDecision) => void>; calls: Map<string, (r: { text: string; is_error?: boolean }) => void> };
+// dynamic: the servers this session runs beyond its config (mr, and any added from /mcp), since
+// setMcpServers replaces that whole set each time.
+type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; cwd: string; env?: Record<string, string>; dynamic: Record<string, unknown>; init: { skills: string[]; terminal: string[] }; switching: Promise<void>; pending: Map<string, (d: PermissionDecision) => void>; calls: Map<string, (r: { text: string; is_error?: boolean }) => void> };
 
 export class Sessions {
   private live = new Map<string, Live>();
@@ -64,6 +67,8 @@ export class Sessions {
       case "commands": return void this.with(m.session, (s) => void this.commands(m.session, s));
       case "mcp_status": return void this.with(m.session, (s) => void this.mcpStatus(m.session, s));
       case "mcp_action": return void this.with(m.session, (s) => void this.mcpAction(m.session, s, m.server, m.action));
+      // One at a time, like switches: each setMcpServers call carries the whole dynamic set.
+      case "mcp_add": return void this.with(m.session, (s) => { s.switching = s.switching.then(() => this.mcpAdd(m.session, s, m.server, m.scope, m.config)); });
       case "tool_result": return void this.with(m.session, (s) => {
         const r = s.calls.get(m.call_id);
         if (!r) return this.emit({ type: "error", session: m.session, error: `no pending tool call ${m.call_id}` });
@@ -136,6 +141,31 @@ export class Sessions {
     await this.mcpStatus(session, s, done);
   }
 
+  // Adding a server from /mcp: saved with `claude mcp add-json` (in the session's own config dir and
+  // folder, so scope means what it does in Claude Code), then attached to this session right away.
+  private async mcpAdd(session: string, s: Live, server: string, scope: McpScope, config: McpAddConfig) {
+    let done: { server: string; action: McpAction; ok: boolean; error?: string } = { server, action: "add", ok: true };
+    try {
+      const claude = this.claude();
+      if (!claude) throw new Error(NO_CLAUDE);
+      const proc = Bun.spawn([claude, "mcp", "add-json", "--scope", scope, server, JSON.stringify(config)], { cwd: s.cwd, env: s.env ? { ...process.env, ...s.env } : process.env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+      const [code, out, err] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      if (code !== 0) throw new Error((err.trim() || out.trim() || `claude mcp add-json exited with ${code}`).split("\n").slice(-3).join(" "));
+      try {
+        if (!s.q?.setMcpServers) throw new Error("this SDK can't add servers mid-session");
+        const next = { ...s.dynamic, [server]: config };
+        const r = await s.q.setMcpServers(next);
+        s.dynamic = next;
+        if (r.errors?.[server]) throw new Error(r.errors[server]);
+      } catch (e) {
+        throw new Error(`saved, but not attached to this session (resume it to load): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } catch (e) {
+      done = { ...done, ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    await this.mcpStatus(session, s, done);
+  }
+
   private with(session: string, f: (s: Live) => void) {
     const s = this.live.get(session);
     if (!s) return this.emit({ type: "error", session, error: "unknown session" });
@@ -146,7 +176,7 @@ export class Sessions {
     if (this.live.has(m.session)) return this.emit({ type: "error", session: m.session, error: "session already running" });
     const claudePath = this.claude();
     if (!claudePath) return this.emit({ type: "session_ended", session: m.session, ok: false, reason: NO_CLAUDE });
-    const s: Live = { inbox: new Inbox(), q: null, init: { skills: [], terminal: [] }, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
+    const s: Live = { inbox: new Inbox(), q: null, cwd: m.cwd, env: m.env, dynamic: {}, init: { skills: [], terminal: [] }, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
     this.live.set(m.session, s);
     s.inbox.push(m.prompt, m.attachments);
 
@@ -156,6 +186,7 @@ export class Sessions {
       this.emit({ type: "tool_call", session: m.session, call_id, tool, args });
     });
     const mcpServer = m.tools?.length ? this.mcp(m.session, m.tools, callTool) : undefined;
+    if (mcpServer) s.dynamic.mr = mcpServer;
 
     const options: Record<string, unknown> = {
       cwd: m.cwd,
