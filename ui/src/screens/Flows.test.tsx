@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AddressView, flowChat, SnippetPager } from "./Flows";
+import { AddressView, flowChat, ReviewView, SnippetPager } from "./Flows";
 import { replay } from "../state/reduce";
 import { flowWaiting } from "../picker/pick";
 import type { MrEvent, TranscriptItem } from "../state/types";
@@ -25,11 +25,26 @@ test("flow chat keeps typed questions and their answers, not the opening prompt 
   const u = (id: string, text: string): TranscriptItem => ({ kind: "user", id, text, at: 0 });
   const t = (id: string, text: string): TranscriptItem => ({ kind: "text", id, text, at: 0 });
   const chat = flowChat([u("1", "/review https://github.com/a/b/pull/1"), t("2", "overview"), u("3", "ok"), t("4", "snippet 1"),
-    u("5", "why is this lock needed?"), t("6", "Because the cache is shared."), u("7", "note f1"), t("8", "noted"), u("9", "Option 2: Fix it"), u("9b", "Thread t1 · Option A: Stream it"), u("9c", "publish and approve"), u("10", "and the retry?")]);
+    u("5", "why is this lock needed?"), t("6", "Because the cache is shared."), u("7", "note f1"), t("8", "noted"), u("9", "Option 2: Fix it"), u("9b", "Thread t1 · Option A: Stream it"), u("9c", "publish and approve"), u("9d", "review anyway"), u("10", "and the retry?")]);
   expect(chat.map((x) => [x.ask.text, x.answer.map((a) => a.kind === "text" && a.text)])).toEqual([["why is this lock needed?", ["Because the cache is shared."]], ["and the retry?", []]]);
 });
 
 // MR-126: every thread is drawn up front, so you decide on all of them while Claude still reads or fixes.
+test("a PR with nothing new since your last review is skipped, with a way to review it anyway", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "R", kind, payload, anchor: null, created_at: 1 });
+  const s = replay([
+    e("R1", "ui.session_requested", { prompt: "/review 482", kind: "review", cwd: "/w" }),
+    e("R2", "flow.review_unchanged", { pr: "#482", title: "Retry payments", last_review_at: "2026-10-14T09:00:00Z", last_review_state: "CHANGES_REQUESTED", checked: "no commits, comments or replies since" }),
+    e("R3", "sidecar.sdk", { message: { type: "result", is_error: false, result: "nothing new" } }),
+  ]).sessions["R"];
+  const html = renderToStaticMarkup(<ReviewView s={s} />);
+  expect(html).toContain("Nothing new since your last review of #482");
+  expect(html).toContain("changes requested");
+  expect(html).toContain("Review anyway");
+  expect(html).not.toContain("The review is starting");
+  expect(flowWaiting(s)).toBeNull(); // nothing for you to do: it doesn't wait in the queue
+});
+
 const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "X", kind, payload, anchor: null, created_at: 1 });
 const opts = [{ id: "A", label: "Fix it", recommended: true }, { id: "B", label: "Push back" }];
 const start = [
