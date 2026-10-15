@@ -126,6 +126,7 @@ export type SessionState = {
   owner: string | null; // origin of the copy that last started or resumed it (MR-99)
   backgroundTasks: { id: string; description: string }[]; // commands and agents still running after the turn ended
   goal: Goal | null; // the /goal Claude keeps working toward until an evaluator says it's met
+  signedOut: { retry: string } | null; // Claude Code refused a turn because its sign-in expired (MR-153): the message to send again once signed in
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
 };
 

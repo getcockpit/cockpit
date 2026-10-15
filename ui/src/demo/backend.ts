@@ -262,6 +262,8 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "attachment_save": { const n = drawnN++; return { path: `/Users/me/Library/Application Support/Cockpit/attachments/demo${n}-drawn.png`, name: `drawn-${n}.png`, mime: "image/png", size: a instanceof Uint8Array ? a.length : 0 }; }
     case "models_refresh": record(null, "sidecar.models", { models: DEMO_MODELS }); return null;
     case "session_stop": record(String(a.session), "sidecar.session_ended", { ok: true }); return null;
+    // Signed back in (MR-153): the real core restarts the session first; here the message just goes again.
+    case "session_retry_signed_in": record(String(a.session), "ui.relogin_restart", {}); return handle("session_send", a);
     case "session_changes": return [
       { path: "src/app/routes.ts", added: 24, removed: 9, status: "M", risky: null },
       { path: "src/auth/session.ts", added: 11, removed: 30, status: "M", risky: "auth" },
