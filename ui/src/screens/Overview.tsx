@@ -57,7 +57,10 @@ export function Overview({ state, docs, fitSignal, onBack, onOpenWorkspace, onOp
   const boxKey = `${box.x},${box.y},${box.w},${box.h}`;
   useLayoutEffect(() => { if (size.w && (!lastCam || fitSignal)) fitNow(!!lastCam); }, [fitSignal, size.w > 0]);
   // While it follows, keep it fitted; not while a rectangle is being dragged (the camera would chase it).
-  useLayoutEffect(() => { if (following && size.w && !drag.current) fitNow(false); }, [size.w, size.h, boxKey]);
+  // A resize refits at once (the window is moving under you); a map change, like a new session, glides.
+  useLayoutEffect(() => { if (following && size.w && !drag.current) fitNow(false); }, [size.w, size.h]);
+  const firstBox = useRef(true);
+  useLayoutEffect(() => { if (firstBox.current) { firstBox.current = false; return; } if (following && size.w && !drag.current) fitNow(true); }, [boxKey]);
   // Far out a click zooms into that workspace (close enough to read it) instead of leaving the map.
   const zoomTo = (a: OverviewArea) => { following = false; glideTo(fit(a, { w: size.w, h: Math.max(1, size.h - BAR_H) })); };
   const zoomBy = (by: number) => { following = false; glideTo((c) => zoomAt(c, size.w / 2, size.h / 2, by)); };
