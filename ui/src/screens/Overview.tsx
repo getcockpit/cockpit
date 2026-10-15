@@ -21,13 +21,16 @@ let following = true;
 // What the map looked like when you last left it, so coming back can say what moved meanwhile.
 let seenAtLeave: Seen | null = null;
 
-/** You were just in this workspace (its Wall, a session, a doc): what happened there happened in front
- *  of you, so it isn't news when you come back to the Overview. Call it on the way out of a workspace. */
-export function markWorkspaceSeen(state: AppState, docs: Doc[], workspace: string) {
+/** What you just had in front of you isn't news when you come back to the Overview: call it on the way
+ *  out of a view. The Wall shows the whole workspace (`only` omitted); a session or a doc shows just
+ *  itself (`only`: ["session:<id>"] or ["doc:<id>"]), so the rest of the workspace keeps its news. */
+export function markWorkspaceSeen(state: AppState, docs: Doc[], workspace: string, only?: string[]) {
   if (!seenAtLeave) return;
-  const here = overview(state, docs, {}).filter((a) => a.workspace === workspace);
-  const rest = Object.fromEntries(Object.entries(seenAtLeave).filter(([k]) => !k.startsWith(`${workspace}|`)));
-  seenAtLeave = { ...rest, ...snapshot(here) };
+  const now = snapshot(overview(state, docs, {}).filter((a) => a.workspace === workspace));
+  const mine = (k: string) => k.startsWith(`${workspace}|`) && (!only || only.includes(k.slice(workspace.length + 1)));
+  // Seen now: its state as you left it; gone from the map (finished in front of you): forgotten.
+  const kept = Object.fromEntries(Object.entries(seenAtLeave).filter(([k]) => !mine(k)));
+  seenAtLeave = { ...kept, ...Object.fromEntries(Object.entries(now).filter(([k]) => mine(k))) };
 }
 const BAR_H = 44; // the hint and zoom buttons along the bottom
 // The last ⌘0 / Fit all request handled, so coming back to the Overview restores where you left it
@@ -478,7 +481,7 @@ function Area({ a, level, zoom, lifted, changes, dim, finding, hitIn, current, o
               style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: l.needs ? "var(--mr-needs)" : undefined, color: l.needs ? "var(--mr-ink)" : "var(--mr-ink-2)" }}>{l.text}</span>
           ))}
           {changedHere.length > 0 && <span data-mr="OverviewAreaChanged" data-mr-source={a.workspace} className="mr-mono" title={`${changedHere.length} changed since you last looked`}
-            style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>✦ {changedHere.length} changed</span>}
+            style={{ flex: "none", fontSize: countSize, fontWeight: 700, padding: "0 6px", background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>✦ {changedHere.length}{close ? " changed" : ""}</span>}
           <span className="mr-grow" />
           {close && a.index < 9 && <kbd className="mr-mono mr-dim" style={{ fontSize: readable(12, zoom, 12) }}>{keyLabel(`⌘${a.index + 1}`)}</kbd>}
         </button>
@@ -538,7 +541,7 @@ function Block({ b, close, zoom, change, dim, current, onClick }: { b: OverviewB
       style={{ position: "relative", height: BLOCK_H, display: "flex", gap: 8, padding: `${close ? 6 : 2}px ${change ? (close ? readable(11, zoom, 12) * 4.4 + 14 : readable(11, zoom, 12) * 1.2 + 14) : 10}px ${close ? 6 : 2}px 0`, border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
       <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp, true) }} />
       {change && <span data-mr="OverviewChange" data-mr-source={b.id} aria-hidden="true" className="mr-mono" title={`${change} since you last looked`}
-        style={{ position: "absolute", top: 0, right: 0, padding: "1px 5px", fontSize: readable(11, zoom, 12), lineHeight: 1.2, fontWeight: 700, background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>{close ? change : "✦"}</span>}
+        style={{ position: "absolute", top: 0, right: 0, padding: "1px 5px", fontSize: readable(11, zoom, 12), lineHeight: 1.2, fontWeight: 700, background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>{close ? change : "●"}</span>}
       <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2, justifyContent: close ? undefined : "center" }}>
         {/* Up close one line, with status and step under it; at middle zoom the title alone gets two
             lines, so a narrow column still shows most of it. A doc is marked by a glyph there. */}
