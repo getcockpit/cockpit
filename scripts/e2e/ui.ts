@@ -37,7 +37,8 @@ const ui = {
     // which PinchTab's click treats as hidden. landing=wall: flows start on the Wall, not the
     // Overview a launch with several workspaces lands on (decision 40), unless they test that.
     pt("nav", `${BASE}/?demo=${demo}&motion=off${opts.overview ? "" : "&landing=wall"}`, "--block-images");
-    await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); });
+    // Generous: on a cold CI runner, Vite compiles the app on the first request.
+    await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); }, 20_000);
   },
   count: (css: string) => Number(pt("count", css).trim()),
   // `within` (CSS) scopes the lookup when the same label shows twice, e.g. two Send buttons.
@@ -183,7 +184,7 @@ const flows: Flow[] = [
     await ui.click("button", "↵ Continue review");
     for (const n of [2, 3]) { await ui.key(" "); await ui.seeText(`Snippet ${n} of 3`); }
     await ui.key(" "); // finish the walkthrough: the review is ready to publish
-    await ui.see("button", key("↵", "Publish as one review"));
+    await ui.see("button", /^(⌘↵|Ctrl\+Enter) Publish as one review$/); // keyLabel spells ↵ "Enter" off macOS
     await ui.click("checkbox", "Approve on my behalf");
     await ui.see("button", "⌘↵ Publish and approve");
     await ui.click("button", "⌘↵ Publish and approve");
