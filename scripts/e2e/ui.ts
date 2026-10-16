@@ -107,7 +107,10 @@ const some = (c: number) => c > 0;
 // Shortcut labels follow the platform (ui/src/platform.ts): "⌘K" on a Mac, "Ctrl+K" in Linux CI.
 const key = (k: string, rest: string) => new RegExp(`^(⌘|Ctrl\\+)${k} ${rest}$`);
 
-type Flow = { name: string; run: () => Promise<void> };
+// `macOnly`: why the flow can't run elsewhere. Off macOS, ⌘ is Ctrl, and headless Chromium keeps some
+// Ctrl combos for its own tabs (Ctrl+T, Ctrl+Tab) so the page never sees them; the real Linux app
+// (WebKitGTK) does. The key mapping itself is unit-tested for both platforms in keys.test.ts.
+type Flow = { name: string; run: () => Promise<void>; macOnly?: string };
 const flows: Flow[] = [
   { name: "J1 first run shows the onboarding", run: async () => {
     await ui.open("fresh");
@@ -180,7 +183,7 @@ const flows: Flow[] = [
     await ui.click("button", "↵ Continue review");
     for (const n of [2, 3]) { await ui.key(" "); await ui.seeText(`Snippet ${n} of 3`); }
     await ui.key(" "); // finish the walkthrough: the review is ready to publish
-    await ui.see("button", "⌘↵ Publish as one review");
+    await ui.see("button", key("↵", "Publish as one review"));
     await ui.click("checkbox", "Approve on my behalf");
     await ui.see("button", "⌘↵ Publish and approve");
     await ui.click("button", "⌘↵ Publish and approve");
@@ -487,7 +490,7 @@ const flows: Flow[] = [
     await ui.key("Mod+1");
     await ui.see("button", "4 need you");
   } },
-  { name: "Keys: ⌃Tab and ⌃⇧Tab cycle workspaces, wrapping", run: async () => {
+  { name: "Keys: ⌃Tab and ⌃⇧Tab cycle workspaces, wrapping", macOnly: "Chromium keeps Ctrl+Tab for its tabs", run: async () => {
     await ui.open("busy");
     await ui.key("Control+Tab");
     await ui.see("button", "1 need you");
@@ -990,7 +993,7 @@ const flows: Flow[] = [
     await ui.click("button", "Already signed in", '[data-mr="SignInWaiting"]');
     await ui.tags("SignInWaiting", 0);
   } },
-  { name: "Keys: ⌘T toggles a session's terminal", run: async () => {
+  { name: "Keys: ⌘T toggles a session's terminal", macOnly: "Chromium keeps Ctrl+T for a new tab", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
     await ui.see("button", key("T", "Open in terminal"));
@@ -1032,8 +1035,9 @@ const flows: Flow[] = [
 const only = process.argv[2];
 const picked = flows.filter((f) => !only || f.name.includes(only));
 mkdirSync(SHOTS, { recursive: true });
-let failed = 0;
+let failed = 0, skipped = 0;
 for (const f of picked) {
+  if (f.macOnly && process.platform !== "darwin") { skipped++; console.log(`SKIP  ${f.name}  (macOS only: ${f.macOnly})`); continue; }
   const t = Date.now();
   try {
     await f.run();
@@ -1045,5 +1049,5 @@ for (const f of picked) {
     console.log(`FAIL  ${f.name}\n      ${(e as Error).message}\n      screenshot: ${shot}`);
   }
 }
-console.log(`\n${picked.length - failed}/${picked.length} flows passed`);
+console.log(`\n${picked.length - failed - skipped}/${picked.length - skipped} flows passed${skipped ? `, ${skipped} skipped (macOS only)` : ""}`);
 process.exit(failed ? 1 : 0);
