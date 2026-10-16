@@ -121,6 +121,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
   if (FAIL && RAW[cmd]) throw new Error(RAW[cmd]);
   switch (cmd) {
     case "events_list": return events;
+    case "events_session": return events.filter((e) => e.session_id === a.sessionId || e.session_id === null);
     case "event_append": return record((a.sessionId as string) ?? null, String(a.kind), (a.payload as Record<string, unknown>) ?? {}).id;
     // Feature usage (MR-83): kept in memory, aggregated like the core's usage_report.
     case "usage_track": usage.push(...((a.items as typeof usage) ?? [])); return null;

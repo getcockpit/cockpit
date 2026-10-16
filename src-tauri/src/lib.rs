@@ -97,6 +97,7 @@ pub fn run() {
             sidecar::tool_result,
             eventlog::event_append,
             eventlog::events_list,
+            eventlog::events_session,
             gh::gh_prs,
             gh::gh_repo,
             gh::gh_review_state,
