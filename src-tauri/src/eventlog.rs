@@ -22,6 +22,18 @@ pub struct Event {
     pub origin: Option<String>,
 }
 
+/// An `Event` as the UI receives it: the payload is the stored JSON text, sent as is.
+#[derive(Debug, Serialize)]
+pub struct WireEvent {
+    pub id: String,
+    pub session_id: Option<String>,
+    pub kind: String,
+    pub payload: Box<serde_json::value::RawValue>,
+    pub anchor: Option<String>,
+    pub created_at: i64,
+    pub origin: Option<String>,
+}
+
 pub struct EventLog {
     conn: Mutex<Connection>,
     /// Monotonic within a millisecond, so id order is always append order.
@@ -112,6 +124,38 @@ impl EventLog {
         rows.collect()
     }
 
+    /// What the UI replays (MR-162): payloads pass through as stored JSON, never parsed and
+    /// re-serialized. With `skip_archived`, sessions that are archived now keep only their small
+    /// rows: their transcripts (`sidecar.sdk`) and command lists were 99% of a 471 MB log, and the
+    /// UI loads them when such a session is opened.
+    pub fn list_wire(&self, session_id: Option<&str>, after: Option<&str>, limit: i64, skip_archived: bool) -> rusqlite::Result<Vec<WireEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
+             WHERE (?1 IS NULL OR session_id = ?1) AND (?2 IS NULL OR id > ?2)
+               AND (?4 = 0 OR session_id IS NULL OR kind NOT IN ('sidecar.sdk', 'sidecar.commands')
+                    OR session_id NOT IN (SELECT session_id FROM events e
+                      WHERE kind = 'ui.session_archived' AND id = (SELECT max(id) FROM events x
+                        WHERE x.session_id = e.session_id AND x.kind IN ('ui.session_archived', 'ui.session_unarchived', 'ui.session_requested', 'sidecar.session_started'))))
+             ORDER BY id LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![session_id, after, limit, skip_archived as i64], wire_row)?;
+        rows.collect()
+    }
+
+    /// One session's full history with the app-wide rows interleaved (MR-162): enough to rebuild a
+    /// session that was loaded without its transcript, since app-wide rows (workspace removal, app
+    /// restarts) change sessions too.
+    pub fn session_wire(&self, session_id: &str) -> rusqlite::Result<Vec<WireEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
+             WHERE session_id = ?1 OR session_id IS NULL ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![session_id], wire_row)?;
+        rows.collect()
+    }
+
     /// Rows other copies of the app wrote since `since_ms` (MR-99). Another process can commit a
     /// row with an id older than ones already seen, so callers re-read a window and drop repeats.
     pub fn foreign_since(&self, since_ms: i64) -> rusqlite::Result<Vec<Event>> {
@@ -133,6 +177,20 @@ impl EventLog {
             .query_row("SELECT id FROM events ORDER BY id DESC LIMIT 1", [], |r| r.get(0))
             .optional()
     }
+}
+
+fn wire_row(r: &rusqlite::Row) -> rusqlite::Result<WireEvent> {
+    let payload: String = r.get(3)?;
+    let null = || serde_json::value::RawValue::from_string("null".into()).unwrap();
+    Ok(WireEvent {
+        id: r.get(0)?,
+        session_id: r.get(1)?,
+        kind: r.get(2)?,
+        payload: serde_json::value::RawValue::from_string(payload).unwrap_or_else(|_| null()),
+        anchor: r.get(4)?,
+        created_at: r.get(5)?,
+        origin: r.get(6)?,
+    })
 }
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<Event> {
@@ -196,8 +254,15 @@ pub fn events_list(
     session_id: Option<String>,
     after: Option<String>,
     limit: Option<i64>,
-) -> Result<Vec<Event>, String> {
-    log.list(session_id.as_deref(), after.as_deref(), limit.unwrap_or(5000)).map_err(|e| e.to_string())
+    skip_archived: Option<bool>,
+) -> Result<Vec<WireEvent>, String> {
+    log.list_wire(session_id.as_deref(), after.as_deref(), limit.unwrap_or(5000), skip_archived.unwrap_or(false)).map_err(|e| e.to_string())
+}
+
+/// An archived session's full history, fetched when it's opened (MR-162).
+#[tauri::command(async)]
+pub fn events_session(log: tauri::State<'_, EventLog>, session_id: String) -> Result<Vec<WireEvent>, String> {
+    log.session_wire(&session_id).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -226,6 +291,40 @@ mod tests {
         let after_a: Vec<_> = log.list(None, Some(&a.id), 100).unwrap().into_iter().map(|e| e.id).collect();
         assert_eq!(after_a, vec![b.id, c.id.clone()]);
         assert_eq!(log.last_id().unwrap(), Some(c.id));
+    }
+
+    #[test]
+    fn wire_rows_carry_the_stored_payload_as_is() {
+        let log = EventLog::in_memory().unwrap();
+        log.append(Some("s"), "k", &json!({"a": [1, {"b": "x"}]}), Some("card:1")).unwrap();
+        let rows = log.list_wire(None, None, 10, false).unwrap();
+        assert_eq!(serde_json::to_value(&rows[0]).unwrap()["payload"], json!({"a": [1, {"b": "x"}]}));
+        assert_eq!(serde_json::to_value(&rows[0]).unwrap()["anchor"], json!("card:1"));
+    }
+
+    #[test]
+    fn skip_archived_drops_only_archived_transcripts() {
+        let log = EventLog::in_memory().unwrap();
+        let kinds = |rows: Vec<WireEvent>| rows.into_iter().map(|e| format!("{}:{}", e.session_id.unwrap_or_default(), e.kind)).collect::<Vec<_>>();
+        for s in ["live", "old", "back", "resumed"] {
+            log.append(Some(s), "ui.session_requested", &json!({}), None).unwrap();
+            log.append(Some(s), "sidecar.sdk", &json!({"message": {"type": "user"}}), None).unwrap();
+            log.append(Some(s), "sidecar.commands", &json!({"commands": []}), None).unwrap();
+        }
+        log.append(Some("old"), "ui.session_archived", &json!({}), None).unwrap();
+        log.append(Some("back"), "ui.session_archived", &json!({}), None).unwrap();
+        log.append(Some("back"), "ui.session_unarchived", &json!({}), None).unwrap();
+        log.append(Some("resumed"), "ui.session_archived", &json!({}), None).unwrap();
+        log.append(Some("resumed"), "sidecar.session_started", &json!({}), None).unwrap();
+        log.append(None, "app.started", &json!({}), None).unwrap();
+        let all = kinds(log.list_wire(None, None, 100, false).unwrap());
+        let light = kinds(log.list_wire(None, None, 100, true).unwrap());
+        assert!(!light.contains(&"old:sidecar.sdk".into()) && !light.contains(&"old:sidecar.commands".into()));
+        assert!(light.contains(&"old:ui.session_requested".into()) && light.contains(&"old:ui.session_archived".into()));
+        assert_eq!(all.len() - light.len(), 2, "only the archived session's transcript rows go: {light:?}");
+        // Opening it reads its full history plus the app-wide rows, in order.
+        let full = kinds(log.session_wire("old").unwrap());
+        assert_eq!(full, vec!["old:ui.session_requested", "old:sidecar.sdk", "old:sidecar.commands", "old:ui.session_archived", ":app.started"]);
     }
 
     #[test]

@@ -121,6 +121,7 @@ export type SessionState = {
   address: AddressFlow | null;
   diagrams: Record<string, Diagram | null>; // transcript item id → layer-3 diagram (null: nothing worth drawing)
   archivedAt: number | null;
+  partial: boolean; // loaded without its transcript at boot (archived, MR-162): its full history loads when opened
   fixApplied: number | null;
   fromDeleted: string | null; // name of the deleted workspace it came from: read-only history (MR-54) // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
   commands: CommandRow[]; // its slash commands and skills (MR-87): names from init, descriptions once asked
