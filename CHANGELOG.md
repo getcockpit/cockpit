@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-16
+
+### Fixed
+- Cockpit no longer climbs to high CPU when notifications go unanswered. Every notification used to wait for its click and poll macOS twice a second, so dozens of ignored ones kept the app busy. Now only the newest three wait for a click (their Answer buttons still work); older ones are reposted silently as plain notifications, a newer notification for the same decision replaces the old one, and answering a decision in Cockpit takes its notification down.
+
 ## [0.1.6] - 2026-10-16
 
 ### Added
