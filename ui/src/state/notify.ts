@@ -113,6 +113,7 @@ const SETTLE_MS = 3000;
 export function useNotify(all: AppState, docs: Doc[], here: Here, onOpen: (t: Target) => void) {
   const queue = useMemo(() => needsQueue(Object.values(all.sessions), docs), [all.sessions, docs]);
   const seen = useRef<Set<string> | null>(null);
+  const posted = useRef(new Set<string>());
   const mounted = useRef(Date.now());
   const latest = useRef({ queue, all, onOpen, here });
   latest.current = { queue, all, onOpen, here };
@@ -127,9 +128,21 @@ export function useNotify(all: AppState, docs: Doc[], here: Here, onOpen: (t: Ta
     const focused = document.hasFocus();
     for (const x of fresh) {
       if (inView(targetFor(x, all.sessions), latest.current.here, focused)) continue;
+      posted.current.add(x.key);
       void invoke("notify", { note: noteFor(x, all.sessions, name) }).catch(() => {});
     }
   }, [queue, all.lastEventId, all.notifications, all.workspaces, all.sessions]);
+
+  // Answered in Cockpit (or the session moved on): its notification comes down, so it can't be
+  // answered twice and doesn't keep a waiting thread in the core.
+  useEffect(() => {
+    if (all.lastEventId === null) return;
+    const live = new Set(queue.map((x) => x.key));
+    const gone = [...posted.current].filter((k) => !live.has(k));
+    if (!gone.length) return;
+    for (const k of gone) posted.current.delete(k);
+    void invoke("notify_withdraw", { keys: gone }).catch(() => {});
+  }, [queue, all.lastEventId]);
 
   useEffect(() => {
     const off = listen<{ key: string; session: string | null; response: Response }>("mr-notify", ({ payload }) => {
