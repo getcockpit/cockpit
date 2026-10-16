@@ -7,13 +7,32 @@ import type { McpAddConfig, McpScope } from "../components/mcpAdd";
 
 export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string };
 
-type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent } | { type: "instance"; id: string };
+type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent } | { type: "instance"; id: string } | { type: "hydrate"; id: string; events: MrEvent[] };
 
-function reducer(state: AppState, a: Action): AppState {
+export function reducer(state: AppState, a: Action): AppState {
   if (a.type === "instance") return { ...state, instance: a.id };
-  if (a.type === "replay") return replay(a.events, { ...initialState, instance: state.instance });
+  if (a.type === "replay") return markPartial(replay(a.events, { ...initialState, instance: state.instance }));
+  if (a.type === "hydrate") return hydrated(state, a.id, a.events);
   return reduce(state, a.event);
 }
+
+// The boot read skips archived sessions' transcripts (MR-162), so every archived session starts partial.
+function markPartial(state: AppState): AppState {
+  const sessions = Object.fromEntries(Object.entries(state.sessions).map(([k, s]) => [k, s.archivedAt ? { ...s, partial: true } : s]));
+  return { ...state, sessions };
+}
+
+/** A partial session rebuilt from its full history (its own rows plus the app-wide ones, in order). */
+export function hydrated(state: AppState, id: string, events: MrEvent[]): AppState {
+  const was = state.sessions[id];
+  if (!was) return state;
+  const full = replay(events, { ...initialState, instance: state.instance }).sessions[id] ?? was;
+  return { ...state, sessions: { ...state.sessions, [id]: { ...full, partial: false } } };
+}
+
+// Asks the mounted store to load a partial session's full history; set by useAppState.
+let requestHydrate: (id: string) => void = () => {};
+export const hydrate = (id: string) => requestHydrate(id);
 
 // Live events can race the initial replay, and rows from another copy of the app (MR-99) can come
 // in after newer ones of ours, so repeats are dropped by id rather than by order.
@@ -36,10 +55,11 @@ export function dedupe() {
 // The whole log, a page at a time. One capped read silently dropped every event past the cap,
 // so after a restart the newest sessions came back without their history (MR-97).
 const PAGE = 5000;
-export async function loadLog(list = (args: { after: string | null; limit: number }) => invoke<MrEvent[]>("events_list", args)): Promise<MrEvent[]> {
+// Archived sessions come without their transcripts: those were 99% of the log (MR-162).
+export async function loadLog(list = (args: { after: string | null; limit: number; skipArchived: boolean }) => invoke<MrEvent[]>("events_list", args)): Promise<MrEvent[]> {
   const all: MrEvent[] = [];
   for (let after: string | null = null; ; ) {
-    const page = await list({ after, limit: PAGE });
+    const page = await list({ after, limit: PAGE, skipArchived: true });
     all.push(...page);
     if (page.length < PAGE) return all;
     after = page[page.length - 1].id;
@@ -54,10 +74,23 @@ export function useAppState(): AppState {
     const pending: MrEvent[] = [];
     let replayed = false;
     const seen = dedupe();
+    // Live rows for a session whose history is loading: the read may or may not include them.
+    const loading = new Map<string, MrEvent[]>();
     const un = listen<MrEvent>("mr-event", ({ payload }) => {
       if (!replayed) pending.push(payload);
-      else if (seen.fresh(payload)) dispatch({ type: "event", event: payload });
+      else if (seen.fresh(payload)) {
+        if (payload.session_id) loading.get(payload.session_id)?.push(payload);
+        dispatch({ type: "event", event: payload });
+      }
     });
+    requestHydrate = (id) => {
+      if (loading.has(id)) return;
+      loading.set(id, []);
+      invoke<MrEvent[]>("events_session", { sessionId: id }).then((events) => {
+        const have = new Set(events.map((e) => e.id));
+        if (alive) dispatch({ type: "hydrate", id, events: [...events, ...(loading.get(id) ?? []).filter((e) => !have.has(e.id))] });
+      }).catch(() => {}).finally(() => loading.delete(id));
+    };
     // Which copy this is comes first: the replay needs it to tell this copy's sessions from others'.
     invoke<string>("instance_id").catch(() => null).then((id) => {
       if (id && alive) dispatch({ type: "instance", id });
@@ -69,8 +102,12 @@ export function useAppState(): AppState {
       replayed = true;
       for (const e of pending) if (seen.fresh(e)) dispatch({ type: "event", event: e });
     });
-    return () => { alive = false; un.then((f) => f()); };
+    return () => { alive = false; requestHydrate = () => {}; un.then((f) => f()); };
   }, []);
+  // A restored session is back on the wall: give it its history.
+  useEffect(() => {
+    for (const s of Object.values(state.sessions)) if (s.partial && !s.archivedAt) hydrate(s.id);
+  }, [state.sessions]);
   return state;
 }
 
