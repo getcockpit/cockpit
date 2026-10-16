@@ -146,6 +146,7 @@ pub fn run() {
             terminal::term_close,
             terminal::term_resize,
             notify::notify,
+            notify::notify_withdraw,
             voice::voice_start,
             voice::voice_stop,
             workspaces::workspace_create,
