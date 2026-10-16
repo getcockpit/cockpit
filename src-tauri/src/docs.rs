@@ -92,6 +92,9 @@ fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
     }
 }
 
+/// Every kind `fold` reads starts with one of these: the start-up replay reads only them (MR-162).
+pub const KIND_PREFIXES: &[&str] = &["doc.", "ui.doc_"];
+
 fn fold(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
     let p = &ev.payload;
     let doc_id = p["doc_id"].as_str().unwrap_or_default().to_owned();
@@ -308,6 +311,19 @@ pub fn handle_tool(docs: &Docs, session: Option<&str>, tool: &str, args: &Value)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_read_covers_every_kind_fold_handles() {
+        let src = include_str!("docs.rs");
+        let body = &src[src.find("fn fold(").unwrap()..];
+        let body = &body[..body.find("\n}\n").unwrap()];
+        let kinds: Vec<&str> = body.lines().filter(|l| l.trim_end().ends_with("=> {") && l.trim_start().starts_with("\"doc") || l.trim_start().starts_with("\"ui."))
+            .flat_map(|l| l.split('"').skip(1).step_by(2)).filter(|k| k.contains('.')).collect();
+        assert!(kinds.len() >= 10, "{kinds:?}");
+        for k in kinds {
+            assert!(KIND_PREFIXES.iter().any(|p| k.starts_with(p)), "{k} isn't read at start-up: add its prefix to KIND_PREFIXES");
+        }
+    }
 
     fn ev(n: u32, kind: &str, payload: Value) -> Event {
         Event { id: format!("E{n:04}"), session_id: Some("s1".into()), kind: kind.into(), payload, anchor: None, created_at: n as i64, origin: None }
