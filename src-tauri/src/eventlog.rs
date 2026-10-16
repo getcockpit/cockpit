@@ -113,6 +113,36 @@ impl EventLog {
         rows.collect()
     }
 
+    /// Every event whose kind starts with one of `prefixes`, oldest first (MR-162). Reads the kind
+    /// index only: folding docs from the whole log took 7.8 s of every start in a debug build.
+    pub fn list_prefixed(&self, prefixes: &[&str]) -> rusqlite::Result<Vec<Event>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
+             WHERE kind >= ?1 AND kind < ?1 || char(1114111) ORDER BY id",
+        )?;
+        let mut out = Vec::new();
+        for p in prefixes {
+            out.extend(stmt.query_map(params![p], row)?.collect::<rusqlite::Result<Vec<_>>>()?);
+        }
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
+    }
+
+    /// What a relaunch needs to resume sessions cut off mid-turn (MR-122): their requests, messages,
+    /// starts and ends, and the `result` that closes each turn. Not the transcripts.
+    pub fn list_turns(&self) -> rusqlite::Result<Vec<Event>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
+             WHERE kind IN ('ui.session_requested', 'ui.message_sent', 'sidecar.session_started', 'sidecar.session_ended')
+                OR (kind = 'sidecar.sdk' AND json_extract(payload, '$.message.type') = 'result')
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], row)?;
+        rows.collect()
+    }
+
     pub fn list(&self, session_id: Option<&str>, after: Option<&str>, limit: i64) -> rusqlite::Result<Vec<Event>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -328,6 +358,20 @@ mod tests {
     }
 
     #[test]
+    fn prefixed_and_turn_reads_pick_only_their_rows() {
+        let log = EventLog::in_memory().unwrap();
+        for k in ["doc.created", "sidecar.sdk", "ui.doc_note", "ui.docs_other", "ui.session_requested", "doc.block_set"] {
+            log.append(Some("s"), k, &json!({"message": {"type": "assistant"}}), None).unwrap();
+        }
+        log.append(Some("s"), "sidecar.sdk", &json!({"message": {"type": "result"}}), None).unwrap();
+        let kinds = |v: Vec<Event>| v.into_iter().map(|e| e.kind).collect::<Vec<_>>();
+        assert_eq!(kinds(log.list_prefixed(&["doc.", "ui.doc_"]).unwrap()), ["doc.created", "ui.doc_note", "doc.block_set"]);
+        let turns = log.list_turns().unwrap();
+        assert_eq!(kinds(turns.clone()), ["ui.session_requested", "sidecar.sdk"]);
+        assert_eq!(turns[1].payload["message"]["type"], "result");
+    }
+
+    #[test]
     fn ids_stay_in_append_order_within_one_millisecond() {
         let log = EventLog::in_memory().unwrap();
         let ids: Vec<String> = (0..500).map(|i| log.append(None, "k", &json!(i), None).unwrap().id).collect();
@@ -348,3 +392,4 @@ mod tests {
         assert_eq!(again[0].payload, json!({"a": 1}));
     }
 }
+

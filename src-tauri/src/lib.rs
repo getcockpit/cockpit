@@ -63,7 +63,7 @@ pub fn run() {
             let log = eventlog::EventLog::open(&dir.join("events.sqlite"))?;
             // Rebuild docs by replaying the log; afterwards record() keeps them current.
             let docs = docs::Docs::default();
-            for ev in log.list(None, None, i64::MAX)? {
+            for ev in log.list_prefixed(docs::KIND_PREFIXES)? {
                 docs.apply(&ev);
             }
             app.manage(usage::Usage::open(&dir.join("events.sqlite"))?);

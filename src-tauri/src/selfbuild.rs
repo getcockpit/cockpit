@@ -337,7 +337,7 @@ fn prune(data: &Path, current: &str, keep: usize) -> Vec<String> {
 
 fn resume_interrupted(app: &AppHandle) {
     let log = app.state::<crate::eventlog::EventLog>();
-    let Ok(events) = log.list(None, None, i64::MAX) else { return };
+    let Ok(events) = log.list_turns() else { return };
     for (sid, sdk, cwd, kind) in interrupted(&events) {
         let _ = crate::sidecar::session_start(
             app.clone(),
