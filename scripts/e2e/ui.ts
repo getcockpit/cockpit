@@ -107,6 +107,8 @@ const ui = {
 const some = (c: number) => c > 0;
 // Shortcut labels follow the platform (ui/src/platform.ts): "⌘K" on a Mac, "Ctrl+K" in Linux CI.
 const key = (k: string, rest: string) => new RegExp(`^(⌘|Ctrl\\+)${k} ${rest}$`);
+// ⌘↵ on macOS reads "Ctrl+Enter" elsewhere (keyLabel spells ↵ out).
+const send = (rest: string) => new RegExp(`^(⌘↵|Ctrl\\+Enter) ${rest}$`);
 
 // `macOnly`: why the flow can't run elsewhere. Off macOS, ⌘ is Ctrl, and headless Chromium keeps some
 // Ctrl combos for its own tabs (Ctrl+T, Ctrl+Tab) so the page never sees them; the real Linux app
@@ -184,10 +186,10 @@ const flows: Flow[] = [
     await ui.click("button", "↵ Continue review");
     for (const n of [2, 3]) { await ui.key(" "); await ui.seeText(`Snippet ${n} of 3`); }
     await ui.key(" "); // finish the walkthrough: the review is ready to publish
-    await ui.see("button", /^(⌘↵|Ctrl\+Enter) Publish as one review$/); // keyLabel spells ↵ "Enter" off macOS
+    await ui.see("button", send("Publish as one review"));
     await ui.click("checkbox", "Approve on my behalf");
-    await ui.see("button", "⌘↵ Publish and approve");
-    await ui.click("button", "⌘↵ Publish and approve");
+    await ui.see("button", send("Publish and approve"));
+    await ui.click("button", send("Publish and approve"));
     await ui.seeText("✓ Published · approved");
   } },
   { name: "J8 step into a waiting address flow", run: async () => {
@@ -348,7 +350,12 @@ const flows: Flow[] = [
     await ui.open("workspaces-busy", { overview: true });
     await ui.tags("OverviewArea", 6);
     await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
-    await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 45)) throw new Error(`fit at ${z}%`); });
+    // Readable for this window: the grid fits far bigger than the six in one row would (zoom ∝ width).
+    await until("fit is readable", () => {
+      const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10), w = Number(/width:([\d.]+)/.exec(pt("box", 'css:[data-mr="OverviewCanvas"]'))![1]);
+      const oneRow = (w - 96) / (6 * 720 + 5 * 80) * 100;
+      if (!(z >= oneRow * 1.4)) throw new Error(`fit at ${z}%, one row would be ${oneRow.toFixed(0)}%`);
+    });
     await ui.see("button", "Open Approve the Acme deploy"); // what needs you is first, never hidden in +N more
     await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewBlock"]', 5); // 13 in progress: 5 shown…
     await until("+8 more", () => { if (!ui.text('[data-mr="OverviewMore"]').includes("+8 more")) throw new Error("no +N more"); });
