@@ -7,7 +7,8 @@ import { resolveTyped } from "./typedPath";
 
 // Work-folder picker (MR-36): one button showing where the session will run. Opens a list of the
 // folders you actually work in (this app's sessions + Claude Code's history), filter by typing,
-// paste a path, or browse with the macOS folder dialog.
+// paste a path, or browse with the macOS folder dialog. A typed path that doesn't exist yet is
+// offered as "Create …", so a new workspace or project can start in a fresh folder.
 
 type Folder = { path: string; name: string; repo: boolean; at: number };
 
@@ -65,15 +66,31 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
     return [...fromApp, ...found].filter((f) => (seen.has(f.path) ? false : (seen.add(f.path), true)));
   }, [found, extra]);
   const typedPath = resolveTyped(q, value, home);
+  // Whether the typed path exists: null while unknown (then it reads "Use", as before).
+  const [exists, setExists] = useState<{ path: string; is: boolean } | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setError("");
+    if (!typedPath) return;
+    let live = true;
+    const t = setTimeout(() => invoke<boolean>("folder_exists", { path: typedPath }).then((is) => { if (live) setExists({ path: typedPath, is }); }).catch(() => {}), 120);
+    return () => { live = false; clearTimeout(t); };
+  }, [typedPath]);
+  const missing = !!typedPath && exists?.path === typedPath && !exists.is;
   const list = all.filter((f) => !q.trim() || typedPath || `${f.name} ${f.path}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 9);
   const rows: { label: string; sub: string; run: () => void }[] = [
-    ...(typedPath ? [{ label: `Use ${tilde(typedPath, home)}`, sub: typedPath === q.trim() ? "typed path" : `typed path: ${q.trim()}`, run: () => pick(typedPath) }] : []),
+    ...(typedPath ? [missing
+      ? { label: `Create ${tilde(typedPath, home)}`, sub: error || "new folder", run: () => void make(typedPath) }
+      : { label: `Use ${tilde(typedPath, home)}`, sub: typedPath === q.trim() ? "typed path" : `typed path: ${q.trim()}`, run: () => pick(typedPath) }] : []),
     ...list.map((f) => ({ label: f.name, sub: tilde(f.path, home) + (f.repo ? "" : " · not a git repo"), run: () => pick(f.path) })),
-    { label: "Choose a folder…", sub: "macOS folder dialog", run: () => void browse() },
+    { label: "Choose a folder…", sub: "macOS folder dialog (New Folder works there too)", run: () => void browse() },
   ];
   function pick(p: string) { onChange(p); setOpenList(false); setQ(""); }
+  async function make(p: string) {
+    try { pick(await invoke<string>("folder_create", { path: p })); } catch (e) { setError(String(e).split("\n")[0]); }
+  }
   async function browse() {
-    const dir = await open({ directory: true, multiple: false, defaultPath: value.startsWith("~") ? undefined : value }).catch(() => null);
+    const dir = await open({ directory: true, multiple: false, defaultPath: value.startsWith("~") ? undefined : value, canCreateDirectories: true }).catch(() => null);
     if (typeof dir === "string") pick(dir);
   }
   useEffect(() => setSel(0), [q, openList]);
@@ -101,7 +118,7 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
             if (k === "Enter") rows[sel]?.run();
             if (k === "Escape") setOpenList(false);
           }}>
-          <input autoFocus className="mr-input" placeholder="Filter, or type a path (~/code/app, ../other)" value={q} onChange={(e) => setQ(e.target.value)} style={{ margin: 8, background: "var(--mr-well)" }} aria-label="Filter folders" />
+          <input autoFocus className="mr-input" placeholder="Filter, or type a path to use or create (~/code/app)" value={q} onChange={(e) => setQ(e.target.value)} style={{ margin: 8, background: "var(--mr-well)" }} aria-label="Filter folders" />
           {rows.map((r, i) => (
             <button key={r.label + r.sub} type="button" role="option" aria-selected={i === sel} onMouseEnter={() => setSel(i)} onClick={r.run}
               style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, border: 0, padding: "7px 12px", font: "inherit", textAlign: "left", cursor: "pointer", color: "var(--mr-ink)", background: i === sel ? "var(--mr-well)" : "transparent", boxShadow: i === sel ? "inset 3px 0 0 var(--mr-selected)" : undefined }}>
