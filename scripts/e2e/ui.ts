@@ -994,6 +994,24 @@ const flows: Flow[] = [
     await ui.seeText("Got it: now run the whole suite");
     await ui.tags("SignedOut", 0);
   } },
+  // Sign in… runs Claude's own `claude auth login`, which exits by itself; the message goes once it took.
+  { name: "J4 Expired sign-in: Sign in… resends on its own", run: async () => {
+    await ui.open("signedout");
+    await ui.clickUntil("button", /Fix the flaky export test/, undefined, "SignedOut");
+    await ui.click("button", "Sign in…");
+    await ui.seeText("Got it: now run the whole suite");
+    await ui.tags("SignedOut", 0);
+  } },
+  { name: "J4 Expired sign-in: a sign-in that didn't take offers Try again", run: async () => {
+    await ui.open("signedout&signin=fail");
+    await ui.clickUntil("button", /Fix the flaky export test/, undefined, "SignedOut");
+    await ui.click("button", "Sign in…");
+    await ui.seeText("Still signed out");
+    await ui.tags("SignedOut", 1);
+    await ui.click("button", "Try again");
+    await ui.seeText("Got it: now run the whole suite");
+    await ui.tags("SignedOut", 0);
+  } },
   { name: "J3 Expired sign-in waits in the needs-you queue", run: async () => {
     await ui.open("signedout");
     await ui.tags("SignInWaiting", 1);
