@@ -63,7 +63,7 @@ pub fn run() {
             let log = eventlog::EventLog::open(&dir.join("events.sqlite"))?;
             // Rebuild docs by replaying the log; afterwards record() keeps them current.
             let docs = docs::Docs::default();
-            for ev in log.list(None, None, i64::MAX)? {
+            for ev in log.list_prefixed(docs::KIND_PREFIXES)? {
                 docs.apply(&ev);
             }
             app.manage(usage::Usage::open(&dir.join("events.sqlite"))?);
@@ -90,12 +90,14 @@ pub fn run() {
             sidecar::session_commands,
             sidecar::session_mcp_status,
             sidecar::session_mcp_action,
+            sidecar::session_mcp_add,
             sidecar::models_refresh,
             sidecar::session_stop,
             sidecar::permission_respond,
             sidecar::tool_result,
             eventlog::event_append,
             eventlog::events_list,
+            eventlog::events_session,
             gh::gh_prs,
             gh::gh_repo,
             gh::gh_review_state,
@@ -130,6 +132,8 @@ pub fn run() {
             sidecar::limits_refresh,
             gh::pr_repo,
             folders::recent_folders,
+            folders::folder_exists,
+            folders::folder_create,
             mentions::session_paths,
             files::files_exist,
             attachments::attachment_save,
@@ -145,15 +149,19 @@ pub fn run() {
             terminal::term_close,
             terminal::term_resize,
             notify::notify,
+            notify::notify_withdraw,
             voice::voice_start,
             voice::voice_stop,
             workspaces::workspace_create,
             workspaces::workspace_rename,
             workspaces::workspace_reorder,
+            workspaces::overview_move,
+            workspaces::overview_tidy,
             workspaces::workspace_set_folder,
             workspaces::workspace_delete,
             sidecar::session_move,
             workspaces::workspace_sign_in,
+            workspaces::workspace_auth_status,
             docs::doc_feedback,
             brief::brief_start,
             brief::brief_continue,

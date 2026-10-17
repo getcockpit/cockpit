@@ -32,11 +32,13 @@ async function until<T>(what: string, check: () => T, ms = 5000): Promise<T> {
 }
 
 const ui = {
-  async open(demo: string) {
+  async open(demo: string, opts: { overview?: boolean } = {}) {
     // motion=off: a headless tab draws no frames, so entry animations would leave tiles at opacity 0,
-    // which PinchTab's click treats as hidden.
-    pt("nav", `${BASE}/?demo=${demo}&motion=off`, "--block-images");
-    await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); });
+    // which PinchTab's click treats as hidden. landing=wall: flows start on the Wall, not the
+    // Overview a launch with several workspaces lands on (decision 40), unless they test that.
+    pt("nav", `${BASE}/?demo=${demo}&motion=off${opts.overview ? "" : "&landing=wall"}`, "--block-images");
+    // Generous: on a cold CI runner, Vite compiles the app on the first request.
+    await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); }, 20_000);
   },
   count: (css: string) => Number(pt("count", css).trim()),
   // `within` (CSS) scopes the lookup when the same label shows twice, e.g. two Send buttons.
@@ -53,7 +55,10 @@ const ui = {
   async clickUntil(role: string, name: string | RegExp, within: string | undefined, tag: string) {
     await until(`${tag} after clicking ${role} "${name}"`, () => {
       if (ui.count(`[data-mr="${tag}"]`) > 0) return;
-      pt("click", ui.find(role, name, within).ref);
+      // Into view first: half under a sticky header, a click lands on the header instead.
+      const ref = ui.find(role, name, within).ref;
+      pt("scrollintoview", ref);
+      pt("click", ref);
       throw new Error("not open yet");
     }, 8000);
   },
@@ -102,8 +107,13 @@ const ui = {
 const some = (c: number) => c > 0;
 // Shortcut labels follow the platform (ui/src/platform.ts): "⌘K" on a Mac, "Ctrl+K" in Linux CI.
 const key = (k: string, rest: string) => new RegExp(`^(⌘|Ctrl\\+)${k} ${rest}$`);
+// ⌘↵ on macOS reads "Ctrl+Enter" elsewhere (keyLabel spells ↵ out).
+const send = (rest: string) => new RegExp(`^(⌘↵|Ctrl\\+Enter) ${rest}$`);
 
-type Flow = { name: string; run: () => Promise<void> };
+// `macOnly`: why the flow can't run elsewhere. Off macOS, ⌘ is Ctrl, and headless Chromium keeps some
+// Ctrl combos for its own tabs (Ctrl+T, Ctrl+Tab) so the page never sees them; the real Linux app
+// (WebKitGTK) does. The key mapping itself is unit-tested for both platforms in keys.test.ts.
+type Flow = { name: string; run: () => Promise<void>; macOnly?: string };
 const flows: Flow[] = [
   { name: "J1 first run shows the onboarding", run: async () => {
     await ui.open("fresh");
@@ -170,6 +180,17 @@ const flows: Flow[] = [
     await ui.tags("ReviewOverview", 1);
     await ui.tags("SnippetPager", 1);
     await ui.see("button", "space Next snippet");
+  } },
+  { name: "J8 publish a review and approve it on my behalf", run: async () => {
+    await ui.open("review");
+    await ui.click("button", "↵ Continue review");
+    for (const n of [2, 3]) { await ui.key(" "); await ui.seeText(`Snippet ${n} of 3`); }
+    await ui.key(" "); // finish the walkthrough: the review is ready to publish
+    await ui.see("button", send("Publish as one review"));
+    await ui.click("checkbox", "Approve on my behalf");
+    await ui.see("button", send("Publish and approve"));
+    await ui.click("button", send("Publish and approve"));
+    await ui.seeText("✓ Published · approved");
   } },
   { name: "J8 step into a waiting address flow", run: async () => {
     await ui.open("address");
@@ -276,6 +297,108 @@ const flows: Flow[] = [
     await ui.click("button", "Personal");
     await ui.see("button", "4 need you");
   } },
+  { name: "J19 see every workspace on the Overview and pick where to go", run: async () => {
+    await ui.open("workspaces", { overview: true });
+    await ui.tags("OverviewArea", 3); // launch lands on the canvas
+    await ui.tags("OverviewBlock", 11); // a clean finish (Bump the lockfile) is gone
+    await ui.gone("button", "Open Bump the lockfile");
+    await until("needs-you count beside Cockpit dev", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("1 needs you")) throw new Error("no count label"); });
+    await ui.css('[data-mr="OverviewArea"] [data-mr="OverviewBlock"] button', 0); // read-only: nothing to answer on the map
+    await ui.rightClick("button", "Open Voice: push to talk"); // Esc closes the right-click menu…
+    await ui.css("[data-mr-menu]", 1);
+    await ui.press("Escape");
+    await ui.css("[data-mr-menu]", 0);
+    await ui.tags("OverviewCanvas", 1); // …and only the menu: still on the Overview
+    // Fit lays three workspaces out as a grid, so launch lands readable, not at half size in one long row.
+    // Fitted (not the unfitted start), and still readable.
+    await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
+    await until("fit is readable", () => { const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10); if (!(z >= 60)) throw new Error(`fit at ${z}%`); });
+    for (let i = 0; i < 4; i++) await ui.press("-"); // − zooms out from the keyboard…
+    await ui.tags("OverviewLamps", 3); // …far out, each workspace is its name, what needs you and a lamp per item
+    await until("double-click Client X", () => pt("dblclick", ui.find("button", "Zoom to workspace Client X").ref)); // far out, even a double-click only zooms in…
+    await ui.tags("OverviewCanvas", 1);
+    await ui.tags("OverviewLamps", 0);
+    await ui.see("button", "Open Quarterly usage report"); // …close enough to read, still on the map
+    for (let i = 0; i < 4; i++) await ui.press("-");
+    await ui.tags("OverviewLamps", 3);
+    await until("needs-you badge stays far out", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_cockpit"]').includes("⚠ 1")) throw new Error("no badge"); });
+    await ui.key("Mod+0");
+    await ui.tags("OverviewLamps", 0);
+    for (let i = 0; i < 4; i++) await ui.press("-");
+    await ui.click("button", /go to 100%/); // 100% lands on a workspace, even from far out over a gap
+    await until("100%", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error("not 100%"); });
+    await ui.press("Escape"); // Esc goes back to the workspace you came from
+    await ui.tags("OverviewCanvas", 0);
+    await ui.key("Mod+0");
+    await ui.tags("OverviewCanvas", 1);
+    await ui.click("button", "Open Approve the event-log migration");
+    await ui.tags("SessionName", 1);
+    await ui.key("Mod+0");
+    await ui.tags("OverviewCanvas", 1);
+    // Coming back is a return: the camera is where you left it (100%), not refitted by an old ⌘0…
+    await until("camera restored", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error(ui.text('[data-mr="OverviewZoomLevel"]')); });
+    await ui.key("Mod+0"); // …and ⌘0 on the Overview fits everything again
+    await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
+    await ui.click("button", "Open workspace Client X");
+    await ui.tags("OverviewCanvas", 0);
+    await ui.see("button", "Open Quarterly usage report");
+    await ui.click("button", /^Overview/);
+    await ui.click("button", "Open Overview canvas");
+    await ui.tags("DocBlock", some);
+  } },
+  { name: "J19 a crowded Overview stays readable", run: async () => {
+    await ui.open("workspaces-busy", { overview: true });
+    await ui.tags("OverviewArea", 6);
+    await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
+    // Readable for this window: the grid fits far bigger than the six in one row would (zoom ∝ width).
+    await until("fit is readable", () => {
+      const z = parseInt(ui.text('[data-mr="OverviewZoomLevel"]'), 10), w = Number(/width:([\d.]+)/.exec(pt("box", 'css:[data-mr="OverviewCanvas"]'))![1]);
+      const oneRow = (w - 96) / (6 * 720 + 5 * 80) * 100;
+      if (!(z >= oneRow * 1.4)) throw new Error(`fit at ${z}%, one row would be ${oneRow.toFixed(0)}%`);
+    });
+    await ui.see("button", "Open Approve the Acme deploy"); // what needs you is first, never hidden in +N more
+    await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewBlock"]', 5); // 13 in progress: 5 shown…
+    await until("+8 more", () => { if (!ui.text('[data-mr="OverviewMore"]').includes("+8 more")) throw new Error("no +N more"); });
+    await ui.css('[data-mr="OverviewArea"][data-mr-source="ws_a"] [data-mr="OverviewGroup"]', 1); // …and no empty columns beside them
+    await until("empty workspace says so", () => { if (!ui.text('[data-mr="OverviewArea"][data-mr-source="ws_e"]').includes("Nothing open")) throw new Error("no empty note"); });
+    for (let i = 0; i < 8; i++) await ui.key("Shift+ArrowUp"); // ⇧↑ pans 400 px a step: off into empty canvas, whatever the window size…
+    await ui.tags("OverviewLost", 1);
+    await ui.click("button", /Back to your workspaces/); // …one button brings everything back
+    await ui.tags("OverviewLost", 0);
+    await ui.key("Mod+0");
+    await ui.press("/"); // find on the map…
+    await ui.css('[data-mr="OverviewFind"] input', 1);
+    await sleep(100);
+    pt("type", 'css:[data-mr="OverviewFind"] input', "refund");
+    await until("one hit", () => { if (ui.text('[data-mr="OverviewFindCount"]').trim() !== "1 found") throw new Error(ui.text('[data-mr="OverviewFindCount"]')); });
+    await ui.css('[data-mr="OverviewArea"][data-dim]', 5); // …everything else fades back…
+    await ui.press("Enter"); // …and Enter flies to it
+    await ui.css('[data-mr="OverviewBlock"][data-current]', 1);
+    await until("100% on the hit", () => { if (ui.text('[data-mr="OverviewZoomLevel"]').trim() !== "100%") throw new Error("not 100%"); });
+    await ui.press("Escape"); // Esc closes find, not the Overview
+    await ui.css('[data-mr="OverviewFind"]', 0);
+    await ui.tags("OverviewCanvas", 1);
+    await ui.key("Mod+0");
+    await ui.click("button", "8 more in In progress: open workspace Acme platform"); // +N more opens the workspace
+    await ui.tags("OverviewCanvas", 0);
+    await ui.see("button", /Acme task 12/);
+  } },
+  { name: "J19 drag a workspace, tidy the map up, undo it", run: async () => {
+    await ui.open("workspaces", { overview: true });
+    await ui.css('[data-mr="OverviewCanvas"][data-fitted]', 1);
+    await ui.css('[data-mr="OverviewTidy"]', 0); // nothing placed by hand: nothing to tidy
+    const box = (css: string) => Object.fromEntries([...pt("box", `css:${css}`).matchAll(/(\w+):(-?[\d.]+)/g)].map(([, k, v]) => [k, Number(v)]));
+    const h = box('[data-mr="OverviewHeader"][data-mr-source="ws_client"]');
+    const x = h.x + h.width - 30, y = h.y + h.height / 2; // the header's empty right end
+    pt("mouse", "down", "--x", String(x), "--y", String(y));
+    pt("mouse", "move", String(x + 10), String(y));
+    pt("mouse", "move", String(x + 300), String(y + 40));
+    pt("mouse", "up", "--x", String(x + 300), "--y", String(y + 40));
+    await ui.tags("OverviewCanvas", 1); // a drag opens nothing
+    await ui.click("button", "Tidy up");
+    await ui.click("button", "Undo tidy");
+    await ui.see("button", "Tidy up"); // the hand-placed layout is back
+  } },
   { name: "J18 move a session to another workspace", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
@@ -375,7 +498,7 @@ const flows: Flow[] = [
     await ui.key("Mod+1");
     await ui.see("button", "4 need you");
   } },
-  { name: "Keys: ⌃Tab and ⌃⇧Tab cycle workspaces, wrapping", run: async () => {
+  { name: "Keys: ⌃Tab and ⌃⇧Tab cycle workspaces, wrapping", macOnly: "Chromium keeps Ctrl+Tab for its tabs", run: async () => {
     await ui.open("busy");
     await ui.key("Control+Tab");
     await ui.see("button", "1 need you");
@@ -721,8 +844,7 @@ const flows: Flow[] = [
   { name: "Keys: lightbox ← / → page, 0 fits, Esc closes", run: async () => {
     await ui.open("view");
     await ui.click("button", "Open Where are we on the settings refactor?");
-    await ui.click("button", "Open inline image");
-    await ui.tags("Lightbox", 1);
+    await ui.clickUntil("button", "Open inline image", '[data-mr="ImageGallery"]', "Lightbox");
     await ui.css('[data-mr="LightboxIndex"][data-mr-source="0"]', 1);
     await ui.key("ArrowRight");
     await ui.css('[data-mr="LightboxIndex"][data-mr-source="1"]', 1);
@@ -809,6 +931,22 @@ const flows: Flow[] = [
     await ui.tags("McpPanel", 0);
     await ui.tags("SessionName", 1);
   } },
+  { name: "/mcp: Add server saves one and lists it", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.fill("Message this session", "/mcp");
+    pt("press", ui.find("textbox", "Message this session").ref, "Enter");
+    await ui.click("button", "Add server");
+    await ui.tags("McpAddServer", 1);
+    await ui.click("button", "Add", "[data-mr=McpAddServer]");
+    await ui.seeText("Name: letters, digits"); // nothing typed: says what's missing, sends nothing
+    await ui.fill("Server name", "web");
+    await ui.fill("Server URL", "https://mcp.example.com/mcp");
+    await ui.click("button", "Add", "[data-mr=McpAddServer]");
+    await ui.seeText("✓ Added web");
+    await ui.tags("McpAddServer", 0);
+    await ui.css('[data-mr="McpServer"][data-mr-source="web"]', 1);
+  } },
   { name: "Keys: picker ↓ / Enter pick a PR to address", run: async () => {
     await ui.open("busy");
     await ui.key("Mod+k");
@@ -856,6 +994,24 @@ const flows: Flow[] = [
     await ui.seeText("Got it: now run the whole suite");
     await ui.tags("SignedOut", 0);
   } },
+  // Sign in… runs Claude's own `claude auth login`, which exits by itself; the message goes once it took.
+  { name: "J4 Expired sign-in: Sign in… resends on its own", run: async () => {
+    await ui.open("signedout");
+    await ui.clickUntil("button", /Fix the flaky export test/, undefined, "SignedOut");
+    await ui.click("button", "Sign in…");
+    await ui.seeText("Got it: now run the whole suite");
+    await ui.tags("SignedOut", 0);
+  } },
+  { name: "J4 Expired sign-in: a sign-in that didn't take offers Try again", run: async () => {
+    await ui.open("signedout&signin=fail");
+    await ui.clickUntil("button", /Fix the flaky export test/, undefined, "SignedOut");
+    await ui.click("button", "Sign in…");
+    await ui.seeText("Still signed out");
+    await ui.tags("SignedOut", 1);
+    await ui.click("button", "Try again");
+    await ui.seeText("Got it: now run the whole suite");
+    await ui.tags("SignedOut", 0);
+  } },
   { name: "J3 Expired sign-in waits in the needs-you queue", run: async () => {
     await ui.open("signedout");
     await ui.tags("SignInWaiting", 1);
@@ -863,7 +1019,7 @@ const flows: Flow[] = [
     await ui.click("button", "Already signed in", '[data-mr="SignInWaiting"]');
     await ui.tags("SignInWaiting", 0);
   } },
-  { name: "Keys: ⌘T toggles a session's terminal", run: async () => {
+  { name: "Keys: ⌘T toggles a session's terminal", macOnly: "Chromium keeps Ctrl+T for a new tab", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
     await ui.see("button", key("T", "Open in terminal"));
@@ -905,8 +1061,9 @@ const flows: Flow[] = [
 const only = process.argv[2];
 const picked = flows.filter((f) => !only || f.name.includes(only));
 mkdirSync(SHOTS, { recursive: true });
-let failed = 0;
+let failed = 0, skipped = 0;
 for (const f of picked) {
+  if (f.macOnly && process.platform !== "darwin") { skipped++; console.log(`SKIP  ${f.name}  (macOS only: ${f.macOnly})`); continue; }
   const t = Date.now();
   try {
     await f.run();
@@ -918,5 +1075,5 @@ for (const f of picked) {
     console.log(`FAIL  ${f.name}\n      ${(e as Error).message}\n      screenshot: ${shot}`);
   }
 }
-console.log(`\n${picked.length - failed}/${picked.length} flows passed`);
+console.log(`\n${picked.length - failed - skipped}/${picked.length - skipped} flows passed${skipped ? `, ${skipped} skipped (macOS only)` : ""}`);
 process.exit(failed ? 1 : 0);

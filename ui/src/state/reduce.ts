@@ -32,12 +32,13 @@ export const initialState: AppState = {
   lastBuildAt: null,
   selfbuild: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
+  overviewLayout: {},
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null,
   };
 }
 
@@ -106,7 +107,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     // Its sessions become read-only history in Personal's archive; their Claude history went with the workspace.
     const id = String(p.id), name = String(p.name ?? "workspace");
     const sessions = Object.fromEntries(Object.entries(next.sessions).map(([k, s]) => [k, s.workspace === id ? { ...s, workspace: "personal", archivedAt: s.archivedAt ?? ev.created_at, fromDeleted: name, pending: [], status: s.status === "ended" || s.status === "error" ? s.status : "ended" as const } : s]));
-    return { ...next, sessions, workspaces: next.workspaces.filter((w) => w.id !== id) };
+    const { [id]: _, ...overviewLayout } = next.overviewLayout;
+    return { ...next, sessions, workspaces: next.workspaces.filter((w) => w.id !== id), overviewLayout };
   }
   if (ev.kind === "ui.workspace_folder_set") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, folder: (p.folder as string) ?? null } : w)) };
   if (ev.kind === "ui.workspace_renamed") return { ...next, workspaces: next.workspaces.map((w) => (w.id === p.id ? { ...w, name: String(p.name) } : w)) };
@@ -116,6 +118,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const rank = (id: string) => { const i = order.indexOf(id); return i < 0 ? order.length : i; };
     return { ...next, workspaces: [...next.workspaces].sort((a, b) => rank(a.id) - rank(b.id)) };
   }
+  // A workspace dragged on the Overview canvas (decision 40): its rectangle's top-left, in canvas units.
+  if (ev.kind === "ui.overview_tidied") return { ...next, overviewLayout: {} };
+  if (ev.kind === "ui.overview_moved") return Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)) ? { ...next, overviewLayout: { ...next.overviewLayout, [String(p.workspace)]: { x: Number(p.x), y: Number(p.y) } } } : next;
   if (ev.kind === "ui.look_set") return { ...next, look: { scale: Number(p.scale ?? next.look.scale) || 1, density: (["compact", "default", "roomy"].includes(String(p.density)) ? p.density : next.look.density) as AppState["look"]["density"] } };
   if (ev.kind === "ui.cockpit_layer_set") return { ...next, cockpitLayer: p.on === true };
   if (ev.kind === "cockpit.usage") {
@@ -224,7 +229,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       break;
     case "ui.message_sent":
       s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending", ...attached(p) }];
-      if (s.review?.publish && String(p.text).trim() === "publish") s.review = { ...s.review, published: true };
+      if (s.review?.publish && /^publish( and approve)?$/.test(String(p.text).trim())) s.review = { ...s.review, published: true, approved: String(p.text).trim() === "publish and approve" };
       s.status = "working";
       break;
     case "ui.run_started":
@@ -267,6 +272,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     case "flow.review_overview":
     case "flow.review_snippet":
     case "flow.review_publish_ready":
+    case "flow.review_unchanged":
     case "ui.review_noted":
     case "ui.review_unnoted":
       s.review = reviewStep(s.review, ev.kind, p);
@@ -485,6 +491,7 @@ function reviewStep(r: SessionState["review"], kind: string, p: Record<string, u
   if (kind === "flow.review_overview") return { ...f, overview: p as never };
   if (kind === "flow.review_snippet") { const n = Number(p.n ?? 0); return { ...f, snippets: { ...f.snippets, [n]: { ...(p as object), n } as never }, current: n }; }
   if (kind === "flow.review_publish_ready") return { ...f, publish: p as never, current: null };
+  if (kind === "flow.review_unchanged") return { ...f, unchanged: p as never };
   if (kind === "ui.review_noted") { const id = String(p.finding_id); return { ...f, noted: f.noted.includes(id) ? f.noted : [...f.noted, id] }; }
   if (kind === "ui.review_unnoted") { const id = String(p.finding_id); return { ...f, noted: f.noted.filter((x) => x !== id) }; }
   return f;

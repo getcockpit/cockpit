@@ -9,7 +9,7 @@ import { summarizeTool } from "../picker/toolSummary";
 import { editCard, isCard, isCheck } from "../picker/logCards";
 import { CheckList, EditSnippet, StepSummary } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
-import { api } from "../state/store";
+import { api, hydrate } from "../state/store";
 import type { AppState, Attachment, CommandRow, Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
 import { docApi, isOpenQuestion, type Doc } from "../state/docs";
 import { AskRow, DocQuestionRow } from "./AskRow";
@@ -74,6 +74,8 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   // A new ask or question glides into view: it sits below the transcript's own end.
   const needsRef = useRef<HTMLDivElement>(null);
   const needsCount = s.pending.length + openQuestions.length;
+  // An archived session came without its transcript (MR-162): load it now.
+  useEffect(() => { if (s.partial) hydrate(s.id); }, [s.id, s.partial]);
   useEffect(() => { if (needsCount) needsRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [needsCount]);
   // A turn is in flight: only then does interrupting mean anything (F9).
   const running = s.status === "working" || s.status === "starting";
@@ -130,13 +132,16 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   const [headH, setHeadH] = useState(0);
   useEffect(() => {
     if (!head.current) return;
+    // Measured once now too: a ResizeObserver can wait for the first painted frame (a background
+    // window draws none), and until then scrolling into view would stop under the header.
+    setHeadH(Math.ceil(head.current.getBoundingClientRect().height));
     const ro = new ResizeObserver(([e]) => setHeadH(Math.ceil(e.target.getBoundingClientRect().height)));
     ro.observe(head.current);
     return () => ro.disconnect();
   }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100%", ["--mr-focus-head" as string]: `${headH + 16}px` }}>
+    <div className="mr-focus-root" style={{ display: "flex", flexDirection: "column", minHeight: "100%", ["--mr-focus-head" as string]: `${headH + 16}px` }}>
       {/* Sticky: the transcript scrolls under it, so state and actions are always in reach. */}
       <header ref={head} className="mr-band" style={{ padding: "12px 24px 0", display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 0, zIndex: 5 }}>
         <div className="mr-row" style={{ gap: 14 }}>
@@ -162,6 +167,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
           {!s.fromDeleted && !elsewhere && <MoveWorkspace s={s} workspaces={workspaces} running={running} />}
           {!s.fromDeleted && <ModelPicker s={s} models={models} />}
           {running && <Key k="⌘." onClick={() => void api.interrupt(s.id)}>Interrupt</Key>}
+          {s.partial && <span data-mr="HistoryLoading" data-mr-source={s.id} className="mr-dim">Loading history…</span>}
           {s.archivedAt
             ? <Key onClick={() => void api.log("ui.session_unarchived", {}, s.id)}>Archived · restore</Key>
             : <Key k="⌘⇧D" tone={finished && !reviewing && !(isFix && !s.fixApplied) ? "primary" : undefined} onClick={onDone}>{finished ? "Mark done" : "Stop & mark done"}</Key>}

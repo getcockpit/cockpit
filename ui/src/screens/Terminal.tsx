@@ -1,5 +1,6 @@
 import { shortError } from "../components/ErrorLine";
-import { useEffect, useRef } from "react";
+import { Key } from "../components";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "../state/listen";
 import { Terminal as XTerm } from "@xterm/xterm";
@@ -46,9 +47,29 @@ export function TerminalPane({ s, command, onExit }: { s: SessionState; command?
     hint={<>Real claude for this conversation. Type <b className="mr-mono">/exit</b> to hand it back to the app.</>} />;
 }
 
-// Sign a new workspace in once (decision 24): an interactive claude in that workspace's config.
+// Sign a workspace in (decision 24): Claude Code's own `claude auth login` in that workspace's
+// config. It opens the browser and exits by itself; then the sign-in is checked, and `onExit`
+// runs only once it took. Otherwise it offers to try again, right here.
 export function SignInPane({ workspace, onExit }: { workspace: string; onExit: () => void }) {
-  return <XTermView termKey={`login:${workspace}`} onExit={onExit}
-    open={(cols, rows) => invoke("workspace_sign_in", { id: workspace, cols, rows })}
-    hint={<>Type <b className="mr-mono">/login</b> and follow the browser sign-in, then <b className="mr-mono">/exit</b>.{workspace === "personal" ? " This is the official claude app; the sign-in happens in your browser." : " This workspace keeps its own memory and history."}</>} />;
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<"open" | "checking" | "failed">("open");
+  const open = useCallback((cols: number, rows: number) => invoke("workspace_sign_in", { id: workspace, cols, rows }), [workspace]);
+  // A ref, not a dependency: a new onExit each render must not reopen the terminal.
+  const done = useRef(onExit);
+  done.current = onExit;
+  const exited = useCallback(() => {
+    setState("checking");
+    invoke<boolean>("workspace_auth_status", { id: workspace }).then((ok) => (ok ? done.current() : setState("failed")), () => setState("failed"));
+  }, [workspace]);
+  if (state !== "open") return (
+    <div className="mr-qrow" data-mr="SignInResult" data-mr-source={`workspace:${workspace}`}><div className="mr-flag" style={{ background: state === "failed" ? "var(--mr-needs)" : "var(--mr-selected)" }} /><div className="mr-qbody">
+      {state === "checking" ? <span>Checking the sign-in…</span> : <>
+        <strong style={{ color: "var(--mr-needs)" }}>Still signed out</strong>
+        <span>The sign-in didn't finish. Nothing was sent.</span>
+        <span className="mr-row"><Key tone="primary" onClick={() => { setAttempt((n) => n + 1); setState("open"); }}>Try again</Key></span>
+      </>}
+    </div></div>
+  );
+  return <XTermView key={attempt} termKey={`login:${workspace}`} onExit={exited} open={open}
+    hint={<>Your browser opens on Claude's sign-in page; this closes by itself once you're signed in.{workspace === "personal" ? " This is the official claude app: the app never sees your password or tokens." : " This workspace keeps its own memory and history."}</>} />;
 }

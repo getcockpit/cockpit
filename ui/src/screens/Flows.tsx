@@ -51,10 +51,13 @@ export function ReviewView({ s }: { s: SessionState }) {
   };
   const next = () => { if (asked !== null || !snip) return; setAsked(snip.n + 1); reply("next"); };
   const back = () => setViewing(null);
+  // "Approve on my behalf" (off by default): Publish then submits the review as an approval.
+  const [approve, setApprove] = useState(false);
+  const publish = () => reply(approve ? "publish and approve" : "publish");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (keyOf(e) === "Enter" && modKey(e) && r.publish && !r.published) { e.preventDefault(); reply("publish"); return; }
+      if (keyOf(e) === "Enter" && modKey(e) && r.publish && !r.published) { e.preventDefault(); publish(); return; }
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || modKey(e)) return;
       if (keyOf(e) === " " && snip) { e.preventDefault(); if (live) next(); else back(); }
       if (keyOf(e) === "ArrowLeft" && shownN !== null) { e.preventDefault(); go(shownN - 1); }
@@ -110,18 +113,41 @@ export function ReviewView({ s }: { s: SessionState }) {
 
       {(r.publish || noted.length > 0) && (
         <section style={{ display: "flex", flexDirection: "column", gap: 8, padding: "14px 16px", background: "var(--mr-tile)" }}>
-          <strong>{r.published ? "✓ Published" : "Your review"}{r.publish?.verdict ? ` · ${r.publish.verdict}` : ""}</strong>
+          <strong>{r.published ? (r.approved ? "✓ Published · approved" : "✓ Published") : "Your review"}{r.publish?.verdict ? ` · ${r.publish.verdict}` : ""}</strong>
           {(r.publish?.comments ?? noted).map((c, i) => (
             <div key={i} className="mr-row" style={{ alignItems: "baseline", gap: 10 }}><SevBars severity={c.severity} /><span className="mr-grow">{c.text}{c.at && <span className="mr-mono mr-dim"> · {c.at}</span>}</span></div>
           ))}
           {r.publish?.dropped ? <span className="mr-dim">{r.publish.dropped} dropped as duplicates of earlier threads</span> : null}
-          {r.publish && !r.published && <Key k="⌘↵" tone="primary" onClick={() => reply("publish")}>Publish as one review</Key>}
-          {r.published && <span className="mr-dim">Posted to the PR as one review. {keyLabel("Mark this session done (⌘⇧D) to clear it from the wall.")}</span>}
+          {r.publish && !r.published && (
+            <div className="mr-row" style={{ gap: 10 }}>
+              <Key k="⌘↵" tone="primary" onClick={publish}>{approve ? "Publish and approve" : "Publish as one review"}</Key>
+              <label className="mr-row" data-mr="ReviewApprove" data-mr-source={s.id} style={{ gap: 6, cursor: "pointer" }}>
+                <input type="checkbox" checked={approve} onChange={(e) => setApprove(e.target.checked)} />
+                Approve on my behalf
+              </label>
+            </div>
+          )}
+          {r.published && <span className="mr-dim">{r.approved ? "Posted to the PR as one review and approved it." : "Posted to the PR as one review."} {keyLabel("Mark this session done (⌘⇧D) to clear it from the wall.")}</span>}
         </section>
       )}
-      {!o && !snip && <span className="mr-dim">The review is starting. The overview appears here when it's ready.</span>}
+      {r.unchanged && !o && !snip && <Unchanged u={r.unchanged} source={s.id} onReply={reply} />}
+      {!o && !snip && !r.unchanged && <span className="mr-dim">The review is starting. The overview appears here when it's ready.</span>}
       <FlowChat s={s} />
     </div>
+  );
+}
+
+// Nothing new on the PR since your last review: the review is skipped, unless you ask for it anyway.
+export function Unchanged({ u, source, onReply }: { u: NonNullable<SessionState["review"]>["unchanged"] & object; source: string; onReply: (text: string) => void }) {
+  const when = u.last_review_at && !Number.isNaN(Date.parse(u.last_review_at)) ? new Date(u.last_review_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : null;
+  const state = u.last_review_state ? u.last_review_state.toLowerCase().replace(/_/g, " ") : null;
+  return (
+    <section data-mr="ReviewUnchanged" data-mr-source={source} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "14px 16px", background: "var(--mr-tile)" }}>
+      <strong>Nothing new since your last review{u.pr ? ` of ${u.pr}` : ""}</strong>
+      {u.title && <span className="mr-ink2">{u.title}</span>}
+      <span className="mr-dim">{[when && `You reviewed it ${when}`, state, u.checked].filter(Boolean).join(" · ") || "No commits, comments or replies since you reviewed it."} · Review skipped.</span>
+      <div className="mr-row"><Key k="↵" onClick={() => onReply("review anyway")}>Review anyway</Key><span className="mr-dim">{keyLabel("Or mark this session done (⌘⇧D) to clear it from the wall.")}</span></div>
+    </section>
   );
 }
 
@@ -272,7 +298,7 @@ export function AddressView({ s }: { s: SessionState }) {
 
 // The flow's own button replies (next, note f1, Option 2: …) drive the visuals above; anything else
 // you type is a question, so it and Claude's answer show here instead of vanishing.
-const CONTROL = /^(ok|next|publish|(un)?note \S+|snippet \d+|(Thread \S+ · )?Option [^:]+: .*|Add this to the review as a comment: [\s\S]*|Remove this from the review: [\s\S]*)$/i;
+const CONTROL = /^(ok|next|publish( and approve)?|review anyway|(un)?note \S+|snippet \d+|(Thread \S+ · )?Option [^:]+: .*|Add this to the review as a comment: [\s\S]*|Remove this from the review: [\s\S]*)$/i;
 
 export type Exchange = { ask: Extract<TranscriptItem, { kind: "user" }>; answer: Extract<TranscriptItem, { kind: "text" | "view" }>[] };
 

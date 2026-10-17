@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { appKey, focusKey, isTyping, keyOf, type KeyEv } from "./keys";
+import { appKey, focusKey, isTyping, keyOf, overviewKey, type KeyEv } from "./keys";
 import { sendsOnEnter } from "./autoGrow";
 import { setMac } from "../platform";
 
@@ -69,6 +69,14 @@ describe("app-wide shortcuts", () => {
       expect(appKey(ev("4", mod), wall)).toBeNull();
       expect(appKey(ev("1", { ...mod, shiftKey: true }), wall)).toBeNull();
       expect(appKey(ev("1", mod), { ...wall, dialog: true })).toBeNull();
+    });
+    it(`${name}0 opens the Overview of every workspace, unless a dialog is open`, () => {
+      setMac(mac);
+      expect(appKey(ev("0", mod), wall)).toEqual({ do: "overview" });
+      expect(appKey(ev("0", mod), { ...wall, screen: "focus" })).toEqual({ do: "overview" });
+      expect(appKey(ev("0", { ...mod, shiftKey: true }), wall)).toBeNull();
+      expect(appKey(ev("0", mod), { ...wall, dialog: true })).toBeNull();
+      expect(appKey(ev("0"), wall)).toBeNull();
     });
     it(`${name} overlays still open from a text field and over a dialog`, () => {
       setMac(mac);
@@ -149,5 +157,42 @@ describe("session (Focus) shortcuts", () => {
     expect(focusKey(ev("r", { ctrlKey: true, target: inTerminal }), idle)).toBeNull();
     expect(focusKey(ev("t", { ctrlKey: true, target: inTerminal }), idle)).toBeNull();
     expect(focusKey(ev("d", { ctrlKey: true, shiftKey: true, target: inTerminal }), idle)).toEqual({ do: "done" });
+  });
+});
+
+describe("overviewKey (decision 40)", () => {
+  const k = (key: string, code = "", mods: Partial<{ metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }> = {}, target: EventTarget | null = null) =>
+    ({ key, code, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, target, ...mods });
+  it("+ and = zoom in, - zooms out", () => {
+    expect(overviewKey(k("+", "Equal", { shiftKey: true }), { dialog: false })).toEqual({ do: "zoom", by: 1.25 });
+    expect(overviewKey(k("=", "Equal"), { dialog: false })).toEqual({ do: "zoom", by: 1.25 });
+    expect(overviewKey(k("-", "Minus"), { dialog: false })).toEqual({ do: "zoom", by: 0.8 });
+  });
+  it("arrows pan the canvas the way they point, further with shift", () => {
+    expect(overviewKey(k("ArrowRight", "ArrowRight"), { dialog: false })).toEqual({ do: "pan", dx: -80, dy: 0 });
+    expect(overviewKey(k("ArrowUp", "ArrowUp", { shiftKey: true }), { dialog: false })).toEqual({ do: "pan", dx: 0, dy: 400 });
+  });
+  it("/ opens find on the canvas, but not while typing (the find box itself)", () => {
+    expect(overviewKey(k("/", "Slash"), { dialog: false })).toEqual({ do: "find" });
+    expect(overviewKey(k("/", "Slash", {}, { tagName: "INPUT" } as unknown as EventTarget), { dialog: false })).toBeNull();
+  });
+  it("Esc goes back to the workspace, unless a dialog owns it", () => {
+    expect(overviewKey(k("Escape", "Escape"), { dialog: false })).toEqual({ do: "back" });
+    expect(overviewKey(k("Escape", "Escape"), { dialog: true })).toBeNull();
+  });
+  it("leaves a key alone once something handled it, or while a menu is open (Esc closes the menu, not the Overview)", () => {
+    expect(overviewKey({ ...k("Escape", "Escape"), defaultPrevented: true }, { dialog: false })).toBeNull();
+    expect(overviewKey(k("Escape", "Escape"), { dialog: false, menu: true })).toBeNull();
+    expect(overviewKey(k("ArrowUp", "ArrowUp"), { dialog: false, menu: true })).toBeNull();
+  });
+  it("reads − and + from the character, so a German layout's \"-\" (on the Slash key) zooms out", () => {
+    expect(overviewKey(k("-", "Slash"), { dialog: false })).toEqual({ do: "zoom", by: 0.8 });
+    expect(overviewKey(k("+", "BracketRight"), { dialog: false })).toEqual({ do: "zoom", by: 1.25 });
+  });
+  it("leaves ⌘ combos, typing and open dialogs alone", () => {
+    expect(overviewKey(k("=", "Equal", { metaKey: true }), { dialog: false })).toBeNull();
+    expect(overviewKey(k("-", "Minus"), { dialog: true })).toBeNull();
+    expect(overviewKey(k("ArrowLeft", "ArrowLeft", {}, { tagName: "INPUT" } as unknown as EventTarget), { dialog: false })).toBeNull();
+    expect(overviewKey(k("a", "KeyA"), { dialog: false })).toBeNull();
   });
 });

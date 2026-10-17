@@ -18,6 +18,7 @@ import { Focus } from "./screens/Focus";
 import { StartPicker } from "./screens/StartPicker";
 import { DocMap } from "./screens/DocMap";
 import { Wall } from "./screens/Wall";
+import { markWorkspaceSeen, Overview, seenScope } from "./screens/Overview";
 import { Timeline } from "./screens/Timeline";
 import { GodMode } from "./screens/GodMode";
 import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
@@ -89,13 +90,32 @@ export default function App() {
   }, [all, workspace]);
   const docs = useMemo(() => allDocs.filter((d) => (d.session_id ? all.sessions[d.session_id]?.workspace === workspace : workspace === "personal")), [allDocs, all, workspace]);
   const [focus, setFocusNow] = useState<string | null>(null);
+  // The Overview of every workspace (decision 40): where launch lands once the log has loaded, when
+  // there's more than one workspace to see (null: not decided yet). ?landing=wall skips it (e2e flows).
+  const [overview, setOverviewNow] = useState<boolean | null>(null);
+  const [fitSignal, setFitSignal] = useState(0);
+  useEffect(() => {
+    if (overview !== null || all.lastEventId === null) return;
+    const skip = new URLSearchParams(location.search).get("landing") === "wall";
+    setOverviewNow(!skip && all.workspaces.length > 1);
+  }, [all.lastEventId]);
   const [docId, setDocIdNow] = useState<string | null>(null);
   // Screen changes morph (MR-67): opening something goes deeper, closing it comes back.
-  const setFocus = (id: string | null) => navigate(id ? "deeper" : "back", () => setFocusNow(id));
+  // Leaving a view: what was on screen isn't news on the Overview later. The Wall shows the whole
+  // workspace; a session or a doc only itself (a session changing behind another one still counts).
+  // The Wall counts as looked at only after a moment on screen (seenScope): Esc then ⌘0 passes through.
+  const wallSince = useRef(Date.now());
+  const onWall = !overview && !focus && !docId;
+  useEffect(() => { if (onWall) wallSince.current = Date.now(); }, [onWall, workspace]);
+  const leaveView = () => {
+    const scope = seenScope({ overview: !!overview, focus, docId, wallSince: wallSince.current, now: Date.now() });
+    if (scope !== "none") markWorkspaceSeen(all, allDocs, workspace, scope === "all" ? undefined : scope);
+  };
+  const setFocus = (id: string | null) => { leaveView(); navigate(id ? "deeper" : "back", () => setFocusNow(id)); };
   const allRef = useRef(all);
   allRef.current = all;
-  useEffect(() => listenSelftest((id) => { setWorkspace(allRef.current.sessions[id]?.workspace ?? "personal"); setFocusNow(id); }), []);
-  const setDocId = (id: string | null) => navigate(id ? "deeper" : "back", () => setDocIdNow(id));
+  useEffect(() => listenSelftest((id) => { setOverviewNow(false); setWorkspace(allRef.current.sessions[id]?.workspace ?? "personal"); setFocusNow(id); }), []);
+  const setDocId = (id: string | null) => { leaveView(); navigate(id ? "deeper" : "back", () => setDocIdNow(id)); };
   // Each workspace remembers where you were (wall, a session or a doc), so switching back is a return, not a restart.
   const views = useRef<Record<string, { focus: string | null; docId: string | null }>>({});
   const [switcher, setSwitcher] = useState(false);
@@ -106,16 +126,26 @@ export default function App() {
   // The open session moved to another workspace (MR-154): follow it there.
   const movedTo = focus ? all.sessions[focus]?.workspace : undefined;
   useEffect(() => { if (movedTo && movedTo !== workspace) { views.current[workspace] = { focus: null, docId: null }; setWorkspace(movedTo); } }, [movedTo]);
+  // From the Overview this goes into the workspace, landing where you left it (I36).
+  // Leaving a workspace for another or for the Overview: what you saw there isn't news later.
   const switchTo = (id: string) => {
-    if (id === workspace) return;
+    if (id !== workspace) leaveView();
+    if (id === workspace) { if (overview) navigate("deeper", () => setOverviewNow(false)); return; }
     views.current[workspace] = { focus, docId };
     const back = views.current[id] ?? { focus: null, docId: null };
-    navigate("side", () => {
+    navigate(overview ? "deeper" : "side", () => {
       setFocusNow(back.focus && all.sessions[back.focus]?.workspace === id ? back.focus : null);
       setDocIdNow(back.docId);
       setWorkspace(id);
+      setOverviewNow(false);
     });
   };
+  // An item on the Overview opens that session or doc inside its workspace.
+  const openIn = (ws: string, session: string | null, doc: string | null) => {
+    if (ws !== workspace) views.current[workspace] = { focus, docId };
+    navigate("deeper", () => { setWorkspace(ws); setFocusNow(session); setDocIdNow(doc); setOverviewNow(false); });
+  };
+  const toOverview = () => { if (overview) setFitSignal((n) => n + 1); else { leaveView(); navigate("back", () => setOverviewNow(true)); } };
   const [picker, setPicker] = useState(false);
   const [god, setGod] = useState(false);
   const [builds, setBuilds] = useState<string | null>(null); // worktree to build, "" = app repo
@@ -137,12 +167,13 @@ export default function App() {
     void w.unminimize().then(() => w.show()).then(() => w.setFocus()).catch(() => {});
     setPicker(false); setArchive(false); setSettings(false); setGod(false); setBuilds(null);
     views.current[workspace] = { focus, docId };
-    navigate("deeper", () => { setWorkspace(t.workspace); setDocIdNow(t.doc); setFocusNow(t.session); });
+    leaveView();
+    navigate("deeper", () => { setOverviewNow(false); setWorkspace(t.workspace); setDocIdNow(t.doc); setFocusNow(t.session); });
   });
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const a = appKey(e, { workspaces: all.workspaces.length, screen: docId ? "doc" : focus ? "focus" : "wall", dialog: !!document.querySelector('[role="dialog"]') });
+      const a = appKey(e, { workspaces: all.workspaces.length, screen: overview ? "overview" : docId ? "doc" : focus ? "focus" : "wall", dialog: !!document.querySelector('[role="dialog"]') });
       if (!a) return;
       e.preventDefault();
       if (a.do === "picker") setPicker(true);
@@ -157,13 +188,14 @@ export default function App() {
         switchTo(all.workspaces[(i + a.by + all.workspaces.length) % all.workspaces.length].id);
       }
       else if (a.do === "switcher") setSwitcher((x) => !x);
+      else if (a.do === "overview") toOverview();
       else if (a.do === "wallView") setWallView(wallView === "wall" ? "timeline" : "wall");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const view = docId ? "doc map" : focus ? "focus" : wallView;
+  const view = overview ? "overview" : docId ? "doc map" : focus ? "focus" : wallView;
   // Feature usage (MR-83): the main screen first, then every open overlay.
   useEffect(() => installUsage(), []);
   useViews([view, picker && "start picker", settings && "settings", god && "god mode", archive && "archive", builds !== null && "builds", switcher && "workspace switcher", signIn && "sign in", deleting && "delete workspace", intro && "intro"].filter((v): v is string => typeof v === "string"));
@@ -178,7 +210,7 @@ export default function App() {
     if (focus && state.sessions[focus]) return { session: focus, label: label(focus) };
     return null;
   };
-  const tabs = <WorkspaceTabs state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onSwitcher={() => setSwitcher(true)} onSignIn={setSignIn} onSettings={() => setSettings(true)} />;
+  const tabs = <WorkspaceTabs state={all} docs={allDocs} active={overview ? "" : workspace} overviewOn={!!overview} onOverview={toOverview} onSwitch={switchTo} onSwitcher={() => setSwitcher(true)} onSignIn={setSignIn} onSettings={() => setSettings(true)} />;
   const signInPanel = signIn && (
     <div role="dialog" aria-label="Sign in to workspace" className="mr-scrim" style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "80px 24px", background: "rgba(21,24,27,.35)", zIndex: 30 }}>
       <div className="mr-sheet" style={{ width: "100%", maxWidth: 900, padding: 16, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -218,6 +250,7 @@ export default function App() {
       <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>
       {godmode}{voice}<Presence show={!!intro}>{intro}</Presence>{permPrompt}
     </>;
+  if (overview) return shell(<ErrorBoundary key="overview" name="overview"><div className="mr-zoom-in" style={{ height: "100%" }}><Overview state={all} docs={allDocs} fitSignal={fitSignal} onBack={() => switchTo(workspace)} onOpenWorkspace={switchTo} onOpenSession={(ws, id) => openIn(ws, id, null)} onOpenDoc={(ws, id) => openIn(ws, null, id)} /></div></ErrorBoundary>, overlays);
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;

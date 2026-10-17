@@ -174,7 +174,10 @@ fn origin_matches(dir: &std::path::Path, slug: &str) -> bool {
 pub fn find_clone(home: &std::path::Path, slug: &str, extra: &[String]) -> Option<String> {
     let (owner, name) = slug.split_once('/')?;
     let mut cands: Vec<std::path::PathBuf> = ["go/github.com", "go/src/github.com", "github.com", "src/github.com", "code", "src", "dev", "projects", "Developer", "repos", "git", "work"]
-        .iter().flat_map(|b| [home.join(b).join(owner).join(name), home.join(b).join(name)]).collect();
+        .iter()
+        // Each part joined on its own: "go/github.com" as one part keeps its "/" on Windows.
+        .map(|b| b.split('/').fold(home.to_path_buf(), |p, c| p.join(c)))
+        .flat_map(|b| [b.join(owner).join(name), b.join(name)]).collect();
     cands.push(home.join(name));
     cands.extend(extra.iter().map(std::path::PathBuf::from));
     cands.into_iter().find(|d| d.is_dir() && origin_matches(d, slug)).map(|d| d.display().to_string())
@@ -185,7 +188,8 @@ pub fn find_clone(home: &std::path::Path, slug: &str, extra: &[String]) -> Optio
 #[tauri::command(async)]
 pub fn pr_repo(spec: String) -> Option<String> {
     let slug = repo_slug(&spec)?;
-    let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    // Windows has no HOME: the profile folder is the same place.
+    let home = std::path::PathBuf::from(std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default());
     let recent: Vec<String> = crate::folders::recent_folders().into_iter().map(|f| f.path).collect();
     find_clone(&home, &slug, &recent)
 }

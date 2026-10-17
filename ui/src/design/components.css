@@ -21,6 +21,8 @@
 .mr-key { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font-weight: 700; cursor: pointer; transition: filter var(--mr-fast); white-space: nowrap; }
 .mr-key:hover { filter: brightness(0.95); }
 .mr-key:disabled { opacity: .5; cursor: default; }
+/* A one-of choice (the /mcp add form): the picked key is teal, the selected colour. */
+[data-mr="McpAddServer"] .mr-key[aria-pressed="true"] { box-shadow: inset 0 -3px 0 var(--mr-selected); }
 /* Every press answers (MR-58): it visibly sinks, and keyboard focus shows a ring. */
 .mr-key:active:not(:disabled), .mr-link:active, .mr-press:active { transform: translateY(1px); filter: brightness(0.85); }
 .mr-key:focus-visible, .mr-link:focus-visible, button:focus-visible { outline: 2px solid var(--mr-selected); outline-offset: 2px; }
@@ -143,3 +145,21 @@ textarea.mr-input { display: block; padding: 10px 12px; line-height: 1.4; resize
 .mr-view-block:hover .mr-view-actions, .mr-view-actions:focus-within { opacity: 1; }
 /* A message box with files dragged over it: they land here when let go. */
 .mr-input[data-mr-drop] { box-shadow: inset 0 0 0 2px var(--mr-selected); background: var(--mr-well); }
+/* The Overview canvas (decision 40): blocks and rectangles answer the pointer; the camera glides on
+   buttons and keys, never under a wheel or a drag. */
+.mr-ov-block:hover { filter: brightness(0.93); }
+/* Needs-you edge lives here, not inline, so the hover ring can add to it (an inline shadow beat :hover). */
+.mr-ov-area[data-needs] { box-shadow: inset calc(4px / var(--mr-ov-z, 1)) 0 0 var(--mr-needs); }
+/* Rings are drawn inside (the rectangle clips anything outside) and divided by the zoom (--mr-ov-z on
+   the camera), so they stay 2 px on screen at any zoom instead of thinning to nothing far out. */
+.mr-ov-area:hover { box-shadow: inset 0 0 0 calc(2px / var(--mr-ov-z, 1)) var(--mr-ink-3); }
+.mr-ov-area[data-needs]:hover { box-shadow: inset calc(4px / var(--mr-ov-z, 1)) 0 0 var(--mr-needs), inset 0 0 0 calc(2px / var(--mr-ov-z, 1)) var(--mr-ink-3); }
+.mr-ov-cam button:focus-visible { outline: calc(2px / var(--mr-ov-z, 1)) solid var(--mr-selected); outline-offset: calc(-2px / var(--mr-ov-z, 1)); }
+.mr-ov-cam[data-glide] { transition: transform 220ms var(--mr-ease); }
+@media (prefers-reduced-motion: reduce) { .mr-ov-cam[data-glide] { transition: none; } }
+/* A session's transcript scrolls under its sticky header: whatever is scrolled into view (Tab focus,
+   find, a jump to a message) stops below the header instead of hiding behind it. */
+.mr-focus-root :where(*) { scroll-margin-top: var(--mr-focus-head, 0px); }
+/* Find on the Overview: what doesn't match fades back; the hit you're on is ringed. */
+.mr-ov-area[data-dim], .mr-ov-block[data-dim] { opacity: .35; }
+.mr-ov-block[data-current], .mr-ov-area[data-current] { outline: calc(3px / var(--mr-ov-z, 1)) solid var(--mr-selected); outline-offset: calc(-3px / var(--mr-ov-z, 1)); }

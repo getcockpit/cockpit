@@ -295,6 +295,10 @@ test("a review is over once you publish it", () => {
   const after = replay([...base, ev("R4", "ui.message_sent", { text: "publish" }), ev("R5", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } })]);
   expect(after.sessions.r.review?.published).toBe(true);
   expect(pickTile(after.sessions.r).state).not.toBe("needs_you");
+  expect(after.sessions.r.review?.approved).toBe(false);
+  const approved = replay([...base, ev("R4", "ui.message_sent", { text: "publish and approve" })]);
+  expect(approved.sessions.r.review?.published).toBe(true);
+  expect(approved.sessions.r.review?.approved).toBe(true);
 });
 
 test("a bug report's fix waits in the queue until applied, then asks for a rebuild until one succeeds", async () => {

@@ -19,13 +19,13 @@ export function isTyping(t: EventTarget | null): boolean {
 }
 
 export type AppKey =
-  | { do: "picker" | "god" | "settings" | "archive" | "update" | "builds" | "switcher" | "wallView" }
+  | { do: "picker" | "god" | "settings" | "archive" | "update" | "builds" | "switcher" | "wallView" | "overview" }
   | { do: "workspace"; index: number }
   | { do: "cycle"; by: 1 | -1 };
 
 /** The app-wide shortcuts (App.tsx), as one decision so each is unit-tested on both platforms.
  *  `dialog`: an overlay owns the keyboard; it blocks workspace switching and T, not ⌘K ⌘, ⌘J etc. */
-export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "focus" | "doc"; dialog: boolean }): AppKey | null {
+export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "focus" | "doc" | "overview"; dialog: boolean }): AppKey | null {
   const k = keyOf(e), mod = modKey(e);
   if (mod && k === "k") return { do: "picker" };
   if (mod && e.shiftKey && k === "g") return { do: "god" };
@@ -33,12 +33,35 @@ export function appKey(e: KeyEv, at: { workspaces: number; screen: "wall" | "foc
   if (mod && e.shiftKey && k === "a") return { do: "archive" };
   // ⌘⇧B updates the app from main (decision 27); ⌘⌥⇧B still opens the build history.
   if (mod && e.shiftKey && k === "b") return { do: e.altKey ? "builds" : "update" };
+  // ⌘0: the Overview of every workspace (decision 40); again on it fits everything in view.
+  if (mod && k === "0" && !e.shiftKey && !e.altKey) return at.dialog ? null : { do: "overview" };
   if (mod && /^[1-9]$/.test(k) && !e.shiftKey) return Number(k) <= at.workspaces && !at.dialog ? { do: "workspace", index: Number(k) - 1 } : null;
   // ⌃Tab / ⌃⇧Tab cycle workspaces like browser tabs; ⌘J opens the switcher (MR-55).
   if (e.ctrlKey && k === "Tab") return at.workspaces > 1 && !at.dialog ? { do: "cycle", by: e.shiftKey ? -1 : 1 } : null;
   if (mod && k === "j") return { do: "switcher" };
   // T switches Wall ↔ Timeline, only on those screens and never while typing.
   if (k === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e.target) && at.screen === "wall" && !at.dialog) return { do: "wallView" };
+  return null;
+}
+
+export type OverviewKey = { do: "zoom"; by: number } | { do: "pan"; dx: number; dy: number } | { do: "back" } | { do: "find" };
+
+/** The Overview canvas's own keys (decision 40): + and − zoom around the middle, arrows pan (⇧ pans
+ *  further), Esc goes back to the workspace you came from. Never while typing, with an overlay or a
+ *  menu open, when something already handled the key (god mode's Esc), or with ⌘/⌃ held (⌘0 and
+ *  friends stay the app's). + and − are read from the character, not the key's place: on a German
+ *  layout "-" sits where US keyboards have "/". */
+export function overviewKey(e: KeyEv & { defaultPrevented?: boolean }, at: { dialog: boolean; menu?: boolean }): OverviewKey | null {
+  if (at.dialog || at.menu || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return null;
+  const step = e.shiftKey ? 400 : 80;
+  if (e.key === "Escape") return { do: "back" };
+  if (e.key === "/") return { do: "find" }; // find on the canvas
+  if (e.key === "+" || e.key === "=") return { do: "zoom", by: 1.25 };
+  if (e.key === "-" || e.key === "_") return { do: "zoom", by: 1 / 1.25 };
+  if (e.key === "ArrowLeft") return { do: "pan", dx: step, dy: 0 };
+  if (e.key === "ArrowRight") return { do: "pan", dx: -step, dy: 0 };
+  if (e.key === "ArrowUp") return { do: "pan", dx: 0, dy: step };
+  if (e.key === "ArrowDown") return { do: "pan", dx: 0, dy: -step };
   return null;
 }
 

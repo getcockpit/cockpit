@@ -17,7 +17,7 @@ export function needsIn(state: AppState, docs: Doc[], ws: string): number {
 }
 
 // Workspace tabs (decision 24). A background tab shows how many things need you in it.
-export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSettings, onSwitcher }: { state: AppState; docs: Doc[]; active: string; onSwitch: (id: string) => void; onSignIn: (id: string) => void; onSettings: () => void; onSwitcher: () => void }) {
+export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSettings, onSwitcher, onOverview, overviewOn }: { state: AppState; docs: Doc[]; active: string; onSwitch: (id: string) => void; onSignIn: (id: string) => void; onSettings: () => void; onSwitcher: () => void; onOverview?: () => void; overviewOn?: boolean }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -147,6 +147,7 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
         <button type="button" onClick={() => setAdding(true)} aria-label="New workspace" style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>+</button>
       )}
       <span className="mr-grow" />
+      {onOverview && <button type="button" data-mr="OverviewButton" data-mr-source="overview" aria-pressed={!!overviewOn} onClick={onOverview} title="Every workspace on one canvas" style={{ padding: "6px 10px", border: 0, background: overviewOn ? "var(--mr-band)" : "transparent", color: overviewOn ? "var(--mr-ink)" : "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Overview <span className="mr-mono">{keyLabel("⌘0")}</span></button>}
       {state.workspaces.length > 1 && <button type="button" onClick={onSwitcher} title={keyLabel("Switch workspace (⌃Tab cycles)")} style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Switch <span className="mr-mono">{keyLabel("⌘J")}</span></button>}
       <button type="button" onClick={onSettings} style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Settings <span className="mr-mono">{keyLabel("⌘,")}</span></button>
     </nav>

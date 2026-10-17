@@ -4,7 +4,7 @@
 
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type { MrEvent } from "../state/types";
+import type { McpServer, MrEvent } from "../state/types";
 import type { Doc } from "../state/docs";
 import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
@@ -82,7 +82,7 @@ function scripted(sid: string, text: string): boolean {
     }
     const jump = /^snippet (\d+)$/.exec(text);
     if (jump && REVIEW_SNIPPETS[Number(jump[1]) - 1]) { later(500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[Number(jump[1]) - 1])); done("snippet"); return true; }
-    if (text === "publish") { later(500, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Published the review on PR #482." }] } })); done("published"); return true; }
+    if (text === "publish" || text === "publish and approve") { later(500, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: text === "publish" ? "Published the review on PR #482." : "Published the review on PR #482 and approved it." }] } })); done("published"); return true; }
     if (text.startsWith("note ")) { done("noted"); return true; }
     if (text === "ok") { later(1500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[0])); later(1700, () => sdk(sid, { type: "result", is_error: false, result: "snippet", total_cost_usd: 0.04 })); return true; }
     if (text.startsWith("Add this to the review") || text.startsWith("About ")) { later(900, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Added to your review." }] } })); done("ok"); return true; }
@@ -104,11 +104,14 @@ function scripted(sid: string, text: string): boolean {
 
 // ?fail=1: every call that can fail does, with the raw text real tools print (MR-52 walk).
 const FAIL = new URLSearchParams(location.search).has("fail");
+// `&signin=fail`: the first sign-in doesn't take (the browser closed), the next one does.
+let signInFails = new URLSearchParams(location.search).get("signin") === "fail" ? 1 : 0;
 const RAW: Record<string, string> = {
   gh_prs: "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.",
   session_changes: "warning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch",
   session_diff: "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'",
   recent_folders: "No such file or directory (os error 2)",
+  folder_create: "couldn't create ~/x: Permission denied (os error 13)",
   daily_driver: "database is locked",
   personal_history: "fatal: invalid reference: main\nhint: ...",
   selfbuild_start: "error[E0425]: cannot find value `x` in this scope\n --> src/lib.rs:3:5\n  |\n3 |     x\n  |     ^ not found in this scope",
@@ -121,6 +124,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
   if (FAIL && RAW[cmd]) throw new Error(RAW[cmd]);
   switch (cmd) {
     case "events_list": return events;
+    case "events_session": return events.filter((e) => e.session_id === a.sessionId || e.session_id === null);
     case "event_append": return record((a.sessionId as string) ?? null, String(a.kind), (a.payload as Record<string, unknown>) ?? {}).id;
     // Feature usage (MR-83): kept in memory, aggregated like the core's usage_report.
     case "usage_track": usage.push(...((a.items as typeof usage) ?? [])); return null;
@@ -258,6 +262,14 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       later(900, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp, done: { server, action, ok, ...(ok ? {} : { error: "connection refused (localhost:4100)" }) } }));
       return null;
     }
+    case "session_mcp_add": {
+      const server = String(a.server), config = a.config as { type: string; url?: string };
+      record(String(a.session), "ui.mcp_action", { server, action: "add", scope: a.scope, transport: config.type });
+      const ok = !demoMcp.some((m) => m.name === server);
+      if (ok) demoMcp.push({ name: server, status: "connected", source: "dynamic", scope: null, error: null, version: null, url: config.url ?? null, tools: ["search", "fetch"] });
+      later(900, () => record(String(a.session), "sidecar.mcp_status", { servers: demoMcp, done: { server, action: "add", ok, ...(ok ? {} : { error: `MCP server ${server} already exists in local config` }) } }));
+      return null;
+    }
     // A drawn-on copy (MR-143): the demo has no disk, so it only names where the core would put it.
     case "attachment_save": { const n = drawnN++; return { path: `/Users/me/Library/Application Support/Cockpit/attachments/demo${n}-drawn.png`, name: `drawn-${n}.png`, mime: "image/png", size: a instanceof Uint8Array ? a.length : 0 }; }
     case "models_refresh": record(null, "sidecar.models", { models: DEMO_MODELS }); return null;
@@ -286,6 +298,8 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       { path: "/Users/me/code/cockpit", name: "cockpit", repo: true, at: 0 },
       { path: "/Users/me/notes", name: "notes", repo: false, at: 0 },
     ];
+    case "folder_exists": return /^(~|\/Users\/me)(\/(code(\/(shop|billing|cockpit))?|notes))?$/.test(String(a.path));
+    case "folder_create": return String(a.path).replace(/^~/, "/Users/me");
     case "gh_repo": return /shop|billing|cockpit/.test(String(a.cwd)) ? `acme/${String(a.cwd).split("/").pop()}` : null;
     case "gh_prs": if (a.repo && a.mode === "review") return [
       { number: 491, title: "Checkout: idempotent order ids", url: `https://github.com/${a.repo}/pull/491`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: a.repo }, reviewNote: "new changes since your review" },
@@ -343,13 +357,23 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "pr_repo": return String(a.spec).includes("acme/shop") ? "/Users/me/code/shop" : null;
     case "fix_apply": record(String(a.session), "ui.fix_applied", { branch: "mr/god-mode-mark-ab12" }); return "merged";
     case "plugin:dialog|open": return "/Users/me/code/picked-folder";
-    case "term_open": case "workspace_sign_in": case "voice_start": throw new Error("Not available in the demo (needs the desktop app).");
+    // A scripted `claude auth login`: prints, then exits by itself like the real one does.
+    case "workspace_sign_in": {
+      const key = `login:${a.id}`;
+      later(100, () => void emit("term-data", { session: key, data: "Opening browser to sign in…\r\n" }));
+      later(900, () => void emit("term-exit", { session: key }));
+      return key;
+    }
+    case "workspace_auth_status": { const ok = signInFails === 0; signInFails = Math.max(0, signInFails - 1); record(null, "ui.sign_in_checked", { workspace: a.id, signed_in: ok }); return ok; }
+    case "term_open": case "voice_start": throw new Error("Not available in the demo (needs the desktop app).");
     case "workspace_create": { const wid = `ws_${Date.now().toString(36)}`; record(null, "ui.workspace_created", { id: wid, name: a.name, config_dir: `/demo/${wid}` }); return wid; }
     case "workspace_delete": record(null, "ui.workspace_deleted", { id: a.id, name: a.name, stopped: 0, trashed_to: "~/.Trash/…" }); return null;
     case "workspace_set_folder": record(null, "ui.workspace_folder_set", { id: a.id, folder: a.folder ?? null }); return null;
     case "workspace_rename": record(null, "ui.workspace_renamed", { id: a.id, name: a.name }); return null;
     case "session_move": record(String(a.session), "ui.session_moved", { from: "personal", to: a.workspace, copied: 1 }); return null;
     case "workspace_reorder": record(null, "ui.workspaces_reordered", { order: a.order }); return null;
+    case "overview_tidy": record(null, "ui.overview_tidied", {}); return null;
+    case "overview_move": record(null, "ui.overview_moved", { workspace: a.workspace, x: Math.round(Number(a.x)), y: Math.round(Number(a.y)) }); return null;
     default: return null;
   }
 }
@@ -386,7 +410,7 @@ const DEMO_COMMANDS = [
   { name: "agent-skills:test", description: "Run TDD workflow: write failing tests, implement, verify", hint: "", aliases: [], builtin: false, skill: true, terminal: false },
   { name: "pinchtab", description: "Browser automation through PinchTab", hint: "", aliases: [], builtin: false, skill: true, terminal: false },
 ];
-const demoMcp = [
+const demoMcp: McpServer[] = [
   { name: "claude.ai Slack", status: "connected", source: "claudeai", scope: "claudeai", error: null, version: "1.4.0", url: null, tools: ["slack_send_message", "slack_read_channel", "slack_search_public", "slack_read_thread"] },
   { name: "claude.ai Gmail", status: "needs-auth", source: "claudeai", scope: "claudeai", error: null, version: null, url: null, tools: [] },
   { name: "linear", status: "failed", source: "user", scope: "user", error: "connection refused (localhost:4100)", version: null, url: "http://localhost:4100/mcp", tools: [] },
