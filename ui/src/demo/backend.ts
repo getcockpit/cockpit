@@ -111,6 +111,7 @@ const RAW: Record<string, string> = {
   session_changes: "warning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch",
   session_diff: "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'",
   recent_folders: "No such file or directory (os error 2)",
+  folder_create: "couldn't create ~/x: Permission denied (os error 13)",
   daily_driver: "database is locked",
   personal_history: "fatal: invalid reference: main\nhint: ...",
   selfbuild_start: "error[E0425]: cannot find value `x` in this scope\n --> src/lib.rs:3:5\n  |\n3 |     x\n  |     ^ not found in this scope",
@@ -297,6 +298,8 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       { path: "/Users/me/code/cockpit", name: "cockpit", repo: true, at: 0 },
       { path: "/Users/me/notes", name: "notes", repo: false, at: 0 },
     ];
+    case "folder_exists": return /^(~|\/Users\/me)(\/(code(\/(shop|billing|cockpit))?|notes))?$/.test(String(a.path));
+    case "folder_create": return String(a.path).replace(/^~/, "/Users/me");
     case "gh_repo": return /shop|billing|cockpit/.test(String(a.cwd)) ? `acme/${String(a.cwd).split("/").pop()}` : null;
     case "gh_prs": if (a.repo && a.mode === "review") return [
       { number: 491, title: "Checkout: idempotent order ids", url: `https://github.com/${a.repo}/pull/491`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: a.repo }, reviewNote: "new changes since your review" },

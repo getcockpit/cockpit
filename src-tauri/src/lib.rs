@@ -132,6 +132,8 @@ pub fn run() {
             sidecar::limits_refresh,
             gh::pr_repo,
             folders::recent_folders,
+            folders::folder_exists,
+            folders::folder_create,
             mentions::session_paths,
             files::files_exist,
             attachments::attachment_save,
