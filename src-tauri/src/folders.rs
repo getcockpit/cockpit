@@ -71,6 +71,39 @@ pub fn recent_folders() -> Vec<Folder> {
     scan(&Path::new(&home).join(".claude/projects"), 15)
 }
 
+/// `~/x` → `<home>/x`; other paths as they are.
+fn expand(path: &str, home: &str) -> PathBuf {
+    match path.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => PathBuf::from(format!("{home}{rest}")),
+        _ => PathBuf::from(path),
+    }
+}
+
+/// Whether a typed path is already a folder, so the picker can offer to create it instead.
+#[tauri::command(async)]
+pub fn folder_exists(path: String) -> bool {
+    expand(path.trim(), &std::env::var("HOME").unwrap_or_default()).is_dir()
+}
+
+/// Creates a typed folder (and its parents) so a new workspace or session can start there.
+/// Absolute or `~` paths only; returns the full path.
+pub fn create(path: &str, home: &str) -> Result<String, String> {
+    let full = expand(path.trim(), home);
+    if !full.is_absolute() {
+        return Err(format!("{path} isn't a full path"));
+    }
+    if full.exists() && !full.is_dir() {
+        return Err(format!("{path} is a file"));
+    }
+    std::fs::create_dir_all(&full).map_err(|e| format!("couldn't create {path}: {e}"))?;
+    Ok(full.display().to_string())
+}
+
+#[tauri::command(async)]
+pub fn folder_create(path: String) -> Result<String, String> {
+    create(&path, &std::env::var("HOME").unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +114,21 @@ mod tests {
         assert_eq!(fold_worktree("/u/app/.claude/worktrees/fix"), "/u/app");
         assert_eq!(fold_worktree("/u/app"), "/u/app");
         assert_eq!(fold_worktree("/u/app-worktrees/x/sub/dir"), "/u/app-worktrees/x/sub/dir");
+    }
+
+    #[test]
+    fn creates_typed_folders_with_parents() {
+        let home = std::env::temp_dir().join(format!("mr-home-{}", ulid::Ulid::new()));
+        std::fs::create_dir_all(&home).unwrap();
+        let h = home.display().to_string();
+        let got = create("~/code/new-app", &h).unwrap();
+        assert_eq!(got, format!("{h}/code/new-app"));
+        assert!(home.join("code/new-app").is_dir());
+        assert_eq!(create("~/code/new-app", &h).unwrap(), got, "existing folder is fine");
+        std::fs::write(home.join("f"), "").unwrap();
+        assert!(create("~/f", &h).is_err());
+        assert!(create("relative/x", &h).is_err());
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
