@@ -154,14 +154,39 @@ pub fn workspace_delete(app: AppHandle, id: String, name: String) -> Result<(), 
     Ok(())
 }
 
-/// Opens an interactive `claude` in this workspace's config folder so the user can run /login once.
+/// Signs a workspace in: runs Claude Code's own `claude auth login` in its config folder (the
+/// browser sign-in; it exits by itself once done, so nothing needs typing). Personal signs in to
+/// your normal Claude Code config; other workspaces to their own folder.
 #[tauri::command]
 pub fn workspace_sign_in(app: AppHandle, id: String, cols: u16, rows: u16) -> Result<String, String> {
-    // Personal signs in to your normal Claude Code config; other workspaces to their own folder.
     let env = config_dir(&app, &id).map(|c| vec![("CLAUDE_CONFIG_DIR".to_string(), c.display().to_string())]).unwrap_or_default();
     let key = format!("login:{id}");
-    crate::terminal::open_command(&app, &key, vec![crate::terminal::claude_path()], &std::env::var("HOME").unwrap_or_default(), env, cols, rows)?;
+    crate::eventlog::record(&app, None, "ui.sign_in_opened", &serde_json::json!({ "workspace": id }), Some(&format!("workspace:{id}")));
+    crate::terminal::open_command(&app, &key, sign_in_argv(crate::terminal::claude_path()), &std::env::var("HOME").unwrap_or_default(), env, cols, rows)?;
     Ok(key)
+}
+
+fn sign_in_argv(claude: String) -> Vec<String> {
+    vec![claude, "auth".into(), "login".into(), "--claudeai".into()]
+}
+
+/// Whether Claude Code is signed in for this workspace, from `claude auth status --json`: checked
+/// after the sign-in terminal closes, so the refused message only goes again once it took.
+#[tauri::command(async)]
+pub fn workspace_auth_status(app: AppHandle, id: String) -> Result<bool, String> {
+    let mut cmd = std::process::Command::new(crate::terminal::claude_path());
+    cmd.args(["auth", "status", "--json"]).env_clear().envs(crate::selfbuild::child_env()).stdin(std::process::Stdio::null());
+    if let Some(dir) = config_dir(&app, &id) {
+        cmd.env("CLAUDE_CONFIG_DIR", dir);
+    }
+    let out = cmd.output().map_err(|e| format!("couldn't run claude: {e}"))?;
+    let signed_in = logged_in(&String::from_utf8_lossy(&out.stdout));
+    crate::eventlog::record(&app, None, "ui.sign_in_checked", &serde_json::json!({ "workspace": id, "signed_in": signed_in }), Some(&format!("workspace:{id}")));
+    Ok(signed_in)
+}
+
+fn logged_in(status_json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(status_json).ok().and_then(|v| v["loggedIn"].as_bool()).unwrap_or(false)
 }
 
 /// Which workspace a session belongs to, from the log: where it was last moved to (MR-154), else
@@ -232,6 +257,18 @@ fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sign_in_runs_claude_auth_login() {
+        assert_eq!(super::sign_in_argv("claude".into()), ["claude", "auth", "login", "--claudeai"]);
+    }
+
+    #[test]
+    fn reads_auth_status() {
+        assert!(super::logged_in(r#"{"loggedIn": true, "authMethod": "claude.ai"}"#));
+        assert!(!super::logged_in(r#"{"loggedIn": false, "authMethod": "none"}"#));
+        assert!(!super::logged_in("error: not json"));
+    }
+
     use super::*;
 
     #[test]

@@ -104,6 +104,8 @@ function scripted(sid: string, text: string): boolean {
 
 // ?fail=1: every call that can fail does, with the raw text real tools print (MR-52 walk).
 const FAIL = new URLSearchParams(location.search).has("fail");
+// `&signin=fail`: the first sign-in doesn't take (the browser closed), the next one does.
+let signInFails = new URLSearchParams(location.search).get("signin") === "fail" ? 1 : 0;
 const RAW: Record<string, string> = {
   gh_prs: "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.",
   session_changes: "warning: Not a git repository. Use --no-index to compare two paths outside a working tree\nusage: git diff --no-index [<options>] <path> <path>\n\nDiff output format options\n    -p, --patch           generate patch",
@@ -352,7 +354,15 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "pr_repo": return String(a.spec).includes("acme/shop") ? "/Users/me/code/shop" : null;
     case "fix_apply": record(String(a.session), "ui.fix_applied", { branch: "mr/god-mode-mark-ab12" }); return "merged";
     case "plugin:dialog|open": return "/Users/me/code/picked-folder";
-    case "term_open": case "workspace_sign_in": case "voice_start": throw new Error("Not available in the demo (needs the desktop app).");
+    // A scripted `claude auth login`: prints, then exits by itself like the real one does.
+    case "workspace_sign_in": {
+      const key = `login:${a.id}`;
+      later(100, () => void emit("term-data", { session: key, data: "Opening browser to sign in…\r\n" }));
+      later(900, () => void emit("term-exit", { session: key }));
+      return key;
+    }
+    case "workspace_auth_status": { const ok = signInFails === 0; signInFails = Math.max(0, signInFails - 1); record(null, "ui.sign_in_checked", { workspace: a.id, signed_in: ok }); return ok; }
+    case "term_open": case "voice_start": throw new Error("Not available in the demo (needs the desktop app).");
     case "workspace_create": { const wid = `ws_${Date.now().toString(36)}`; record(null, "ui.workspace_created", { id: wid, name: a.name, config_dir: `/demo/${wid}` }); return wid; }
     case "workspace_delete": record(null, "ui.workspace_deleted", { id: a.id, name: a.name, stopped: 0, trashed_to: "~/.Trash/…" }); return null;
     case "workspace_set_folder": record(null, "ui.workspace_folder_set", { id: a.id, folder: a.folder ?? null }); return null;
