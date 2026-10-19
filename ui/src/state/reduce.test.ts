@@ -585,9 +585,9 @@ describe("auto-review watched repos (MR-170)", () => {
   const set = (id: string, payload: Record<string, unknown>) => ({ id, session_id: null, kind: "ui.auto_review_repos_set", payload, anchor: null, created_at: 1 });
   test("starts empty; each event replaces the whole list; a bad payload changes nothing", () => {
     expect(initialState.autoReviewRepos).toEqual([]);
-    const added = replay([set("01A", { repos: ["acme/forge", "acme/shop"] })] as never);
-    expect(added.autoReviewRepos).toEqual(["acme/forge", "acme/shop"]);
-    const removed = replay([set("01A", { repos: ["acme/forge", "acme/shop"] }), set("01B", { repos: ["acme/shop"] })] as never);
+    const added = replay([set("01A", { repos: ["globex/forge", "acme/shop"] })] as never);
+    expect(added.autoReviewRepos).toEqual(["globex/forge", "acme/shop"]);
+    const removed = replay([set("01A", { repos: ["globex/forge", "acme/shop"] }), set("01B", { repos: ["acme/shop"] })] as never);
     expect(removed.autoReviewRepos).toEqual(["acme/shop"]);
     expect(replay([set("01A", { repos: ["acme/shop"] }), set("01B", { repos: "x" })] as never).autoReviewRepos).toEqual(["acme/shop"]);
     expect(replay([set("01A", { repos: ["acme/shop", 3] })] as never).autoReviewRepos).toEqual(["acme/shop"]);

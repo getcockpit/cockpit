@@ -280,9 +280,9 @@ mod tests {
     #[test]
     fn cleans_the_watched_repo_list() {
         let v = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        assert_eq!(clean_watched(&v(&[" acme/forge ", "https://github.com/acme/shop.git", "acme/Forge"])), Ok(v(&["acme/forge", "acme/shop"])));
+        assert_eq!(clean_watched(&v(&[" globex/forge ", "https://github.com/acme/shop.git", "Globex/Forge"])), Ok(v(&["globex/forge", "acme/shop"])));
         assert_eq!(clean_watched(&[]), Ok(vec![]));
-        assert!(clean_watched(&v(&["acme/forge", "forge"])).is_err());
+        assert!(clean_watched(&v(&["globex/forge", "forge"])).is_err());
         assert!(clean_watched(&v(&["a/b\" OR x"])).is_err());
         assert!(clean_watched(&v(&["a/b/c"])).is_err());
     }
