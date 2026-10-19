@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { replay } from "./reduce";
-import { cadenceLabel, draftFrom, runLabel } from "../screens/Recurring";
+import { cadenceLabel, checkLabel, draftFrom, runLabel } from "../screens/Recurring";
+import { cadenceExpr, cronLabel, nextRuns, parseCron, toCron } from "../components/cron";
 import type { MrEvent } from "./types";
 
 // Recurring sessions (MR-167): the core logs schedule events; the list and runs fold here.
@@ -57,5 +58,49 @@ describe("labels", () => {
   test("Repeat… drafts from the session: the repo, not its worktree", () => {
     const s = replay([ev("ui.session_requested", { prompt: "Weekly usage review", cwd: "/r-worktrees/x", repo: "/r", branch: "mr/x", workspace: "w1" }, "s9")]).sessions.s9;
     expect(draftFrom(s)).toMatchObject({ prompt: "Weekly usage review", cwd: "/r", workspace: "w1", worktree: true, fromSession: "s9" });
+  });
+});
+
+// MR-169: cron cadences, built from rows, and the check gate's status.
+describe("cron cadences", () => {
+  test("rows round-trip to the expression", () => {
+    for (const e of ["*/5 9-17 * * 1-5", "0 9 * * *", "0,30 8 * * 1,4", "15 0-23/3 * * *", "0 0 1,15 * *"]) {
+      const r = parseCron(e)!;
+      expect(parseCron(toCron(r))).toEqual(r);
+    }
+    expect(toCron(parseCron("0 9 * * MON-FRI")!)).toBe("0 9 * * 1-5");
+    expect(parseCron("0 9 * * 7")!.dow).toEqual({ mode: "these", values: [0] });
+    for (const bad of ["* * * *", "60 * * * *", "*/0 * * * *", "5-1 * * * *", "0 9 * foo *"]) expect(parseCron(bad)).toBeNull();
+  });
+  test("labels", () => {
+    expect(cronLabel("*/5 9-17 * * 1-5")).toBe("Every 5 min, 09–17h, Weekdays");
+    expect(cronLabel("0 9 * * *")).toBe("Daily at 09:00");
+    expect(cronLabel("0 9 * * 1-5")).toBe("Weekdays at 09:00");
+    expect(cronLabel("30 8 * * 1,4")).toBe("Mon, Thu at 08:30");
+    expect(cronLabel("0 * * * *")).toBe("Hourly at :00");
+    expect(cronLabel("15 0-23/3 * * *")).toBe("Every 3 h from 00:15");
+    expect(cronLabel("*/10 * * * *")).toBe("Every 10 min");
+    expect(cadenceLabel({ kind: "cron", expr: "0 9 * * 6,0" })).toBe("Sat, Sun at 09:00");
+  });
+  test("the older kinds convert as the core does", () => {
+    expect(cadenceExpr({ kind: "weekdays", at: "09:05" })).toBe("5 9 * * 1-5");
+    expect(cadenceExpr({ kind: "weekly", at: "08:30", days: [7, 1] })).toBe("30 8 * * 1,7");
+    expect(cadenceExpr({ kind: "hourly", at: "09:15", every_h: 3 })).toBe("15 0-23/3 * * *");
+  });
+  test("next runs (the demo's preview)", () => {
+    const mon = new Date(2026, 9, 19, 9, 3).getTime();
+    expect(nextRuns("*/5 9-17 * * 1-5", mon, 2).map((t) => new Date(t).getMinutes())).toEqual([5, 10]);
+    expect(new Date(nextRuns("0 9 * * 1-5", new Date(2026, 9, 23, 10, 0).getTime(), 1)[0]).getDay()).toBe(1);
+  });
+  test("a schedule keeps its check", () => {
+    const s = replay([ev("ui.schedule_set", { ...def, id: "g", check: "gh pr list" })]).schedules.g;
+    expect(s.check).toBe("gh pr list");
+    expect(replay([ev("ui.schedule_set", { ...def, id: "h" })]).schedules.h.check).toBeNull();
+  });
+  test("check status", () => {
+    const now = 10 * 60_000;
+    expect(checkLabel(undefined)).toBe("not checked yet");
+    expect(checkLabel({ at: now - 120_000, outcome: "same", skipped: 14, error: null }, now)).toBe("checked 2m ago · no change · skipped 14×");
+    expect(checkLabel({ at: now, outcome: "error", skipped: 1, error: "timed out after 60 s" }, now)).toBe("checked just now · check failed: timed out after 60 s");
   });
 });

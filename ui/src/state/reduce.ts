@@ -148,7 +148,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "ui.schedule_set" && p.id) {
     const id = String(p.id);
     const mode = (["auto", "acceptEdits", "default", "never"].includes(String(p.permission_mode)) ? p.permission_mode : "auto") as PermissionMode;
-    const sc: Schedule = { id, name: String(p.name ?? ""), prompt: String(p.prompt ?? ""), cwd: String(p.cwd ?? ""), workspace: String(p.workspace ?? "personal"), worktree: p.worktree !== false, cadence: (p.cadence ?? { kind: "daily", at: "09:00" }) as Cadence, permissionMode: mode, paused: p.paused === true, fromSession: (p.from_session as string) ?? null, runs: next.schedules[id]?.runs ?? [] };
+    const sc: Schedule = { id, name: String(p.name ?? ""), prompt: String(p.prompt ?? ""), cwd: String(p.cwd ?? ""), workspace: String(p.workspace ?? "personal"), worktree: p.worktree !== false, cadence: (p.cadence ?? { kind: "daily", at: "09:00" }) as Cadence, permissionMode: mode, paused: p.paused === true, fromSession: (p.from_session as string) ?? null, check: typeof p.check === "string" && p.check.trim() ? p.check : null, runs: next.schedules[id]?.runs ?? [] };
     return { ...next, schedules: { ...next.schedules, [id]: sc } };
   }
   if (ev.kind === "ui.schedule_deleted") { const { [String(p.id)]: _gone, ...rest } = next.schedules; return { ...next, schedules: rest }; }

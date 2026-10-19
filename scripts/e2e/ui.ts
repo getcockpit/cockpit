@@ -1067,8 +1067,9 @@ const flows: Flow[] = [
   { name: "J20 Run now starts a tagged run and adds it to the history", run: async () => {
     await ui.open("recurring");
     await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
-    await ui.tags("ScheduleRow", 1);
-    await ui.click("button", "Run now", '[data-mr="ScheduleRow"]');
+    await ui.tags("ScheduleRow", 2);
+    // Retried: the row re-renders as its check status loads, which can swallow a first click.
+    await ui.clickUntil("button", "Run now", '[data-mr="ScheduleRow"][data-mr-source="sch1"]', "RecurringMark");
     await ui.tags("Recurring", 0);
     await ui.tags("RecurringMark", 1);
     await ui.see("button", "↻ Schedule…");
@@ -1082,9 +1083,10 @@ const flows: Flow[] = [
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
     await ui.clickUntil("button", "Repeat…", undefined, "ScheduleEditor");
-    await ui.click("radio", "Weekly");
-    await ui.click("button", "Thu");
+    await ui.click("button", "Mondays 09:00");
+    await ui.click("button", "Thu", '[data-mr="CronRow"][data-mr-source="Weekdays"]');
     await ui.seeText("Mon, Thu at 09:00");
+    await ui.seeText("Next: ");
     await ui.click("button", "Schedule it");
     await ui.tags("ScheduleRow", 1);
     await ui.seeText("Next ");
@@ -1094,12 +1096,30 @@ const flows: Flow[] = [
   { name: "J20 an empty list offers examples that fill in the editor", run: async () => {
     await ui.open("busy");
     await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
-    await ui.tags("RecurringExample", 2);
+    await ui.tags("RecurringExample", 3);
     await ui.clickUntil("button", /^Weekly report/, '[data-mr="Recurring"]', "ScheduleEditor");
     await ui.seeText("Mon at 09:00");
     await ui.click("button", "Schedule it");
     await ui.tags("ScheduleRow", 1);
     await ui.tags("RecurringExample", 0);
+  } },
+  { name: "J20 a watch every few minutes runs only when its check finds something new", run: async () => {
+    await ui.open("busy");
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.clickUntil("button", /^Review requests watch/, '[data-mr="Recurring"]', "CronBuilder");
+    await ui.seeText("Every 5 min, 09–17h, Weekdays");
+    await ui.seeText("Next: ");
+    if (!pt("attr", "css:[aria-label='Check command']", "value").includes("review-requested")) throw new Error("the example's check isn't filled in");
+    // The hours row: drop 17 → work hours end at 16.
+    await ui.click("button", "17", '[data-mr="CronRow"][data-mr-source="Hours"]');
+    await ui.seeText("Every 5 min, 09–16h, Weekdays");
+    // The expression is editable too, and the rows follow it.
+    await ui.fill("Cron expression", "*/10 * * * *");
+    await ui.seeText("Every 10 min");
+    await ui.click("button", "Schedule it");
+    await ui.tags("ScheduleRow", 1);
+    await ui.tags("ScheduleCheck", 1);
+    await ui.seeText("no change · skipped 7×");
   } },
   { name: "Keys: Esc closes the delete-workspace dialog", run: async () => {
     await ui.open("busy");
