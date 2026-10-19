@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
-import { needsAutoReview, lastLocalReview, reviewKey, type ReviewState } from "../picker/autoReview";
+import { cloneWorkspaces, needsAutoReview, lastLocalReview, reviewKey, type ReviewState } from "../picker/autoReview";
 import { promptFor } from "../screens/StartPicker";
 import { cached } from "./cache";
 import { prRepo, prSlug } from "./prRepo";
 import { loadPrs, PRS_TTL, startCwd } from "./prs";
-import { api, type Pr } from "./store";
+import { api, currentWorkspace, type Pr } from "./store";
 import type { AppState } from "./types";
 
 // Auto-review (MR-72): every minute, look at the PRs waiting for your review and start /review in
@@ -33,11 +33,13 @@ export function useAutoReview(state: AppState) {
           const slug = p.repository?.nameWithOwner ?? prSlug(p.url);
           const where = slug ? await prRepo(slug) : null;
           if (!where) { checked.set(p.url, p.updatedAt); continue; } // no clone found: it stays a suggestion on the wall
-          const id = await api.start(where, promptFor("review", p.url), "review");
+          // It runs in the workspace that works in this repo, and only that workspace hears about it.
+          const owner = cloneWorkspaces(live.current, where)[0] ?? currentWorkspace();
+          const id = await api.start(where, promptFor("review", p.url), "review", undefined, owner);
           markStarted(reviewKey(p.url, info.headSha));
           checked.set(p.url, p.updatedAt);
           void api.log("ui.auto_review_started", { url: p.url, head: info.headSha }, id);
-          window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Started a review of PR #${p.number}: ${p.title}` }));
+          if (owner === currentWorkspace()) window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Started a review of PR #${p.number}: ${p.title}` }));
         } catch {
           return; // session cap reached or the start failed: try again on the next tick
         } finally {

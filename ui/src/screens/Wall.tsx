@@ -14,7 +14,7 @@ import { pickTile, type TileSpec } from "../picker/pick";
 import { docApi, docRole, docStage, groupByDoc, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
-import { loadPrs as fetchPrs, PRS_TTL, startCwd } from "../state/prs";
+import { loadPrs as fetchPrs, prInWorkspace, PRS_TTL, startCwd, usePrClones } from "../state/prs";
 import type { AppState, SessionState, Todo } from "../state/types";
 import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow, SignInRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
@@ -32,7 +32,7 @@ import { ViewTabs } from "../components/ViewTabs";
 const REVIEW = new Set<TileSpec["state"]>(["review", "done", "interrupted", "error"]);
 export const inReviewTray = (t: TileSpec) => REVIEW.has(t.state);
 
-export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onSignIn, onOpenDoc, onStart, onBuild, onTimeline, onSettings, onRecurring }: { onRecurring?: () => void; state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onSignIn?: (s: SessionState) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
+export function Wall({ state, all = state, workspace = "personal", docs, archived, onArchive, onOpen, onSignIn, onOpenDoc, onStart, onBuild, onTimeline, onSettings, onRecurring }: { onRecurring?: () => void; state: AppState; all?: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onSignIn?: (s: SessionState) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -64,7 +64,13 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
   // Only the owner's Mac has the app repo; that gates the weekly usage review (MR-106).
   const [appRepo, setAppRepo] = useState<string | null>(null);
   useEffect(() => { invoke<string>("app_repo_path").then(setAppRepo).catch(() => setAppRepo(null)); }, []);
-  const suggestions = useMemo(() => suggest(state, docs, prs, new Set(state.dismissed), appRepo), [state, docs, prs, appRepo]);
+  // A PR's suggestion shows only in the workspaces that work in its repo (or everywhere, until one does).
+  const clones = usePrClones([...prs.review, ...prs.mine]);
+  const prsHere = useMemo(() => {
+    const here = (p: Pr) => prInWorkspace(p, clones, all, workspace);
+    return { review: prs.review.filter(here), mine: prs.mine.filter(here) };
+  }, [prs, clones, all, workspace]);
+  const suggestions = useMemo(() => suggest(state, docs, prsHere, new Set(state.dismissed), appRepo), [state, docs, prsHere, appRepo]);
   const act = async (g: Suggestion) => {
     const a = g.action;
     if (a.kind === "open_session") onOpen(a.id);
