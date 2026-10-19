@@ -4,6 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-19
+
+### Added
+- **Cron-like schedules for recurring sessions:** a visual builder (presets, then rows for minutes, hours, weekdays and days of month) plus an editable cron expression, with a plain-English label and the next five runs. "Every 5 min during work hours" is one click. Existing schedules keep working.
+- **"Only run when…" checks:** a recurring session can have a shell command that runs first, for free. Claude starts only when it exits 0 and prints something new since the last run, and what it printed goes into the prompt. Comes with presets (review requests, your PRs' reviews and CI, new commits on main). The list shows the last check: "checked 2m ago · no change · skipped 7×".
+- **Auto-review can watch chosen repos:** Settings → Sessions → Reviews → Also watch, for teams that never request reviewers.
+
+### Changed
+- A recurring run is skipped while the schedule's previous run is still going.
+- PR review/address suggestions and auto-review show only in the workspace that works in that repo.
+
 ## [0.1.8] - 2026-10-19
 
 ### Added
