@@ -21,7 +21,7 @@ export type Question = { question: string; header: string; options: { label: str
 export type TranscriptItem = (
   | { kind: "text"; id: string; text: string; at: number }
   | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; background?: Background; at: number }
-  | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery; attachments?: Attachment[] }
+  | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery; attachments?: Attachment[]; via?: "doc" } // via: a doc-change note from Cockpit (MR-168)
   | { kind: "view"; id: string; title: string; blocks: ViewBlock[]; at: number }
   | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number }
 ) & { step?: string }; // the plan step in progress when it arrived (MR-69)

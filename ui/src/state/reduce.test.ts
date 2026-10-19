@@ -716,3 +716,14 @@ describe("expired sign-in (MR-153)", () => {
     expect(s.signedOut).toBeNull();
   });
 });
+
+test("a doc-change note from Cockpit shows in the transcript as from the doc, not from you (MR-168)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "b", kind, payload, anchor: null, created_at: 1 });
+  const s = replay([
+    ev("B1", "ui.session_requested", { prompt: "build it", kind: "blank", cwd: "/w" }),
+    ev("B2", "sidecar.sdk", { message: { type: "result", is_error: false, result: "ok" } }),
+    ev("B3", "doc.relay", { doc_id: "d", from: "p", text: "Working doc \"Retries\" was just changed" }),
+  ]).sessions.b;
+  expect(s.transcript.at(-1)).toMatchObject({ kind: "user", via: "doc", text: "Working doc \"Retries\" was just changed" });
+  expect(s.status).toBe("working");
+});
