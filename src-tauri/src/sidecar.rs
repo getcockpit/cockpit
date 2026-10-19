@@ -530,6 +530,14 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     }
     let attachments = attachments.filter(|a| !a.is_empty());
     let mut sent = serde_json::json!({ "text": text });
+    // Doc changes that waited for your next message go in front of it (MR-168).
+    let mut before = String::new();
+    for (doc_id, note) in app.state::<crate::docs::Docs>().take_waiting(&session) {
+        crate::eventlog::record(&app, Some(&session), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "text": note, "waited": true }), Some(&format!("doc:{doc_id}")));
+        before.push_str(&note);
+        before.push_str("\n\n");
+    }
+    let text = before + &text;
     if let Some(a) = &attachments {
         sent["attachments"] = a.clone().into();
     }

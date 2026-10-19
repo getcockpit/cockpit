@@ -70,6 +70,8 @@ pub struct Docs {
     changed: Mutex<BTreeMap<String, Vec<(String, String)>>>,
     /// Sessions whose turn a relay note started: what they change in it isn't relayed back.
     relayed: Mutex<std::collections::HashSet<String>>,
+    /// Notes that wait for a session's next message (changes that don't shape the plan), as (doc, text).
+    waiting: Mutex<BTreeMap<String, Vec<(String, String)>>>,
 }
 
 impl Docs {
@@ -100,14 +102,26 @@ impl Docs {
         }
     }
 
-    /// The notes to send once `author`'s turn ends (MR-168): one per (doc, other live session).
+    /// The notes to send once `author`'s turn ends (MR-168): one per (doc, other live session) for
+    /// changes that shape the plan; the rest wait for that session's next message (`take_waiting`).
     /// Nothing when a relay note started that turn, so two sessions can't keep pinging each other.
     pub fn take_relay(&self, author: &str, live: &std::collections::HashSet<String>) -> Vec<(String, String, String)> {
         let changes = self.changed.lock().unwrap().remove(author).unwrap_or_default();
         if self.relayed.lock().unwrap().remove(author) {
             return vec![];
         }
-        relay_notes(&self.docs.lock().unwrap(), author, &changes, live)
+        let notes = relay_notes(&self.docs.lock().unwrap(), author, &changes, live);
+        let mut waiting = self.waiting.lock().unwrap();
+        let mut now = vec![];
+        for n in notes {
+            if n.3 { now.push((n.0, n.1, n.2)) } else { waiting.entry(n.0).or_default().push((n.1, n.2)) }
+        }
+        now
+    }
+
+    /// The notes waiting for `session`, to go in front of the message you're sending it.
+    pub fn take_waiting(&self, session: &str) -> Vec<(String, String)> {
+        self.waiting.lock().unwrap().remove(session).unwrap_or_default()
     }
 
     /// A relay note went to `session` while it was idle: the turn it starts is the note's.
@@ -116,9 +130,13 @@ impl Docs {
     }
 }
 
+/// Sections whose changes reshape the plan: their notes go out at once (MR-168, decided).
+pub const PLAN_SHAPING: [&str; 4] = ["question", "design", "scope", "risk"];
+
 /// For each doc `author` changed: a note to each of the doc's other sessions (its plan session and
-/// builds) that is still running, saying what changed. Returns (session, doc id, text).
-pub fn relay_notes(docs: &BTreeMap<String, Doc>, author: &str, changes: &[(String, String)], live: &std::collections::HashSet<String>) -> Vec<(String, String, String)> {
+/// builds) that is still running, saying what changed. Changes to plan-shaping sections (and
+/// removed blocks) make one note that goes now; the rest one that waits. Returns (session, doc id, text, now).
+pub fn relay_notes(docs: &BTreeMap<String, Doc>, author: &str, changes: &[(String, String)], live: &std::collections::HashSet<String>) -> Vec<(String, String, String, bool)> {
     let mut by_doc: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for (d, b) in changes {
         by_doc.entry(d).or_default().push(b);
@@ -130,23 +148,29 @@ pub fn relay_notes(docs: &BTreeMap<String, Doc>, author: &str, changes: &[(Strin
             continue;
         }
         let role = if doc.session_id.as_deref() == Some(author) { "plan session" } else if doc.build_sessions.iter().any(|s| s == author) { "build session" } else { "another session" };
-        let lines: Vec<String> = blocks
-            .iter()
-            .map(|b| match doc.blocks.get(*b) {
-                Some(x) => format!("- {} ({}): {}", x.section, b, x.takeaway),
-                None => format!("- removed block {b}"),
-            })
-            .collect();
-        let text = format!(
-            "Working doc \"{}\" (doc_id {}) was just changed by its {role}:\n{}\nRe-read it with the mr doc_read tool if this affects your work, then carry on. No reply needed.",
-            doc.title,
-            doc.id,
-            lines.join("\n")
-        );
-        let mut to: Vec<&String> = doc.session_id.iter().chain(doc.build_sessions.iter()).filter(|s| s.as_str() != author && live.contains(*s)).collect();
-        to.dedup();
-        for s in to {
-            out.push((s.clone(), doc.id.clone(), text.clone()));
+        let (mut now, mut later) = (vec![], vec![]);
+        for b in blocks {
+            match doc.blocks.get(b) {
+                Some(x) if PLAN_SHAPING.contains(&x.section.as_str()) => now.push(format!("- {} ({}): {}", x.section, b, x.takeaway)),
+                Some(x) => later.push(format!("- {} ({}): {}", x.section, b, x.takeaway)),
+                None => now.push(format!("- removed block {b}")),
+            }
+        }
+        let to: Vec<&String> = doc.session_id.iter().chain(doc.build_sessions.iter()).filter(|s| s.as_str() != author && live.contains(*s)).collect();
+        for (lines, at_once) in [(now, true), (later, false)] {
+            if lines.is_empty() {
+                continue;
+            }
+            let text = format!(
+                "Working doc \"{}\" (doc_id {}) was {} changed by its {role}:\n{}\nRe-read it with the mr doc_read tool if this affects your work, then carry on. No reply needed.",
+                doc.title,
+                doc.id,
+                if at_once { "just" } else { "meanwhile" },
+                lines.join("\n")
+            );
+            for s in &to {
+                out.push(((*s).clone(), doc.id.clone(), text.clone(), at_once));
+            }
         }
     }
     out
@@ -405,6 +429,7 @@ mod tests {
         e(2, "b1", "ui.doc_build_started", json!({ "doc_id": "d" }));
         e(3, "b2", "ui.doc_build_started", json!({ "doc_id": "d" }));
         e(4, "plan", "doc.block_set", json!({ "doc_id": "d", "block_id": "design_1", "section": "design", "takeaway": "Exponential backoff" }));
+        e(5, "b1", "doc.block_set", json!({ "doc_id": "d", "block_id": "log_1", "section": "log", "takeaway": "Retries wired" }));
         for _ in 0..2 {
             docs.note_change("plan", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
         }
@@ -420,11 +445,18 @@ mod tests {
         docs.mark_relayed("b1");
         docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
         assert!(docs.take_relay("b1", &live).is_empty());
-        // Its next, user-driven turn relays to the plan session as usual.
+        // Its next, user-driven turn relays a design change to the plan session at once...
         docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
         let back = docs.take_relay("b1", &live);
         assert_eq!((back.len(), back[0].0.as_str()), (1, "plan"));
         assert!(back[0].2.contains("by its build session"));
+        // ...but a log entry doesn't shape the plan: it waits for your next message to the plan session.
+        docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "log_1" }));
+        assert!(docs.take_relay("b1", &live).is_empty());
+        let waiting = docs.take_waiting("plan");
+        assert_eq!(waiting.len(), 1);
+        assert!(waiting[0].1.contains("meanwhile") && waiting[0].1.contains("log (log_1): Retries wired"));
+        assert!(docs.take_waiting("plan").is_empty());
     }
 
     fn run(docs: &Docs, n: &mut u32, tool: &str, args: Value) -> (String, bool) {
