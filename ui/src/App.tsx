@@ -225,7 +225,8 @@ export default function App() {
   const buildsPanel = builds !== null && <Builds defaultWorktree={builds || undefined} onClose={() => setBuilds(null)} />;
   const archived = Object.values(state.sessions).filter((x) => x.archivedAt);
   const archivePanel = archive && <Archive sessions={archived} onClose={() => setArchive(false)} onOpen={(id) => { setArchive(false); setDocId(null); setFocus(id); }} />;
-  const overlay = picker && <StartPicker state={state} workspace={workspace} initialText={pickerText} initialMode={pickerMode} onClose={() => { setPicker(false); setPickerText(""); setPickerMode(undefined); }} onStarted={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
+  // Started from inside a session: it joins the Wall and the current screen stays put.
+  const overlay = picker && <StartPicker state={state} workspace={workspace} initialText={pickerText} initialMode={pickerMode} onClose={() => { setPicker(false); setPickerText(""); setPickerMode(undefined); }} onStarted={(id) => { setPicker(false); if (!focus) { setDocId(null); setFocus(id); } }} />;
   // App shell: the workspace tabs stay put and only the view scrolls, so sticky headers work and
   // nothing pushes the tabs off-screen (MR-43).
   const shell = (view: React.ReactNode, overlays: React.ReactNode) => (
