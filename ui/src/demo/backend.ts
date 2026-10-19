@@ -82,7 +82,8 @@ function scripted(sid: string, text: string): boolean {
     }
     const jump = /^snippet (\d+)$/.exec(text);
     if (jump && REVIEW_SNIPPETS[Number(jump[1]) - 1]) { later(500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[Number(jump[1]) - 1])); done("snippet"); return true; }
-    if (text === "publish" || text === "publish and approve") { later(500, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: text === "publish" ? "Published the review on PR #482." : "Published the review on PR #482 and approved it." }] } })); done("published"); return true; }
+    // Posted: Claude reports it and the core archives the session, nothing is left for you.
+    if (text === "publish" || text === "publish and approve") { later(500, () => { record("R", "flow.review_published", { pr: "#482", comments: 1, approved: text !== "publish" }); record("R", "ui.session_archived", { by: "review_published" }); }); done("published"); return true; }
     if (text.startsWith("note ")) { done("noted"); return true; }
     if (text === "ok") { later(1500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[0])); later(1700, () => sdk(sid, { type: "result", is_error: false, result: "snippet", total_cost_usd: 0.04 })); return true; }
     if (text.startsWith("Add this to the review") || text.startsWith("About ")) { later(900, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Added to your review." }] } })); done("ok"); return true; }
