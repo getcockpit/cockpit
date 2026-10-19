@@ -163,3 +163,6 @@ textarea.mr-input { display: block; padding: 10px 12px; line-height: 1.4; resize
 /* Find on the Overview: what doesn't match fades back; the hit you're on is ringed. */
 .mr-ov-area[data-dim], .mr-ov-block[data-dim] { opacity: .35; }
 .mr-ov-block[data-current], .mr-ov-area[data-current] { outline: calc(3px / var(--mr-ov-z, 1)) solid var(--mr-selected); outline-offset: calc(-3px / var(--mr-ov-z, 1)); }
+/* Copy buttons on text blocks: shown on hover or keyboard focus, kept while saying "Copied". */
+.mr-copy { opacity: 0; transition: opacity var(--mr-fast) var(--mr-ease); }
+.mr-copyable:hover .mr-copy, .mr-copy:focus-visible, .mr-copy[data-state="done"], .mr-copy[data-state="failed"] { opacity: 1; }
