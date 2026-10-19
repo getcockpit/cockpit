@@ -11,7 +11,7 @@ import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
-import { docApi, docStage, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
+import { docApi, docRole, docStage, groupByDoc, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
 import { loadPrs as fetchPrs, PRS_TTL, startCwd } from "../state/prs";
@@ -39,6 +39,8 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
   const queue = useMemo(() => needsQueue(sessions, docs), [sessions, docs]);
   const running = tiles.filter((t) => !inReviewTray(t.tile));
   const review = tiles.filter((t) => inReviewTray(t.tile));
+  const tileOf = useMemo(() => new Map(running.map((t) => [t.s.id, t])), [running]);
+  const grouped = useMemo(() => groupByDoc(docs, running.map((t) => t.s.id)), [docs, running]);
   const count = (k: TileSpec["state"]) => tiles.filter((t) => t.tile.state === k).length;
   const [sel, setSel] = useState(0);
   const cwd = startCwd();
@@ -169,38 +171,25 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
 
         {sessions.length === 0 && rows === 0 && <QuickStart state={state} workspace={workspace} onStarted={onOpen} onMore={(mode) => onStart({ mode, text: "" })} />}
 
-        {sessions.length > 0 && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {(running.length > 0 || docs.length > 0) && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
           <div className="mr-grid">
-            {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} compactWindow={state.compactWindow} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
+            {/* A doc and the sessions that plan and build it, as one group across the grid (MR-168). */}
+            {grouped.groups.map(({ doc, sessions: members }) => (
+              <div key={doc.id} data-mr="DocGroup" data-mr-source={doc.id} style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
+                <DocTile d={doc} sessions={state.sessions} onOpenDoc={onOpenDoc} header />
+                <div className="mr-grid">
+                  {members.map(({ id, role }) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={{ doc, role }} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
+                </div>
+              </div>
+            ))}
+            {grouped.loose.map((id) => { const { s, tile } = tileOf.get(id)!; return <Tile key={id} s={s} tile={tile} docTag={null} compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(s)} />; })}
+            {grouped.idle.map((d) => <DocTile key={d.id} d={d} sessions={state.sessions} onOpenDoc={onOpenDoc} />)}
             <button type="button" className="mr-tile" onClick={() => onStart()} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
               <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>{keyLabel("⌘K")}</kbd>Start something</span>
             </button>
           </div>
         </section>}
-
-        {docs.length > 0 && (
-          <section aria-label="Working docs" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <h2 className="mr-h">Working docs <span className="mr-dim">{docs.length}</span></h2>
-            <div className="mr-grid">
-              {docs.map((d) => {
-                const blocks = Object.values(d.blocks);
-                const open = blocks.filter(isOpenQuestion).length;
-                const stage = isBrief(d) ? null : docStage(d, state.sessions);
-                return (
-                  <button key={d.id} type="button" className="mr-tile" data-mr="DocTile" data-mr-source={d.id} data-s={open ? "needs_you" : stage === "shipped" ? "done" : "working"} onClick={() => onOpenDoc(d.id)} style={{ minHeight: 96 }}>
-                    <div className="mr-flag" />
-                    <div className="mr-tbody">
-                      <strong style={{ fontSize: 15 }}>{d.title}</strong>
-                      <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>v{d.version} · {blocks.length} blocks{stage ? ` · ${STAGE_LABEL[stage]}` : ""}{open ? ` · ${open} open question${open === 1 ? "" : "s"}` : ""}</span>
-                      <span className="mr-ink2 mr-ellipsis">{blocks.find((b) => b.section === "goal")?.takeaway ?? ""}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         {review.length > 0 && (
           <section id="mr-review" aria-label="Ready to review" style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 12 }}>
@@ -232,6 +221,32 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
   );
 }
 
+// A working doc on the Wall: a tile of its own, or the header of its group (MR-168).
+function DocTile({ d, sessions, onOpenDoc, header }: { d: Doc; sessions: AppState["sessions"]; onOpenDoc: (id: string) => void; header?: boolean }) {
+  const blocks = Object.values(d.blocks);
+  const open = blocks.filter(isOpenQuestion).length;
+  const stage = isBrief(d) ? null : docStage(d, sessions);
+  const meta = `v${d.version} · ${blocks.length} blocks${stage ? ` · ${STAGE_LABEL[stage]}` : ""}${open ? ` · ${open} open question${open === 1 ? "" : "s"}` : ""}`;
+  const goal = blocks.find((b) => b.section === "goal")?.takeaway ?? "";
+  return (
+    <button type="button" className="mr-tile" data-mr="DocTile" data-mr-source={d.id} data-s={open ? "needs_you" : stage === "shipped" ? "done" : "working"} onClick={() => onOpenDoc(d.id)} style={header ? { minHeight: 0 } : { minHeight: 96 }}>
+      <div className="mr-flag" />
+      {header
+        ? <div className="mr-tbody" style={{ flexDirection: "row", gap: 12, alignItems: "baseline", padding: "8px 14px" }}>
+            <span className="mr-mono mr-dim" aria-hidden="true" style={{ fontSize: 12 }}>▤ doc</span>
+            <strong className="mr-ellipsis" style={{ fontSize: 15 }}>{d.title}</strong>
+            <span className="mr-ink2 mr-ellipsis mr-grow">{goal}</span>
+            <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{meta}</span>
+          </div>
+        : <div className="mr-tbody">
+            <strong style={{ fontSize: 15 }}>{d.title}</strong>
+            <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{meta}</span>
+            <span className="mr-ink2 mr-ellipsis">{goal}</span>
+          </div>}
+    </button>
+  );
+}
+
 // A "Your call" row (MR-107): the move, why, and dismiss. Quiet: a well, not an amber flag.
 function CallRow({ g, selected, onAct }: { g: Suggestion; selected: boolean; onAct: () => void }) {
   return (
@@ -251,7 +266,7 @@ export function sideThread(s: SessionState): Promise<string> {
   return api.start(s.cwd, `Side thread about the session "${s.title}" (working in ${s.cwd}). Without changing anything, look at what it has done so far (git diff, files) and report briefly: risks, anything it may have missed, and simpler alternatives.`, "blank", false);
 }
 
-function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; compactWindow: number | null; onOpen: (id: string) => void; onDiscover: () => void }) {
+function Tile({ s, tile, docTag, grouped, compactWindow, onOpen, onOpenDoc, onDiscover }: { s: SessionState; tile: TileSpec; docTag: ReturnType<typeof docRole>; grouped?: boolean; compactWindow: number | null; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onDiscover: () => void }) {
   return (
     <button type="button" className="mr-tile" data-mr="Tile" data-mr-source={s.id} data-mr-layer="code" data-s={tile.state} {...dragSession(s, sessionTitle(s))} onClick={(e) => { if (!consumeDrag()) pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })(e); }} style={{ touchAction: "none" }} aria-label={`Open ${s.title}`}>
       <div className="mr-flag" />
@@ -261,7 +276,8 @@ function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState;
           <StateMark s={tile.state} />
         </div>
         <div className="mr-row" style={{ gap: 8 }}>
-          <span className="mr-mono mr-dim mr-ellipsis mr-grow" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
+          <span className="mr-mono mr-dim mr-ellipsis mr-grow" style={{ fontSize: 12 }}>{s.kind !== "blank" && s.kind !== docTag?.role ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
+          {docTag && <span role="link" tabIndex={-1} className="mr-mono mr-ellipsis" data-mr="DocTag" data-mr-source={docTag.doc.id} title={`${docTag.role === "build" ? "Builds" : "Plans"} the working doc “${docTag.doc.title}”: click to open it`} onClick={(e) => { e.stopPropagation(); onOpenDoc(docTag.doc.id); }} style={{ fontSize: 12, padding: "0 6px", background: "var(--mr-well)", color: "var(--mr-ink-2)", flexShrink: 0, maxWidth: "60%", cursor: "pointer" }}>▤ {docTag.role}{grouped ? "" : ` · ${docTag.doc.title}`}</span>}
           {s.goal && <span className="mr-mono" data-mr="GoalMark" data-mr-source={s.id} title={`Goal: ${s.goal.condition}`} style={{ fontSize: 12, color: "var(--mr-selected)" }}>◎ goal</span>}
           <ContextMeter s={s} compactWindow={compactWindow} running={false} slim />
         </div>
