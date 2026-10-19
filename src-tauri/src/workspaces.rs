@@ -50,6 +50,11 @@ fn copy_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Personal, or a workspace whose folder is still there (deleting one moves it to the Trash).
+pub fn exists(app: &AppHandle, workspace: &str) -> bool {
+    config_dir(app, workspace).is_none_or(|c| c.is_dir())
+}
+
 pub fn config_dir(app: &AppHandle, workspace: &str) -> Option<PathBuf> {
     if workspace == PERSONAL || workspace.is_empty() {
         return None;

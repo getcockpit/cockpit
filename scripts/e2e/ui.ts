@@ -1091,6 +1091,16 @@ const flows: Flow[] = [
     await ui.click("button", "Pause", '[data-mr="ScheduleRow"]');
     await ui.seeText("Paused");
   } },
+  { name: "J20 an empty list offers examples that fill in the editor", run: async () => {
+    await ui.open("busy");
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.tags("RecurringExample", 2);
+    await ui.clickUntil("button", /^Weekly report/, '[data-mr="Recurring"]', "ScheduleEditor");
+    await ui.seeText("Mon at 09:00");
+    await ui.click("button", "Schedule it");
+    await ui.tags("ScheduleRow", 1);
+    await ui.tags("RecurringExample", 0);
+  } },
   { name: "Keys: Esc closes the delete-workspace dialog", run: async () => {
     await ui.open("busy");
     await ui.rightClick("button", "Client A");
