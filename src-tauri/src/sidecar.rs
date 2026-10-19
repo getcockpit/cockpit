@@ -19,6 +19,8 @@ pub struct Sidecar {
     oneshots: Mutex<std::collections::HashMap<String, std::sync::mpsc::Sender<serde_json::Value>>>,
     /// Sessions whose flow finished (review published, address pushed): archived already, stopped when the turn ends.
     closing: Mutex<std::collections::HashSet<String>>,
+    /// Sessions started in a mode of their own (a recurring run's, MR-167) until you set one for all.
+    modes: Mutex<std::collections::HashMap<String, String>>,
 }
 
 /// How many sessions may be mid-turn at once when nothing else says (MR-105; was 6, decision 14).
@@ -72,7 +74,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         let mut payload = serde_json::from_str::<serde_json::Value>(line)
                             .unwrap_or_else(|_| serde_json::json!({ "type": "raw", "line": line }));
                         // Never ask (I109): allowed here, logged as auto_allowed so no card is drawn.
-                        if payload["type"] == "permission_request" && permission_mode(&handle) == "never" && auto_allows(&payload) {
+                        if payload["type"] == "permission_request" && session_mode(&handle, payload["session"].as_str().unwrap_or("")) == "never" && auto_allows(&payload) {
                             payload["auto_allowed"] = true.into();
                             let decision = serde_json::json!({ "behavior": "allow", "updatedInput": payload["input"] });
                             let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "permission_response", "session": payload["session"], "request_id": payload["request_id"], "decision": decision }));
@@ -110,6 +112,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         // The Cockpit layer draws the cards once a turn ends (decision 34).
                         if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
                             if let Some(id) = session.as_deref() {
+                                crate::schedules::on_turn_end(&handle, id, &payload["message"]);
                                 if handle.state::<Sidecar>().closing.lock().unwrap().remove(id) {
                                     let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": id }));
                                 } else {
@@ -276,6 +279,17 @@ fn permission_mode(app: &AppHandle) -> &'static str {
     fold_permission_mode(evs.iter().map(|e| &e.payload))
 }
 
+/// A session's own mode if it started in one (a recurring run), else everyone's.
+fn session_mode(app: &AppHandle, session: &str) -> String {
+    let own = app.state::<Sidecar>().modes.lock().unwrap().get(session).cloned();
+    own.unwrap_or_else(|| permission_mode(app).to_owned())
+}
+
+/// Whether a new session would be refused for the cap right now.
+pub fn at_cap(app: &AppHandle) -> bool {
+    busy(&app.state::<Sidecar>()) >= session_cap(app)
+}
+
 /// Sets how sessions ask for permission. Logged first, then switched on every running session so
 /// it applies at once; new and resumed sessions start in it.
 #[tauri::command]
@@ -284,6 +298,7 @@ pub fn permission_mode_set(app: AppHandle, state: State<'_, Sidecar>, mode: Stri
         return Err(format!("unknown permission mode: {mode}"));
     }
     crate::eventlog::record(&app, None, "ui.permission_mode_set", &serde_json::json!({ "mode": mode }), None);
+    state.modes.lock().unwrap().clear();
     let live: Vec<String> = state.live.lock().unwrap().iter().cloned().collect();
     for id in live {
         let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "set_permission_mode", "session": id, "mode": sdk_mode(&mode) }));
@@ -371,6 +386,32 @@ pub fn session_start(
     preset: Option<String>,
     attachments: Option<Vec<serde_json::Value>>,
 ) -> Result<String, String> {
+    start_with(app, state, cwd, prompt, resume, tools, kind, worktree, session_id, workspace, preset, attachments, Started::default())
+}
+
+/// What only Cockpit itself starts sessions with: a recurring run's schedule and its own mode (MR-167).
+#[derive(Default)]
+pub struct Started {
+    pub schedule: Option<String>,
+    pub permission_mode: Option<String>,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn start_with(
+    app: AppHandle,
+    state: State<'_, Sidecar>,
+    cwd: String,
+    prompt: String,
+    resume: Option<String>,
+    tools: Option<serde_json::Value>,
+    kind: Option<String>,
+    worktree: Option<bool>,
+    session_id: Option<String>,
+    workspace: Option<String>,
+    preset: Option<String>,
+    attachments: Option<Vec<serde_json::Value>>,
+    started: Started,
+) -> Result<String, String> {
     let mut cwd = expand_home(&app, &cwd);
     if !std::path::Path::new(&cwd).is_dir() {
         return Err(format!("not a folder: {cwd}"));
@@ -402,6 +443,13 @@ pub fn session_start(
     if let Some(id) = preset {
         payload["preset"] = id.into();
     }
+    // A recurring run (MR-167): its tile is tagged ↻ and its history lists it.
+    if let Some(id) = &started.schedule {
+        payload["schedule"] = id.clone().into();
+    }
+    if let Some(m) = &started.permission_mode {
+        payload["permission_mode"] = m.clone().into();
+    }
     // What the session compacts at, so usage reports can tell sessions apart (I63).
     let compact = compact_window(&app);
     payload["compact_window"] = compact.into();
@@ -424,7 +472,14 @@ pub fn session_start(
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
-    msg["permission_mode"] = sdk_mode(permission_mode(&app)).into();
+    let mode = match started.permission_mode.filter(|m| PERMISSION_MODES.contains(&m.as_str())) {
+        Some(m) => {
+            state.modes.lock().unwrap().insert(session.clone(), m.clone());
+            m
+        }
+        None => session_mode(&app, &session),
+    };
+    msg["permission_mode"] = sdk_mode(&mode).into();
     let (model, effort) = model_choice(&app, &session);
     if let Some(m) = model {
         msg["model"] = m.into();

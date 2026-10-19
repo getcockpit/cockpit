@@ -131,7 +131,16 @@ export type SessionState = {
   goal: Goal | null; // the /goal Claude keeps working toward until an evaluator says it's met
   signedOut: { retry: string } | null; // Claude Code refused a turn because its sign-in expired (MR-153): the message to send again once signed in
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
+  schedule: string | null; // a recurring run: the schedule that started it (MR-167)
+  unread: boolean; // a recurring run you haven't opened yet: marked new on the Wall and in the review tray
 };
+
+// A recurring session (MR-167): a saved prompt + folder + cadence that Cockpit starts by itself.
+// at: local "HH:MM"; days: 1 = Monday … 7 = Sunday (weekly); every_h (hourly).
+export type Cadence = { kind: "daily" | "weekdays" | "weekly" | "hourly"; at: string; days?: number[]; every_h?: number };
+export type ScheduleRun = { at: number; session: string | null; reason: "due" | "catchup" | "manual"; ok: boolean; error: string | null; slot: string | null };
+export type Schedule = { id: string; name: string; prompt: string; cwd: string; workspace: string; worktree: boolean; cadence: Cadence; permissionMode: PermissionMode; paused: boolean; fromSession: string | null; runs: ScheduleRun[] };
+export type BackgroundMode = "schedules" | "always" | "never";
 
 // Claude Code's /goal (active_goal): the completion condition, how many turns it was checked and found not met, and why.
 export type Goal = { condition: string; iterations: number; setAt: number; lastReason: string | null };
@@ -179,6 +188,8 @@ export type AppState = {
   selfbuild: { id: string; branch: string; sha: string; phase: "building" | "ready" } | null; // the latest self-build until relaunched or dismissed
   update: UpdateState;
   overviewLayout: Record<string, { x: number; y: number }>; // where each workspace sits on the Overview canvas (decision 40)
+  schedules: Record<string, Schedule>; // recurring sessions (MR-167)
+  background: BackgroundMode; // when closing the window leaves Cockpit running in the tray (MR-167)
 };
 
 export type PermissionMode = "auto" | "acceptEdits" | "default" | "never";
