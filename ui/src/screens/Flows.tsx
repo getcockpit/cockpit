@@ -127,7 +127,7 @@ export function ReviewView({ s }: { s: SessionState }) {
               </label>
             </div>
           )}
-          {r.published && <span className="mr-dim">{r.approved ? "Posted to the PR as one review and approved it." : "Posted to the PR as one review."} {keyLabel("Mark this session done (⌘⇧D) to clear it from the wall.")}</span>}
+          {r.published && <span className="mr-dim">{r.approved ? "Posted to the PR as one review and approved it." : "Posted to the PR as one review."} {s.archivedAt ? "Nothing left to do, so the session archived itself." : "It archives itself once Claude confirms the post."}</span>}
         </section>
       )}
       {r.unchanged && !o && !snip && <Unchanged u={r.unchanged} source={s.id} onReply={reply} />}
@@ -244,7 +244,7 @@ export function AddressView({ s }: { s: SessionState }) {
               {nextSteps.slice(0, 3).map((x, i) => <Key key={i} k={String(i + 1)} tone={i === 0 ? "primary" : undefined} disabled={working} onClick={() => send(x)}>{x.label}</Key>)}
             </div>
           )}
-          <span className="mr-dim">{keyLabel("Or mark this session done (⌘⇧D) to clear it from the wall.")}</span>
+          <span className="mr-dim">{done.pushed && s.archivedAt ? "Pushed and every reply posted, so the session archived itself." : keyLabel("Or mark this session done (⌘⇧D) to clear it from the wall.")}</span>
         </section>
       )}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
