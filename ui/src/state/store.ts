@@ -175,6 +175,12 @@ export const api = {
   /** Into another workspace, conversation and all (MR-154). */
   move: (session: string, workspace: string) => invoke("session_move", { session, workspace }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
+  // Recurring sessions (MR-167): saved, run and deleted by the core, which logs each.
+  scheduleSet: (schedule: Record<string, unknown>) => invoke<string>("schedule_set", { schedule }),
+  scheduleDelete: (id: string) => invoke("schedule_delete", { id }),
+  scheduleRunNow: (id: string) => invoke<string>("schedule_run_now", { id }),
+  schedulesNext: () => invoke<Record<string, number>>("schedules_next"),
+  setBackground: (mode: string) => invoke("background_set", { mode }),
   log: (kind: string, payload: Record<string, unknown>, sessionId?: string, anchor?: string) => invoke("event_append", { sessionId, kind, payload, anchor }),
 };
 
