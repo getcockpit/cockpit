@@ -8,6 +8,8 @@ import { Settings } from "./screens/Settings";
 import { Onboarding } from "./screens/Onboarding";
 import { PermissionPrompt } from "./components/PermissionChoice";
 import { Archive } from "./screens/Archive";
+import { draftFrom, Recurring, type Draft } from "./screens/Recurring";
+import { listen } from "./state/listen";
 import { Toast } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { navigate, Presence } from "./components/motion";
@@ -152,6 +154,12 @@ export default function App() {
   const [pickerText, setPickerText] = useState("");
   const [pickerMode, setPickerMode] = useState<"review" | "address" | undefined>(undefined);
   const [archive, setArchive] = useState(false);
+  // Recurring sessions (MR-167): the overlay, optionally with a new schedule drafted from a session.
+  const [recurring, setRecurring] = useState<{ draft: Draft | null } | null>(null);
+  // Opening a recurring run reads it: its "new" mark goes.
+  const unreadOpen = focus && all.sessions[focus]?.unread ? focus : null;
+  useEffect(() => { if (unreadOpen) void api.log("ui.run_seen", {}, unreadOpen); }, [unreadOpen]);
+  useEffect(() => { const off = listen("mr-open-recurring", () => setRecurring({ draft: null })); return () => void off.then((f) => f()); }, []);
   // Wall or Timeline (decision 29, MR-32): remembered per viewer, like the open workspace.
   const [wallView, setWallViewNow] = useState<"wall" | "timeline">(() => { try { return localStorage.getItem("mr.wallView") === "timeline" ? "timeline" : "wall"; } catch { return "wall"; } });
   const setWallView = (v: "wall" | "timeline") => navigate("side", () => { setWallViewNow(v); try { localStorage.setItem("mr.wallView", v); } catch { /* per-viewer convenience */ } });
@@ -198,7 +206,7 @@ export default function App() {
   const view = overview ? "overview" : docId ? "doc map" : focus ? "focus" : wallView;
   // Feature usage (MR-83): the main screen first, then every open overlay.
   useEffect(() => installUsage(), []);
-  useViews([view, picker && "start picker", settings && "settings", god && "god mode", archive && "archive", builds !== null && "builds", switcher && "workspace switcher", signIn && "sign in", deleting && "delete workspace", intro && "intro"].filter((v): v is string => typeof v === "string"));
+  useViews([view, picker && "start picker", settings && "settings", god && "god mode", archive && "archive", recurring && "recurring", builds !== null && "builds", switcher && "workspace switcher", signIn && "sign in", deleting && "delete workspace", intro && "intro"].filter((v): v is string => typeof v === "string"));
   const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src, component) => { if (component === "WorkspaceTab") return src !== "personal" ? { label: "Delete workspace…", run: () => setDeleting(src) } : null; const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
   // Point + talk: which session does the thing under the pointer belong to?
   const resolve = (t: PointTarget) => {
@@ -246,6 +254,7 @@ export default function App() {
       <Presence show={!!signIn}>{signInPanel}</Presence>
       <Presence show={settings}><Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} /></Presence>
       <Presence show={archive}>{archivePanel}</Presence>
+      <Presence show={!!recurring}>{recurring && <Recurring state={all} workspace={workspace} draft={recurring.draft} onClose={() => setRecurring(null)} onOpenSession={(id) => { setRecurring(null); setDocId(null); setFocus(id); }} />}</Presence>
       <Toast />
       <Presence show={!!deleting}>{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}</Presence>
       <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>
@@ -255,7 +264,7 @@ export default function App() {
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
   const focused = focus ? state.sessions[focus] : null;
-  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} workspaces={state.workspaces} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} onSignIn={(then) => { afterSignIn.current = then; setSignIn(focused.workspace); }} /></div>}</ErrorBoundary>, overlays);
+  if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} workspaces={state.workspaces} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} onSignIn={(then) => { afterSignIn.current = then; setSignIn(focused.workspace); }} onRepeat={() => setRecurring({ draft: focused.schedule ? null : draftFrom(focused) })} /></div>}</ErrorBoundary>, overlays);
   if (wallView === "timeline") return shell(<ErrorBoundary key="timeline" name="timeline"><Timeline state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onWall={() => setWallView("wall")} /></ErrorBoundary>, overlays);
-  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onSettings={() => setSettings(true)} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onSignIn={(s) => { setFocus(s.id); afterSignIn.current = () => void api.retrySignedIn(s.id, s.signedOut?.retry ?? ""); setSignIn(s.workspace); }} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
+  return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} onRecurring={() => setRecurring({ draft: null })} onSettings={() => setSettings(true)} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onSignIn={(s) => { setFocus(s.id); afterSignIn.current = () => void api.retrySignedIn(s.id, s.signedOut?.retry ?? ""); setSignIn(s.workspace); }} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
 }

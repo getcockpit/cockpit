@@ -1048,6 +1048,42 @@ const flows: Flow[] = [
     await until("a command filled in", () => { if (!/\/\w+/.test(pt("html", "css:[data-mr=PromptBox] textarea"))) throw new Error("no command in the box"); });
     await ui.tags("SessionName", 1);
   } },
+  { name: "J20 a recurring run lands on the Wall marked new until you open it", run: async () => {
+    await ui.open("recurring");
+    await ui.tags("RecurringTag", 1);
+    await ui.tags("Unread", 1);
+    await ui.clickUntil("button", /Summarise the PRs/, undefined, "RecurringMark");
+    await ui.key("Escape");
+    await ui.tags("RecurringTag", 1);
+    await ui.tags("Unread", 0);
+  } },
+  { name: "J20 Run now starts a tagged run and adds it to the history", run: async () => {
+    await ui.open("recurring");
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.tags("ScheduleRow", 1);
+    await ui.click("button", "Run now", '[data-mr="ScheduleRow"]');
+    await ui.tags("Recurring", 0);
+    await ui.tags("RecurringMark", 1);
+    await ui.see("button", "↻ Schedule…");
+    await ui.key("Escape");
+    await ui.tags("RecurringTag", 2);
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.click("button", "History (2)");
+    await ui.tags("ScheduleRun", 2);
+  } },
+  { name: "J20 make a schedule with Repeat… and see it listed", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.clickUntil("button", "Repeat…", undefined, "ScheduleEditor");
+    await ui.click("radio", "Weekly");
+    await ui.click("button", "Thu");
+    await ui.seeText("Mon, Thu at 09:00");
+    await ui.click("button", "Schedule it");
+    await ui.tags("ScheduleRow", 1);
+    await ui.seeText("Next ");
+    await ui.click("button", "Pause", '[data-mr="ScheduleRow"]');
+    await ui.seeText("Paused");
+  } },
   { name: "Keys: Esc closes the delete-workspace dialog", run: async () => {
     await ui.open("busy");
     await ui.rightClick("button", "Client A");
