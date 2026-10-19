@@ -553,10 +553,10 @@ export const markFor = (b: OverviewBlock) => b.kind === "session" && !(b.lamp ==
 export const statusFor = (b: OverviewBlock) => (markFor(b) && b.status === STATE_LABEL[b.lamp] ? "" : b.status);
 
 function Block({ b, close, zoom, change, dim, current, onClick }: { b: OverviewBlock; close: boolean; zoom: number; change?: "new" | "updated"; dim?: boolean; current?: boolean; onClick: (e: React.MouseEvent) => void }) {
-  const tip = [b.kind === "doc" ? `Doc: ${b.title}` : b.title, b.status, b.step && b.step !== b.status ? b.step : null].filter(Boolean).join("\n");
+  const tip = [b.kind === "doc" ? `Doc: ${b.title}` : b.role ? `${b.title} (${b.role === "build" ? "builds" : "plans"} the doc above)` : b.title, b.status, b.step && b.step !== b.status ? b.step : null].filter(Boolean).join("\n");
   return (
     <button type="button" className="mr-ov-block" data-mr="OverviewBlock" data-mr-source={b.id} data-mr-kind={b.kind} data-s={b.lamp} data-dim={dim || undefined} data-current={current || undefined} data-change={change} aria-label={`Open ${b.title}, ${b.status}${change ? `, ${change} since you last looked` : ""}`} title={tip} onClick={onClick}
-      style={{ position: "relative", height: BLOCK_H, display: "flex", gap: 8, padding: `${close ? 6 : 2}px ${change ? (close ? readable(11, zoom, 12) * 4.4 + 14 : readable(11, zoom, 12) * 1.2 + 14) : 10}px ${close ? 6 : 2}px 0`, border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
+      style={{ position: "relative", height: BLOCK_H, marginLeft: b.parent ? (close ? 16 : 8) : 0, display: "flex", gap: 8, padding: `${close ? 6 : 2}px ${change ? (close ? readable(11, zoom, 12) * 4.4 + 14 : readable(11, zoom, 12) * 1.2 + 14) : 10}px ${close ? 6 : 2}px 0`, border: 0, font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", overflow: "hidden" }}>
       <span aria-hidden="true" style={{ flex: "none", width: close ? 4 : 4 / Math.min(1, zoom / 0.9), alignSelf: "stretch", ...lampStyle(b.lamp, true) }} />
       {change && <span data-mr="OverviewChange" data-mr-source={b.id} aria-hidden="true" className="mr-mono" title={`${change} since you last looked`}
         style={{ position: "absolute", top: 0, right: 0, padding: "1px 5px", fontSize: readable(11, zoom, 12), lineHeight: 1.2, fontWeight: 700, background: "var(--mr-band)", color: "var(--mr-ink-2)" }}>{close ? change : "●"}</span>}
@@ -564,7 +564,7 @@ function Block({ b, close, zoom, change, dim, current, onClick }: { b: OverviewB
         {/* Up close one line, with status and step under it; at middle zoom the title alone gets two
             lines, so a narrow column still shows most of it. A doc is marked by a glyph there. */}
         <span className={close ? "mr-ellipsis" : undefined} style={{ fontWeight: 600, fontSize: readable(14, zoom, 12), lineHeight: 1.15, ...(close ? {} : { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" }) }}>
-          {b.kind === "doc" && (close ? <span className="mr-mono mr-dim" style={{ fontWeight: 400, fontSize: "0.85em" }}>doc · </span> : <span className="mr-dim" aria-hidden="true" style={{ fontWeight: 400 }}>▤ </span>)}{b.title}
+          {b.role && <span className="mr-mono mr-dim" data-mr="OverviewDocRole" data-mr-source={b.parent} style={{ fontWeight: 400, fontSize: "0.85em" }}>{b.role} · </span>}{b.kind === "doc" && (close ? <span className="mr-mono mr-dim" style={{ fontWeight: 400, fontSize: "0.85em" }}>doc · </span> : <span className="mr-dim" aria-hidden="true" style={{ fontWeight: 400 }}>▤ </span>)}{b.title}
         </span>
         {close
           ? <>
