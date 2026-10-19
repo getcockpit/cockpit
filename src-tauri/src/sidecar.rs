@@ -113,6 +113,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
                             if let Some(id) = session.as_deref() {
                                 crate::schedules::on_turn_end(&handle, id, &payload["message"]);
+                                relay_doc_changes(&handle, id);
                                 if handle.state::<Sidecar>().closing.lock().unwrap().remove(id) {
                                     let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": id }));
                                 } else {
@@ -754,6 +755,21 @@ pub fn expand_home(app: &AppHandle, path: &str) -> String {
     }
 }
 
+/// The doc changes a session made this turn go to the doc's other running sessions (MR-168): right
+/// away, queued behind their turn if they're mid-turn. Recorded as `doc.relay` on the recipient.
+fn relay_doc_changes(app: &AppHandle, author: &str) {
+    let state = app.state::<Sidecar>();
+    let live = state.live.lock().unwrap().clone();
+    for (to, doc_id, text) in app.state::<crate::docs::Docs>().take_relay(author, &live) {
+        crate::eventlog::record(app, Some(&to), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "from": author, "text": text }), Some(&format!("doc:{doc_id}")));
+        // An idle session starts a turn for the note; what it changes then isn't relayed back.
+        if state.idle.lock().unwrap().remove(&to) {
+            app.state::<crate::docs::Docs>().mark_relayed(&to);
+        }
+        let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "send", "session": to, "text": text }));
+    }
+}
+
 /// Answers a relayed `mr` MCP tool call from the core's own state (docs), then replies to the sidecar.
 fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     let session = payload["session"].as_str().unwrap_or_default().to_owned();
@@ -771,6 +787,7 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     for (kind, p) in events {
         let anchor = p["doc_id"].as_str().map(|d| format!("doc:{d}"));
         crate::eventlog::record(app, Some(&session), &kind, &p, anchor.as_deref());
+        app.state::<crate::docs::Docs>().note_change(&session, &kind, &p);
     }
     if crate::flows::is_flow_tool(tool) && crate::flows::closes_session(tool, &payload["args"]) {
         // Nothing left for the user: archive it now, stop it once this turn ends.

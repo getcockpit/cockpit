@@ -47,6 +47,35 @@ export const isStalled = (d: Doc, sessions: Record<string, SessionState>, now: n
 /** The docs a session shows in Focus: the ones it wrote and the ones it builds (MR-118). */
 export const docsOf = (docs: Doc[], sessionId: string) => docs.filter((d) => d.session_id === sessionId || d.build_sessions?.includes(sessionId));
 
+/** Which working doc a session works on, and how: it builds it (Build it) or it plans it (wrote it).
+ *  Build wins when both, and the newest doc wins among several. Briefs don't tag. */
+export function docRole(docs: Doc[], sessionId: string): { doc: Doc; role: "plan" | "build" } | null {
+  const own = docs.filter((d) => !isBrief(d)).sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+  const build = own.find((d) => d.build_sessions?.includes(sessionId));
+  if (build) return { doc: build, role: "build" };
+  const plan = own.find((d) => d.session_id === sessionId);
+  return plan ? { doc: plan, role: "plan" } : null;
+}
+
+/** The Wall's doc groups (MR-168): each doc with the sessions that plan or build it (each session
+ *  in one group, the one docRole picks), docs with none, and the sessions that belong to no doc. */
+export function groupByDoc(docs: Doc[], sessionIds: string[]): { groups: { doc: Doc; sessions: { id: string; role: "plan" | "build" }[] }[]; idle: Doc[]; loose: string[] } {
+  const by = new Map<string, { id: string; role: "plan" | "build" }[]>();
+  const loose: string[] = [];
+  for (const id of sessionIds) {
+    const r = docRole(docs, id);
+    if (r) by.set(r.doc.id, [...(by.get(r.doc.id) ?? []), { id, role: r.role }]);
+    else loose.push(id);
+  }
+  // The plan session first, then builds oldest first.
+  const rank = (x: { role: string }) => (x.role === "plan" ? 0 : 1);
+  return {
+    groups: docs.filter((d) => by.has(d.id)).map((doc) => ({ doc, sessions: by.get(doc.id)!.sort((a, b) => rank(a) - rank(b)) })),
+    idle: docs.filter((d) => !by.has(d.id)),
+    loose,
+  };
+}
+
 export const SECTIONS = ["goal", "scope", "success", "design", "risk", "question", "components", "verification", "log"] as const;
 export const SECTION_LABEL: Record<string, string> = {
   goal: "Goal", scope: "Scope", success: "Success criteria", design: "Design", risk: "Risk",

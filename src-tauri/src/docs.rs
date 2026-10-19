@@ -66,6 +66,10 @@ pub struct Doc {
 #[derive(Default)]
 pub struct Docs {
     docs: Mutex<BTreeMap<String, Doc>>,
+    /// Blocks each session changed this turn, as (doc, block), for the relay at its turn's end (MR-168).
+    changed: Mutex<BTreeMap<String, Vec<(String, String)>>>,
+    /// Sessions whose turn a relay note started: what they change in it isn't relayed back.
+    relayed: Mutex<std::collections::HashSet<String>>,
 }
 
 impl Docs {
@@ -82,6 +86,70 @@ impl Docs {
     pub fn list(&self) -> Vec<Doc> {
         self.docs.lock().unwrap().values().cloned().collect()
     }
+
+    /// A session's tool call changed a block (doc.block_set / doc.block_removed): remember it for the relay.
+    pub fn note_change(&self, session: &str, kind: &str, p: &Value) {
+        if kind != "doc.block_set" && kind != "doc.block_removed" {
+            return;
+        }
+        let key = (p["doc_id"].as_str().unwrap_or_default().to_owned(), p["block_id"].as_str().unwrap_or_default().to_owned());
+        let mut changed = self.changed.lock().unwrap();
+        let list = changed.entry(session.to_owned()).or_default();
+        if !list.contains(&key) {
+            list.push(key);
+        }
+    }
+
+    /// The notes to send once `author`'s turn ends (MR-168): one per (doc, other live session).
+    /// Nothing when a relay note started that turn, so two sessions can't keep pinging each other.
+    pub fn take_relay(&self, author: &str, live: &std::collections::HashSet<String>) -> Vec<(String, String, String)> {
+        let changes = self.changed.lock().unwrap().remove(author).unwrap_or_default();
+        if self.relayed.lock().unwrap().remove(author) {
+            return vec![];
+        }
+        relay_notes(&self.docs.lock().unwrap(), author, &changes, live)
+    }
+
+    /// A relay note went to `session` while it was idle: the turn it starts is the note's.
+    pub fn mark_relayed(&self, session: &str) {
+        self.relayed.lock().unwrap().insert(session.to_owned());
+    }
+}
+
+/// For each doc `author` changed: a note to each of the doc's other sessions (its plan session and
+/// builds) that is still running, saying what changed. Returns (session, doc id, text).
+pub fn relay_notes(docs: &BTreeMap<String, Doc>, author: &str, changes: &[(String, String)], live: &std::collections::HashSet<String>) -> Vec<(String, String, String)> {
+    let mut by_doc: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (d, b) in changes {
+        by_doc.entry(d).or_default().push(b);
+    }
+    let mut out = vec![];
+    for (doc_id, blocks) in by_doc {
+        let Some(doc) = docs.get(doc_id) else { continue };
+        if doc.kind == "brief" {
+            continue;
+        }
+        let role = if doc.session_id.as_deref() == Some(author) { "plan session" } else if doc.build_sessions.iter().any(|s| s == author) { "build session" } else { "another session" };
+        let lines: Vec<String> = blocks
+            .iter()
+            .map(|b| match doc.blocks.get(*b) {
+                Some(x) => format!("- {} ({}): {}", x.section, b, x.takeaway),
+                None => format!("- removed block {b}"),
+            })
+            .collect();
+        let text = format!(
+            "Working doc \"{}\" (doc_id {}) was just changed by its {role}:\n{}\nRe-read it with the mr doc_read tool if this affects your work, then carry on. No reply needed.",
+            doc.title,
+            doc.id,
+            lines.join("\n")
+        );
+        let mut to: Vec<&String> = doc.session_id.iter().chain(doc.build_sessions.iter()).filter(|s| s.as_str() != author && live.contains(*s)).collect();
+        to.dedup();
+        for s in to {
+            out.push((s.clone(), doc.id.clone(), text.clone()));
+        }
+    }
+    out
 }
 
 fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
@@ -327,6 +395,36 @@ mod tests {
 
     fn ev(n: u32, kind: &str, payload: Value) -> Event {
         Event { id: format!("E{n:04}"), session_id: Some("s1".into()), kind: kind.into(), payload, anchor: None, created_at: n as i64, origin: None }
+    }
+
+    #[test]
+    fn relay_tells_the_other_live_sessions_once_per_turn() {
+        let docs = Docs::default();
+        let e = |n: u32, sid: &str, kind: &str, p: Value| docs.apply(&Event { session_id: Some(sid.into()), ..ev(n, kind, p) });
+        e(1, "plan", "doc.created", json!({ "doc_id": "d", "title": "Retries" }));
+        e(2, "b1", "ui.doc_build_started", json!({ "doc_id": "d" }));
+        e(3, "b2", "ui.doc_build_started", json!({ "doc_id": "d" }));
+        e(4, "plan", "doc.block_set", json!({ "doc_id": "d", "block_id": "design_1", "section": "design", "takeaway": "Exponential backoff" }));
+        for _ in 0..2 {
+            docs.note_change("plan", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
+        }
+        docs.note_change("plan", "doc.block_removed", &json!({ "doc_id": "d", "block_id": "risk_1" }));
+        // b2 ended: only b1 hears, once, with both changes; the author never does.
+        let live: std::collections::HashSet<String> = ["plan", "b1"].map(String::from).into();
+        let notes = docs.take_relay("plan", &live);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].0, "b1");
+        assert!(notes[0].2.contains("by its plan session") && notes[0].2.contains("design (design_1): Exponential backoff") && notes[0].2.contains("removed block risk_1"));
+        assert!(docs.take_relay("plan", &live).is_empty(), "drained");
+        // b1's turn started by the note: its edits don't bounce back.
+        docs.mark_relayed("b1");
+        docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
+        assert!(docs.take_relay("b1", &live).is_empty());
+        // Its next, user-driven turn relays to the plan session as usual.
+        docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
+        let back = docs.take_relay("b1", &live);
+        assert_eq!((back.len(), back[0].0.as_str()), (1, "plan"));
+        assert!(back[0].2.contains("by its build session"));
     }
 
     fn run(docs: &Docs, n: &mut u32, tool: &str, args: Value) -> (String, bool) {

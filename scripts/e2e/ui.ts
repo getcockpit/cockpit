@@ -220,6 +220,13 @@ const flows: Flow[] = [
     await ui.click("button", "Click again to drop this doc");
     await ui.tags("DocTile", 2);
   } },
+  { name: "MR-168 a doc and its plan and build sessions show as one group", run: async () => {
+    await ui.open("doclife");
+    await ui.tags("DocGroup", 2);
+    await ui.tags("DocTag", 2); // ▤ plan and ▤ build, inside their groups
+    await ui.click("button", /^Retire the old invoices table/); // the group's doc header
+    await ui.tags("DocStage", 1);
+  } },
   { name: "Doc lifecycle: a doc built without Build it can be marked shipped", run: async () => {
     await ui.open("doclife");
     await ui.click("button", /^Nightly backup check/);
