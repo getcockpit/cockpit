@@ -6,6 +6,7 @@ import { Diff } from "./Diff";
 import { Markdown, inline } from "./Markdown";
 import { Chips, Mark } from "./Turn";
 import { FileRefChip } from "./FileChip";
+import { CopyKey } from "./CopyKey";
 import { ImageCompare, ImageGallery } from "./ImageReview";
 import type { ViewBlock } from "../state/types";
 
@@ -627,6 +628,7 @@ function Actions({ b, title, onReply, onDiscover, live }: { b: ViewBlock; title:
   const gist = blockGist(b);
   return (
     <span className="mr-view-actions" style={{ position: "absolute", top: 6, right: 8, display: "flex", gap: 4 }}>
+      {b.type === "text" && str(b.markdown) && <CopyKey text={str(b.markdown)} style={{ opacity: 1 }} />}
       {live && <Key onClick={() => onReply(`Go one level deeper on "${gist}"`)}>↘ Deeper</Key>}
       {onDiscover && <Key onClick={() => onDiscover(`the "${title}" view, ${gist}`)}>⌕ Discover</Key>}
     </span>
