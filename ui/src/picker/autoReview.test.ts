@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAbout, lastLocalReview, needsAutoReview, reviewKey } from "./autoReview";
+import { cloneWorkspaces, isAbout, lastLocalReview, needsAutoReview, prHere, reviewKey } from "./autoReview";
 import type { SessionState } from "../state/types";
 
 const pr = { number: 482, title: "Retry payments", url: "https://github.com/acme/shop/pull/482", updatedAt: "", repository: { nameWithOwner: "acme/shop" } };
@@ -41,5 +41,30 @@ describe("auto-review (MR-72)", () => {
     const s = (kind: string, title: string, startedAt: number) => ({ kind, title, startedAt }) as SessionState;
     expect(lastLocalReview([s("review", "/review 482", 5), s("review", `/review ${pr.url}`, 9), s("blank", "/review 482", 20), s("review", "/review 1", 30)], pr)).toBe(9);
     expect(lastLocalReview([], pr)).toBeNull();
+  });
+});
+
+describe("PR suggestions per workspace", () => {
+  const s = (id: string, workspace: string, cwd: string, repo: string | null = null, fromDeleted: string | null = null) => ({ id, workspace, cwd, repo, fromDeleted }) as unknown as SessionState;
+  const state = (sessions: SessionState[], folders: Record<string, string | null> = {}) => ({
+    sessions: Object.fromEntries(sessions.map((x) => [x.id, x])),
+    order: sessions.map((x) => x.id),
+    workspaces: [{ id: "personal", name: "Personal", configDir: null, folder: folders.personal ?? null }, { id: "work", name: "Work", configDir: null, folder: folders.work ?? null }],
+  });
+
+  it("belongs to the workspaces whose sessions ran in the clone, its worktrees or subfolders, newest first", () => {
+    const st = state([s("a", "personal", "/c/shop/ui"), s("b", "work", "/c/shop-worktrees/fix-1", "/c/shop"), s("c", "personal", "/c/shopify")]);
+    expect(cloneWorkspaces(st, "/c/shop")).toEqual(["work", "personal"]);
+    expect(cloneWorkspaces(st, "/c/other")).toEqual([]);
+  });
+
+  it("counts a pinned folder, and not sessions from a deleted workspace", () => {
+    expect(cloneWorkspaces(state([s("a", "personal", "/c/shop", null, "Old")], { work: "/c/shop" }), "/c/shop")).toEqual(["work"]);
+  });
+
+  it("shows a PR only where its repo is worked on, or everywhere when nowhere yet", () => {
+    expect(prHere(["work"], "personal")).toBe(false);
+    expect(prHere(["work"], "work")).toBe(true);
+    expect(prHere([], "personal")).toBe(true);
   });
 });

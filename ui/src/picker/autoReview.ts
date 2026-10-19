@@ -1,5 +1,5 @@
 import type { Pr } from "../state/store";
-import type { SessionState } from "../state/types";
+import type { AppState, SessionState } from "../state/types";
 
 // Auto-review (MR-72): a PR waiting for your review gets a /review session by itself, unless it's a
 // draft or nothing changed since your last review (on GitHub, or a Review session here).
@@ -31,3 +31,22 @@ export function needsAutoReview(info: ReviewState, url: string, localAt: number 
   const commit = info.lastCommitAt ? Date.parse(info.lastCommitAt) : null;
   return commit !== null && commit > last;
 }
+
+const inside = (path: string, clone: string) => {
+  const p = path.replace(/\/+$/, ""), c = clone.replace(/\/+$/, "");
+  return p === c || p.startsWith(`${c}/`) || p.startsWith(`${c}-worktrees/`);
+};
+
+/** The workspaces that work in this clone, most recent first: their pinned folder or a session's repo/folder sits in it. */
+export function cloneWorkspaces(state: Pick<AppState, "sessions" | "order" | "workspaces">, clone: string): string[] {
+  const out: string[] = [];
+  for (const id of [...state.order].reverse()) {
+    const s = state.sessions[id];
+    if (s && !s.fromDeleted && !out.includes(s.workspace) && [s.repo, s.cwd].some((p) => p && inside(p, clone))) out.push(s.workspace);
+  }
+  for (const w of state.workspaces) if (w.folder && inside(w.folder, clone) && !out.includes(w.id)) out.push(w.id);
+  return out;
+}
+
+/** Whether a PR's suggestion belongs in this workspace: its clone's workspaces, or every one when none works in it yet. */
+export const prHere = (owners: string[], workspace: string) => !owners.length || owners.includes(workspace);
