@@ -725,5 +725,8 @@ test("a doc-change note from Cockpit shows in the transcript as from the doc, no
     ev("B3", "doc.relay", { doc_id: "d", from: "p", text: "Working doc \"Retries\" was just changed" }),
   ]).sessions.b;
   expect(s.transcript.at(-1)).toMatchObject({ kind: "user", via: "doc", text: "Working doc \"Retries\" was just changed" });
+  // A note queued for your next message shows nothing until it's delivered.
+  const queued = replay([ev("B1", "ui.session_requested", { prompt: "build it", kind: "blank", cwd: "/w" }), ev("B2", "doc.relay_waiting", { doc_id: "d", text: "later" })]).sessions.b;
+  expect(queued.transcript.some((t) => t.kind === "user" && t.via === "doc")).toBe(false);
   expect(s.status).toBe("working");
 });
