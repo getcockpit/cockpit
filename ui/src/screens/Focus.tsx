@@ -292,16 +292,11 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
   const one = (t: Row): React.ReactNode => t.kind === "step" ? null : t.kind === "text" ? (
         <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {diagrams[t.id] && <FlowDiagram d={diagrams[t.id]!} />}
-          <div style={{ position: "relative" }}>
-            <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} />
-            {t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
-              <span style={{ position: "absolute", top: 6, right: 8 }}>
-                <Key onClick={() => { setDrawing((d) => new Set(d).add(t.id)); onDiagram(t); }} disabled={drawing.has(t.id) && !(t.id in diagrams)}>
-                  {drawing.has(t.id) && !(t.id in diagrams) ? "Drawing…" : t.id in diagrams ? "No flow to draw · retry" : "Diagram"}
-                </Key>
-              </span>
-            )}
-          </div>
+          <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} actions={t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
+            <Key onClick={() => { setDrawing((d) => new Set(d).add(t.id)); onDiagram(t); }} disabled={drawing.has(t.id) && !(t.id in diagrams)}>
+              {drawing.has(t.id) && !(t.id in diagrams) ? "Drawing…" : t.id in diagrams ? "No flow to draw · retry" : "Diagram"}
+            </Key>
+          )} />
         </div>
       ) : t.kind === "view" ? (
         <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={onReply} onDiscover={onDiscover} live={live && t.id === lastTextId} />

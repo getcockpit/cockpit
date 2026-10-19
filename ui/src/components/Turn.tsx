@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Markdown, inline } from "./Markdown";
+import { CopyKey } from "./CopyKey";
 import { keyLabel } from "../platform";
 import { proposedReplies, replyOptions, withoutReplyLine } from "../picker/queue";
 import { parseReport, type Item, type Report, type Section } from "../picker/report";
@@ -99,10 +100,16 @@ export function Chips({ options, onReply }: { options: string[]; onReply: (t: st
   );
 }
 
-/** One assistant turn: a report when it's shaped like one, Markdown otherwise. */
-export function TurnText({ text, onReply, live }: { text: string; onReply: (t: string) => void; live: boolean }): ReactNode {
+/** One assistant turn: a report when it's shaped like one, Markdown otherwise. A Copy button for
+ *  its Markdown sits top right, next to any `actions` the caller adds. */
+export function TurnText({ text, onReply, live, actions }: { text: string; onReply: (t: string) => void; live: boolean; actions?: ReactNode }): ReactNode {
   const r = parseReport(text);
-  if (r) return <ReportView r={r} onReply={onReply} live={live} />;
-  // Proposed replies show as buttons under the turn, so their bare Next line isn't repeated here.
-  return <div style={{ padding: "12px 14px", background: "var(--mr-tile)" }}><Markdown text={withoutReplyLine(text)} /></div>;
+  return (
+    <div className="mr-copyable" style={{ position: "relative" }}>
+      {r ? <ReportView r={r} onReply={onReply} live={live} />
+        // Proposed replies show as buttons under the turn, so their bare Next line isn't repeated here.
+        : <div style={{ padding: "12px 14px", background: "var(--mr-tile)" }}><Markdown text={withoutReplyLine(text)} /></div>}
+      <span className="mr-row" style={{ position: "absolute", top: 6, right: 8, gap: 4 }}><CopyKey text={text} />{actions}</span>
+    </div>
+  );
 }
