@@ -11,7 +11,7 @@ import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
-import { docApi, docStage, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
+import { docApi, docRole, docStage, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
 import { loadPrs as fetchPrs, PRS_TTL, startCwd } from "../state/prs";
@@ -168,7 +168,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
         {sessions.length > 0 && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
           <div className="mr-grid">
-            {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} compactWindow={state.compactWindow} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
+            {running.map(({ s, tile }) => <Tile key={s.id} s={s} tile={tile} docTag={docRole(docs, s.id)} compactWindow={state.compactWindow} onOpen={onOpen} onDiscover={() => void discover(s)} />)}
             <button type="button" className="mr-tile" onClick={() => onStart()} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
               <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>{keyLabel("⌘K")}</kbd>Start something</span>
             </button>
@@ -247,7 +247,7 @@ export function sideThread(s: SessionState): Promise<string> {
   return api.start(s.cwd, `Side thread about the session "${s.title}" (working in ${s.cwd}). Without changing anything, look at what it has done so far (git diff, files) and report briefly: risks, anything it may have missed, and simpler alternatives.`, "blank", false);
 }
 
-function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; compactWindow: number | null; onOpen: (id: string) => void; onDiscover: () => void }) {
+function Tile({ s, tile, docTag, compactWindow, onOpen, onDiscover }: { s: SessionState; tile: TileSpec; docTag: ReturnType<typeof docRole>; compactWindow: number | null; onOpen: (id: string) => void; onDiscover: () => void }) {
   return (
     <button type="button" className="mr-tile" data-mr="Tile" data-mr-source={s.id} data-mr-layer="code" data-s={tile.state} {...dragSession(s, sessionTitle(s))} onClick={(e) => { if (!consumeDrag()) pointer({ open: () => onOpen(s.id), deeper: () => onOpen(s.id), discover: onDiscover })(e); }} style={{ touchAction: "none" }} aria-label={`Open ${s.title}`}>
       <div className="mr-flag" />
@@ -257,7 +257,8 @@ function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState;
           <StateMark s={tile.state} />
         </div>
         <div className="mr-row" style={{ gap: 8 }}>
-          <span className="mr-mono mr-dim mr-ellipsis mr-grow" style={{ fontSize: 12 }}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
+          <span className="mr-mono mr-dim mr-ellipsis mr-grow" style={{ fontSize: 12 }}>{s.kind !== "blank" && s.kind !== docTag?.role ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
+          {docTag && <span className="mr-mono" data-mr="DocTag" data-mr-source={docTag.doc.id} title={`${docTag.role === "build" ? "Builds" : "Plans"} the working doc “${docTag.doc.title}”`} style={{ fontSize: 12, padding: "0 6px", background: "var(--mr-well)", color: "var(--mr-ink-2)", whiteSpace: "nowrap" }}>▤ {docTag.role}</span>}
           {s.goal && <span className="mr-mono" data-mr="GoalMark" data-mr-source={s.id} title={`Goal: ${s.goal.condition}`} style={{ fontSize: 12, color: "var(--mr-selected)" }}>◎ goal</span>}
           <ContextMeter s={s} compactWindow={compactWindow} running={false} slim />
         </div>

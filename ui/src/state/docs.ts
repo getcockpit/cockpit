@@ -47,6 +47,16 @@ export const isStalled = (d: Doc, sessions: Record<string, SessionState>, now: n
 /** The docs a session shows in Focus: the ones it wrote and the ones it builds (MR-118). */
 export const docsOf = (docs: Doc[], sessionId: string) => docs.filter((d) => d.session_id === sessionId || d.build_sessions?.includes(sessionId));
 
+/** Which working doc a session works on, and how: it builds it (Build it) or it plans it (wrote it).
+ *  Build wins when both, and the newest doc wins among several. Briefs don't tag. */
+export function docRole(docs: Doc[], sessionId: string): { doc: Doc; role: "plan" | "build" } | null {
+  const own = docs.filter((d) => !isBrief(d)).sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
+  const build = own.find((d) => d.build_sessions?.includes(sessionId));
+  if (build) return { doc: build, role: "build" };
+  const plan = own.find((d) => d.session_id === sessionId);
+  return plan ? { doc: plan, role: "plan" } : null;
+}
+
 export const SECTIONS = ["goal", "scope", "success", "design", "risk", "question", "components", "verification", "log"] as const;
 export const SECTION_LABEL: Record<string, string> = {
   goal: "Goal", scope: "Scope", success: "Success criteria", design: "Design", risk: "Risk",
