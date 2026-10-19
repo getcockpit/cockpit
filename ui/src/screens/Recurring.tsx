@@ -31,7 +31,13 @@ export function runLabel(r: ScheduleRun): string {
 }
 
 /** What a new schedule starts as: from a session ("Repeat…") or blank. */
-export type Draft = Partial<Pick<Schedule, "name" | "prompt" | "cwd" | "workspace" | "worktree" | "fromSession">>;
+export type Draft = Partial<Pick<Schedule, "name" | "prompt" | "cwd" | "workspace" | "worktree" | "fromSession" | "cadence">>;
+
+/** Starting points on an empty list: picked, they open the editor filled in. */
+export const EXAMPLES: { name: string; prompt: string; cadence: Cadence; worktree: boolean }[] = [
+  { name: "Daily PR digest", prompt: "List the open pull requests in this repo that wait on me or changed since yesterday, one line each on what they need. Use gh.", cadence: { kind: "weekdays", at: "09:00", days: [1], every_h: 1 }, worktree: false },
+  { name: "Weekly report", prompt: "Write a short report of what was merged into main in the last 7 days: themes, notable changes, anything risky. Use git log.", cadence: { kind: "weekly", at: "09:00", days: [1], every_h: 1 }, worktree: false },
+];
 
 export function draftFrom(s: SessionState): Draft {
   return { name: sessionTitle(s).slice(0, 60), prompt: s.title, cwd: s.repo ?? s.cwd, workspace: s.workspace, worktree: !!s.repo, fromSession: s.id };
@@ -41,6 +47,12 @@ const when = (t: number) => {
   const d = new Date(t), today = new Date();
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return d.toDateString() === today.toDateString() ? `today ${time}` : `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} ${time}`;
+};
+
+/** Where this workspace's latest session ran: a likely home for an example schedule. */
+const lastFolder = (state: AppState, workspace: string) => {
+  const s = state.order.map((id) => state.sessions[id]).filter((x) => x?.workspace === workspace).at(-1);
+  return s ? s.repo ?? s.cwd : "";
 };
 
 const toast = (detail: string) => window.dispatchEvent(new CustomEvent("mr:toast", { detail }));
@@ -78,6 +90,17 @@ export function Recurring({ state, workspace, draft, onClose, onOpenSession }: {
           ? <Editor key={"id" in editing ? editing.id : "new"} state={state} initial={editing} onCancel={() => setEditing(null)} onSaved={() => setEditing(null)} />
           : <div style={{ display: "flex", flexDirection: "column", padding: 12, gap: 6 }}>
             {list.length === 0 && <div className="mr-dim" style={{ padding: "8px 4px 12px" }}>No schedules yet. Make one here, or press Repeat… on any session to run it again on a schedule. Runs land on the Wall marked ↻, with a notification when they finish.</div>}
+            {list.length === 0 && <section data-mr="RecurringExamples" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <h3 className="mr-h" style={{ padding: "0 4px" }}>Start from an example</h3>
+              {EXAMPLES.map((x) => (
+                <button key={x.name} type="button" data-mr="RecurringExample" data-mr-source={x.name} className="mr-row" onClick={() => setEditing({ ...x, workspace, cwd: lastFolder(state, workspace) })}
+                  style={{ gap: 12, padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>
+                  <strong>{x.name}</strong>
+                  <span className="mr-dim mr-grow mr-ellipsis">{x.prompt}</span>
+                  <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{cadenceLabel(x.cadence)}</span>
+                </button>
+              ))}
+            </section>}
             {list.map((sc) => {
               const last = sc.runs[sc.runs.length - 1];
               return (
@@ -131,7 +154,7 @@ function Editor({ state, initial, onCancel, onSaved }: { state: AppState; initia
   const [cwd, setCwd] = useState(initial.cwd ?? "");
   const [ws, setWs] = useState(initial.workspace ?? "personal");
   const [worktree, setWorktree] = useState(initial.worktree ?? true);
-  const [cadence, setCadence] = useState<Cadence>(existing?.cadence ?? { kind: "weekdays", at: "09:00", days: [1], every_h: 1 });
+  const [cadence, setCadence] = useState<Cadence>(existing?.cadence ?? initial.cadence ?? { kind: "weekdays", at: "09:00", days: [1], every_h: 1 });
   const [mode, setMode] = useState<PermissionMode>(existing?.permissionMode ?? "auto");
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);

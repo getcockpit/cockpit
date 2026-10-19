@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please **don't** open a public issue. Report it privately through [GitHub's private vulnerability reporting](https://github.com/getcockpit/cockpit/security/advisories/new), or email [redacted].
+Please **don't** open a public issue. Report it privately through [GitHub's private vulnerability reporting](https://github.com/getcockpit/cockpit/security/advisories/new).
 
 You'll get an answer within 3 working days. Once a fix ships, you'll be credited in the release notes unless you'd rather not be.
 

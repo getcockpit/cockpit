@@ -390,6 +390,17 @@ pub fn session_start(
     start_with(app, state, cwd, prompt, resume, tools, kind, worktree, session_id, workspace, preset, attachments, Started::default())
 }
 
+/// Appended for a recurring run (MR-167): nobody is watching when it starts.
+pub const UNATTENDED: &str = "This session was started by a schedule (a recurring session); nobody is watching it right now. Do the whole task end to end without stopping to ask: pick sensible defaults and say which you picked. Only ask when you truly can't continue. End with a short report of the result.";
+
+/// The system-prompt append, plus `UNATTENDED` for a recurring run.
+pub fn unattended(append: Option<String>, scheduled: bool) -> Option<String> {
+    if !scheduled {
+        return append;
+    }
+    Some(append.map_or_else(|| UNATTENDED.to_owned(), |a| format!("{a}\n\n{UNATTENDED}")))
+}
+
 /// What only Cockpit itself starts sessions with: a recurring run's schedule and its own mode (MR-167).
 #[derive(Default)]
 pub struct Started {
@@ -513,7 +524,8 @@ pub fn start_with(
     }
     // Every session gets the visual-app guidance (MR-56); blank ones the plan nudge (MR-98);
     // Review/Address add their flow steps.
-    if let Some(a) = append_prompt(&kind, layer) {
+    // A recurring run starts with nobody watching: it shouldn't stop to ask what it can decide.
+    if let Some(a) = unattended(append_prompt(&kind, layer), started.schedule.is_some()) {
         msg["append_system_prompt"] = a.into();
     }
     state.live.lock().unwrap().insert(session.clone());
@@ -813,7 +825,7 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prompt, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
+    use super::{append_prompt, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, unattended, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, UNATTENDED, VISUAL_GUIDANCE};
 
     #[test]
     fn mcp_add_checks_name_scope_and_transport() {
@@ -840,6 +852,15 @@ mod tests {
         let review = append_prompt("review", false).unwrap();
         assert!(review.starts_with(VISUAL_GUIDANCE) && !review.contains(PLAN_NUDGE));
         assert!(!append_prompt("review", true).unwrap().contains(VISUAL_GUIDANCE));
+    }
+
+    #[test]
+    fn recurring_runs_are_told_nobody_is_watching() {
+        assert_eq!(unattended(None, false), None);
+        assert_eq!(unattended(Some("x".into()), false).as_deref(), Some("x"));
+        assert_eq!(unattended(None, true).as_deref(), Some(UNATTENDED));
+        let both = unattended(append_prompt("blank", false), true).unwrap();
+        assert!(both.starts_with(VISUAL_GUIDANCE) && both.ends_with(UNATTENDED));
     }
 
     #[test]

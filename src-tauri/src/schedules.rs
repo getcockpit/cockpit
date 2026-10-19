@@ -196,7 +196,8 @@ fn fire(app: &AppHandle, s: &Schedule, reason: &str, slot: Option<NaiveDateTime>
         Some("blank".into()),
         Some(d["worktree"].as_bool().unwrap_or(true)),
         None,
-        d["workspace"].as_str().map(str::to_owned),
+        // Its workspace was deleted since: run in Personal rather than not at all.
+        d["workspace"].as_str().filter(|w| crate::workspaces::exists(app, w)).map(str::to_owned),
         None,
         None,
         started,
