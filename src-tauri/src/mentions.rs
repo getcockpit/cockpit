@@ -1,9 +1,10 @@
 //! @ mentions in the message box (MR-108): the files and folders a session can point Claude at.
 //! In a git repo it's what git sees (tracked plus untracked, ignores respected), like Claude Code's
 //! own @ menu; elsewhere a shallow walk that skips hidden and dependency folders. Folders end in `/`.
+//! A path typed from outside the folder (`~/`, `../`, `/`) lists that one folder instead.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const MAX: usize = 20_000;
@@ -67,6 +68,36 @@ pub fn session_paths(cwd: String) -> Vec<String> {
     paths(Path::new(&cwd))
 }
 
+/// Where a typed folder like `~/x/`, `../` or `/tmp/` is, from the session folder.
+fn resolve(cwd: &Path, dir: &str) -> Option<PathBuf> {
+    if dir == "~" || dir.starts_with("~/") {
+        return Some(dirs::home_dir()?.join(dir[1..].trim_start_matches('/')));
+    }
+    Some(cwd.join(dir))
+}
+
+/// One folder's entries, each as typed (`dir` plus the name), folders ending in `/`, sorted.
+pub fn dir_entries(cwd: &Path, dir: &str) -> Vec<String> {
+    let Some(rd) = resolve(cwd, dir).and_then(|p| std::fs::read_dir(p).ok()) else { return Vec::new() };
+    let mut out: Vec<String> = rd
+        .flatten()
+        .take(MAX)
+        .map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            // Follows links, so a linked folder can be opened too.
+            let folder = std::fs::metadata(e.path()).is_ok_and(|m| m.is_dir());
+            format!("{dir}{name}{}", if folder { "/" } else { "" })
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+#[tauri::command(async)]
+pub fn mention_dir(cwd: String, dir: String) -> Vec<String> {
+    dir_entries(Path::new(&cwd), &dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +125,22 @@ mod tests {
         assert!(Command::new("git").arg("-C").arg(&root).arg("init").output().unwrap().status.success());
         std::fs::write(root.join(".gitignore"), "node_modules/\n.hidden/\n").unwrap();
         assert_eq!(paths(&root), vec!["src/", ".gitignore", "src/main.rs"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn lists_a_folder_outside_the_session_folder() {
+        let root = std::env::temp_dir().join(format!("mr-mentions-{}", ulid::Ulid::new()));
+        std::fs::create_dir_all(root.join("app/src")).unwrap();
+        std::fs::create_dir_all(root.join("other")).unwrap();
+        std::fs::write(root.join("notes.md"), "").unwrap();
+        let cwd = root.join("app");
+        assert_eq!(dir_entries(&cwd, "../"), vec!["../app/", "../notes.md", "../other/"]);
+        assert_eq!(dir_entries(&cwd, "./"), vec!["./src/"]);
+        let abs = format!("{}/", root.display());
+        assert_eq!(dir_entries(&cwd, &abs), vec![format!("{abs}app/"), format!("{abs}notes.md"), format!("{abs}other/")]);
+        assert_eq!(dir_entries(&cwd, "../missing/"), Vec::<String>::new());
+        assert_eq!(resolve(&cwd, "~/x/"), dirs::home_dir().map(|h| h.join("x/")));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

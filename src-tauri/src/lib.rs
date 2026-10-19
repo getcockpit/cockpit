@@ -135,6 +135,7 @@ pub fn run() {
             folders::folder_exists,
             folders::folder_create,
             mentions::session_paths,
+            mentions::mention_dir,
             files::files_exist,
             attachments::attachment_save,
             attachments::attachment_info,
