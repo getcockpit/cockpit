@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../state/store";
 import type { Attachment, CommandRow } from "../state/types";
 import { matchCommands, typedCommand } from "../picker/slash";
-import { insertMention, matchPaths, typedMention } from "../picker/mention";
+import { insertMention, matchDir, matchPaths, outsideQuery, typedMention } from "../picker/mention";
 import { expandPastes, foldsPaste, pasteToken, pastesIn, placeFile, segments } from "../picker/compose";
 import { MentionMenu, SlashMenu } from "./SlashMenu";
 import { AttachmentRow, notesKey, seedPreview } from "./Attachments";
@@ -27,6 +27,16 @@ function folderPaths(cwd: string): Promise<string[]> {
   const paths = api.paths(cwd).catch(() => { pathsCache.delete(cwd); return [] as string[]; });
   pathsCache.set(cwd, { at: Date.now(), paths });
   return paths;
+}
+
+// One folder outside the session folder (~/, ../, /), for a path typed from there; cached briefly per folder.
+const dirCache = new Map<string, { at: number; entries: Promise<string[]> }>();
+function dirEntries(cwd: string, dir: string): Promise<string[]> {
+  const key = `${cwd}\0${dir}`, hit = dirCache.get(key);
+  if (hit && Date.now() - hit.at < 5_000) return hit.entries;
+  const entries = api.mentionDir(cwd, dir).catch(() => { dirCache.delete(key); return [] as string[]; });
+  dirCache.set(key, { at: Date.now(), entries });
+  return entries;
 }
 
 const toast = (detail: string) => window.dispatchEvent(new CustomEvent("mr:toast", { detail }));
@@ -78,7 +88,19 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
   const mention = typed === null && !closed ? typedMention(text, caret) : null;
   const mentioning = mention !== null;
   useEffect(() => { if (mentioning) void folderPaths(cwd).then(setPaths); }, [mentioning, cwd]);
-  const found = useMemo(() => (mention && paths ? matchPaths(paths, mention.query) : []), [mention?.query, mention?.start, paths]); // eslint-disable-line react-hooks/exhaustive-deps
+  const outside = mention ? outsideQuery(mention.query) : null;
+  const [entries, setEntries] = useState<{ dir: string; list: string[] } | null>(null);
+  useEffect(() => {
+    if (!outside) return;
+    let live = true;
+    void dirEntries(cwd, outside.dir).then((list) => { if (live) setEntries({ dir: outside.dir, list }); });
+    return () => { live = false; };
+  }, [outside?.dir, cwd]); // eslint-disable-line react-hooks/exhaustive-deps
+  const found = useMemo(() => {
+    if (!mention) return [];
+    if (outside) return entries?.dir === outside.dir ? matchDir(entries.list, outside) : [];
+    return paths ? matchPaths(paths, mention.query) : [];
+  }, [mention?.query, mention?.start, paths, entries]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (typed !== null) p.onCommands?.(); }, [typed !== null]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setActive(0); }, [typed, mention?.query]);
 
