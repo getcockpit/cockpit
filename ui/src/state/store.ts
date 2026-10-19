@@ -137,6 +137,8 @@ export const api = {
   prs: (cwd: string, mode: "review" | "address", repo?: string) => invoke<Pr[]>("gh_prs", { cwd, mode, repo }),
   ghRepo: (cwd: string) => invoke<string | null>("gh_repo", { cwd }),
   reviewState: (url: string) => invoke<unknown>("gh_review_state", { url }),
+  // Repos auto-review also scans (MR-170): the core validates them and logs ui.auto_review_repos_set.
+  autoReviewReposSet: (repos: string[]) => invoke<string[]>("auto_review_repos_set", { repos }),
   // Every message you send is acknowledged on screen right away (MR-58), then the session shows it's working.
   send: (session: string, text: string, attachments?: Attachment[]) => {
     const files = attachments?.length ? ` + ${attachments.length} file${attachments.length > 1 ? "s" : ""}` : "";
