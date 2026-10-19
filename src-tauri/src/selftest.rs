@@ -311,7 +311,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             for id in ["t1", "t2"] {
                 crate::eventlog::record(app, Some(&session), "ui.address_chosen", &serde_json::json!({ "id": id, "option": "A" }), Some(&format!("address:{id}")));
             }
-            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Thread t1 · Option A and Thread t2 · Option A, and push back on t3. It's a pretend PR: don't edit files or post anything, just report each step with the tools (one passing check per proof, replies posted: true), call address_done, then reply with exactly: SELFTEST DONE".into(), None);
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Thread t1 · Option A and Thread t2 · Option A, and push back on t3. It's a pretend PR: don't edit files or post anything, just report each step with the tools (one passing check per proof, replies posted: true), call address_done with pushed: false, then reply with exactly: SELFTEST DONE".into(), None);
         }
         Some("sdk") if payload["message"]["type"] == "result" && resume_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 1 done: stop the session; session_ended triggers the resume below.

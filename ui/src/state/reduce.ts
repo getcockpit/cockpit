@@ -273,6 +273,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     case "flow.review_snippet":
     case "flow.review_publish_ready":
     case "flow.review_unchanged":
+    case "flow.review_published":
     case "ui.review_noted":
     case "ui.review_unnoted":
       s.review = reviewStep(s.review, ev.kind, p);
@@ -492,6 +493,7 @@ function reviewStep(r: SessionState["review"], kind: string, p: Record<string, u
   if (kind === "flow.review_snippet") { const n = Number(p.n ?? 0); return { ...f, snippets: { ...f.snippets, [n]: { ...(p as object), n } as never }, current: n }; }
   if (kind === "flow.review_publish_ready") return { ...f, publish: p as never, current: null };
   if (kind === "flow.review_unchanged") return { ...f, unchanged: p as never };
+  if (kind === "flow.review_published") return { ...f, published: true, approved: p.approved === true || !!f.approved, current: null };
   if (kind === "ui.review_noted") { const id = String(p.finding_id); return { ...f, noted: f.noted.includes(id) ? f.noted : [...f.noted, id] }; }
   if (kind === "ui.review_unnoted") { const id = String(p.finding_id); return { ...f, noted: f.noted.filter((x) => x !== id) }; }
   return f;
