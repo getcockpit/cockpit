@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-19
+
+### Changed
+- **Repeat… sits beside the session title:** a quiet ↻ Repeat… link (Schedule… on a recurring run) instead of a button in the action row, which no longer wraps Mark done onto a second line. ⌘⇧R opens it from anywhere in the session.
+
 ## [0.1.9] - 2026-10-19
 
 ### Added
