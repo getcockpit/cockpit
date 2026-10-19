@@ -112,7 +112,7 @@ export function Recurring({ state, workspace, draft, onClose, onOpenSession }: {
         {editing
           ? <Editor key={"id" in editing ? editing.id : "new"} state={state} initial={editing} onCancel={() => setEditing(null)} onSaved={() => setEditing(null)} />
           : <div style={{ display: "flex", flexDirection: "column", padding: 12, gap: 6 }}>
-            {list.length === 0 && <div className="mr-dim" style={{ padding: "8px 4px 12px" }}>No schedules yet. Make one here, or press Repeat… on any session to run it again on a schedule. Runs land on the Wall marked ↻, with a notification when they finish.</div>}
+            {list.length === 0 && <div className="mr-dim" style={{ padding: "8px 4px 12px" }}>No schedules yet. Make one here, or press Repeat… (⌘⇧R) on any session to run it again on a schedule. Runs land on the Wall marked ↻, with a notification when they finish.</div>}
             {list.length === 0 && <section data-mr="RecurringExamples" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <h3 className="mr-h" style={{ padding: "0 4px" }}>Start from an example</h3>
               {EXAMPLES.map((x) => (
