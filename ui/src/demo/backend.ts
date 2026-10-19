@@ -7,6 +7,7 @@ import { emit } from "@tauri-apps/api/event";
 import type { Cadence, McpServer, MrEvent } from "../state/types";
 import { cadenceExpr, nextRuns } from "../components/cron";
 import type { Doc } from "../state/docs";
+import { watchSlug } from "../state/prRepo";
 import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
 let seq = 0;
@@ -339,6 +340,13 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     ];
     case "folder_exists": return /^(~|\/Users\/me)(\/(code(\/(shop|billing|cockpit))?|notes))?$/.test(String(a.path));
     case "folder_create": return String(a.path).replace(/^~/, "/Users/me");
+    // Watched repos (MR-170): validated and logged like the core's auto_review_repos_set.
+    case "auto_review_repos_set": {
+      const repos = ((a.repos as string[]) ?? []).map((r) => { const s = watchSlug(r); if (!s) throw new Error(`not a GitHub repo (owner/name): ${r}`); return s; })
+        .filter((r, i, all) => all.findIndex((x) => x.toLowerCase() === r.toLowerCase()) === i);
+      record(null, "ui.auto_review_repos_set", { repos });
+      return repos;
+    }
     case "gh_repo": return /shop|billing|cockpit/.test(String(a.cwd)) ? `acme/${String(a.cwd).split("/").pop()}` : null;
     case "gh_prs": if (a.repo && a.mode === "review") return [
       { number: 491, title: "Checkout: idempotent order ids", url: `https://github.com/${a.repo}/pull/491`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: a.repo }, reviewNote: "new changes since your review" },

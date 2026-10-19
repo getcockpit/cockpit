@@ -1,5 +1,5 @@
 import { shortError } from "../components/ErrorLine";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "../state/listen";
 import { Key } from "../components";
@@ -10,6 +10,7 @@ import { isAppChange } from "../picker/queue";
 import type { AppState, MrEvent } from "../state/types";
 import { Usage } from "./Usage";
 import { PERMISSION_MODES, usePermissionPick } from "../components/PermissionChoice";
+import { watchSlug } from "../state/prRepo";
 
 // Settings (decision 25): theme, and the history of your own changes to the app — collected on a
 // local branch `mine` that's never pushed — with apply / revert / build & relaunch / roll back.
@@ -170,6 +171,7 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
             <Segmented label="Auto-review" value={state.autoReview ? "on" : "off"} options={[["on", "On"], ["off", "Off"]]} onPick={(v) => void api.log("ui.auto_review_set", { on: v === "on" })} />
             <span className="mr-dim" style={{ fontSize: 12 }}>Starts your /review by itself when a PR waits for you: never drafts, and only if you haven't reviewed it yet or it has new commits since.</span>
           </div>
+          <WatchedRepos repos={state.autoReviewRepos} />
         </section>}
 
         {tab === "sessions" && <section data-mr="BackgroundSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -281,6 +283,40 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
         </div>
         {msg && <div style={{ padding: "0 16px 16px", color: msg.includes("fail") || msg.includes("can't") || msg.includes("conflict") ? "var(--mr-error)" : "var(--mr-ink-2)" }}>{msg}</div>}
       </div>
+    </div>
+  );
+}
+
+// Watched repos (MR-170): auto-review also reviews every PR in these, whether or not you were asked.
+function WatchedRepos({ repos }: { repos: string[] }) {
+  // Uncontrolled: what's in the box is read when you add, however it got there (typed or pasted).
+  const box = useRef<HTMLInputElement>(null);
+  const [err, setErr] = useState("");
+  const save = (next: string[]) => api.autoReviewReposSet(next).then(() => setErr(""), (e) => setErr(shortError(e)));
+  const add = () => {
+    const draft = box.current?.value ?? "";
+    const slug = watchSlug(draft);
+    if (!slug) { setErr(draft.trim() ? "Not a GitHub repo: write it as owner/name." : ""); return; }
+    if (box.current) box.current.value = "";
+    if (repos.some((r) => r.toLowerCase() === slug.toLowerCase())) { setErr(""); return; }
+    void save([...repos, slug]);
+  };
+  return (
+    <div data-mr="WatchedRepos" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="mr-row" style={{ gap: 8 }}>
+        <span className="mr-dim">Also watch</span>
+        <input data-mr="WatchedRepoInput" aria-label="Watch a repo" placeholder="owner/name" ref={box} onChange={() => setErr("")} onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+          style={{ width: 220, font: "inherit", padding: "6px 8px", background: "var(--mr-well)", border: 0, color: "var(--mr-ink)" }} />
+        <Key onClick={add}>Add</Key>
+        <span className="mr-dim" style={{ fontSize: 12 }}>Every open PR in these repos that isn't yours gets reviewed too, even when nobody asked you. Same rules as above.</span>
+      </div>
+      {repos.map((r) => (
+        <div key={r} data-mr="WatchedRepo" data-mr-source={r} className="mr-row" style={{ padding: "6px 10px", background: "var(--mr-well)" }}>
+          <span className="mr-grow mr-mono">{r}</span>
+          <button type="button" className="mr-link" style={{ color: "var(--mr-error)" }} aria-label={`Stop watching ${r}`} onClick={() => void save(repos.filter((x) => x !== r))}>Remove</button>
+        </div>
+      ))}
+      {err && <span data-mr="WatchedRepoError" style={{ fontSize: 12, color: "var(--mr-error)" }}>{err}</span>}
     </div>
   );
 }

@@ -176,6 +176,7 @@ export type AppState = {
   look: { scale: number; density: "compact" | "default" | "roomy" }; // instant style controls (MR-50)
   presets: Preset[]; // your own kinds in the start picker (MR-80)
   autoReview: boolean; // start /review by itself for PRs waiting on you (MR-72)
+  autoReviewRepos: string[]; // owner/name repos auto-review also scans, review requested or not (MR-170)
   notifications: boolean; // macOS notifications for new needs-you items while the app is in the background (MR-94)
   compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I63)
   sessionCap: number; // how many sessions may be mid-turn at once; idle ones don't count (MR-105)

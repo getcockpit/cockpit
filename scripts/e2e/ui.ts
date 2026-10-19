@@ -287,6 +287,19 @@ const flows: Flow[] = [
     await ui.click("button", "Transit");
     await until("theme applied", () => { const t = pt("attr", "html", "data-theme").trim(); if (t !== "transit") throw new Error(`data-theme is "${t}"`); });
   } },
+  { name: "Auto-review: add and remove a watched repo in Settings (MR-170)", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Settings");
+    await ui.clickUntil("tab", "Sessions", undefined, "WatchedRepos");
+    // The Reviews section can sit under the fold: scroll each target in before acting on it. Each
+    // step acts until its tag shows, since a click mid-render can miss (adding twice is a no-op).
+    const at = (role: string, name: string) => { pt("scrollintoview", ui.find(role, name).ref); return ui.find(role, name).ref; };
+    const step = (what: string, done: () => boolean, act: () => void) => until(what, () => { if (done()) return; act(); throw new Error("not yet"); }, 8000);
+    await step("an error for a bare name", () => ui.count('[data-mr="WatchedRepoError"]') === 1, () => { pt("fill", at("textbox", "Watch a repo"), "forge"); pt("press", at("textbox", "Watch a repo"), "Enter"); });
+    await step("acme/forge listed", () => ui.count('[data-mr="WatchedRepo"]') === 1, () => { pt("fill", at("textbox", "Watch a repo"), "acme/forge"); pt("click", at("button", "Add")); });
+    if (pt("attr", 'css:[data-mr="WatchedRepo"]', "data-mr-source").trim() !== "acme/forge") throw new Error("wrong repo listed");
+    await step("acme/forge removed", () => ui.count('[data-mr="WatchedRepo"]') === 0, () => pt("click", at("button", "Stop watching acme/forge")));
+  } },
   { name: "J16 delete a workspace by typing its name", run: async () => {
     await ui.open("busy");
     await ui.rightClick("button", "Client A");
