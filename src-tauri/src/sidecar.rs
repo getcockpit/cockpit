@@ -53,6 +53,13 @@ pub fn busy(state: &Sidecar) -> usize {
     state.live.lock().unwrap().iter().filter(|s| !idle.contains(*s)).count()
 }
 
+/// Whether this session is live and mid-turn (a recurring run still going, MR-169).
+pub fn mid_turn(app: &AppHandle, session: &str) -> bool {
+    let state = app.state::<Sidecar>();
+    let live = state.live.lock().unwrap().contains(session);
+    live && !state.idle.lock().unwrap().contains(session)
+}
+
 pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let (mut rx, child) = app.shell().sidecar("mr-sidecar")?.env_clear().envs(crate::selfbuild::child_env()).spawn()?;
     *app.state::<Sidecar>().child.lock().unwrap() = Some(child);

@@ -183,6 +183,8 @@ pub fn run() {
             schedules::schedule_delete,
             schedules::schedule_run_now,
             schedules::schedules_next,
+            schedules::schedule_preview,
+            schedules::schedules_checks,
             background::background_set
         ])
         .on_window_event(|window, ev| {

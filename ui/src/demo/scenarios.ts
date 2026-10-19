@@ -317,6 +317,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   empty: { events: [...ready, onboarded], docs: [] },
   // Recurring sessions (MR-167): one schedule with a finished, unread run in the review tray. ?demo=recurring
   recurring: { events: [...ready, onboarded,
+    { kind: "ui.schedule_set", payload: { id: "sch2", name: "Review requests watch", prompt: "These pull requests wait on my review. For each new or changed one, one line on what it does.", cwd: "~/code/billing", workspace: "personal", worktree: false, cadence: { kind: "cron", expr: "*/5 9-17 * * 1-5" }, check: "gh pr list --search \"review-requested:@me\" --json number,title,updatedAt", permission_mode: "auto", paused: false }, at: 1 },
     { kind: "ui.schedule_set", payload: { id: "sch1", name: "Daily PR digest", prompt: "Summarise the PRs waiting on me, oldest first", cwd: "~/code/billing", workspace: "personal", worktree: false, cadence: { kind: "weekdays", at: "09:00" }, permission_mode: "auto", paused: false }, at: 2 },
     { session: "RD", kind: "ui.session_requested", payload: { cwd: "~/code/billing", prompt: "Summarise the PRs waiting on me, oldest first", kind: "blank", workspace: "personal", schedule: "sch1" }, at: 10 },
     { session: "RD", kind: "schedule.fired", payload: { id: "sch1", session: "RD", reason: "due", slot: "2026-10-19T09:00" }, at: 10 },

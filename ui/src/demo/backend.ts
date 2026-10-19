@@ -4,7 +4,8 @@
 
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type { McpServer, MrEvent } from "../state/types";
+import type { Cadence, McpServer, MrEvent } from "../state/types";
+import { cadenceExpr, nextRuns } from "../components/cron";
 import type { Doc } from "../state/docs";
 import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
@@ -238,6 +239,18 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       const out: Record<string, number> = {};
       for (const e of events) if (e.kind === "ui.schedule_set") out[String(e.payload.id)] = Date.now() + 3_600_000;
       for (const e of events) if (e.kind === "ui.schedule_deleted" || (e.kind === "ui.schedule_set" && e.payload.paused)) delete out[String(e.payload.id)];
+      return out;
+    }
+    // MR-169: the next runs come from the same expressions; a gated schedule looks checked a minute ago.
+    case "schedule_preview": {
+      const c = a.cadence as Cadence;
+      const next = nextRuns(cadenceExpr(c), Date.now());
+      if (!next.length) throw "that never runs";
+      return next;
+    }
+    case "schedules_checks": {
+      const out: Record<string, unknown> = {};
+      for (const e of events) if (e.kind === "ui.schedule_set") { if (e.payload.check) out[String(e.payload.id)] = { at: Date.now() - 60_000, outcome: "same", skipped: 7, error: null }; else delete out[String(e.payload.id)]; }
       return out;
     }
     case "schedule_run_now": {

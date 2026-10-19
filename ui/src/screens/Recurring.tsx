@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Key, StateMark } from "../components";
 import { keyOf } from "../components/keys";
 import { FolderPicker } from "../components/FolderPicker";
+import { CronBuilder } from "../components/CronBuilder";
+import { cadenceExpr, cronLabel } from "../components/cron";
 import { PERMISSION_MODES } from "../components/PermissionChoice";
 import { pickTile } from "../picker/pick";
 import { sessionTitle } from "../picker/title";
 import { api } from "../state/store";
-import type { AppState, Cadence, PermissionMode, Schedule, ScheduleRun, SessionState } from "../state/types";
+import type { AppState, Cadence, PermissionMode, Schedule, ScheduleCheck, ScheduleRun, SessionState } from "../state/types";
 
 // Recurring sessions (MR-167): a saved prompt + folder + cadence that Cockpit starts by itself.
 // One overlay: the list (next run, pause, Run now), the editor, and each schedule's runs. Every
@@ -14,9 +16,10 @@ import type { AppState, Cadence, PermissionMode, Schedule, ScheduleRun, SessionS
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/** "Weekdays at 09:00", "Mon, Thu at 08:30", "Every 3 h from 09:15". */
+/** "Weekdays at 09:00", "Mon, Thu at 08:30", "Every 3 h from 09:15", "Every 5 min, 09–17h, Weekdays". */
 export function cadenceLabel(c: Cadence): string {
   switch (c.kind) {
+    case "cron": return cronLabel(c.expr);
     case "daily": return `Daily at ${c.at}`;
     case "weekdays": return `Weekdays at ${c.at}`;
     case "weekly": return `${(c.days ?? []).map((d) => DAYS[d - 1]).filter(Boolean).join(", ") || "No days"} at ${c.at}`;
@@ -30,11 +33,27 @@ export function runLabel(r: ScheduleRun): string {
   return r.ok ? why : `didn't start: ${r.error ?? "unknown error"}`;
 }
 
+/** What a schedule's last check said, for its row: "checked 2m ago · skipped 14× (no change)". */
+export function checkLabel(c: ScheduleCheck | undefined, now = Date.now()): string {
+  if (!c) return "not checked yet";
+  const ago = Math.max(0, Math.round((now - c.at) / 60_000));
+  const why = { checking: "checking…", fired: "changed: started a run", busy: "last run still going", no: "check said no", same: "no change", error: `check failed: ${c.error ?? "unknown error"}` }[c.outcome];
+  return `checked ${ago ? `${ago}m ago` : "just now"} · ${why}${c.skipped > 1 ? ` · skipped ${c.skipped}×` : ""}`;
+}
+
+/** Ready-made checks: each prints something stable that changes only when there's news. */
+export const CHECKS: { label: string; check: string }[] = [
+  { label: "Review requests", check: `gh pr list --search "review-requested:@me" --json number,title,updatedAt` },
+  { label: "My PRs: reviews + CI", check: `gh pr list --author @me --json number,reviewDecision,statusCheckRollup --jq '.[] | "\(.number) \(.reviewDecision) \([.statusCheckRollup[].conclusion] | unique | join(","))"'` },
+  { label: "New commits on main", check: "git fetch -q origin main && git rev-parse origin/main" },
+];
+
 /** What a new schedule starts as: from a session ("Repeat…") or blank. */
-export type Draft = Partial<Pick<Schedule, "name" | "prompt" | "cwd" | "workspace" | "worktree" | "fromSession" | "cadence">>;
+export type Draft = Partial<Pick<Schedule, "name" | "prompt" | "cwd" | "workspace" | "worktree" | "fromSession" | "cadence" | "check">>;
 
 /** Starting points on an empty list: picked, they open the editor filled in. */
-export const EXAMPLES: { name: string; prompt: string; cadence: Cadence; worktree: boolean }[] = [
+export const EXAMPLES: { name: string; prompt: string; cadence: Cadence; worktree: boolean; check?: string }[] = [
+  { name: "Review requests watch", prompt: "These pull requests wait on my review (from the check output below). For each one that is new or changed, give one line: what it does and how big the review is. Use gh for detail.", cadence: { kind: "cron", expr: "*/5 9-17 * * 1-5" }, worktree: false, check: CHECKS[0].check },
   { name: "Daily PR digest", prompt: "List the open pull requests in this repo that wait on me or changed since yesterday, one line each on what they need. Use gh.", cadence: { kind: "weekdays", at: "09:00", days: [1], every_h: 1 }, worktree: false },
   { name: "Weekly report", prompt: "Write a short report of what was merged into main in the last 7 days: themes, notable changes, anything risky. Use git log.", cadence: { kind: "weekly", at: "09:00", days: [1], every_h: 1 }, worktree: false },
 ];
@@ -61,10 +80,14 @@ export function Recurring({ state, workspace, draft, onClose, onOpenSession }: {
   const [editing, setEditing] = useState<Schedule | Draft | null>(draft ?? null);
   const [history, setHistory] = useState<string | null>(null);
   const [next, setNext] = useState<Record<string, number>>({});
+  const [checks, setChecks] = useState<Record<string, ScheduleCheck>>({});
   const list = Object.values(state.schedules).sort((a, b) => a.name.localeCompare(b.name));
   useEffect(() => {
     let alive = true;
-    const load = () => void api.schedulesNext().then((n) => alive && setNext(n ?? {})).catch(() => {});
+    const load = () => {
+      void api.schedulesNext().then((n) => alive && setNext(n ?? {})).catch(() => {});
+      void api.schedulesChecks().then((c) => alive && setChecks(c ?? {})).catch(() => {});
+    };
     load();
     const t = setInterval(load, 30_000);
     return () => { alive = false; clearInterval(t); };
@@ -112,6 +135,9 @@ export function Recurring({ state, workspace, draft, onClose, onOpenSession }: {
                       {sc.paused ? "Paused" : next[sc.id] ? `Next ${when(next[sc.id])}` : "Next —"}
                       {last ? ` · last ${when(last.at)} (${runLabel(last)})` : " · never run"}
                     </span>
+                    {sc.check && <span className="mr-dim mr-ellipsis" style={{ fontSize: 12, color: checks[sc.id]?.outcome === "error" ? "var(--mr-error)" : undefined }} data-mr="ScheduleCheck" data-mr-source={sc.id} title={sc.check}>
+                      ⌁ {checkLabel(checks[sc.id])}{(() => { const n = sc.runs.filter((r) => r.ok && r.at > Date.now() - 3_600_000).length; return n > 1 ? ` · ${n} runs in the last hour` : ""; })()}
+                    </span>}
                   </span>
                   <Key onClick={() => runNow(sc)}>Run now</Key>
                   <Key onClick={() => setPaused(sc, !sc.paused)}>{sc.paused ? "Resume" : "Pause"}</Key>
@@ -144,7 +170,7 @@ export function Recurring({ state, workspace, draft, onClose, onOpenSession }: {
 
 /** The schedule as the core takes it. */
 function wire(sc: Schedule | (Draft & { id?: string; cadence?: Cadence; permissionMode?: PermissionMode; paused?: boolean })) {
-  return { id: sc.id, name: sc.name, prompt: sc.prompt, cwd: sc.cwd, workspace: sc.workspace, worktree: sc.worktree, cadence: sc.cadence, permission_mode: sc.permissionMode, paused: sc.paused ?? false, from_session: sc.fromSession ?? null };
+  return { id: sc.id, name: sc.name, prompt: sc.prompt, cwd: sc.cwd, workspace: sc.workspace, worktree: sc.worktree, cadence: sc.cadence, check: sc.check ?? null, permission_mode: sc.permissionMode, paused: sc.paused ?? false, from_session: sc.fromSession ?? null };
 }
 
 function Editor({ state, initial, onCancel, onSaved }: { state: AppState; initial: Schedule | Draft; onCancel: () => void; onSaved: () => void }) {
@@ -154,14 +180,15 @@ function Editor({ state, initial, onCancel, onSaved }: { state: AppState; initia
   const [cwd, setCwd] = useState(initial.cwd ?? "");
   const [ws, setWs] = useState(initial.workspace ?? "personal");
   const [worktree, setWorktree] = useState(initial.worktree ?? true);
-  const [cadence, setCadence] = useState<Cadence>(existing?.cadence ?? initial.cadence ?? { kind: "weekdays", at: "09:00", days: [1], every_h: 1 });
+  const [expr, setExpr] = useState(cadenceExpr(existing?.cadence ?? initial.cadence ?? { kind: "cron", expr: "0 9 * * 1-5" }));
+  const [check, setCheck] = useState(initial.check ?? "");
+  const cadence: Cadence = { kind: "cron", expr };
   const [mode, setMode] = useState<PermissionMode>(existing?.permissionMode ?? "auto");
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const set = (c: Partial<Cadence>) => setCadence((x) => ({ ...x, ...c }));
   const save = () => {
     setErr(null);
-    api.scheduleSet(wire({ id: existing?.id, name, prompt, cwd, workspace: ws, worktree, cadence, permissionMode: mode, paused: existing?.paused ?? false, fromSession: initial.fromSession ?? null }))
+    api.scheduleSet(wire({ id: existing?.id, name, prompt, cwd, workspace: ws, worktree, cadence, check: check.trim() || null, permissionMode: mode, paused: existing?.paused ?? false, fromSession: initial.fromSession ?? null }))
       .then(() => { toast(existing ? `Saved “${name}”` : `“${name}” is scheduled: ${cadenceLabel(cadence)}`); onSaved(); })
       .catch((e) => setErr(String(e).split("\n")[0]));
   };
@@ -178,24 +205,17 @@ function Editor({ state, initial, onCancel, onSaved }: { state: AppState; initia
           <select aria-label="Workspace" value={ws} onChange={(e) => setWs(e.target.value)} className="mr-input" style={{ background: "var(--mr-well)" }}>{state.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}
         <label className="mr-row" style={{ gap: 6 }}><input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />Own worktree per run (git repos)</label>
       </div>
-      <div className="mr-row" style={{ gap: 10, flexWrap: "wrap" }} data-mr="CadencePicker" data-mr-source={existing?.id ?? "new"}>
+      <div style={field} data-mr="CadencePicker" data-mr-source={existing?.id ?? "new"}>
         <span className="mr-dim">Runs</span>
-        <div role="radiogroup" aria-label="Cadence" className="mr-row" style={{ gap: 0, background: "var(--mr-well)", padding: 3 }}>
-          {([["daily", "Daily"], ["weekdays", "Weekdays"], ["weekly", "Weekly"], ["hourly", "Every N hours"]] as const).map(([k, l]) => (
-            <button key={k} type="button" role="radio" aria-checked={cadence.kind === k} onClick={() => set({ kind: k })}
-              style={{ border: 0, padding: "5px 12px", font: "inherit", cursor: "pointer", background: cadence.kind === k ? "var(--mr-ink)" : "transparent", color: cadence.kind === k ? "var(--mr-tile)" : "var(--mr-ink)" }}>{l}</button>
-          ))}
+        <CronBuilder value={expr} onChange={setExpr} source={existing?.id ?? "new"} />
+      </div>
+      <div style={field} data-mr="ScheduleCheckField" data-mr-source={existing?.id ?? "new"}>
+        <span className="mr-dim">Only run when… <span style={{ fontSize: 12 }}>· optional: a command run first, for free, in the folder. Claude starts only if it exits 0 and prints something new since the last run; what it prints goes into the prompt. Empty: always run.</span></span>
+        <input className="mr-input mr-mono" aria-label="Check command" value={check} onChange={(e) => setCheck(e.target.value)} spellCheck={false} placeholder='gh pr list --search "review-requested:@me" --json number,updatedAt' style={{ background: "var(--mr-well)", fontSize: 13 }} />
+        <div className="mr-row" style={{ gap: 4, flexWrap: "wrap" }}>
+          {CHECKS.map((c) => <Key key={c.label} onClick={() => setCheck(c.check)}>{c.label}</Key>)}
+          <span className="mr-dim" style={{ fontSize: 12 }}>Avoid printing times or durations: they change every run.</span>
         </div>
-        {cadence.kind === "weekly" && <div className="mr-row" style={{ gap: 2 }} role="group" aria-label="Days">
-          {DAYS.map((d, i) => { const on = (cadence.days ?? []).includes(i + 1); return (
-            <button key={d} type="button" aria-pressed={on} onClick={() => set({ days: on ? (cadence.days ?? []).filter((x) => x !== i + 1) : [...(cadence.days ?? []), i + 1].sort() })}
-              style={{ border: 0, padding: "5px 8px", font: "inherit", cursor: "pointer", background: on ? "var(--mr-selected)" : "var(--mr-well)", color: on ? "var(--mr-tile)" : "var(--mr-ink)" }}>{d}</button>
-          ); })}
-        </div>}
-        {cadence.kind === "hourly" && <label className="mr-row" style={{ gap: 6 }}>every<input type="number" min={1} max={24} aria-label="Every N hours" value={cadence.every_h ?? 1} onChange={(e) => set({ every_h: Math.max(1, Math.min(24, Number(e.target.value) || 1)) })} className="mr-input" style={{ width: 64, background: "var(--mr-well)" }} />h from</label>}
-        {cadence.kind !== "hourly" && <span className="mr-dim">at</span>}
-        <input type="time" aria-label="Time" value={cadence.at} onChange={(e) => set({ at: e.target.value || "09:00" })} className="mr-input" style={{ background: "var(--mr-well)" }} />
-        <span className="mr-dim" style={{ fontSize: 12 }}>{cadenceLabel(cadence)}, your local time</span>
       </div>
       <div className="mr-row" style={{ gap: 10, flexWrap: "wrap" }}>
         <span className="mr-dim">Ask before</span>
