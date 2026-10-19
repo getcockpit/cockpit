@@ -191,6 +191,7 @@ const flows: Flow[] = [
     await ui.see("button", send("Publish and approve"));
     await ui.click("button", send("Publish and approve"));
     await ui.seeText("✓ Published · approved");
+    await ui.seeText("the session archived itself");
   } },
   { name: "J8 step into a waiting address flow", run: async () => {
     await ui.open("address");

@@ -17,6 +17,8 @@ pub struct Sidecar {
     idle: Mutex<std::collections::HashSet<String>>,
     /// Waiters for one-shot replies, by request id.
     oneshots: Mutex<std::collections::HashMap<String, std::sync::mpsc::Sender<serde_json::Value>>>,
+    /// Sessions whose flow finished (review published, address pushed): archived already, stopped when the turn ends.
+    closing: Mutex<std::collections::HashSet<String>>,
 }
 
 /// How many sessions may be mid-turn at once when nothing else says (MR-105; was 6, decision 14).
@@ -108,7 +110,11 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         // The Cockpit layer draws the cards once a turn ends (decision 34).
                         if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
                             if let Some(id) = session.as_deref() {
-                                crate::cockpit_layer::after_turn(handle.clone(), id.to_owned());
+                                if handle.state::<Sidecar>().closing.lock().unwrap().remove(id) {
+                                    let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": id }));
+                                } else {
+                                    crate::cockpit_layer::after_turn(handle.clone(), id.to_owned());
+                                }
                             }
                         }
                         if crate::selftest::enabled() {
@@ -710,6 +716,11 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     for (kind, p) in events {
         let anchor = p["doc_id"].as_str().map(|d| format!("doc:{d}"));
         crate::eventlog::record(app, Some(&session), &kind, &p, anchor.as_deref());
+    }
+    if crate::flows::is_flow_tool(tool) && crate::flows::closes_session(tool, &payload["args"]) {
+        // Nothing left for the user: archive it now, stop it once this turn ends.
+        crate::eventlog::record(app, Some(&session), "ui.session_archived", &serde_json::json!({ "by": tool }), None);
+        app.state::<Sidecar>().closing.lock().unwrap().insert(session.clone());
     }
     let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error));
 }
