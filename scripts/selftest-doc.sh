@@ -26,6 +26,7 @@ need "SELECT COUNT(*) FROM events WHERE kind='ui.doc_build_started' AND session_
 need "SELECT COUNT(*) FROM events WHERE kind='sidecar.tool_call' AND session_id = $build AND json_extract(payload,'$.tool')='doc_read'" "the build session didn't read the doc"
 need "SELECT COUNT(*) FROM events WHERE kind='doc.block_set' AND session_id = $build AND json_extract(payload,'$.block_id')='build_log'" "the build session didn't log to the doc"
 # MR-168: the build only logs (not plan-shaping), so nothing interrupts the plan session: the note
-# waits for your next message to it (covered by docs::relay_tells_the_other_live_sessions_once_per_turn).
+# is queued in the log (doc.relay_waiting) for your next message to it, and survives a restart.
 [ "$(sqlite3 "$db" "SELECT COUNT(*) FROM events WHERE kind='doc.relay'")" = "0" ] || { echo "FAILED: a log-only change was relayed at once"; exit 1; }
+need "SELECT COUNT(*) FROM events WHERE kind='doc.relay_waiting' AND session_id = $plan AND json_extract(payload,'$.from') = $build" "the build's log wasn't queued for the plan session"
 echo "SELFTEST DOC PASSED ($db)"
