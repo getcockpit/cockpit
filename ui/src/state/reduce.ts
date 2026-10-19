@@ -17,6 +17,7 @@ export const initialState: AppState = {
   theme: "control-room",
   look: { scale: 1, density: "default" },
   autoReview: autoReviewDefault(import.meta.env),
+  autoReviewRepos: [],
   notifications: true,
   compactWindow: 200_000,
   sessionCap: 10,
@@ -136,6 +137,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "ui.session_cap_set") return { ...next, sessionCap: typeof p.cap === "number" ? Math.max(1, p.cap) : next.sessionCap };
   if (ev.kind === "ui.permission_mode_set") return { ...next, permissionMode: p.mode === "auto" || p.mode === "acceptEdits" || p.mode === "default" || p.mode === "never" ? p.mode : next.permissionMode };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
+  // The whole list each time (MR-170): validated by the core's auto_review_repos_set.
+  if (ev.kind === "ui.auto_review_repos_set") return Array.isArray(p.repos) ? { ...next, autoReviewRepos: p.repos.filter((r): r is string => typeof r === "string") } : next;
   if (ev.kind === "ui.notifications_set") return { ...next, notifications: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
   if (ev.kind === "ui.preset_saved") {

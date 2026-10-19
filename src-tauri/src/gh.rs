@@ -110,6 +110,27 @@ pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>) -
     }
 }
 
+/// The repos auto-review also watches (MR-170): trimmed, a `github.com/` prefix or `.git` dropped,
+/// each one a safe `owner/name`, duplicates (any case) kept once, in the order given.
+pub fn clean_watched(repos: &[String]) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = Vec::new();
+    for r in repos {
+        let r = r.trim().trim_start_matches("https://").trim_start_matches("github.com/").trim_end_matches('/').trim_end_matches(".git");
+        let slug = safe_slug(r).ok_or_else(|| format!("not a GitHub repo (owner/name): {r}"))?;
+        if !out.iter().any(|o| o.eq_ignore_ascii_case(slug)) { out.push(slug.to_owned()); }
+    }
+    Ok(out)
+}
+
+/// Settings → Sessions → Watched repos (MR-170): validates the whole list and logs it as
+/// `ui.auto_review_repos_set`, which the reducer reads. Returns the list as stored.
+#[tauri::command(async)]
+pub fn auto_review_repos_set(app: AppHandle, repos: Vec<String>) -> Result<Vec<String>, String> {
+    let repos = clean_watched(&repos)?;
+    crate::eventlog::record(&app, None, "ui.auto_review_repos_set", &serde_json::json!({ "repos": repos }), None).ok_or("event log unavailable")?;
+    Ok(repos)
+}
+
 /// `owner/name` of a git remote URL on GitHub (https or ssh), or None.
 fn github_slug(url: &str) -> Option<String> {
     let u = url.trim().trim_end_matches('/').trim_end_matches(".git");
@@ -254,6 +275,16 @@ mod tests {
         assert_eq!(safe_slug("my-org/my.repo_1"), Some("my-org/my.repo_1"));
         assert!(mine_query(" repo:a/b").contains("archived:false repo:a/b\""));
         assert!(mine_query("").contains("archived:false\""));
+    }
+
+    #[test]
+    fn cleans_the_watched_repo_list() {
+        let v = |xs: &[&str]| xs.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(clean_watched(&v(&[" acme/forge ", "https://github.com/acme/shop.git", "acme/Forge"])), Ok(v(&["acme/forge", "acme/shop"])));
+        assert_eq!(clean_watched(&[]), Ok(vec![]));
+        assert!(clean_watched(&v(&["acme/forge", "forge"])).is_err());
+        assert!(clean_watched(&v(&["a/b\" OR x"])).is_err());
+        assert!(clean_watched(&v(&["a/b/c"])).is_err());
     }
 
     #[test]

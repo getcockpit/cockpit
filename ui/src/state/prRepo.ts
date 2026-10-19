@@ -11,6 +11,12 @@ export function prSlug(spec: string): string | null {
   return m && !/^\d+$/.test(m[1]) ? `${m[1]}/${m[2]}` : null;
 }
 
+/** `owner/name` from what was typed (a repo URL works too), checked like the core's safe_slug; null if it isn't one. */
+export function watchSlug(input: string): string | null {
+  const s = input.trim().replace(/^https?:\/\//, "").replace(/^github\.com\//, "").replace(/\/$/, "").replace(/\.git$/, "");
+  return /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(s) ? s : null;
+}
+
 export function rememberPrRepo(slug: string, path: string) {
   try { localStorage.setItem(KEY, JSON.stringify({ ...remembered(), [slug]: path })); } catch { /* convenience only */ }
 }

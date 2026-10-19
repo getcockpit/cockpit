@@ -107,6 +107,7 @@ pub fn run() {
             gh::gh_prs,
             gh::gh_repo,
             gh::gh_review_state,
+            gh::auto_review_repos_set,
             docs::docs_list,
             daily::daily_driver,
             changes::session_changes,

@@ -581,6 +581,19 @@ describe("auto-review default (MR-93)", () => {
   });
 });
 
+describe("auto-review watched repos (MR-170)", () => {
+  const set = (id: string, payload: Record<string, unknown>) => ({ id, session_id: null, kind: "ui.auto_review_repos_set", payload, anchor: null, created_at: 1 });
+  test("starts empty; each event replaces the whole list; a bad payload changes nothing", () => {
+    expect(initialState.autoReviewRepos).toEqual([]);
+    const added = replay([set("01A", { repos: ["acme/forge", "acme/shop"] })] as never);
+    expect(added.autoReviewRepos).toEqual(["acme/forge", "acme/shop"]);
+    const removed = replay([set("01A", { repos: ["acme/forge", "acme/shop"] }), set("01B", { repos: ["acme/shop"] })] as never);
+    expect(removed.autoReviewRepos).toEqual(["acme/shop"]);
+    expect(replay([set("01A", { repos: ["acme/shop"] }), set("01B", { repos: "x" })] as never).autoReviewRepos).toEqual(["acme/shop"]);
+    expect(replay([set("01A", { repos: ["acme/shop", 3] })] as never).autoReviewRepos).toEqual(["acme/shop"]);
+  });
+});
+
 // Dev and /Applications share one log (MR-99): each row says which copy wrote it.
 describe("several copies of the app on one log", () => {
   let n = 0;
