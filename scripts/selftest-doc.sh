@@ -25,4 +25,7 @@ build="(SELECT session_id FROM events WHERE kind='ui.doc_build_started' LIMIT 1)
 need "SELECT COUNT(*) FROM events WHERE kind='ui.doc_build_started' AND session_id IS NOT $plan" "Build wasn't linked to a new session"
 need "SELECT COUNT(*) FROM events WHERE kind='sidecar.tool_call' AND session_id = $build AND json_extract(payload,'$.tool')='doc_read'" "the build session didn't read the doc"
 need "SELECT COUNT(*) FROM events WHERE kind='doc.block_set' AND session_id = $build AND json_extract(payload,'$.block_id')='build_log'" "the build session didn't log to the doc"
+# MR-168: the build's log reached the still-running plan session as one doc.relay note.
+need "SELECT COUNT(*) FROM events WHERE kind='doc.relay' AND session_id = $plan AND json_extract(payload,'$.from') = $build" "the build's doc change wasn't relayed to the plan session"
+sqlite3 "$db" "SELECT 'relay → ' || session_id || ': ' || substr(json_extract(payload,'$.text'),1,160) FROM events WHERE kind='doc.relay';"
 echo "SELFTEST DOC PASSED ($db)"

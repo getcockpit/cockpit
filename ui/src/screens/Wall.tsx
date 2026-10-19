@@ -233,7 +233,7 @@ function DocTile({ d, sessions, onOpenDoc, header }: { d: Doc; sessions: AppStat
       <div className="mr-flag" />
       {header
         ? <div className="mr-tbody" style={{ flexDirection: "row", gap: 12, alignItems: "baseline", padding: "8px 14px" }}>
-            <span className="mr-mono mr-dim" style={{ fontSize: 12 }}>▤ doc</span>
+            <span className="mr-mono mr-dim" aria-hidden="true" style={{ fontSize: 12 }}>▤ doc</span>
             <strong className="mr-ellipsis" style={{ fontSize: 15 }}>{d.title}</strong>
             <span className="mr-ink2 mr-ellipsis mr-grow">{goal}</span>
             <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{meta}</span>
