@@ -299,6 +299,11 @@ test("a review is over once you publish it", () => {
   const approved = replay([...base, ev("R4", "ui.message_sent", { text: "publish and approve" })]);
   expect(approved.sessions.r.review?.published).toBe(true);
   expect(approved.sessions.r.review?.approved).toBe(true);
+  // Claude confirms the post and the core archives the session: nothing is left for you.
+  const closed = replay([...base, ev("R4", "ui.message_sent", { text: "publish and approve" }), ev("R5", "flow.review_published", { pr: "#482", comments: 1, approved: true }), ev("R6", "ui.session_archived", { by: "review_published" })]);
+  expect(closed.sessions.r.review?.published).toBe(true);
+  expect(closed.sessions.r.review?.approved).toBe(true);
+  expect(closed.sessions.r.archivedAt).toBe(1);
 });
 
 test("a bug report's fix waits in the queue until applied, then asks for a rebuild until one succeeds", async () => {
