@@ -1,4 +1,5 @@
 mod attachments;
+mod background;
 mod brief;
 mod changes;
 mod cockpit_layer;
@@ -18,6 +19,7 @@ mod notify;
 mod personal;
 mod release_update;
 mod runs;
+mod schedules;
 mod selfbuild;
 mod selftest;
 mod sidecar;
@@ -49,6 +51,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::Builder::new().args(["--hidden"]).build())
         .manage(sidecar::Sidecar::default())
         .manage(terminal::Terminals::default())
         .manage(voice::Voice::default())
@@ -74,6 +77,9 @@ pub fn run() {
             update::on_start(app.handle());
             release_update::on_start(app.handle());
             sidecar::start(app.handle())?;
+            // Recurring sessions (MR-167): the minute tick, then the tray and start-at-login.
+            schedules::start(app.handle());
+            background::start(app.handle());
             if selftest::enabled() {
                 selftest::run(app.handle().clone());
             }
@@ -172,13 +178,27 @@ pub fn run() {
             docs::doc_mark_shipped,
             usage::usage_track,
             usage::usage_report,
-            instances::instance_id
+            instances::instance_id,
+            schedules::schedule_set,
+            schedules::schedule_delete,
+            schedules::schedule_run_now,
+            schedules::schedules_next,
+            background::background_set
         ])
+        .on_window_event(|window, ev| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = ev {
+                background::on_close(window.app_handle(), window, api);
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, ev| {
-            if let tauri::RunEvent::Exit = ev {
-                instances::stop(app);
+            match ev {
+                tauri::RunEvent::Exit => instances::stop(app),
+                // The Dock icon of a hidden window (kept running for schedules) brings it back.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => background::show_main(app),
+                _ => {}
             }
         });
 }
