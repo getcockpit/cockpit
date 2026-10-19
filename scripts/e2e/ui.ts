@@ -296,9 +296,9 @@ const flows: Flow[] = [
     const at = (role: string, name: string) => { pt("scrollintoview", ui.find(role, name).ref); return ui.find(role, name).ref; };
     const step = (what: string, done: () => boolean, act: () => void) => until(what, () => { if (done()) return; act(); throw new Error("not yet"); }, 8000);
     await step("an error for a bare name", () => ui.count('[data-mr="WatchedRepoError"]') === 1, () => { pt("fill", at("textbox", "Watch a repo"), "forge"); pt("press", at("textbox", "Watch a repo"), "Enter"); });
-    await step("acme/forge listed", () => ui.count('[data-mr="WatchedRepo"]') === 1, () => { pt("fill", at("textbox", "Watch a repo"), "acme/forge"); pt("click", at("button", "Add")); });
-    if (pt("attr", 'css:[data-mr="WatchedRepo"]', "data-mr-source").trim() !== "acme/forge") throw new Error("wrong repo listed");
-    await step("acme/forge removed", () => ui.count('[data-mr="WatchedRepo"]') === 0, () => pt("click", at("button", "Stop watching acme/forge")));
+    await step("globex/forge listed", () => ui.count('[data-mr="WatchedRepo"]') === 1, () => { pt("fill", at("textbox", "Watch a repo"), "globex/forge"); pt("click", at("button", "Add")); });
+    if (pt("attr", 'css:[data-mr="WatchedRepo"]', "data-mr-source").trim() !== "globex/forge") throw new Error("wrong repo listed");
+    await step("globex/forge removed", () => ui.count('[data-mr="WatchedRepo"]') === 0, () => pt("click", at("button", "Stop watching globex/forge")));
   } },
   { name: "J16 delete a workspace by typing its name", run: async () => {
     await ui.open("busy");
