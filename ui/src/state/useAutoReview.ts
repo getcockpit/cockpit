@@ -31,7 +31,9 @@ export function useAutoReview(state: AppState) {
         try {
           const info = await api.reviewState(p.url).catch(() => null) as ReviewState | null;
           if (!info) continue;
-          if (!needsAutoReview(info, p.url, lastLocalReview(Object.values(live.current.sessions), p), started())) { checked.set(p.url, p.updatedAt); continue; }
+          // Heads a recurring review started count too (MR-171): the two never review the same head twice.
+          const seen = new Set([...started(), ...live.current.reviewStarts]);
+          if (!needsAutoReview(info, p.url, lastLocalReview(Object.values(live.current.sessions), p), seen)) { checked.set(p.url, p.updatedAt); continue; }
           const slug = p.repository?.nameWithOwner ?? prSlug(p.url);
           const where = slug ? await prRepo(slug) : null;
           if (!where) { checked.set(p.url, p.updatedAt); continue; } // no clone found: it stays a suggestion on the wall

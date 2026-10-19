@@ -139,10 +139,14 @@ export type SessionState = {
 // at: local "HH:MM"; days: 1 = Monday … 7 = Sunday (weekly); every_h (hourly).
 // Since MR-169 the editor saves `cron` (minute hour day-of-month month weekday, local time); the older kinds still load.
 export type Cadence = { kind: "daily" | "weekdays" | "weekly" | "hourly"; at: string; days?: number[]; every_h?: number } | { kind: "cron"; expr: string };
-export type ScheduleRun = { at: number; session: string | null; reason: "due" | "catchup" | "manual"; ok: boolean; error: string | null; slot: string | null };
-export type Schedule = { id: string; name: string; prompt: string; cwd: string; workspace: string; worktree: boolean; cadence: Cadence; permissionMode: PermissionMode; paused: boolean; fromSession: string | null; check: string | null; runs: ScheduleRun[] };
+/** A review a review-mode run started (MR-171): `schedule.review_started`. */
+export type ScheduleReview = { at: number; url: string; number: number | null; title: string; session: string };
+export type ScheduleRun = { at: number; session: string | null; reason: "due" | "catchup" | "manual"; ok: boolean; error: string | null; slot: string | null; mode?: ScheduleMode; reviews?: ScheduleReview[]; url?: string | null };
+/** What a schedule starts (MR-171): its prompt, or the cmd+k Review for each PR that needs you. */
+export type ScheduleMode = "prompt" | "review";
+export type Schedule = { id: string; name: string; mode: ScheduleMode; prompt: string; cwd: string; workspace: string; worktree: boolean; cadence: Cadence; permissionMode: PermissionMode; paused: boolean; fromSession: string | null; check: string | null; runs: ScheduleRun[] };
 /** A schedule's last check (MR-169): kept in the core's memory only, skipped slots aren't logged. */
-export type ScheduleCheck = { at: number; outcome: "checking" | "fired" | "busy" | "no" | "same" | "error"; skipped: number; error: string | null };
+export type ScheduleCheck = { at: number; outcome: "checking" | "fired" | "busy" | "no" | "same" | "error" | "nothing" | "queued"; skipped: number; error: string | null; waiting?: number };
 export type BackgroundMode = "schedules" | "always" | "never";
 
 // Claude Code's /goal (active_goal): the completion condition, how many turns it was checked and found not met, and why.
@@ -177,6 +181,7 @@ export type AppState = {
   presets: Preset[]; // your own kinds in the start picker (MR-80)
   autoReview: boolean; // start /review by itself for PRs waiting on you (MR-72)
   autoReviewRepos: string[]; // owner/name repos auto-review also scans, review requested or not (MR-170)
+  reviewStarts: string[]; // `url@head` of every review auto-review or a schedule started (MR-171): both skip these
   notifications: boolean; // macOS notifications for new needs-you items while the app is in the background (MR-94)
   compactWindow: number | null; // sessions auto-compact at this many context tokens; null = the model's limit (I63)
   sessionCap: number; // how many sessions may be mid-turn at once; idle ones don't count (MR-105)

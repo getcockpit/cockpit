@@ -325,6 +325,15 @@ export const SCENARIOS: Record<string, Scenario> = {
     { session: "RD", kind: "sidecar.sdk", payload: { message: { type: "assistant", message: { content: [{ type: "text", text: "3 PRs wait on you: #412 (4 days), #418, #421." }] } } }, at: 12 },
     { session: "RD", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "3 PRs wait on you: #412 (4 days), #418, #421.", total_cost_usd: 0.04 } }, at: 13 },
   ], docs: [] },
+  // MR-171: a review-mode schedule: quiet runs folded, one run that started two reviews. ?demo=recurringreview
+  recurringreview: { events: [...ready, onboarded,
+    { kind: "ui.schedule_set", payload: { id: "sch3", name: "Review requests watch", mode: "review", prompt: "", cwd: "~/code/shop", workspace: "personal", worktree: false, cadence: { kind: "cron", expr: "*/5 9-17 * * 1-5" }, permission_mode: "auto", paused: false }, at: 1 },
+    { kind: "schedule.fired", payload: { id: "sch3", mode: "review", reason: "due", slot: "2026-10-19T09:00", new: 0 }, at: 2 },
+    { kind: "schedule.fired", payload: { id: "sch3", mode: "review", reason: "due", slot: "2026-10-19T09:05", new: 0 }, at: 3 },
+    { kind: "schedule.fired", payload: { id: "sch3", mode: "review", reason: "due", slot: "2026-10-19T09:10", new: 1 }, at: 4 },
+    { session: "RV1", kind: "ui.session_requested", payload: { cwd: "~/code/shop", prompt: "/review https://github.com/acme/shop/pull/488", kind: "review", workspace: "personal", schedule: "sch3" }, at: 5 },
+    { session: "RV1", kind: "schedule.review_started", payload: { id: "sch3", url: "https://github.com/acme/shop/pull/488", number: 488, title: "Shop: paginate order history", head: "h488", session: "RV1" }, at: 5 },
+  ], docs: [] },
   busy: { events: busy, docs: [planDoc] },
   signedout: { events: signedOutEvents, docs: [] },
   // Doc lifecycle (MR-151): one stalled with open questions, one ready, one building, one shipped. ?demo=doclife

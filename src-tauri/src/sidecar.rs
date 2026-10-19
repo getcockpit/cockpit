@@ -413,6 +413,15 @@ pub fn unattended(append: Option<String>, scheduled: bool) -> Option<String> {
 pub struct Started {
     pub schedule: Option<String>,
     pub permission_mode: Option<String>,
+    /// Nobody is watching: append `UNATTENDED`. A prompt-mode run is; a review a schedule starts
+    /// (MR-171) isn't, since it must stop for you before anything goes to GitHub.
+    pub unattended: bool,
+}
+
+/// The system-prompt append a session starts with: the visual guidance, its flow's steps, and
+/// `UNATTENDED` only when `started` says nobody is watching.
+pub fn system_append(kind: &str, layer: bool, started: &Started) -> Option<String> {
+    unattended(append_prompt(kind, layer), started.unattended)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -491,7 +500,7 @@ pub fn start_with(
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
-    let mode = match started.permission_mode.filter(|m| PERMISSION_MODES.contains(&m.as_str())) {
+    let mode = match started.permission_mode.clone().filter(|m| PERMISSION_MODES.contains(&m.as_str())) {
         Some(m) => {
             state.modes.lock().unwrap().insert(session.clone(), m.clone());
             m
@@ -532,7 +541,7 @@ pub fn start_with(
     // Every session gets the visual-app guidance (MR-56); blank ones the plan nudge (MR-98);
     // Review/Address add their flow steps.
     // A recurring run starts with nobody watching: it shouldn't stop to ask what it can decide.
-    if let Some(a) = unattended(append_prompt(&kind, layer), started.schedule.is_some()) {
+    if let Some(a) = system_append(&kind, layer, &started) {
         msg["append_system_prompt"] = a.into();
     }
     state.live.lock().unwrap().insert(session.clone());
@@ -832,7 +841,7 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prompt, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, unattended, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, UNATTENDED, VISUAL_GUIDANCE};
+    use super::{append_prompt, system_append, Started, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, unattended, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, UNATTENDED, VISUAL_GUIDANCE};
 
     #[test]
     fn mcp_add_checks_name_scope_and_transport() {
@@ -868,6 +877,22 @@ mod tests {
         assert_eq!(unattended(None, true).as_deref(), Some(UNATTENDED));
         let both = unattended(append_prompt("blank", false), true).unwrap();
         assert!(both.starts_with(VISUAL_GUIDANCE) && both.ends_with(UNATTENDED));
+    }
+
+    #[test]
+    fn a_scheduled_review_is_not_unattended_and_still_waits_for_publish() {
+        // MR-171: a review a schedule starts carries its schedule but nobody-is-watching stays off,
+        // so the review flow's "only publish after the user says 'publish'" is the last word.
+        let review = Started { schedule: Some("sch".into()), permission_mode: None, unattended: false };
+        for layer in [false, true] {
+            let a = system_append("review", layer, &review).unwrap();
+            assert!(!a.contains(UNATTENDED), "layer {layer}");
+            assert!(a.contains("only publish to GitHub after the user says 'publish'"), "layer {layer}");
+            assert!(a.contains("call review_publish_ready"), "layer {layer}");
+        }
+        let run = Started { schedule: Some("sch".into()), permission_mode: None, unattended: true };
+        assert!(system_append("blank", false, &run).unwrap().ends_with(UNATTENDED));
+        assert!(!system_append("review", false, &Started::default()).unwrap().contains(UNATTENDED));
     }
 
     #[test]

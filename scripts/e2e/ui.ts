@@ -1109,7 +1109,7 @@ const flows: Flow[] = [
   { name: "J20 an empty list offers examples that fill in the editor", run: async () => {
     await ui.open("busy");
     await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
-    await ui.tags("RecurringExample", 3);
+    await ui.tags("RecurringExample", 4);
     await ui.clickUntil("button", /^Weekly report/, '[data-mr="Recurring"]', "ScheduleEditor");
     await ui.seeText("Mon at 09:00");
     await ui.click("button", "Schedule it");
@@ -1133,6 +1133,44 @@ const flows: Flow[] = [
     await ui.tags("ScheduleRow", 1);
     await ui.tags("ScheduleCheck", 1);
     await ui.seeText("no change · skipped 7×");
+  } },
+  // MR-171: review mode.
+  { name: "J20 a review schedule lists the PRs it started and folds the quiet runs", run: async () => {
+    await ui.open("recurringreview");
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.tags("ScheduleRow", 1);
+    await ui.seeText("reviews each PR that needs you");
+    await ui.seeText("nothing new");
+    await ui.click("button", "History (3)");
+    await ui.tags("ScheduleReview", 1);
+    await ui.seeText("Shop: paginate order history");
+    await ui.seeText("nothing new, 2 runs");
+    await ui.seeText("started 1 review (#488)");
+  } },
+  { name: "J20 switch a watch to review mode: Run now starts one review per PR, once per head", run: async () => {
+    await ui.open("recurring");
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.clickUntil("button", "Edit", '[data-mr="ScheduleRow"][data-mr-source="sch2"]', "ScheduleEditor");
+    await ui.tags("ScheduleCheckField", 1);
+    await ui.click("radio", "Start a review for each PR that needs me");
+    await ui.tags("ScheduleCheckField", 0);
+    await ui.tags("ScheduleReviewNote", 1);
+    if (ui.count("[aria-label='Prompt']") > 0) throw new Error("the prompt is still shown");
+    await ui.seeText("Reviews PRs in acme/billing");
+    await ui.click("button", "Save");
+    await ui.tags("ScheduleRow", 2);
+    await ui.seeText("reviews each PR that needs you");
+    await ui.clickUntil("button", "Run now", '[data-mr="ScheduleRow"][data-mr-source="sch2"]', "RecurringMark");
+    await ui.key("Escape");
+    await ui.tags("RecurringTag", 3);
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.click("button", "History (1)", '[data-mr="ScheduleRow"][data-mr-source="sch2"]');
+    await ui.tags("ScheduleReview", 2);
+    await ui.seeText("started 2 reviews (#491, #495)");
+    // The same heads again: nothing new, no third session.
+    await ui.click("button", "Run now", '[data-mr="ScheduleRow"][data-mr-source="sch2"]');
+    await ui.seeText("nothing new to review");
+    await ui.tags("ScheduleReview", 2);
   } },
   { name: "Keys: Esc closes the delete-workspace dialog", run: async () => {
     await ui.open("busy");

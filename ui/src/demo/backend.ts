@@ -230,9 +230,12 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     // Recurring sessions (MR-167): logged like the core; Run now starts a scripted session tagged ↻.
     case "schedule_set": {
       const d = (a.schedule as Record<string, unknown>) ?? {};
-      if (!String(d.name ?? "").trim() || !String(d.prompt ?? "").trim()) throw "give it a name and a prompt";
+      const mode = d.mode ?? "prompt";
+      if (mode !== "prompt" && mode !== "review") throw `unknown mode: ${String(mode)} (prompt or review)`;
+      if (!String(d.name ?? "").trim() || (mode === "prompt" && !String(d.prompt ?? "").trim())) throw "give it a name and a prompt";
+      if (mode === "review" && !handle("gh_repo", { cwd: d.cwd })) throw `review mode needs a GitHub repo: ${String(d.cwd)} has no github.com origin`;
       const id = (d.id as string) || `sch${Date.now().toString(36)}`;
-      record(null, "ui.schedule_set", { ...d, id, workspace: d.workspace ?? "personal", permission_mode: d.permission_mode ?? "auto", paused: d.paused ?? false });
+      record(null, "ui.schedule_set", { ...d, id, mode, workspace: d.workspace ?? "personal", permission_mode: d.permission_mode ?? "auto", paused: d.paused ?? false });
       return id;
     }
     case "schedule_delete": record(null, "ui.schedule_deleted", { id: a.id }); return null;
@@ -251,12 +254,28 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     }
     case "schedules_checks": {
       const out: Record<string, unknown> = {};
-      for (const e of events) if (e.kind === "ui.schedule_set") { if (e.payload.check) out[String(e.payload.id)] = { at: Date.now() - 60_000, outcome: "same", skipped: 7, error: null }; else delete out[String(e.payload.id)]; }
+      for (const e of events) if (e.kind === "ui.schedule_set") { if (e.payload.mode === "review") out[String(e.payload.id)] = { at: Date.now() - 60_000, outcome: "nothing", skipped: 3, error: null, waiting: 0 }; else if (e.payload.check) out[String(e.payload.id)] = { at: Date.now() - 60_000, outcome: "same", skipped: 7, error: null }; else delete out[String(e.payload.id)]; }
       return out;
     }
     case "schedule_run_now": {
       const set = [...events].reverse().find((e) => e.kind === "ui.schedule_set" && e.payload.id === a.id);
       if (!set) throw "that schedule was deleted";
+      // MR-171: review mode lists the repo's PRs and starts a Review for each head not started yet.
+      if (set.payload.mode === "review") {
+        const repo = handle("gh_repo", { cwd: set.payload.cwd }) as string | null;
+        if (!repo) throw `${String(set.payload.cwd)} isn't a GitHub repo (no github.com origin)`;
+        const prs = handle("gh_prs", { cwd: set.payload.cwd, mode: "review", repo }) as { number: number; title: string; url: string }[];
+        const done = new Set(events.filter((e) => e.kind === "schedule.review_started" || e.kind === "ui.auto_review_started").map((e) => `${e.payload.url}@${e.payload.head ?? ""}`));
+        const todo = prs.filter((p) => !done.has(`${p.url}@h${p.number}`));
+        record(null, "schedule.fired", { id: a.id, mode: "review", reason: "manual", new: todo.length });
+        const ids = todo.map((p, i) => {
+          const sid = `s${Date.now().toString(36)}${i}`;
+          record(sid, "ui.session_requested", { cwd: set.payload.cwd, prompt: `/review ${p.url}`, kind: "review", resume: null, workspace: set.payload.workspace ?? "personal", schedule: a.id });
+          record(sid, "schedule.review_started", { id: a.id, url: p.url, number: p.number, title: p.title, head: `h${p.number}`, session: sid });
+          return sid;
+        });
+        return ids[0] ?? "";
+      }
       const sid = `s${Date.now().toString(36)}`;
       record(sid, "ui.session_requested", { cwd: set.payload.cwd, prompt: set.payload.prompt, kind: "blank", resume: null, workspace: set.payload.workspace ?? "personal", schedule: a.id });
       record(sid, "schedule.fired", { id: a.id, session: sid, reason: "manual" });
