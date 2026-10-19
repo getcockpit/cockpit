@@ -77,6 +77,25 @@ pub struct Docs {
 impl Docs {
     /// Folds one event into the docs. Unknown kinds are ignored; replaying the log rebuilds all docs.
     pub fn apply(&self, ev: &Event) {
+        // Notes waiting for a session's next message live in the log, so a restart keeps them
+        // (MR-168): queued by `doc.relay_waiting`, cleared once delivered (`doc.relay`, waited).
+        // Neither changes the doc itself.
+        let to = ev.session_id.clone().unwrap_or_default();
+        match ev.kind.as_str() {
+            "doc.relay_waiting" => {
+                let p = &ev.payload;
+                let note = (p["doc_id"].as_str().unwrap_or_default().to_owned(), p["text"].as_str().unwrap_or_default().to_owned());
+                self.waiting.lock().unwrap().entry(to).or_default().push(note);
+                return;
+            }
+            "doc.relay" => {
+                if ev.payload["waited"].as_bool() == Some(true) {
+                    self.waiting.lock().unwrap().remove(&to);
+                }
+                return;
+            }
+            _ => {}
+        }
         let mut docs = self.docs.lock().unwrap();
         apply_to(&mut docs, ev);
     }
@@ -102,26 +121,22 @@ impl Docs {
         }
     }
 
-    /// The notes to send once `author`'s turn ends (MR-168): one per (doc, other live session) for
-    /// changes that shape the plan; the rest wait for that session's next message (`take_waiting`).
+    /// The notes for `author`'s turn that just ended (MR-168), as (session, doc id, text, now): one
+    /// per (doc, other live session) for changes that shape the plan (now), and one for the rest,
+    /// which the caller records as `doc.relay_waiting` for that session's next message.
     /// Nothing when a relay note started that turn, so two sessions can't keep pinging each other.
-    pub fn take_relay(&self, author: &str, live: &std::collections::HashSet<String>) -> Vec<(String, String, String)> {
+    pub fn take_relay(&self, author: &str, live: &std::collections::HashSet<String>) -> Vec<(String, String, String, bool)> {
         let changes = self.changed.lock().unwrap().remove(author).unwrap_or_default();
         if self.relayed.lock().unwrap().remove(author) {
             return vec![];
         }
-        let notes = relay_notes(&self.docs.lock().unwrap(), author, &changes, live);
-        let mut waiting = self.waiting.lock().unwrap();
-        let mut now = vec![];
-        for n in notes {
-            if n.3 { now.push((n.0, n.1, n.2)) } else { waiting.entry(n.0).or_default().push((n.1, n.2)) }
-        }
-        now
+        relay_notes(&self.docs.lock().unwrap(), author, &changes, live)
     }
 
-    /// The notes waiting for `session`, to go in front of the message you're sending it.
-    pub fn take_waiting(&self, session: &str) -> Vec<(String, String)> {
-        self.waiting.lock().unwrap().remove(session).unwrap_or_default()
+    /// The notes waiting for `session`, to go in front of the message you're sending it. They stay
+    /// queued until their delivery is recorded (`doc.relay` with `waited`).
+    pub fn waiting_for(&self, session: &str) -> Vec<(String, String)> {
+        self.waiting.lock().unwrap().get(session).cloned().unwrap_or_default()
     }
 
     /// A relay note went to `session` while it was idle: the turn it starts is the note's.
@@ -438,7 +453,7 @@ mod tests {
         let live: std::collections::HashSet<String> = ["plan", "b1"].map(String::from).into();
         let notes = docs.take_relay("plan", &live);
         assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].0, "b1");
+        assert_eq!((notes[0].0.as_str(), notes[0].3), ("b1", true));
         assert!(notes[0].2.contains("by its plan session") && notes[0].2.contains("design (design_1): Exponential backoff") && notes[0].2.contains("removed block risk_1"));
         assert!(docs.take_relay("plan", &live).is_empty(), "drained");
         // b1's turn started by the note: its edits don't bounce back.
@@ -448,15 +463,41 @@ mod tests {
         // Its next, user-driven turn relays a design change to the plan session at once...
         docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
         let back = docs.take_relay("b1", &live);
-        assert_eq!((back.len(), back[0].0.as_str()), (1, "plan"));
+        assert_eq!((back.len(), back[0].0.as_str(), back[0].3), (1, "plan", true));
         assert!(back[0].2.contains("by its build session"));
         // ...but a log entry doesn't shape the plan: it waits for your next message to the plan session.
         docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "log_1" }));
-        assert!(docs.take_relay("b1", &live).is_empty());
-        let waiting = docs.take_waiting("plan");
-        assert_eq!(waiting.len(), 1);
-        assert!(waiting[0].1.contains("meanwhile") && waiting[0].1.contains("log (log_1): Retries wired"));
-        assert!(docs.take_waiting("plan").is_empty());
+        let later = docs.take_relay("b1", &live);
+        assert_eq!((later.len(), later[0].0.as_str(), later[0].3), (1, "plan", false));
+        assert!(later[0].2.contains("meanwhile") && later[0].2.contains("log (log_1): Retries wired"));
+    }
+
+    #[test]
+    fn waiting_notes_live_in_the_log_and_survive_a_restart() {
+        let note = |n: u32, kind: &str, p: Value| Event { session_id: Some("plan".into()), ..ev(n, kind, p) };
+        let log = vec![
+            note(1, "doc.relay_waiting", json!({ "doc_id": "d", "text": "first" })),
+            note(2, "doc.relay_waiting", json!({ "doc_id": "d", "text": "second" })),
+        ];
+        // A fresh Docs replaying the log (an app restart) has both, in order.
+        let docs = Docs::default();
+        for e in &log {
+            docs.apply(e);
+        }
+        assert_eq!(docs.waiting_for("plan").iter().map(|n| n.1.as_str()).collect::<Vec<_>>(), ["first", "second"]);
+        assert!(docs.waiting_for("b1").is_empty());
+        // Delivered with your next message: gone, and a later replay agrees.
+        docs.apply(&note(3, "doc.relay", json!({ "doc_id": "d", "text": "first", "waited": true })));
+        assert!(docs.waiting_for("plan").is_empty());
+        let again = Docs::default();
+        for e in log.iter().chain([&note(3, "doc.relay", json!({ "doc_id": "d", "waited": true }))]) {
+            again.apply(e);
+        }
+        assert!(again.waiting_for("plan").is_empty());
+        // A plain relay (sent at once) doesn't touch the queue.
+        docs.apply(&note(4, "doc.relay_waiting", json!({ "doc_id": "d", "text": "third" })));
+        docs.apply(&note(5, "doc.relay", json!({ "doc_id": "d", "text": "now" })));
+        assert_eq!(docs.waiting_for("plan").len(), 1);
     }
 
     fn run(docs: &Docs, n: &mut u32, tool: &str, args: Value) -> (String, bool) {

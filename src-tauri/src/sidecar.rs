@@ -532,7 +532,7 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     let mut sent = serde_json::json!({ "text": text });
     // Doc changes that waited for your next message go in front of it (MR-168).
     let mut before = String::new();
-    for (doc_id, note) in app.state::<crate::docs::Docs>().take_waiting(&session) {
+    for (doc_id, note) in app.state::<crate::docs::Docs>().waiting_for(&session) {
         crate::eventlog::record(&app, Some(&session), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "text": note, "waited": true }), Some(&format!("doc:{doc_id}")));
         before.push_str(&note);
         before.push_str("\n\n");
@@ -768,8 +768,14 @@ pub fn expand_home(app: &AppHandle, path: &str) -> String {
 fn relay_doc_changes(app: &AppHandle, author: &str) {
     let state = app.state::<Sidecar>();
     let live = state.live.lock().unwrap().clone();
-    for (to, doc_id, text) in app.state::<crate::docs::Docs>().take_relay(author, &live) {
-        crate::eventlog::record(app, Some(&to), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "from": author, "text": text }), Some(&format!("doc:{doc_id}")));
+    for (to, doc_id, text, now) in app.state::<crate::docs::Docs>().take_relay(author, &live) {
+        let anchor = format!("doc:{doc_id}");
+        if !now {
+            // Not plan-shaping: it waits, in the log, for your next message to that session.
+            crate::eventlog::record(app, Some(&to), "doc.relay_waiting", &serde_json::json!({ "doc_id": doc_id, "from": author, "text": text }), Some(&anchor));
+            continue;
+        }
+        crate::eventlog::record(app, Some(&to), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "from": author, "text": text }), Some(&anchor));
         // An idle session starts a turn for the note; what it changes then isn't relayed back.
         if state.idle.lock().unwrap().remove(&to) {
             app.state::<crate::docs::Docs>().mark_relayed(&to);
