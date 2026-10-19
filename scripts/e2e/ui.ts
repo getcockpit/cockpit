@@ -1085,7 +1085,7 @@ const flows: Flow[] = [
     await ui.clickUntil("button", "Run now", '[data-mr="ScheduleRow"][data-mr-source="sch1"]', "RecurringMark");
     await ui.tags("Recurring", 0);
     await ui.tags("RecurringMark", 1);
-    await ui.see("button", "↻ Schedule…");
+    await ui.see("button", /Schedule…$/);
     await ui.key("Escape");
     await ui.tags("RecurringTag", 2);
     await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
@@ -1095,7 +1095,7 @@ const flows: Flow[] = [
   { name: "J20 make a schedule with Repeat… and see it listed", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");
-    await ui.clickUntil("button", "Repeat…", undefined, "ScheduleEditor");
+    await ui.clickUntil("button", /Repeat…$/, undefined, "ScheduleEditor");
     await ui.click("button", "Mondays 09:00");
     await ui.click("button", "Thu", '[data-mr="CronRow"][data-mr-source="Weekdays"]');
     await ui.seeText("Mon, Thu at 09:00");
