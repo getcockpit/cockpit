@@ -67,3 +67,15 @@ describe("paths outside the session folder", () => {
     expect(matchDir(ls, { dir: "~/", name: ".z" })).toEqual(["~/.zshrc"]);
   });
 });
+
+describe("paths with spaces", () => {
+  it("reads an open quote as one query, spaces and all", () => {
+    expect(typedMention('see @"~/Library/Application Su', 30)).toEqual({ start: 4, query: "~/Library/Application Su", quoted: true });
+    expect(typedMention('see @"/a b/c" and', 17)).toBeNull();
+  });
+  it("quotes a picked path with spaces, and replaces an open quote", () => {
+    expect(insertMention("@~/Lib", { start: 0, query: "~/Lib" }, "~/Library/Application Support/")).toEqual({ text: '@"~/Library/Application Support/" ', caret: 34 });
+    expect(insertMention('@"~/Library/Application Su', { start: 0, query: "~/Library/Application Su", quoted: true }, "~/Library/Application Support/")).toEqual({ text: '@"~/Library/Application Support/" ', caret: 34 });
+    expect(insertMention('@"~/a b" next', { start: 0, query: "~/a b", quoted: true }, "~/a b c.md")).toEqual({ text: '@"~/a b c.md" next', caret: 14 });
+  });
+});

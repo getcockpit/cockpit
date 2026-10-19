@@ -1,8 +1,16 @@
 // @ mentions in the message box (MR-108): point Claude at a file or folder, as in Claude Code.
 
-/** The @ being typed before the caret: "look at @src/ap" → { start: 8, query: "src/ap" }. Null when there's none. */
-export function typedMention(text: string, caret: number): { start: number; query: string } | null {
-  const m = /(^|\s)@([^\s@]*)$/.exec(text.slice(0, caret));
+export type TypedMention = { start: number; query: string; quoted?: true };
+
+/**
+ * The @ being typed before the caret: "look at @src/ap" → { start: 8, query: "src/ap" }. Null when there's none.
+ * An open quote takes spaces: `@"~/Library/Application Su` → { query: "~/Library/Application Su", quoted: true }.
+ */
+export function typedMention(text: string, caret: number): TypedMention | null {
+  const before = text.slice(0, caret);
+  const q = /(^|\s)@"([^"\n]*)$/.exec(before);
+  if (q) return { start: q.index + q[1].length, query: q[2], quoted: true };
+  const m = /(^|\s)@([^\s@"]*)$/.exec(before);
   return m ? { start: m.index + m[1].length, query: m[2] } : null;
 }
 
@@ -55,9 +63,12 @@ export function matchDir(entries: string[], at: { dir: string; name: string }, m
 }
 
 /** The text with the typed @query swapped for the picked path, and where the caret goes. */
-export function insertMention(text: string, at: { start: number; query: string }, path: string): { text: string; caret: number } {
-  const head = `${text.slice(0, at.start)}@${path} `;
-  const rest = text.slice(at.start + 1 + at.query.length).replace(/^ /, "");
+// A path with spaces goes in quotes: @"/a b/c.png".
+export function insertMention(text: string, at: TypedMention, path: string): { text: string; caret: number } {
+  const head = `${text.slice(0, at.start)}${/\s/.test(path) ? `@"${path}"` : `@${path}`} `;
+  let rest = text.slice(at.start + 1 + (at.quoted ? 1 : 0) + at.query.length);
+  if (at.quoted) rest = rest.replace(/^"/, "");
+  rest = rest.replace(/^ /, "");
   return { text: head + rest, caret: head.length };
 }
 
