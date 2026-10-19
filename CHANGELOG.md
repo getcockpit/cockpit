@@ -4,6 +4,24 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-19
+
+### Added
+- **Recurring sessions:** save a prompt, folder, workspace and cadence (daily, weekdays, chosen days, every N hours), and Cockpit starts a fresh session when it's due, catching up once on missed runs. Open them from ↻ Recurring on the Wall or the tray, or turn a session into one with **Repeat…**. Finished runs land on the Wall marked new. Cockpit can keep running in the background (tray icon, start at login).
+- **Doc groups:** on the Wall, a working doc and the sessions that plan and build it show as one group (▤ plan / ▤ build); the Overview nests them under the doc too. A session outside a group carries a chip naming its doc, and clicking it opens the doc.
+- **Plan and build stay in sync:** when one session changes the doc's question, design, scope or risk, the doc's other running sessions get a short note right away. Other changes wait and go in front of your next message to that session, even across a restart.
+- Copy button on every rendered text block: turns, code fences and view text.
+- The folder picker can create a folder that doesn't exist yet.
+- @ mentions list folders outside the session folder (`@~/`, `@../`, `@./`, `@/`), including paths with spaces.
+
+### Changed
+- PR review and address sessions archive themselves once the review is posted or the fixes are pushed.
+- ⌘K from inside a session starts the new one in the background instead of jumping to it.
+- Much faster start-up: archived sessions' history loads only when you open them.
+
+### Fixed
+- Sign in… runs `claude auth login`, closes by itself, and resends your message only once the sign-in actually took.
+
 ## [0.1.7] - 2026-10-16
 
 ### Fixed
