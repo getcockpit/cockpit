@@ -225,6 +225,31 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       runAgent(sid, String(a.prompt ?? ""));
       return sid;
     }
+    // Recurring sessions (MR-167): logged like the core; Run now starts a scripted session tagged ↻.
+    case "schedule_set": {
+      const d = (a.schedule as Record<string, unknown>) ?? {};
+      if (!String(d.name ?? "").trim() || !String(d.prompt ?? "").trim()) throw "give it a name and a prompt";
+      const id = (d.id as string) || `sch${Date.now().toString(36)}`;
+      record(null, "ui.schedule_set", { ...d, id, workspace: d.workspace ?? "personal", permission_mode: d.permission_mode ?? "auto", paused: d.paused ?? false });
+      return id;
+    }
+    case "schedule_delete": record(null, "ui.schedule_deleted", { id: a.id }); return null;
+    case "schedules_next": {
+      const out: Record<string, number> = {};
+      for (const e of events) if (e.kind === "ui.schedule_set") out[String(e.payload.id)] = Date.now() + 3_600_000;
+      for (const e of events) if (e.kind === "ui.schedule_deleted" || (e.kind === "ui.schedule_set" && e.payload.paused)) delete out[String(e.payload.id)];
+      return out;
+    }
+    case "schedule_run_now": {
+      const set = [...events].reverse().find((e) => e.kind === "ui.schedule_set" && e.payload.id === a.id);
+      if (!set) throw "that schedule was deleted";
+      const sid = `s${Date.now().toString(36)}`;
+      record(sid, "ui.session_requested", { cwd: set.payload.cwd, prompt: set.payload.prompt, kind: "blank", resume: null, workspace: set.payload.workspace ?? "personal", schedule: a.id });
+      record(sid, "schedule.fired", { id: a.id, session: sid, reason: "manual" });
+      runAgent(sid, String(set.payload.prompt ?? ""));
+      return sid;
+    }
+    case "background_set": record(null, "ui.background_set", { mode: a.mode }); return null;
     case "session_send": {
       const sid = String(a.session), text = String(a.text);
       record(sid, "ui.message_sent", { text });
