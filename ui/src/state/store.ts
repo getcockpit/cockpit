@@ -161,6 +161,7 @@ export const api = {
   mcpStatus: (session: string) => invoke("session_mcp_status", { session }),
   // @ mentions (MR-108): the files and folders in a session's folder, folders ending in /.
   paths: (cwd: string) => invoke<string[]>("session_paths", { cwd }),
+  mentionDir: (cwd: string, dir: string) => invoke<string[]>("mention_dir", { cwd, dir }),
   mcpAction: (session: string, server: string, action: "reconnect" | "enable" | "disable") => invoke("session_mcp_action", { session, server, action }),
   // Saved with `claude mcp add-json` in scope, then attached to the running session.
   mcpAdd: (session: string, server: string, scope: McpScope, config: McpAddConfig) => invoke("session_mcp_add", { session, server, scope, config }),

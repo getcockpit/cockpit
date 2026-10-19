@@ -37,6 +37,23 @@ export function matchPaths(paths: string[], query: string, max = 8): string[] {
   return out.sort((a, b) => a.k - b.k || a.p.length - b.p.length || a.p.localeCompare(b.p)).slice(0, max).map((x) => x.p);
 }
 
+/**
+ * A query that points outside the session folder (`~/`, `../`, `./`, `/`): the folder to list and
+ * the name typed in it. "~/Doc" → { dir: "~/", name: "Doc" }; a bare "~" or ".." opens that folder.
+ */
+export function outsideQuery(query: string): { dir: string; name: string } | null {
+  if (query === "~" || query === "." || query === "..") return { dir: `${query}/`, name: "" };
+  if (!/^(~\/|\.\.?\/|\/)/.test(query)) return null;
+  const cut = query.lastIndexOf("/") + 1;
+  return { dir: query.slice(0, cut), name: query.slice(cut) };
+}
+
+/** Menu rows for one listed folder: entries named like `name`, hidden ones only once a `.` is typed. */
+export function matchDir(entries: string[], at: { dir: string; name: string }, max = 8): string[] {
+  const names = entries.filter((e) => e.startsWith(at.dir)).map((e) => e.slice(at.dir.length)).filter((n) => n && (at.name.startsWith(".") || !n.startsWith(".")));
+  return matchPaths(names, at.name, max).map((n) => at.dir + n);
+}
+
 /** The text with the typed @query swapped for the picked path, and where the caret goes. */
 export function insertMention(text: string, at: { start: number; query: string }, path: string): { text: string; caret: number } {
   const head = `${text.slice(0, at.start)}@${path} `;

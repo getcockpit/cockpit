@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { droppedMentions, insertDropped, insertMention, matchPaths, typedMention } from "./mention";
+import { droppedMentions, insertDropped, insertMention, matchDir, matchPaths, outsideQuery, typedMention } from "./mention";
 
 const PATHS = ["docs/", "src-tauri/", "src-tauri/src/", "ui/", "ui/src/", "ui/src/screens/", "README.md", "src-tauri/src/mentions.rs", "ui/src/screens/Focus.tsx", "ui/src/screens/Wall.tsx"];
 
@@ -47,5 +47,23 @@ describe("dropped files", () => {
   });
   it("replaces a selection", () => {
     expect(insertDropped("see THIS now", 4, 8, ["/f"])).toEqual({ text: "see @/f now", caret: 7 });
+  });
+});
+
+describe("paths outside the session folder", () => {
+  it("splits ~, .. and / queries into the folder and the name typed in it", () => {
+    expect(outsideQuery("~")).toEqual({ dir: "~/", name: "" });
+    expect(outsideQuery("..")).toEqual({ dir: "../", name: "" });
+    expect(outsideQuery("~/Doc")).toEqual({ dir: "~/", name: "Doc" });
+    expect(outsideQuery("../../app/sr")).toEqual({ dir: "../../app/", name: "sr" });
+    expect(outsideQuery("/tmp/x")).toEqual({ dir: "/tmp/", name: "x" });
+    expect(outsideQuery("src/ui")).toBeNull();
+    expect(outsideQuery(".gitignore")).toBeNull();
+  });
+  it("matches the folder's entries by name and hides dotfiles until a . is typed", () => {
+    const ls = ["~/.zshrc", "~/Desktop/", "~/Documents/", "~/notes.md"];
+    expect(matchDir(ls, { dir: "~/", name: "" })).toEqual(["~/Desktop/", "~/Documents/", "~/notes.md"]);
+    expect(matchDir(ls, { dir: "~/", name: "doc" })).toEqual(["~/Documents/"]);
+    expect(matchDir(ls, { dir: "~/", name: ".z" })).toEqual(["~/.zshrc"]);
   });
 });
