@@ -250,6 +250,11 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       if (s.review?.publish && /^publish( and approve)?$/.test(String(p.text).trim())) s.review = { ...s.review, published: true, approved: String(p.text).trim() === "publish and approve" };
       s.status = "working";
       break;
+    // Another session changed a doc this one plans or builds; Cockpit told it (MR-168).
+    case "doc.relay":
+      s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending", via: "doc" }];
+      s.status = "working";
+      break;
     case "ui.run_started":
       s.runs = [...s.runs, { id: String(p.run_id ?? ev.id), command: String(p.command ?? ""), cwd: String(p.cwd ?? ""), status: "running", code: null, from: ev.created_at, to: null }];
       break;
