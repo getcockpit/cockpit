@@ -6,7 +6,7 @@ const sent: { cmd: string; args: Record<string, unknown> }[] = [];
 let reply: unknown = null;
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (cmd: string, args: Record<string, unknown>) => { sent.push({ cmd, args }); return Promise.resolve(cmd === "brief_continue" ? reply : undefined); } }));
 vi.stubGlobal("window", { dispatchEvent: () => true, addEventListener: () => {} });
-const { buildDoc, continueBrief, continueLabel, decideQuestion, docRole, docsOf, isDecision } = await import("./docs");
+const { buildDoc, continueBrief, continueLabel, decideQuestion, docRole, docsOf, groupByDoc, isDecision } = await import("./docs");
 
 const block = (id: string, section: string) => ({ id, section, status: "", takeaway: id, key: "", body: "", data: { options: [{ label: "A", description: "" }] }, order: 1, decision: null, updated: "" });
 const brief: Doc = { id: "d1", title: "Catch-up: retries", session_id: "s1", version: 1, kind: "brief", blocks: { q_1: block("q_1", "question"), risk_1: block("risk_1", "risk") }, pending_notes: [], pending_changes: [] };
@@ -62,5 +62,16 @@ describe("doc tags on sessions", () => {
     expect(docRole([plan, brief], "p1")).toEqual({ doc: plan, role: "plan" });
     expect(docRole([plan, brief], "b1")).toEqual({ doc: plan, role: "build" });
     expect(docRole([plan, brief], "s1")).toBeNull();
+  });
+});
+
+describe("doc groups on the Wall (MR-168)", () => {
+  test("each doc gathers its plan then its builds; docs without sessions are idle; the rest stay loose", () => {
+    const a: Doc = { id: "a", title: "A", session_id: "p1", version: 1, blocks: {}, pending_notes: [], pending_changes: [], build_sessions: ["b1", "b2"] };
+    const b: Doc = { id: "b", title: "B", session_id: "p9", version: 1, blocks: {}, pending_notes: [], pending_changes: [] };
+    const g = groupByDoc([a, b], ["b2", "x", "p1", "b1"]);
+    expect(g.groups.map((x) => [x.doc.id, x.sessions.map((m) => `${m.role}:${m.id}`)])).toEqual([["a", ["plan:p1", "build:b2", "build:b1"]]]);
+    expect(g.idle.map((d) => d.id)).toEqual(["b"]);
+    expect(g.loose).toEqual(["x"]);
   });
 });

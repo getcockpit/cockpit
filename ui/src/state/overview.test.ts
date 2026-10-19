@@ -61,8 +61,13 @@ describe("Overview grouping (decision 40)", () => {
     expect(ids("personal", "progress")).toEqual(expect.arrayContaining(["ask", "run", "drafting"]));
     expect(area("personal").groups.progress.find((b) => b.id === "ask")).toMatchObject({ needs: true, lamp: "needs_you", status: "Needs you" });
   });
-  it("puts finished plans and ready or shipped docs in review", () => {
-    expect(ids("personal", "review")).toEqual(["rev", "ready", "shipped"]);
+  it("puts ready or shipped docs in review", () => {
+    expect(ids("personal", "review")).toEqual(["ready", "shipped"]);
+  });
+  it("moves a doc's plan session under the doc, in the doc's column (MR-168)", () => {
+    const p = ids("personal", "progress");
+    expect(p.indexOf("rev")).toBe(p.indexOf("drafting") + 1);
+    expect(area("personal").groups.progress.find((b) => b.id === "rev")).toMatchObject({ parent: "drafting", role: "plan" });
   });
   it("puts errors, interruptions and sessions that ended with steps open in resume", () => {
     expect(ids("personal", "resume")).toEqual(["open"]);
@@ -78,7 +83,7 @@ describe("Overview grouping (decision 40)", () => {
     expect(lines.some((l) => /rm -rf|Which\?|Asks:/.test(l))).toBe(false);
   });
   it("counts beside the name: needs you from the Wall's own queue, then each group", () => {
-    expect(area("personal").counts).toEqual({ needs: 2, resume: 1, progress: 3, review: 3 });
+    expect(area("personal").counts).toEqual({ needs: 2, resume: 1, progress: 4, review: 2 });
     expect(area("ws_b").counts).toEqual({ needs: 0, resume: 2, progress: 0, review: 0 });
   });
   it("places the real probe session (it ended its turn idle) in its own workspace", () => {
