@@ -172,6 +172,14 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
           </div>
         </section>}
 
+        {tab === "sessions" && <section data-mr="BackgroundSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <h2 className="mr-h">In the background <span className="mr-dim" style={{ fontWeight: 400 }}>so recurring sessions run with the window closed</span></h2>
+          <div className="mr-row" style={{ gap: 12 }}>
+            <Segmented label="Keep running" value={state.background} options={[["schedules", "While I have schedules"], ["always", "Always"], ["never", "Never"]]} onPick={(v) => void api.setBackground(v).catch(() => {})} />
+            <span className="mr-dim" style={{ fontSize: 12 }}>{state.background === "never" ? "Closing the window quits Cockpit; schedules run only while it's open, and missed ones catch up once at the next start." : `Closing the window hides it; Cockpit stays in the ${navigator.platform.startsWith("Mac") ? "menu bar" : "system tray"} and starts at login${state.background === "schedules" ? " while a schedule is active" : ""}. Quit from there.`}</span>
+          </div>
+        </section>}
+
         {tab === "sessions" && <section data-mr="NotificationSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 className="mr-h">Notifications</h2>
           <div className="mr-row" style={{ gap: 12 }}>

@@ -45,7 +45,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, elsewhere = false }: { s: SessionState; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
+export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, onRepeat, elsewhere = false }: { s: SessionState; onRepeat?: () => void; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -147,7 +147,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
         <div className="mr-row" style={{ gap: 14 }}>
           <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-            <SessionName s={s} />
+            <span className="mr-row" style={{ gap: 8, minWidth: 0 }}><SessionName s={s} />{s.schedule && <span className="mr-mono" data-mr="RecurringMark" data-mr-source={s.id} title="Started by a recurring schedule" style={{ fontSize: 12, color: "var(--mr-selected)" }}>↻</span>}</span>
             <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }} title={s.cwd}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{where || s.cwd}</span>
           </div>
           <StateMark s={tile.state} />
@@ -157,6 +157,8 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
         {/* Wraps: Ctrl+Shift+… labels off macOS are wider than ⌘⇧… (MR-133). */}
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10, flexWrap: "wrap", rowGap: 8 }}>
           {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
+          {/* Recurring sessions (MR-167): run this prompt again on a schedule. */}
+          {onRepeat && !s.fromDeleted && s.kind === "blank" && <Key onClick={onRepeat}>{s.schedule ? "↻ Schedule…" : "Repeat…"}</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
           {s.sdkSessionId && <Key k="⌘T" onClick={toggleTerminal}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}

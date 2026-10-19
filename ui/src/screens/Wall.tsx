@@ -32,7 +32,7 @@ import { ViewTabs } from "../components/ViewTabs";
 const REVIEW = new Set<TileSpec["state"]>(["review", "done", "interrupted", "error"]);
 export const inReviewTray = (t: TileSpec) => REVIEW.has(t.state);
 
-export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onSignIn, onOpenDoc, onStart, onBuild, onTimeline, onSettings }: { state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onSignIn?: (s: SessionState) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
+export function Wall({ state, workspace = "personal", docs, archived, onArchive, onOpen, onSignIn, onOpenDoc, onStart, onBuild, onTimeline, onSettings, onRecurring }: { onRecurring?: () => void; state: AppState; workspace?: string; docs: Doc[]; archived: number; onArchive: () => void; onOpen: (id: string) => void; onSignIn?: (s: SessionState) => void; onOpenDoc: (id: string) => void; onStart: (init?: { mode: "review" | "address"; text: string }) => void; onBuild: (worktree: string) => void; onTimeline?: () => void; onSettings?: () => void }) {
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
@@ -126,6 +126,10 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
           <Count n={review.length} label="to review" onClick={() => jump("mr-review")} />
         </>}
         <span className="mr-grow" />
+        {/* Recurring sessions (MR-167): the list, editor and runs. */}
+        {onRecurring && <button type="button" data-mr="RecurringButton" data-mr-source="recurring" className="mr-key" onClick={onRecurring} title="Recurring sessions: run a saved prompt on a schedule" style={{ minHeight: 28, marginRight: 8 }}>
+          ↻ Recurring{Object.keys(state.schedules).length ? ` ${Object.values(state.schedules).filter((x) => !x.paused).length}` : ""}
+        </button>}
         {/* Never ask is on (I109): a red lamp for as long as it is; click for Settings. */}
         {state.permissionMode === "never" && (
           <button type="button" data-mr="NeverAskLamp" data-mr-source="never" onClick={onSettings} title="Sessions act without asking, except for high-risk actions. Click to change it in Settings."
@@ -205,7 +209,7 @@ export function Wall({ state, workspace = "personal", docs, archived, onArchive,
               {review.map(({ s, tile }) => (
                 <button key={s.id} type="button" className="mr-row" data-mr="ReviewRow" data-mr-source={s.id} {...dragSession(s, sessionTitle(s))} onClick={() => { if (!consumeDrag()) onOpen(s.id); }} style={{ padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left", touchAction: "none" }}>
                   <StateMark s={tile.state} />
-                  <span className="mr-grow mr-ellipsis">{sessionTitle(s)}</span>
+                  <span className="mr-grow mr-ellipsis">{s.schedule && <RecurringTag s={s} name={state.schedules[s.schedule]?.name} />}{sessionTitle(s)}</span>
                   {Object.keys(s.files).length > 0 && <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{plural(Object.keys(s.files).length, "file")}</span>}
                   <span className="mr-key" role="button" tabIndex={0} title="Mark done and move to the archive" style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.archive(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.archive(s); } }}>Done ✓</span>
                   {s.status === "interrupted" && s.sdkSessionId && <span className="mr-key" role="button" tabIndex={0} style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.resume(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.resume(s); } }}>Resume ↻</span>}
@@ -253,7 +257,7 @@ function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState;
       <div className="mr-flag" />
       <div className="mr-tbody">
         <div className="mr-row" style={{ alignItems: "baseline" }}>
-          <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{sessionTitle(s)}</strong>
+          <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{s.schedule && <RecurringTag s={s} />}{sessionTitle(s)}</strong>
           <StateMark s={tile.state} />
         </div>
         <div className="mr-row" style={{ gap: 8 }}>
@@ -269,6 +273,15 @@ function Tile({ s, tile, compactWindow, onOpen, onDiscover }: { s: SessionState;
         {tileNote(tile) && <span className="mr-ink2" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{tileNote(tile)}</span>}
       </div>
     </button>
+  );
+}
+
+// A recurring run (MR-167): ↻ in teal, and "new" until you open it.
+function RecurringTag({ s, name }: { s: SessionState; name?: string }) {
+  return (
+    <span data-mr="RecurringTag" data-mr-source={s.id} title={name ? `Recurring: ${name}` : "Started by a recurring schedule"} style={{ marginRight: 6, fontWeight: 700, color: "var(--mr-selected)" }}>
+      ↻{s.unread && <span data-mr="Unread" data-mr-source={s.id} className="mr-mono" style={{ marginLeft: 4, padding: "0 4px", fontSize: 11, background: "var(--mr-selected)", color: "var(--mr-tile)" }}>new</span>}
+    </span>
   );
 }
 
