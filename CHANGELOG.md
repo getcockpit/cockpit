@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-20
+
+### Added
+- **Recurring review schedules:** a schedule can now run in review mode. Each slot lists the open PRs of the folder's GitHub repo that need you, and starts one Review session per PR whose latest commit isn't reviewed or being reviewed yet (shared with Auto-review, so a PR is never reviewed twice). Reviews still stop before publishing. The editor offers an "Each run" choice, and the history lists the PRs each run started.
+
 ## [0.1.10] - 2026-10-19
 
 ### Changed
