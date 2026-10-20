@@ -179,10 +179,10 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
 
         {(running.length > 0 || docs.length > 0) && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
-          <div className="mr-grid">
-            {/* A doc and the sessions that plan and build it, as one group across the grid (MR-168). */}
+          <div className="mr-grid" style={{ containerType: "inline-size" }}>
+            {/* A doc and the sessions that plan and build it, as one group at most two tiles wide (MR-168). */}
             {grouped.groups.map(({ doc, sessions: members }) => (
-              <div key={doc.id} data-mr="DocGroup" data-mr-source={doc.id} style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
+              <div key={doc.id} data-mr="DocGroup" data-mr-source={doc.id} className="mr-docgroup" style={{ ["--mr-span" as string]: Math.min(members.length, 2), display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
                 <DocTile d={doc} sessions={state.sessions} onOpenDoc={onOpenDoc} header />
                 <div className="mr-grid">
                   {members.map(({ id, role }) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={{ doc, role }} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
@@ -238,11 +238,13 @@ function DocTile({ d, sessions, onOpenDoc, header }: { d: Doc; sessions: AppStat
     <button type="button" className="mr-tile" data-mr="DocTile" data-mr-source={d.id} data-s={open ? "needs_you" : stage === "shipped" ? "done" : "working"} onClick={() => onOpenDoc(d.id)} style={header ? { minHeight: 0 } : { minHeight: 96 }}>
       <div className="mr-flag" />
       {header
-        ? <div className="mr-tbody" style={{ flexDirection: "row", gap: 12, alignItems: "baseline", padding: "8px 14px" }}>
-            <span className="mr-mono mr-dim" aria-hidden="true" style={{ fontSize: 12 }}>▤ doc</span>
-            <strong className="mr-ellipsis" style={{ fontSize: 15 }}>{d.title}</strong>
-            <span className="mr-ink2 mr-ellipsis mr-grow">{goal}</span>
-            <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{meta}</span>
+        ? <div className="mr-tbody" style={{ gap: 4, padding: "8px 14px" }}>
+            <span className="mr-row" style={{ gap: 12, alignItems: "baseline", minWidth: 0 }}>
+              <span className="mr-mono mr-dim" aria-hidden="true" style={{ fontSize: 12, whiteSpace: "nowrap" }}>▤ doc</span>
+              <strong className="mr-ellipsis mr-grow" style={{ fontSize: 15 }}>{d.title}</strong>
+            </span>
+            <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{meta}</span>
+            {goal && <span className="mr-ink2 mr-ellipsis">{goal}</span>}
           </div>
         : <div className="mr-tbody">
             <strong style={{ fontSize: 15 }}>{d.title}</strong>
