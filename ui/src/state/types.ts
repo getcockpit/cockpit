@@ -139,14 +139,10 @@ export type SessionState = {
 // at: local "HH:MM"; days: 1 = Monday … 7 = Sunday (weekly); every_h (hourly).
 // Since MR-169 the editor saves `cron` (minute hour day-of-month month weekday, local time); the older kinds still load.
 export type Cadence = { kind: "daily" | "weekdays" | "weekly" | "hourly"; at: string; days?: number[]; every_h?: number } | { kind: "cron"; expr: string };
-/** A review a review-mode run started (MR-171): `schedule.review_started`. */
-export type ScheduleReview = { at: number; url: string; number: number | null; title: string; session: string };
-export type ScheduleRun = { at: number; session: string | null; reason: "due" | "catchup" | "manual"; ok: boolean; error: string | null; slot: string | null; mode?: ScheduleMode; reviews?: ScheduleReview[]; url?: string | null };
-/** What a schedule starts (MR-171): its prompt, or the cmd+k Review for each PR that needs you. */
-export type ScheduleMode = "prompt" | "review";
-export type Schedule = { id: string; name: string; mode: ScheduleMode; prompt: string; cwd: string; workspace: string; worktree: boolean; cadence: Cadence; permissionMode: PermissionMode; paused: boolean; fromSession: string | null; check: string | null; runs: ScheduleRun[] };
+export type ScheduleRun = { at: number; session: string | null; reason: "due" | "catchup" | "manual"; ok: boolean; error: string | null; slot: string | null };
+export type Schedule = { id: string; name: string; prompt: string; cwd: string; workspace: string; worktree: boolean; cadence: Cadence; permissionMode: PermissionMode; paused: boolean; fromSession: string | null; check: string | null; runs: ScheduleRun[] };
 /** A schedule's last check (MR-169): kept in the core's memory only, skipped slots aren't logged. */
-export type ScheduleCheck = { at: number; outcome: "checking" | "fired" | "busy" | "no" | "same" | "error" | "nothing" | "queued"; skipped: number; error: string | null; waiting?: number };
+export type ScheduleCheck = { at: number; outcome: "checking" | "fired" | "busy" | "no" | "same" | "error"; skipped: number; error: string | null };
 export type BackgroundMode = "schedules" | "always" | "never";
 
 // Claude Code's /goal (active_goal): the completion condition, how many turns it was checked and found not met, and why.
