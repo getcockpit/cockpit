@@ -25,25 +25,38 @@ fn mine_query(scope: &str) -> String {
     format!("query {{ viewer {{ login }} search(query: \"is:pr is:open author:@me archived:false{scope}\", type: ISSUE, first: 30) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft reviewDecision repository {{ nameWithOwner }} reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ nodes {{ author {{ login }} }} }} }} }} }} }} }} }}")
 }
 
-// Open PRs in one repo that aren't mine, with when I last reviewed each and its newest commit (MR-81).
+// Open PRs in one repo that aren't mine, with when I last reviewed each and its newest commit (MR-81),
+// and each reviewer's standing APPROVED / CHANGES_REQUESTED, to find mine (MR-173).
 fn unreviewed_query(repo: &str) -> String {
-    format!("query {{ search(query: \"is:pr is:open -author:@me archived:false repo:{repo}\", type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft author {{ login }} repository {{ nameWithOwner }} headRefOid viewerLatestReview {{ submittedAt }} commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }} }} }} }} }}")
+    format!("query {{ viewer {{ login }} search(query: \"is:pr is:open -author:@me archived:false repo:{repo}\", type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft author {{ login }} repository {{ nameWithOwner }} headRefOid viewerLatestReview {{ submittedAt state }} latestOpinionatedReviews(first: 100) {{ nodes {{ state author {{ login }} }} }} commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }} }} }} }} }}")
 }
 
-/// What's worth reviewing in one repo: PRs I've never reviewed, and PRs with commits newer than
-/// my last review (`reviewNote` says which). Drafts are skipped, as auto-review does (MR-72).
-/// Changed-since-my-review first (I'm mid-review there), then never reviewed; newest first in each.
+/// The `reviewNote` of a PR I reviewed, with no commits since, that still lacks my approval (MR-173).
+pub const NOT_APPROVED: &str = "not approved yet";
+
+/// What's worth reviewing in one repo: PRs I've never reviewed, PRs with commits newer than my
+/// last review, and PRs I reviewed with nothing new since that still lack my approval (a "ship
+/// it" left as a comment, MR-173) (`reviewNote` says which). My standing opinion is my entry in
+/// `latestOpinionatedReviews`: a later comment doesn't undo an approval, and changes requested
+/// leave the ball with the author, so both drop out. Drafts are skipped, as auto-review does
+/// (MR-72). Changed-since-my-review first (I'm mid-review there), then never reviewed, then not
+/// approved yet; newest first in each.
 pub fn rank_unreviewed(data: &serde_json::Value) -> serde_json::Value {
+    let me = data["viewer"]["login"].as_str().unwrap_or_default();
     let mut prs: Vec<(u8, serde_json::Value)> = data["search"]["nodes"].as_array().cloned().unwrap_or_default().into_iter()
         .filter(|p| p["number"].is_number() && p["isDraft"] != true)
         .filter_map(|mut p| {
             let mine = p["viewerLatestReview"]["submittedAt"].as_str().map(str::to_owned);
             let last = p["commits"]["nodes"][0]["commit"]["committedDate"].as_str().map(str::to_owned);
+            let opinion = p["latestOpinionatedReviews"]["nodes"].as_array()
+                .and_then(|rs| rs.iter().find(|r| !me.is_empty() && r["author"]["login"].as_str() == Some(me)))
+                .and_then(|r| r["state"].as_str().map(str::to_owned));
             let (tier, note) = match (mine, last.clone()) {
                 (None, _) => (1, "not reviewed yet"),
                 // RFC 3339 UTC timestamps from GitHub compare correctly as strings.
                 (Some(r), Some(c)) if c > r => (0, "new changes since your review"),
-                _ => return None,
+                _ if matches!(opinion.as_deref(), Some("APPROVED" | "CHANGES_REQUESTED")) => return None,
+                _ => (2, NOT_APPROVED),
             };
             p["reviewNote"] = note.into();
             // What a recurring review dedupes on (MR-171): the head it would review, and when it was made.
@@ -51,6 +64,7 @@ pub fn rank_unreviewed(data: &serde_json::Value) -> serde_json::Value {
             p["lastCommitAt"] = last.into();
             let o = p.as_object_mut()?;
             o.remove("viewerLatestReview");
+            o.remove("latestOpinionatedReviews");
             o.remove("commits");
             o.remove("headRefOid");
             Some((tier, p))
@@ -95,8 +109,8 @@ pub fn rank_mine(data: &serde_json::Value) -> serde_json::Value {
     prs.into()
 }
 
-/// `review`: open PRs waiting for my review; in one repo, every PR I haven't reviewed or that
-/// changed since my review (MR-81). `address`: my open PRs, the ones with something to
+/// `review`: open PRs waiting for my review; in one repo, every PR I haven't reviewed, that
+/// changed since my review (MR-81) or that I reviewed without approving (MR-173). `address`: my open PRs, the ones with something to
 /// address first. Both work from any folder (MR-48): every repo by default, or just `repo` (MR-79).
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
 #[tauri::command(async)]
@@ -269,13 +283,47 @@ mod tests {
         ] } });
         let r = rank_unreviewed(&data);
         let order: Vec<u64> = r.as_array().unwrap().iter().map(|p| p["number"].as_u64().unwrap()).collect();
-        assert_eq!(order, vec![2, 5, 1]);
+        assert_eq!(order, vec![2, 5, 1, 3]);
         assert_eq!(r[0]["reviewNote"], "new changes since your review");
         assert_eq!(r[1]["reviewNote"], "not reviewed yet");
+        assert_eq!(r[3]["reviewNote"], NOT_APPROVED);
         assert!(r[0].get("commits").is_none() && r[0].get("viewerLatestReview").is_none());
         assert_eq!(r[0]["lastCommitAt"], "2026-10-02T10:00:00Z");
         assert!(unreviewed_query("a/b").contains("headRefOid"));
         assert!(unreviewed_query("a/b").contains("-author:@me archived:false repo:a/b\""));
+    }
+
+    #[test]
+    fn surfaces_prs_i_reviewed_but_havent_approved() {
+        // Reviewed by me on 10-02, newest commit 10-01: nothing new since my review (MR-173).
+        let pr = |n: u64, updated: &str, mine: &str, opinions: serde_json::Value| json!({ "number": n, "updatedAt": updated, "isDraft": false,
+            "url": format!("https://github.com/acme/shop/pull/{n}"), "headRefOid": format!("sha{n}"),
+            "viewerLatestReview": { "submittedAt": "2026-10-02T10:00:00Z", "state": mine }, "latestOpinionatedReviews": { "nodes": opinions },
+            "commits": { "nodes": [{ "commit": { "committedDate": "2026-10-01T10:00:00Z" } }] } });
+        let op = |by: &str, state: &str| json!({ "state": state, "author": { "login": by } });
+        let data = json!({ "viewer": { "login": "me" }, "search": { "nodes": [
+            // Only a "ship it" comment: surfaced, last tier.
+            pr(1, "2026-10-03", "COMMENTED", json!([])),
+            // Approved: done.
+            pr(2, "2026-10-04", "APPROVED", json!([op("me", "APPROVED")])),
+            // Approved, then a later comment: still approved.
+            pr(3, "2026-10-05", "COMMENTED", json!([op("me", "APPROVED")])),
+            // Changes requested: the ball is with the author.
+            pr(4, "2026-10-06", "CHANGES_REQUESTED", json!([op("me", "CHANGES_REQUESTED")])),
+            // Someone else approved, I only commented: still needs mine.
+            pr(5, "2026-10-07", "COMMENTED", json!([op("dana", "APPROVED")])),
+            // Never reviewed: ahead of the not-approved ones.
+            json!({ "number": 6, "updatedAt": "2026-10-01", "isDraft": false, "viewerLatestReview": null,
+                "commits": { "nodes": [{ "commit": { "committedDate": "2026-10-01T09:00:00Z" } }] } }),
+        ] } });
+        let r = rank_unreviewed(&data);
+        let order: Vec<u64> = r.as_array().unwrap().iter().map(|p| p["number"].as_u64().unwrap()).collect();
+        assert_eq!(order, vec![6, 5, 1]);
+        assert_eq!((r[1]["reviewNote"].as_str(), r[2]["reviewNote"].as_str()), (Some(NOT_APPROVED), Some(NOT_APPROVED)));
+        assert_eq!((r[2]["headSha"].as_str(), r[2]["lastCommitAt"].as_str()), (Some("sha1"), Some("2026-10-01T10:00:00Z")));
+        assert!(r[2].get("latestOpinionatedReviews").is_none());
+        let q = unreviewed_query("a/b");
+        assert!(q.contains("viewer { login }") && q.contains("viewerLatestReview { submittedAt state }") && q.contains("latestOpinionatedReviews(first: 100)"));
     }
 
     #[test]

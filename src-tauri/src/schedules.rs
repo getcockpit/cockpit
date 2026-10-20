@@ -16,6 +16,10 @@
 //! auto-review (`needs_review`). Each start is a `schedule.review_started`; the slot is a
 //! `schedule.fired` even when nothing was new. These reviews aren't unattended: they stop for you
 //! before anything is posted. PRs left over at the session cap start on later ticks (`Reviews`).
+//! PRs you reviewed with nothing new since but haven't approved (MR-173, `gh::NOT_APPROVED`: a
+//! "ship it" left as a comment) get one review per head on their own marker (`not_approved_key`,
+//! logged as `schedule.review_started` with `reason: "not_approved"`), whatever reviewed that head
+//! before; a new push makes them a "new changes" PR again.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
@@ -425,12 +429,23 @@ pub fn review_key(url: &str, head: &str) -> String {
     format!("{url}@{head}")
 }
 
+/// The once-per-head marker of a "not approved yet" review (MR-173): apart from `review_key`, which
+/// the earlier reviews of that same head already hold.
+pub fn not_approved_key(url: &str, head: &str) -> String {
+    format!("{}#not_approved", review_key(url, head))
+}
+
+/// `schedule.review_started`'s `reason` for a "not approved yet" PR.
+const NOT_APPROVED_REASON: &str = "not_approved";
+
 /// What the log says has been reviewed here: every head a review was started for (auto-review's
 /// `ui.auto_review_started`, a schedule's `schedule.review_started`) and every Review session's
 /// first prompt with when it started.
 #[derive(Debug, Default)]
 pub struct Reviewed {
     heads: HashSet<String>,
+    /// `not_approved_key`s: heads a "not approved yet" review was started for.
+    unapproved: HashSet<String>,
     sessions: Vec<(String, i64)>,
 }
 
@@ -441,7 +456,11 @@ pub fn reviewed(events: &[crate::eventlog::Event]) -> Reviewed {
         match ev.kind.as_str() {
             "ui.auto_review_started" | "schedule.review_started" => {
                 if let Some(url) = p["url"].as_str() {
-                    r.heads.insert(review_key(url, p["head"].as_str().unwrap_or_default()));
+                    let head = p["head"].as_str().unwrap_or_default();
+                    r.heads.insert(review_key(url, head));
+                    if p["reason"] == NOT_APPROVED_REASON {
+                        r.unapproved.insert(not_approved_key(url, head));
+                    }
                 }
             }
             "ui.session_requested" if p["kind"] == "review" && p["resume"].is_null() => {
@@ -460,12 +479,26 @@ fn about(prompt: &str, url: &str, number: u64, slug: Option<&str>) -> bool {
     arg.contains(url) || arg == number.to_string() || arg == format!("#{number}") || slug.is_some_and(|s| arg == format!("{s}#{number}"))
 }
 
-/// Start a review of this PR (from `gh::unreviewed`, so never reviewed on GitHub or new commits
-/// since)? Auto-review's rule (`needsAutoReview`): not a draft, no review started for this head
-/// yet, and no Review session here since its newest commit.
+/// Whether `gh::unreviewed` listed this PR as reviewed by you, unchanged since, and not approved.
+pub fn not_approved(pr: &Value) -> bool {
+    pr["reviewNote"] == crate::gh::NOT_APPROVED
+}
+
+/// Start a review of this PR (from `gh::unreviewed`, so never reviewed on GitHub, new commits
+/// since, or not approved yet)? Auto-review's rule (`needsAutoReview`): not a draft, no review
+/// started for this head yet, and no Review session here since its newest commit. A "not approved
+/// yet" PR fails that by definition (its head was reviewed), so it has its own rule: one review per
+/// head, on its own marker (MR-173).
 pub fn needs_review(pr: &Value, seen: &Reviewed) -> bool {
     let Some(url) = pr["url"].as_str() else { return false };
-    if pr["isDraft"] == true || seen.heads.contains(&review_key(url, pr["headSha"].as_str().unwrap_or_default())) {
+    let head = pr["headSha"].as_str().unwrap_or_default();
+    if pr["isDraft"] == true {
+        return false;
+    }
+    if not_approved(pr) {
+        return !seen.unapproved.contains(&not_approved_key(url, head));
+    }
+    if seen.heads.contains(&review_key(url, head)) {
         return false;
     }
     let (n, slug) = (pr["number"].as_u64().unwrap_or(0), pr["repository"]["nameWithOwner"].as_str());
@@ -632,7 +665,10 @@ fn start_reviews(app: &AppHandle, s: &Schedule, prs: Vec<Value>) -> Vec<String> 
         );
         match res {
             Ok(session) => {
-                let ev = json!({ "id": s.id, "url": url, "number": pr["number"], "title": pr["title"], "head": pr["headSha"], "session": session });
+                let mut ev = json!({ "id": s.id, "url": url, "number": pr["number"], "title": pr["title"], "head": pr["headSha"], "session": session });
+                if not_approved(&pr) {
+                    ev["reason"] = NOT_APPROVED_REASON.into();
+                }
                 crate::eventlog::record(app, Some(&session), "schedule.review_started", &ev, None);
                 sessions.push(session);
                 started.push(pr);
@@ -1215,6 +1251,35 @@ mod tests {
         draft["isDraft"] = true.into();
         assert!(!needs_review(&draft, &reviewed(&[])));
         assert_eq!(review_key(url, "h1"), format!("{url}@h1"));
+    }
+
+    #[test]
+    fn an_unapproved_head_gets_one_review_of_its_own() {
+        let url = "https://github.com/acme/shop/pull/59";
+        let at = |iso: &str| chrono::DateTime::parse_from_rfc3339(iso).unwrap().timestamp_millis();
+        let pr = |head: &str, last: &str| json!({ "number": 59, "url": url, "headSha": head, "lastCommitAt": last, "reviewNote": crate::gh::NOT_APPROVED, "repository": { "nameWithOwner": "acme/shop" } });
+        let one = pr("h1", "2026-10-19T09:00:00Z");
+        // This head was reviewed already: by a schedule, by auto-review and by hand after its commit.
+        let before = vec![
+            ev("schedule.review_started", json!({ "id": "w", "url": url, "head": "h1", "session": "s1" }), at("2026-10-19T09:05:00Z")),
+            ev("ui.auto_review_started", json!({ "url": url, "head": "h1" }), at("2026-10-19T09:06:00Z")),
+            ev("ui.session_requested", json!({ "kind": "review", "prompt": format!("/review {url}"), "resume": null }), at("2026-10-19T09:30:00Z")),
+        ];
+        assert!(needs_review(&one, &reviewed(&before)));
+        // Once its own marker is logged, not again on later ticks.
+        let mut after = before.clone();
+        after.push(ev("schedule.review_started", json!({ "id": "w", "url": url, "head": "h1", "session": "s2", "reason": "not_approved" }), at("2026-10-19T10:00:00Z")));
+        assert!(!needs_review(&one, &reviewed(&after)));
+        // A new head (still unapproved) starts once more.
+        assert!(needs_review(&pr("h2", "2026-10-19T11:00:00Z"), &reviewed(&after)));
+        // The marker also counts as a plain review of that head, so auto-review's rule holds too.
+        let mut plain = one.clone();
+        plain.as_object_mut().unwrap().remove("reviewNote");
+        assert!(!needs_review(&plain, &reviewed(&after)));
+        let mut draft = one.clone();
+        draft["isDraft"] = true.into();
+        assert!(!needs_review(&draft, &reviewed(&[])));
+        assert_eq!(not_approved_key(url, "h1"), format!("{url}@h1#not_approved"));
     }
 
     #[cfg(unix)]
