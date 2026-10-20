@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Move a session between workspaces (MR-154): a Personal session remembers a word, moves to a new
-# workspace and back, then resumes and must still remember it. Its conversation is copied into the
+# Move a session between workspaces (MR-154): a Personal session remembers a word, is moved to a new
+# workspace mid-turn (queued until the turn ends, MR-177) and back, then resumes and must still remember it. Its conversation is copied into the
 # workspace's own Claude folder on the way.
 set -euo pipefail
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
@@ -16,6 +16,8 @@ ws="$(ls "$data/workspaces" | head -1)"
 sdk="$(sqlite3 "$db" "SELECT json_extract(payload,'$.sdk_session_id') FROM events WHERE kind='sidecar.session_started' ORDER BY id LIMIT 1;")"
 moves="$(sqlite3 "$db" "SELECT group_concat(json_extract(payload,'$.to') || ':' || json_extract(payload,'$.copied'), ' ') FROM events WHERE kind='ui.session_moved';")"
 [ "$moves" = "$ws:1 personal:1" ] || { echo "FAILED: moves logged as '$moves'"; exit 1; }
+queued="$(sqlite3 "$db" "SELECT count(*) FROM events WHERE kind='ui.session_move_queued' AND json_extract(payload,'$.to')='$ws' AND id < (SELECT min(id) FROM events WHERE kind='ui.session_moved');")"
+[ "$queued" = 1 ] || { echo "FAILED: the mid-turn move wasn't queued first"; exit 1; }
 ls "$data/workspaces/$ws/claude/projects"/*/"$sdk.jsonl" >/dev/null 2>&1 || { echo "FAILED: conversation not copied into $ws"; exit 1; }
 last="$(sqlite3 "$db" "SELECT json_extract(payload,'$.workspace') FROM events WHERE kind='ui.session_requested' ORDER BY id DESC LIMIT 1;")"
 [ "$last" = "personal" ] || { echo "FAILED: resumed in '$last', not personal"; exit 1; }

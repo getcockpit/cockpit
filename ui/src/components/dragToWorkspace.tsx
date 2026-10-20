@@ -48,7 +48,7 @@ export function dragSession(s: SessionState, title: string) {
         if (to && to !== d.from) {
           const name = document.querySelector(`[data-mr="WorkspaceTab"][data-mr-source="${CSS.escape(to)}"]`)?.getAttribute("data-mr-name") ?? "that workspace";
           void api.move(d.session, to)
-            .then(() => window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Moved to ${name}` })))
+            .then((r) => window.dispatchEvent(new CustomEvent("mr:toast", { detail: r === "queued" ? `Moves to ${name} when this turn ends` : `Moved to ${name}` })))
             .catch((err) => window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Not moved: ${String(err).split("\n")[0]}` })));
         }
       };

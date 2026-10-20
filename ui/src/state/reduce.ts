@@ -42,7 +42,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null, schedule: null, spawnedBy: null, unread: false,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, moveTo: null, moveFailed: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null, schedule: null, spawnedBy: null, unread: false,
   };
 }
 
@@ -278,6 +278,19 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       break;
     case "ui.session_moved":
       s.workspace = String(p.to ?? s.workspace); // its conversation went with it (MR-154)
+      s.moveTo = null;
+      s.moveFailed = null;
+      break;
+    case "ui.session_move_queued": // asked mid-turn: it moves when the turn ends (MR-177)
+      s.moveTo = String(p.to ?? "") || null;
+      s.moveFailed = null;
+      break;
+    case "ui.session_move_cancelled":
+      s.moveTo = null;
+      break;
+    case "ui.session_move_failed":
+      s.moveTo = null;
+      s.moveFailed = String(p.error ?? "it couldn't move");
       break;
     case "ui.session_renamed":
       s.name = String(p.name ?? "").trim() || null; // an empty name hands the title back to Claude

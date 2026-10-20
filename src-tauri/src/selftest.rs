@@ -113,6 +113,7 @@ fn brief_layer_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brieflayer")
 }
 static BRIEFED: AtomicBool = AtomicBool::new(false);
+static MOVE_QUEUED: AtomicBool = AtomicBool::new(false);
 
 /// The message box's attachments (MR-141), driven in the real UI: once the session is up, the UI
 /// pastes an image and a long text and drops a PDF on the box, then sends; Claude must see both files.
@@ -345,18 +346,29 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             if busy != 0 { eprintln!("[selftest] an idle session still counts toward the cap ({busy} busy)"); std::process::exit(1); }
             let _ = crate::sidecar::session_stop(app.state::<crate::sidecar::Sidecar>(), session);
         }
+        Some("sdk") if move_mode() && payload["message"]["type"] == "assistant" && !MOVE_QUEUED.swap(true, Ordering::SeqCst) => {
+            // MR-177: asked mid-turn, the move is queued rather than refused.
+            let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            let ws = crate::workspaces::workspace_create(app.clone(), "Moved".into()).expect("workspace");
+            match crate::sidecar::session_move(app.clone(), session, ws) {
+                Ok(r) if r == "queued" => {}
+                r => { eprintln!("[selftest] a mid-turn move wasn't queued: {r:?}"); std::process::exit(1); }
+            }
+        }
         Some("sdk") if payload["message"]["type"] == "result" && move_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
-            // MR-154: move the waiting session to a new workspace and back, then resume it: it must
-            // still remember the word. Off this thread: a move waits for the session to end.
+            // MR-154: the queued move lands once the turn ends; then move it back and resume it: it
+            // must still remember the word. Off this thread: a move waits for the session to end.
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             let app = app.clone();
             std::thread::spawn(move || {
-                let ws = crate::workspaces::workspace_create(app.clone(), "Moved".into()).expect("workspace");
-                for to in [ws.as_str(), crate::workspaces::PERSONAL] {
-                    if let Err(e) = crate::sidecar::session_move(app.clone(), session.clone(), to.into()) {
-                        eprintln!("[selftest] move to {to} failed: {e}");
-                        std::process::exit(1);
-                    }
+                let deadline = std::time::Instant::now() + Duration::from_secs(20);
+                while crate::workspaces::workspace_of(&app, &session) == crate::workspaces::PERSONAL {
+                    if std::time::Instant::now() > deadline { eprintln!("[selftest] the queued move never happened"); std::process::exit(1); }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                if let Err(e) = crate::sidecar::session_move(app.clone(), session.clone(), crate::workspaces::PERSONAL.into()) {
+                    eprintln!("[selftest] move back failed: {e}");
+                    std::process::exit(1);
                 }
                 let r = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(), None);
                 if let Err(e) = r { eprintln!("[selftest] resume after the move failed: {e}"); std::process::exit(1); }

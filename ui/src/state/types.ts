@@ -123,6 +123,8 @@ export type SessionState = {
   archivedAt: number | null;
   partial: boolean; // loaded without its transcript at boot (archived, MR-162): its full history loads when opened
   fixApplied: number | null;
+  moveTo: string | null; // a workspace it moves to once this turn ends (MR-177)
+  moveFailed: string | null; // why the last queued move didn't happen
   fromDeleted: string | null; // name of the deleted workspace it came from: read-only history (MR-54) // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
   commands: CommandRow[]; // its slash commands and skills (MR-87): names from init, descriptions once asked
   mcp: McpState | null; // its MCP servers (MR-87): from init, fresh from /mcp
