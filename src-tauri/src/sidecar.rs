@@ -416,6 +416,8 @@ pub struct Started {
     /// Nobody is watching: append `UNATTENDED`. A prompt-mode run is; a review a schedule starts
     /// (MR-171) isn't, since it must stop for you before anything goes to GitHub.
     pub unattended: bool,
+    /// Spawned by this session's `session_spawn` call (MR-176).
+    pub parent: Option<String>,
 }
 
 /// The system-prompt append a session starts with: the visual guidance, its flow's steps, and
@@ -478,6 +480,11 @@ pub fn start_with(
     if let Some(m) = &started.permission_mode {
         payload["permission_mode"] = m.clone().into();
     }
+    // A spawned session (MR-176): its tile names the parent, and it can't spawn more.
+    if let Some(p) = &started.parent {
+        payload["parent"] = p.clone().into();
+    }
+    let spawned = started.parent.is_some() || (resume.is_some() && crate::spawn::spawned_by(&app.state::<crate::eventlog::EventLog>().list(Some(&session), None, 100_000).unwrap_or_default()).is_some());
     // What the session compacts at, so usage reports can tell sessions apart (I63).
     let compact = compact_window(&app);
     payload["compact_window"] = compact.into();
@@ -525,6 +532,9 @@ pub fn start_with(
         }
         if crate::selfbuild::update_available(&cwd) {
             specs.push(crate::selfbuild::update_spec());
+        }
+        if !spawned {
+            specs.push(crate::spawn::tool_spec());
         }
         serde_json::Value::Array(specs)
     });
@@ -818,6 +828,23 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     let session = payload["session"].as_str().unwrap_or_default().to_owned();
     let call_id = payload["call_id"].as_str().unwrap_or_default().to_owned();
     let tool = payload["tool"].as_str().unwrap_or_default();
+    if tool == crate::spawn::TOOL {
+        // Off the reader loop: a worktree is a few git calls.
+        let (app, args) = (app.clone(), payload["args"].clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            let (text, is_error) = match crate::spawn::handle(&app, &session, &args) {
+                Ok((events, text)) => {
+                    for (kind, p) in events {
+                        crate::eventlog::record(&app, Some(&session), &kind, &p, None);
+                    }
+                    (text, false)
+                }
+                Err(e) => (e, true),
+            };
+            let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error), None);
+        });
+        return;
+    }
     let (events, text, is_error) = if crate::flows::is_flow_tool(tool) {
         crate::flows::handle_tool(tool, &payload["args"])
     } else if crate::views::is_view_tool(tool) {
@@ -886,14 +913,14 @@ mod tests {
     fn a_scheduled_review_is_not_unattended_and_still_waits_for_publish() {
         // MR-171: a review a schedule starts carries its schedule but nobody-is-watching stays off,
         // so the review flow's "only publish after the user says 'publish'" is the last word.
-        let review = Started { schedule: Some("sch".into()), permission_mode: None, unattended: false };
+        let review = Started { schedule: Some("sch".into()), unattended: false, ..Default::default() };
         for layer in [false, true] {
             let a = system_append("review", layer, &review).unwrap();
             assert!(!a.contains(UNATTENDED), "layer {layer}");
             assert!(a.contains("only publish to GitHub after the user says 'publish'"), "layer {layer}");
             assert!(a.contains("call review_publish_ready"), "layer {layer}");
         }
-        let run = Started { schedule: Some("sch".into()), permission_mode: None, unattended: true };
+        let run = Started { schedule: Some("sch".into()), unattended: true, ..Default::default() };
         assert!(system_append("blank", false, &run).unwrap().ends_with(UNATTENDED));
         assert!(!system_append("review", false, &Started::default()).unwrap().contains(UNATTENDED));
     }

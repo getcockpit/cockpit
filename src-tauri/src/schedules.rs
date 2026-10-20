@@ -429,6 +429,7 @@ pub fn started_for(s: &Schedule) -> crate::sidecar::Started {
         schedule: Some(s.id.clone()),
         permission_mode: s.def["permission_mode"].as_str().map(str::to_owned),
         unattended: true,
+        parent: None,
     }
 }
 

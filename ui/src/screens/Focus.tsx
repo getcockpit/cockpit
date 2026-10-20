@@ -149,7 +149,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
         <div className="mr-row" style={{ gap: 14 }}>
           <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-            <span className="mr-row" style={{ gap: 8, minWidth: 0 }}><SessionName s={s} />{s.schedule && <span className="mr-mono" data-mr="RecurringMark" data-mr-source={s.id} title="Started by a recurring schedule" style={{ fontSize: 12, color: "var(--mr-selected)" }}>↻</span>}
+            <span className="mr-row" style={{ gap: 8, minWidth: 0 }}><SessionName s={s} />{s.spawnedBy && <span className="mr-mono mr-ink2" data-mr="SpawnMark" data-mr-source={s.id} title={s.spawnedBy.title ? `Started by the session “${s.spawnedBy.title}”` : "Started by another session"} style={{ fontSize: 12 }}>↳</span>}{s.schedule && <span className="mr-mono" data-mr="RecurringMark" data-mr-source={s.id} title="Started by a recurring schedule" style={{ fontSize: 12, color: "var(--mr-selected)" }}>↻</span>}
               {/* Recurring sessions (MR-167): run this prompt again on a schedule. Beside the title, not
                   in the action row, which has no room left at common widths. */}
               {onRepeat && !s.fromDeleted && s.kind === "blank" && <button type="button" onClick={onRepeat} className="mr-dim" data-mr="RepeatButton" data-mr-source={s.id} title={`${s.schedule ? "Edit the schedule that started this run" : "Run this prompt again on a schedule"} (${keyLabel("⌘⇧R")})`}
