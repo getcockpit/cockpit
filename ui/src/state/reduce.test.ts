@@ -299,6 +299,11 @@ test("a review is over once you publish it", () => {
   const approved = replay([...base, ev("R4", "ui.message_sent", { text: "publish and approve" })]);
   expect(approved.sessions.r.review?.published).toBe(true);
   expect(approved.sessions.r.review?.approved).toBe(true);
+  // Claude confirms the post and the core archives the session: nothing is left for you.
+  const closed = replay([...base, ev("R4", "ui.message_sent", { text: "publish and approve" }), ev("R5", "flow.review_published", { pr: "#482", comments: 1, approved: true }), ev("R6", "ui.session_archived", { by: "review_published" })]);
+  expect(closed.sessions.r.review?.published).toBe(true);
+  expect(closed.sessions.r.review?.approved).toBe(true);
+  expect(closed.sessions.r.archivedAt).toBe(1);
 });
 
 test("a bug report's fix waits in the queue until applied, then asks for a rebuild until one succeeds", async () => {
@@ -576,6 +581,19 @@ describe("auto-review default (MR-93)", () => {
   });
 });
 
+describe("auto-review watched repos (MR-170)", () => {
+  const set = (id: string, payload: Record<string, unknown>) => ({ id, session_id: null, kind: "ui.auto_review_repos_set", payload, anchor: null, created_at: 1 });
+  test("starts empty; each event replaces the whole list; a bad payload changes nothing", () => {
+    expect(initialState.autoReviewRepos).toEqual([]);
+    const added = replay([set("01A", { repos: ["globex/forge", "acme/shop"] })] as never);
+    expect(added.autoReviewRepos).toEqual(["globex/forge", "acme/shop"]);
+    const removed = replay([set("01A", { repos: ["globex/forge", "acme/shop"] }), set("01B", { repos: ["acme/shop"] })] as never);
+    expect(removed.autoReviewRepos).toEqual(["acme/shop"]);
+    expect(replay([set("01A", { repos: ["acme/shop"] }), set("01B", { repos: "x" })] as never).autoReviewRepos).toEqual(["acme/shop"]);
+    expect(replay([set("01A", { repos: ["acme/shop", 3] })] as never).autoReviewRepos).toEqual(["acme/shop"]);
+  });
+});
+
 // Dev and /Applications share one log (MR-99): each row says which copy wrote it.
 describe("several copies of the app on one log", () => {
   let n = 0;
@@ -709,5 +727,32 @@ describe("expired sign-in (MR-153)", () => {
   it("clears once Claude answers again", () => {
     const s = replay([...start, ev("ui.message_sent", { text: "go" }), ...refused(), ev("ui.relogin_restart", {}), ev("sidecar.sdk", { message: { type: "assistant", message: { content: [{ type: "text", text: "On it." }] } } })]).sessions.S;
     expect(s.signedOut).toBeNull();
+  });
+});
+
+test("a doc-change note from Cockpit shows in the transcript as from the doc, not from you (MR-168)", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "b", kind, payload, anchor: null, created_at: 1 });
+  const s = replay([
+    ev("B1", "ui.session_requested", { prompt: "build it", kind: "blank", cwd: "/w" }),
+    ev("B2", "sidecar.sdk", { message: { type: "result", is_error: false, result: "ok" } }),
+    ev("B3", "doc.relay", { doc_id: "d", from: "p", text: "Working doc \"Retries\" was just changed" }),
+  ]).sessions.b;
+  expect(s.transcript.at(-1)).toMatchObject({ kind: "user", via: "doc", text: "Working doc \"Retries\" was just changed" });
+  // A note queued for your next message shows nothing until it's delivered.
+  const queued = replay([ev("B1", "ui.session_requested", { prompt: "build it", kind: "blank", cwd: "/w" }), ev("B2", "doc.relay_waiting", { doc_id: "d", text: "later" })]).sessions.b;
+  expect(queued.transcript.some((t) => t.kind === "user" && t.via === "doc")).toBe(false);
+  expect(s.status).toBe("working");
+});
+
+describe("spawned sessions (MR-176)", () => {
+  const ev = (id: string, sid: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: sid, kind, payload, anchor: null, created_at: 1 });
+  test("a session requested with a parent names it; one you start doesn't", () => {
+    const st = replay([
+      ev("A1", "p", "ui.session_requested", { prompt: "Plan the launch", cwd: "/w" }),
+      ev("A2", "c", "ui.session_requested", { prompt: "Write the changelog", cwd: "/w", parent: "p" }),
+      ev("A3", "c", "ui.session_requested", { prompt: "Continue", cwd: "/w", resume: "sdk" }),
+    ]);
+    expect(st.sessions.c.spawnedBy).toEqual({ id: "p", title: "Plan the launch" });
+    expect(st.sessions.p.spawnedBy).toBeNull();
   });
 });

@@ -66,11 +66,36 @@ pub struct Doc {
 #[derive(Default)]
 pub struct Docs {
     docs: Mutex<BTreeMap<String, Doc>>,
+    /// Blocks each session changed this turn, as (doc, block), for the relay at its turn's end (MR-168).
+    changed: Mutex<BTreeMap<String, Vec<(String, String)>>>,
+    /// Sessions whose turn a relay note started: what they change in it isn't relayed back.
+    relayed: Mutex<std::collections::HashSet<String>>,
+    /// Notes that wait for a session's next message (changes that don't shape the plan), as (doc, text).
+    waiting: Mutex<BTreeMap<String, Vec<(String, String)>>>,
 }
 
 impl Docs {
     /// Folds one event into the docs. Unknown kinds are ignored; replaying the log rebuilds all docs.
     pub fn apply(&self, ev: &Event) {
+        // Notes waiting for a session's next message live in the log, so a restart keeps them
+        // (MR-168): queued by `doc.relay_waiting`, cleared once delivered (`doc.relay`, waited).
+        // Neither changes the doc itself.
+        let to = ev.session_id.clone().unwrap_or_default();
+        match ev.kind.as_str() {
+            "doc.relay_waiting" => {
+                let p = &ev.payload;
+                let note = (p["doc_id"].as_str().unwrap_or_default().to_owned(), p["text"].as_str().unwrap_or_default().to_owned());
+                self.waiting.lock().unwrap().entry(to).or_default().push(note);
+                return;
+            }
+            "doc.relay" => {
+                if ev.payload["waited"].as_bool() == Some(true) {
+                    self.waiting.lock().unwrap().remove(&to);
+                }
+                return;
+            }
+            _ => {}
+        }
         let mut docs = self.docs.lock().unwrap();
         apply_to(&mut docs, ev);
     }
@@ -82,6 +107,88 @@ impl Docs {
     pub fn list(&self) -> Vec<Doc> {
         self.docs.lock().unwrap().values().cloned().collect()
     }
+
+    /// A session's tool call changed a block (doc.block_set / doc.block_removed): remember it for the relay.
+    pub fn note_change(&self, session: &str, kind: &str, p: &Value) {
+        if kind != "doc.block_set" && kind != "doc.block_removed" {
+            return;
+        }
+        let key = (p["doc_id"].as_str().unwrap_or_default().to_owned(), p["block_id"].as_str().unwrap_or_default().to_owned());
+        let mut changed = self.changed.lock().unwrap();
+        let list = changed.entry(session.to_owned()).or_default();
+        if !list.contains(&key) {
+            list.push(key);
+        }
+    }
+
+    /// The notes for `author`'s turn that just ended (MR-168), as (session, doc id, text, now): one
+    /// per (doc, other live session) for changes that shape the plan (now), and one for the rest,
+    /// which the caller records as `doc.relay_waiting` for that session's next message.
+    /// Nothing when a relay note started that turn, so two sessions can't keep pinging each other.
+    pub fn take_relay(&self, author: &str, live: &std::collections::HashSet<String>) -> Vec<(String, String, String, bool)> {
+        let changes = self.changed.lock().unwrap().remove(author).unwrap_or_default();
+        if self.relayed.lock().unwrap().remove(author) {
+            return vec![];
+        }
+        relay_notes(&self.docs.lock().unwrap(), author, &changes, live)
+    }
+
+    /// The notes waiting for `session`, to go in front of the message you're sending it. They stay
+    /// queued until their delivery is recorded (`doc.relay` with `waited`).
+    pub fn waiting_for(&self, session: &str) -> Vec<(String, String)> {
+        self.waiting.lock().unwrap().get(session).cloned().unwrap_or_default()
+    }
+
+    /// A relay note went to `session` while it was idle: the turn it starts is the note's.
+    pub fn mark_relayed(&self, session: &str) {
+        self.relayed.lock().unwrap().insert(session.to_owned());
+    }
+}
+
+/// Sections whose changes reshape the plan: their notes go out at once (MR-168, decided).
+pub const PLAN_SHAPING: [&str; 4] = ["question", "design", "scope", "risk"];
+
+/// For each doc `author` changed: a note to each of the doc's other sessions (its plan session and
+/// builds) that is still running, saying what changed. Changes to plan-shaping sections (and
+/// removed blocks) make one note that goes now; the rest one that waits. Returns (session, doc id, text, now).
+pub fn relay_notes(docs: &BTreeMap<String, Doc>, author: &str, changes: &[(String, String)], live: &std::collections::HashSet<String>) -> Vec<(String, String, String, bool)> {
+    let mut by_doc: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (d, b) in changes {
+        by_doc.entry(d).or_default().push(b);
+    }
+    let mut out = vec![];
+    for (doc_id, blocks) in by_doc {
+        let Some(doc) = docs.get(doc_id) else { continue };
+        if doc.kind == "brief" {
+            continue;
+        }
+        let role = if doc.session_id.as_deref() == Some(author) { "plan session" } else if doc.build_sessions.iter().any(|s| s == author) { "build session" } else { "another session" };
+        let (mut now, mut later) = (vec![], vec![]);
+        for b in blocks {
+            match doc.blocks.get(b) {
+                Some(x) if PLAN_SHAPING.contains(&x.section.as_str()) => now.push(format!("- {} ({}): {}", x.section, b, x.takeaway)),
+                Some(x) => later.push(format!("- {} ({}): {}", x.section, b, x.takeaway)),
+                None => now.push(format!("- removed block {b}")),
+            }
+        }
+        let to: Vec<&String> = doc.session_id.iter().chain(doc.build_sessions.iter()).filter(|s| s.as_str() != author && live.contains(*s)).collect();
+        for (lines, at_once) in [(now, true), (later, false)] {
+            if lines.is_empty() {
+                continue;
+            }
+            let text = format!(
+                "Working doc \"{}\" (doc_id {}) was {} changed by its {role}:\n{}\nRe-read it with the mr doc_read tool if this affects your work, then carry on. No reply needed.",
+                doc.title,
+                doc.id,
+                if at_once { "just" } else { "meanwhile" },
+                lines.join("\n")
+            );
+            for s in &to {
+                out.push(((*s).clone(), doc.id.clone(), text.clone(), at_once));
+            }
+        }
+    }
+    out
 }
 
 fn apply_to(docs: &mut BTreeMap<String, Doc>, ev: &Event) {
@@ -327,6 +434,70 @@ mod tests {
 
     fn ev(n: u32, kind: &str, payload: Value) -> Event {
         Event { id: format!("E{n:04}"), session_id: Some("s1".into()), kind: kind.into(), payload, anchor: None, created_at: n as i64, origin: None }
+    }
+
+    #[test]
+    fn relay_tells_the_other_live_sessions_once_per_turn() {
+        let docs = Docs::default();
+        let e = |n: u32, sid: &str, kind: &str, p: Value| docs.apply(&Event { session_id: Some(sid.into()), ..ev(n, kind, p) });
+        e(1, "plan", "doc.created", json!({ "doc_id": "d", "title": "Retries" }));
+        e(2, "b1", "ui.doc_build_started", json!({ "doc_id": "d" }));
+        e(3, "b2", "ui.doc_build_started", json!({ "doc_id": "d" }));
+        e(4, "plan", "doc.block_set", json!({ "doc_id": "d", "block_id": "design_1", "section": "design", "takeaway": "Exponential backoff" }));
+        e(5, "b1", "doc.block_set", json!({ "doc_id": "d", "block_id": "log_1", "section": "log", "takeaway": "Retries wired" }));
+        for _ in 0..2 {
+            docs.note_change("plan", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
+        }
+        docs.note_change("plan", "doc.block_removed", &json!({ "doc_id": "d", "block_id": "risk_1" }));
+        // b2 ended: only b1 hears, once, with both changes; the author never does.
+        let live: std::collections::HashSet<String> = ["plan", "b1"].map(String::from).into();
+        let notes = docs.take_relay("plan", &live);
+        assert_eq!(notes.len(), 1);
+        assert_eq!((notes[0].0.as_str(), notes[0].3), ("b1", true));
+        assert!(notes[0].2.contains("by its plan session") && notes[0].2.contains("design (design_1): Exponential backoff") && notes[0].2.contains("removed block risk_1"));
+        assert!(docs.take_relay("plan", &live).is_empty(), "drained");
+        // b1's turn started by the note: its edits don't bounce back.
+        docs.mark_relayed("b1");
+        docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
+        assert!(docs.take_relay("b1", &live).is_empty());
+        // Its next, user-driven turn relays a design change to the plan session at once...
+        docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "design_1" }));
+        let back = docs.take_relay("b1", &live);
+        assert_eq!((back.len(), back[0].0.as_str(), back[0].3), (1, "plan", true));
+        assert!(back[0].2.contains("by its build session"));
+        // ...but a log entry doesn't shape the plan: it waits for your next message to the plan session.
+        docs.note_change("b1", "doc.block_set", &json!({ "doc_id": "d", "block_id": "log_1" }));
+        let later = docs.take_relay("b1", &live);
+        assert_eq!((later.len(), later[0].0.as_str(), later[0].3), (1, "plan", false));
+        assert!(later[0].2.contains("meanwhile") && later[0].2.contains("log (log_1): Retries wired"));
+    }
+
+    #[test]
+    fn waiting_notes_live_in_the_log_and_survive_a_restart() {
+        let note = |n: u32, kind: &str, p: Value| Event { session_id: Some("plan".into()), ..ev(n, kind, p) };
+        let log = vec![
+            note(1, "doc.relay_waiting", json!({ "doc_id": "d", "text": "first" })),
+            note(2, "doc.relay_waiting", json!({ "doc_id": "d", "text": "second" })),
+        ];
+        // A fresh Docs replaying the log (an app restart) has both, in order.
+        let docs = Docs::default();
+        for e in &log {
+            docs.apply(e);
+        }
+        assert_eq!(docs.waiting_for("plan").iter().map(|n| n.1.as_str()).collect::<Vec<_>>(), ["first", "second"]);
+        assert!(docs.waiting_for("b1").is_empty());
+        // Delivered with your next message: gone, and a later replay agrees.
+        docs.apply(&note(3, "doc.relay", json!({ "doc_id": "d", "text": "first", "waited": true })));
+        assert!(docs.waiting_for("plan").is_empty());
+        let again = Docs::default();
+        for e in log.iter().chain([&note(3, "doc.relay", json!({ "doc_id": "d", "waited": true }))]) {
+            again.apply(e);
+        }
+        assert!(again.waiting_for("plan").is_empty());
+        // A plain relay (sent at once) doesn't touch the queue.
+        docs.apply(&note(4, "doc.relay_waiting", json!({ "doc_id": "d", "text": "third" })));
+        docs.apply(&note(5, "doc.relay", json!({ "doc_id": "d", "text": "now" })));
+        assert_eq!(docs.waiting_for("plan").len(), 1);
     }
 
     fn run(docs: &Docs, n: &mut u32, tool: &str, args: Value) -> (String, bool) {

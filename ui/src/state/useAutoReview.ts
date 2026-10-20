@@ -1,14 +1,15 @@
 import { useEffect, useRef } from "react";
-import { needsAutoReview, lastLocalReview, reviewKey, type ReviewState } from "../picker/autoReview";
+import { cloneWorkspaces, needsAutoReview, lastLocalReview, reviewKey, type ReviewState } from "../picker/autoReview";
 import { promptFor } from "../screens/StartPicker";
 import { cached } from "./cache";
 import { prRepo, prSlug } from "./prRepo";
-import { loadPrs, PRS_TTL, startCwd } from "./prs";
-import { api, type Pr } from "./store";
+import { loadPrs, loadWatched, mergeReviewPrs, PRS_TTL, startCwd, watchedKey } from "./prs";
+import { api, currentWorkspace, type Pr } from "./store";
 import type { AppState } from "./types";
 
-// Auto-review (MR-72): every minute, look at the PRs waiting for your review and start /review in
-// the PR's clone for each one that needs it (see needsAutoReview). Runs on every screen.
+// Auto-review (MR-72): every minute, look at the PRs waiting for your review, plus every PR in the
+// repos you watch (MR-170: for teams that never request reviewers), and start /review in the PR's
+// clone for each one that needs it (see needsAutoReview). Runs on every screen.
 const KEY = "mr.autoReviewed";
 const started = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(KEY) ?? "[]")); } catch { return new Set(); } };
 const markStarted = (k: string) => { try { localStorage.setItem(KEY, JSON.stringify([...started(), k].slice(-200))); } catch { /* the session itself also counts as a review */ } };
@@ -16,6 +17,7 @@ const markStarted = (k: string) => { try { localStorage.setItem(KEY, JSON.string
 export function useAutoReview(state: AppState) {
   const live = useRef(state);
   live.current = state;
+  const tickRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!state.autoReview) return;
     let alive = true;
@@ -29,15 +31,19 @@ export function useAutoReview(state: AppState) {
         try {
           const info = await api.reviewState(p.url).catch(() => null) as ReviewState | null;
           if (!info) continue;
-          if (!needsAutoReview(info, p.url, lastLocalReview(Object.values(live.current.sessions), p), started())) { checked.set(p.url, p.updatedAt); continue; }
+          // Heads a recurring review started count too (MR-171): the two never review the same head twice.
+          const seen = new Set([...started(), ...live.current.reviewStarts]);
+          if (!needsAutoReview(info, p.url, lastLocalReview(Object.values(live.current.sessions), p), seen)) { checked.set(p.url, p.updatedAt); continue; }
           const slug = p.repository?.nameWithOwner ?? prSlug(p.url);
           const where = slug ? await prRepo(slug) : null;
           if (!where) { checked.set(p.url, p.updatedAt); continue; } // no clone found: it stays a suggestion on the wall
-          const id = await api.start(where, promptFor("review", p.url), "review");
+          // It runs in the workspace that works in this repo, and only that workspace hears about it.
+          const owner = cloneWorkspaces(live.current, where)[0] ?? currentWorkspace();
+          const id = await api.start(where, promptFor("review", p.url), "review", undefined, owner);
           markStarted(reviewKey(p.url, info.headSha));
           checked.set(p.url, p.updatedAt);
           void api.log("ui.auto_review_started", { url: p.url, head: info.headSha }, id);
-          window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Started a review of PR #${p.number}: ${p.title}` }));
+          if (owner === currentWorkspace()) window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Started a review of PR #${p.number}: ${p.title}` }));
         } catch {
           return; // session cap reached or the start failed: try again on the next tick
         } finally {
@@ -45,12 +51,26 @@ export function useAutoReview(state: AppState) {
         }
       }
     };
+    // Both lists are cached for PRS_TTL ("prs" is shared with the wall; the watched list has its own
+    // entry per set of repos), so a tick is free until one of them goes stale.
+    let requested: Pr[] = [];
+    let watched: Pr[] = [];
+    const go = () => void run(mergeReviewPrs(requested, watched, live.current.autoReviewRepos));
     const tick = () => {
-      const now = cached("prs", PRS_TTL, () => loadPrs(startCwd()), (v) => { if (alive) void run(v.review); });
-      if (now) void run(now.review);
+      const repos = live.current.autoReviewRepos;
+      const now = cached("prs", PRS_TTL, () => loadPrs(startCwd()), (v) => { if (alive) { requested = v.review; go(); } });
+      const w = repos.length ? cached(watchedKey(repos), PRS_TTL, () => loadWatched(startCwd(), repos), (v) => { if (alive && watchedKey(live.current.autoReviewRepos) === watchedKey(repos)) { watched = v; go(); } }) : [];
+      if (now) requested = now.review;
+      if (w) watched = w;
+      if (now || w?.length) go();
     };
+    tickRef.current = tick;
     tick();
     const t = setInterval(tick, 60_000);
-    return () => { alive = false; clearInterval(t); };
+    return () => { alive = false; tickRef.current = null; clearInterval(t); };
   }, [state.autoReview]);
+  // A repo added or removed is scanned right away, without restarting the loop above.
+  const repos = state.autoReviewRepos.join(",");
+  const seenRepos = useRef(repos);
+  useEffect(() => { if (seenRepos.current !== repos) { seenRepos.current = repos; tickRef.current?.(); } }, [repos]);
 }

@@ -1,4 +1,4 @@
-import type { AppState, Attachment, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
+import type { AppState, Attachment, Cadence, PermissionMode, Schedule, ScheduleRun, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
 
 // Packaged builds (scripts/package.sh sets VITE_MR_PACKAGED=1) go to people without the /review
 // command, so auto-review starts off there (MR-93). Settings → Auto-review still turns it on.
@@ -17,6 +17,8 @@ export const initialState: AppState = {
   theme: "control-room",
   look: { scale: 1, density: "default" },
   autoReview: autoReviewDefault(import.meta.env),
+  autoReviewRepos: [],
+  reviewStarts: [],
   notifications: true,
   compactWindow: 200_000,
   sessionCap: 10,
@@ -33,12 +35,14 @@ export const initialState: AppState = {
   selfbuild: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
   overviewLayout: {},
+  schedules: {},
+  background: "schedules",
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null, schedule: null, spawnedBy: null, unread: false,
   };
 }
 
@@ -134,6 +138,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "ui.session_cap_set") return { ...next, sessionCap: typeof p.cap === "number" ? Math.max(1, p.cap) : next.sessionCap };
   if (ev.kind === "ui.permission_mode_set") return { ...next, permissionMode: p.mode === "auto" || p.mode === "acceptEdits" || p.mode === "default" || p.mode === "never" ? p.mode : next.permissionMode };
   if (ev.kind === "ui.auto_review_set") return { ...next, autoReview: p.on !== false };
+  // The whole list each time (MR-170): validated by the core's auto_review_repos_set.
+  if (ev.kind === "ui.auto_review_repos_set") return Array.isArray(p.repos) ? { ...next, autoReviewRepos: p.repos.filter((r): r is string => typeof r === "string") } : next;
   if (ev.kind === "ui.notifications_set") return { ...next, notifications: p.on !== false };
   if (ev.kind === "ui.theme_set") return { ...next, theme: String(p.theme) };
   if (ev.kind === "ui.preset_saved") {
@@ -142,6 +148,26 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     return { ...next, presets: at < 0 ? [...next.presets, pr] : next.presets.map((x, i) => (i === at ? pr : x)) };
   }
   if (ev.kind === "ui.preset_removed") return { ...next, presets: next.presets.filter((x) => x.id !== p.id) };
+  // Recurring sessions (MR-167): the core logs these; the list and each run's history fold here.
+  if (ev.kind === "ui.schedule_set" && p.id) {
+    const id = String(p.id);
+    const mode = (["auto", "acceptEdits", "default", "never"].includes(String(p.permission_mode)) ? p.permission_mode : "auto") as PermissionMode;
+    const sc: Schedule = { id, name: String(p.name ?? ""), prompt: String(p.prompt ?? ""), cwd: String(p.cwd ?? ""), workspace: String(p.workspace ?? "personal"), worktree: p.worktree !== false, cadence: (p.cadence ?? { kind: "daily", at: "09:00" }) as Cadence, permissionMode: mode, paused: p.paused === true, fromSession: (p.from_session as string) ?? null, check: typeof p.check === "string" && p.check.trim() ? p.check : null, runs: next.schedules[id]?.runs ?? [] };
+    return { ...next, schedules: { ...next.schedules, [id]: sc } };
+  }
+  if (ev.kind === "ui.schedule_deleted") { const { [String(p.id)]: _gone, ...rest } = next.schedules; return { ...next, schedules: rest }; }
+  if ((ev.kind === "schedule.fired" || ev.kind === "schedule.failed") && next.schedules[String(p.id)]) {
+    const sc = next.schedules[String(p.id)];
+    const run: ScheduleRun = { at: ev.created_at, session: (p.session as string) ?? null, reason: (["due", "catchup", "manual"].includes(String(p.reason)) ? p.reason : "due") as ScheduleRun["reason"], ok: ev.kind === "schedule.fired", error: (p.error as string) ?? null, slot: (p.slot as string) ?? null };
+    return { ...next, schedules: { ...next.schedules, [sc.id]: { ...sc, runs: [...sc.runs, run] } } };
+  }
+  // A PR head auto-review started (or the older review-mode schedules did, MR-171): not again.
+  if (ev.kind === "schedule.review_started" || ev.kind === "ui.auto_review_started") {
+    const key = typeof p.url === "string" ? `${p.url}@${typeof p.head === "string" ? p.head : ""}` : null;
+    return key && !next.reviewStarts.includes(key) ? { ...next, reviewStarts: [...next.reviewStarts, key] } : next;
+  }
+  if (ev.kind === "ui.run_seen" && sid && next.sessions[sid]?.unread) return { ...next, sessions: { ...next.sessions, [sid]: { ...next.sessions[sid], unread: false } } };
+  if (ev.kind === "ui.background_set") return { ...next, background: p.mode === "always" || p.mode === "never" || p.mode === "schedules" ? p.mode : next.background };
   if (ev.kind === "ui.suggestion_dismissed") return { ...next, dismissed: [...next.dismissed, String(p.id)] };
   if (ev.kind === "ui.session_requested" && sid) {
     const kind = (["review", "address", "plan", "blank"].includes(String(p.kind)) ? p.kind : "blank") as SessionKind;
@@ -156,7 +182,9 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     // Files sent with the first prompt: it shows as your first message, so they can be seen.
     const files = attached(p);
     if (files.attachments) fresh.transcript = [{ kind: "user", id: ev.id, text: String(p.prompt ?? ""), at: ev.created_at, ...files }];
-    return { ...next, sessions: { ...next.sessions, [sid]: { ...fresh, ...where, owner: ev.origin ?? null } }, order: [...next.order, sid] };
+    const run = typeof p.schedule === "string" ? { schedule: p.schedule, unread: true } : {};
+    const spawned = typeof p.parent === "string" ? { spawnedBy: { id: p.parent, title: next.sessions[p.parent]?.title ?? "" } } : {};
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...fresh, ...where, ...run, ...spawned, owner: ev.origin ?? null } }, order: [...next.order, sid] };
   }
   if (ev.kind === "picker.layer2" && sid) {
     // A render decision, not session activity: annotate the item and tick the meter, nothing else.
@@ -232,6 +260,11 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       if (s.review?.publish && /^publish( and approve)?$/.test(String(p.text).trim())) s.review = { ...s.review, published: true, approved: String(p.text).trim() === "publish and approve" };
       s.status = "working";
       break;
+    // Another session changed a doc this one plans or builds; Cockpit told it (MR-168).
+    case "doc.relay":
+      s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending", via: "doc" }];
+      s.status = "working";
+      break;
     case "ui.run_started":
       s.runs = [...s.runs, { id: String(p.run_id ?? ev.id), command: String(p.command ?? ""), cwd: String(p.cwd ?? ""), status: "running", code: null, from: ev.created_at, to: null }];
       break;
@@ -273,6 +306,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     case "flow.review_snippet":
     case "flow.review_publish_ready":
     case "flow.review_unchanged":
+    case "flow.review_published":
     case "ui.review_noted":
     case "ui.review_unnoted":
       s.review = reviewStep(s.review, ev.kind, p);
@@ -492,6 +526,7 @@ function reviewStep(r: SessionState["review"], kind: string, p: Record<string, u
   if (kind === "flow.review_snippet") { const n = Number(p.n ?? 0); return { ...f, snippets: { ...f.snippets, [n]: { ...(p as object), n } as never }, current: n }; }
   if (kind === "flow.review_publish_ready") return { ...f, publish: p as never, current: null };
   if (kind === "flow.review_unchanged") return { ...f, unchanged: p as never };
+  if (kind === "flow.review_published") return { ...f, published: true, approved: p.approved === true || !!f.approved, current: null };
   if (kind === "ui.review_noted") { const id = String(p.finding_id); return { ...f, noted: f.noted.includes(id) ? f.noted : [...f.noted, id] }; }
   if (kind === "ui.review_unnoted") { const id = String(p.finding_id); return { ...f, noted: f.noted.filter((x) => x !== id) }; }
   return f;

@@ -66,13 +66,13 @@ export function overviewKey(e: KeyEv & { defaultPrevented?: boolean }, at: { dia
 }
 
 export type FocusKey =
-  | { do: "back" | "blur" | "interrupt" | "done" | "raw" | "model" | "catchUp" | "terminal" }
+  | { do: "back" | "blur" | "interrupt" | "done" | "raw" | "model" | "catchUp" | "terminal" | "repeat" }
   | { do: "reply"; index: number };
 
 /** A session's own shortcuts (Focus.tsx). Esc goes back even from a text field (the message box keeps
  *  focus after sending): an empty field goes straight back, one with a draft is only left, so the draft
  *  isn't lost to a stray Esc. The terminal keeps Esc for itself, and an open dialog closes first. */
-export function focusKey(e: KeyEv & { defaultPrevented: boolean }, at: { running: boolean; archived: boolean; fromDeleted: boolean; replies: number; resumable: boolean; dialog: boolean }): FocusKey | null {
+export function focusKey(e: KeyEv & { defaultPrevented: boolean }, at: { running: boolean; archived: boolean; fromDeleted: boolean; replies: number; resumable: boolean; dialog: boolean; repeatable?: boolean }): FocusKey | null {
   const k = keyOf(e), mod = modKey(e);
   if (k === "Escape") {
     const el = e.target as (HTMLElement & { value?: string }) | null;
@@ -83,6 +83,8 @@ export function focusKey(e: KeyEv & { defaultPrevented: boolean }, at: { running
   if (k === "." && mod) return at.running ? { do: "interrupt" } : null;
   if (k === "d" && mod && e.shiftKey) return at.archived ? null : { do: "done" };
   if (e.altKey && /^[1-3]$/.test(k)) return !at.running && Number(k) <= at.replies ? { do: "reply", index: Number(k) - 1 } : null;
+  // ⌘⇧R: run this prompt again on a schedule (MR-167); before ⌘R, which it would otherwise match.
+  if (k === "r" && mod && e.shiftKey) return at.repeatable ? { do: "repeat" } : null;
   if (k === "r" && mod) return { do: "raw" };
   if (k === "m" && mod && e.shiftKey) return at.fromDeleted ? null : { do: "model" };
   if (k === "u" && mod && e.shiftKey) return at.fromDeleted ? null : { do: "catchUp" };

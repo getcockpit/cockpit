@@ -191,6 +191,7 @@ const flows: Flow[] = [
     await ui.see("button", send("Publish and approve"));
     await ui.click("button", send("Publish and approve"));
     await ui.seeText("✓ Published · approved");
+    await ui.seeText("the session archived itself");
   } },
   { name: "J8 step into a waiting address flow", run: async () => {
     await ui.open("address");
@@ -218,6 +219,13 @@ const flows: Flow[] = [
     await ui.click("button", "Drop doc");
     await ui.click("button", "Click again to drop this doc");
     await ui.tags("DocTile", 2);
+  } },
+  { name: "MR-168 a doc and its plan and build sessions show as one group", run: async () => {
+    await ui.open("doclife");
+    await ui.tags("DocGroup", 2);
+    await ui.tags("DocTag", 2); // ▤ plan and ▤ build, inside their groups
+    await ui.click("button", /^Retire the old invoices table/); // the group's doc header
+    await ui.tags("DocStage", 1);
   } },
   { name: "Doc lifecycle: a doc built without Build it can be marked shipped", run: async () => {
     await ui.open("doclife");
@@ -278,6 +286,19 @@ const flows: Flow[] = [
     await ui.tags("Look", 1);
     await ui.click("button", "Transit");
     await until("theme applied", () => { const t = pt("attr", "html", "data-theme").trim(); if (t !== "transit") throw new Error(`data-theme is "${t}"`); });
+  } },
+  { name: "Auto-review: add and remove a watched repo in Settings (MR-170)", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Settings");
+    await ui.clickUntil("tab", "Sessions", undefined, "WatchedRepos");
+    // The Reviews section can sit under the fold: scroll each target in before acting on it. Each
+    // step acts until its tag shows, since a click mid-render can miss (adding twice is a no-op).
+    const at = (role: string, name: string) => { pt("scrollintoview", ui.find(role, name).ref); return ui.find(role, name).ref; };
+    const step = (what: string, done: () => boolean, act: () => void) => until(what, () => { if (done()) return; act(); throw new Error("not yet"); }, 8000);
+    await step("an error for a bare name", () => ui.count('[data-mr="WatchedRepoError"]') === 1, () => { pt("fill", at("textbox", "Watch a repo"), "forge"); pt("press", at("textbox", "Watch a repo"), "Enter"); });
+    await step("globex/forge listed", () => ui.count('[data-mr="WatchedRepo"]') === 1, () => { pt("fill", at("textbox", "Watch a repo"), "globex/forge"); pt("click", at("button", "Add")); });
+    if (pt("attr", 'css:[data-mr="WatchedRepo"]', "data-mr-source").trim() !== "globex/forge") throw new Error("wrong repo listed");
+    await step("globex/forge removed", () => ui.count('[data-mr="WatchedRepo"]') === 0, () => pt("click", at("button", "Stop watching globex/forge")));
   } },
   { name: "J16 delete a workspace by typing its name", run: async () => {
     await ui.open("busy");
@@ -1046,6 +1067,74 @@ const flows: Flow[] = [
     await ui.tags("SlashMenu", 0);
     await until("a command filled in", () => { if (!/\/\w+/.test(pt("html", "css:[data-mr=PromptBox] textarea"))) throw new Error("no command in the box"); });
     await ui.tags("SessionName", 1);
+  } },
+  { name: "J20 a recurring run lands on the Wall marked new until you open it", run: async () => {
+    await ui.open("recurring");
+    await ui.tags("RecurringTag", 1);
+    await ui.tags("Unread", 1);
+    await ui.clickUntil("button", /Summarise the PRs/, undefined, "RecurringMark");
+    await ui.key("Escape");
+    await ui.tags("RecurringTag", 1);
+    await ui.tags("Unread", 0);
+  } },
+  { name: "J20 Run now starts a tagged run and adds it to the history", run: async () => {
+    await ui.open("recurring");
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.tags("ScheduleRow", 2);
+    // Retried: the row re-renders as its check status loads, which can swallow a first click.
+    await ui.clickUntil("button", "Run now", '[data-mr="ScheduleRow"][data-mr-source="sch1"]', "RecurringMark");
+    await ui.tags("Recurring", 0);
+    await ui.tags("RecurringMark", 1);
+    await ui.see("button", /Schedule…$/);
+    await ui.key("Escape");
+    await ui.tags("RecurringTag", 2);
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.click("button", "History (2)");
+    await ui.tags("ScheduleRun", 2);
+  } },
+  { name: "J20 make a schedule with Repeat… and see it listed", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.clickUntil("button", /Repeat…$/, undefined, "ScheduleEditor");
+    await ui.click("button", "Mondays 09:00");
+    await ui.click("button", "Thu", '[data-mr="CronRow"][data-mr-source="Weekdays"]');
+    await ui.seeText("Mon, Thu at 09:00");
+    await ui.seeText("Next: ");
+    await ui.click("button", "Schedule it");
+    await ui.tags("ScheduleRow", 1);
+    await ui.seeText("Next ");
+    await ui.click("button", "Pause", '[data-mr="ScheduleRow"]');
+    await ui.seeText("Paused");
+  } },
+  // MR-175: nothing in Recurring is about one kind of task: no mode, no preset checks, no examples.
+  { name: "J20 a new schedule is just a prompt, a folder, a cadence and an optional check", run: async () => {
+    await ui.open("busy");
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.tags("RecurringExample", 0);
+    await ui.clickUntil("button", "New schedule", '[data-mr="Recurring"]', "ScheduleEditor");
+    await ui.tags("ScheduleMode", 0);
+    await ui.tags("ScheduleCheckField", 1);
+    if (ui.count("[aria-label='Prompt']") !== 1) throw new Error("no prompt field");
+    if (ui.count("[aria-label='Each run']") > 0) throw new Error("the review-mode toggle is back");
+    for (const b of ["Review requests", "My PRs: reviews + CI", "New commits on main"]) if (pt("text").includes(b)) throw new Error(`preset check "${b}" is still offered`);
+  } },
+  { name: "J20 a watch every few minutes runs only when its check finds something new", run: async () => {
+    await ui.open("recurring");
+    await ui.clickUntil("button", /↻ Recurring/, undefined, "Recurring");
+    await ui.clickUntil("button", "Edit", '[data-mr="ScheduleRow"][data-mr-source="sch2"]', "CronBuilder");
+    await ui.seeText("Every 5 min, 09–17h, Weekdays");
+    await ui.seeText("Next: ");
+    if (!pt("attr", "css:[aria-label='Check command']", "value").includes("review-requested")) throw new Error("the schedule's check isn't filled in");
+    // The hours row: drop 17 → work hours end at 16.
+    await ui.click("button", "17", '[data-mr="CronRow"][data-mr-source="Hours"]');
+    await ui.seeText("Every 5 min, 09–16h, Weekdays");
+    // The expression is editable too, and the rows follow it.
+    await ui.fill("Cron expression", "*/10 * * * *");
+    await ui.seeText("Every 10 min");
+    await ui.click("button", "Save");
+    await ui.tags("ScheduleRow", 2);
+    await ui.tags("ScheduleCheck", 1);
+    await ui.seeText("no change · skipped 7×");
   } },
   { name: "Keys: Esc closes the delete-workspace dialog", run: async () => {
     await ui.open("busy");

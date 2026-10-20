@@ -1,3 +1,4 @@
+import { keyLabel } from "../platform";
 import { focusKey } from "../components/keys";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -45,7 +46,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, elsewhere = false }: { s: SessionState; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
+export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, onRepeat, elsewhere = false }: { s: SessionState; onRepeat?: () => void; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -94,7 +95,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const a = focusKey(e, { running, archived: !!s.archivedAt, fromDeleted: !!s.fromDeleted, replies: replies.length, resumable: !!s.sdkSessionId, dialog: !!document.querySelector('[role="dialog"]') });
+      const a = focusKey(e, { running, archived: !!s.archivedAt, fromDeleted: !!s.fromDeleted, replies: replies.length, resumable: !!s.sdkSessionId, dialog: !!document.querySelector('[role="dialog"]'), repeatable: !!onRepeat && !s.fromDeleted && s.kind === "blank" });
       if (!a) return;
       e.preventDefault();
       if (a.do === "blur") (e.target as HTMLElement).blur();
@@ -106,10 +107,11 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
       else if (a.do === "model") document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click();
       else if (a.do === "catchUp") void catchUp();
       else if (a.do === "terminal") toggleTerminal();
+      else if (a.do === "repeat") onRepeat?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onBack, s.id, running, replies]);
+  }, [onBack, onRepeat, s.id, running, replies]);
 
 
   const openTerminal = (command?: string) => {
@@ -147,7 +149,11 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
         <div className="mr-row" style={{ gap: 14 }}>
           <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-            <SessionName s={s} />
+            <span className="mr-row" style={{ gap: 8, minWidth: 0 }}><SessionName s={s} />{s.spawnedBy && <span className="mr-mono mr-ink2" data-mr="SpawnMark" data-mr-source={s.id} title={s.spawnedBy.title ? `Started by the session “${s.spawnedBy.title}”` : "Started by another session"} style={{ fontSize: 12 }}>↳</span>}{s.schedule && <span className="mr-mono" data-mr="RecurringMark" data-mr-source={s.id} title="Started by a recurring schedule" style={{ fontSize: 12, color: "var(--mr-selected)" }}>↻</span>}
+              {/* Recurring sessions (MR-167): run this prompt again on a schedule. Beside the title, not
+                  in the action row, which has no room left at common widths. */}
+              {onRepeat && !s.fromDeleted && s.kind === "blank" && <button type="button" onClick={onRepeat} className="mr-dim" data-mr="RepeatButton" data-mr-source={s.id} title={`${s.schedule ? "Edit the schedule that started this run" : "Run this prompt again on a schedule"} (${keyLabel("⌘⇧R")})`}
+                style={{ border: 0, padding: "2px 6px", background: "transparent", font: "inherit", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{s.schedule ? "Schedule…" : "↻ Repeat…"}</button>}</span>
             <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }} title={s.cwd}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{where || s.cwd}</span>
           </div>
           <StateMark s={tile.state} />
@@ -262,7 +268,7 @@ function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean;
     asked.current = true;
     api.commands(s.id).catch(() => {});
   };
-  const history = useMemo(() => s.transcript.flatMap((t) => (t.kind === "user" && t.text ? [t.text] : [])).slice(-50), [s.transcript]);
+  const history = useMemo(() => s.transcript.flatMap((t) => (t.kind === "user" && t.text && !t.via ? [t.text] : [])).slice(-50), [s.transcript]);
   return (
     <form className="mr-row" style={{ position: "relative", alignItems: "flex-end" }} onSubmit={(e) => { e.preventDefault(); box.current?.submit(); }}>
       <span className="mr-mono" style={{ padding: "2px 6px", marginBottom: 10, background: "var(--mr-ink)", color: "var(--mr-tile)" }}>→</span>
@@ -292,21 +298,16 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
   const one = (t: Row): React.ReactNode => t.kind === "step" ? null : t.kind === "text" ? (
         <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {diagrams[t.id] && <FlowDiagram d={diagrams[t.id]!} />}
-          <div style={{ position: "relative" }}>
-            <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} />
-            {t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
-              <span style={{ position: "absolute", top: 6, right: 8 }}>
-                <Key onClick={() => { setDrawing((d) => new Set(d).add(t.id)); onDiagram(t); }} disabled={drawing.has(t.id) && !(t.id in diagrams)}>
-                  {drawing.has(t.id) && !(t.id in diagrams) ? "Drawing…" : t.id in diagrams ? "No flow to draw · retry" : "Diagram"}
-                </Key>
-              </span>
-            )}
-          </div>
+          <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} actions={t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
+            <Key onClick={() => { setDrawing((d) => new Set(d).add(t.id)); onDiagram(t); }} disabled={drawing.has(t.id) && !(t.id in diagrams)}>
+              {drawing.has(t.id) && !(t.id in diagrams) ? "Drawing…" : t.id in diagrams ? "No flow to draw · retry" : "Diagram"}
+            </Key>
+          )} />
         </div>
       ) : t.kind === "view" ? (
         <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={onReply} onDiscover={onDiscover} live={live && t.id === lastTextId} />
       ) : t.kind === "user" ? (
-        <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)", alignItems: "flex-start" }}><span className="mr-mono mr-dim">you →</span><span className="mr-grow" style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>{t.text && <UserText text={t.text} commands={commands} />}{t.attachments && <AttachmentRow items={t.attachments} big />}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
+        <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)", alignItems: "flex-start" }}><span className="mr-mono mr-dim" data-mr="UserFrom" data-mr-source={t.id}>{t.via === "doc" ? "▤ doc →" : "you →"}</span><span className="mr-grow" style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>{t.text && <UserText text={t.text} commands={commands} />}{t.attachments && <AttachmentRow items={t.attachments} big />}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
       ) : t.kind === "result" ? (
         <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}</div>
       ) : t.kind === "tools" ? (

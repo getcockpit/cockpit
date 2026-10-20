@@ -17,4 +17,6 @@ need() { [ "$(sqlite3 "$db" "$1")" != "0" ] || { echo "FAILED: $2"; exit 1; }; }
 need "SELECT COUNT(*) FROM events WHERE kind='plan.updated'" "Claude published no plan"
 need "SELECT COUNT(*) > 1 FROM events WHERE kind='plan.updated'" "Claude never updated the plan after publishing it"
 need "SELECT COUNT(*) FROM events e WHERE kind='plan.updated' AND id=(SELECT MAX(id) FROM events WHERE kind='plan.updated') AND NOT EXISTS (SELECT 1 FROM json_each(e.payload,'$.steps') s WHERE json_extract(s.value,'$.status')!='done')" "the final plan isn't all done"
+# MR-174 (reported, not required: it depends on Claude writing its reply first): did the closed plan end the turn?
+echo "closing plan ended the turn: $(sqlite3 "$db" "SELECT CASE WHEN EXISTS (SELECT 1 FROM events WHERE kind='sidecar.sdk' AND json_extract(payload,'$.message.type')='assistant' AND id > (SELECT MAX(id) FROM events WHERE kind='plan.updated')) THEN 'no' ELSE 'yes' END")"
 echo "SELFTEST PLAN PASSED ($db)"

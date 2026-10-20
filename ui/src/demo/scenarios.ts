@@ -315,6 +315,16 @@ export const SCENARIOS: Record<string, Scenario> = {
   permissions: { events: [...sidecarUp, onboarded], docs: [] },
   neverask: { events: [...ready, { kind: "ui.permission_mode_set", payload: { mode: "never" }, at: 1 }, onboarded], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
+  // Recurring sessions (MR-167): one schedule with a finished, unread run in the review tray. ?demo=recurring
+  recurring: { events: [...ready, onboarded,
+    { kind: "ui.schedule_set", payload: { id: "sch2", name: "Review requests watch", prompt: "These pull requests wait on my review. For each new or changed one, one line on what it does.", cwd: "~/code/billing", workspace: "personal", worktree: false, cadence: { kind: "cron", expr: "*/5 9-17 * * 1-5" }, check: "gh pr list --search \"review-requested:@me\" --json number,title,updatedAt", permission_mode: "auto", paused: false }, at: 1 },
+    { kind: "ui.schedule_set", payload: { id: "sch1", name: "Daily PR digest", prompt: "Summarise the PRs waiting on me, oldest first", cwd: "~/code/billing", workspace: "personal", worktree: false, cadence: { kind: "weekdays", at: "09:00" }, permission_mode: "auto", paused: false }, at: 2 },
+    { session: "RD", kind: "ui.session_requested", payload: { cwd: "~/code/billing", prompt: "Summarise the PRs waiting on me, oldest first", kind: "blank", workspace: "personal", schedule: "sch1" }, at: 10 },
+    { session: "RD", kind: "schedule.fired", payload: { id: "sch1", session: "RD", reason: "due", slot: "2026-10-19T09:00" }, at: 10 },
+    { session: "RD", kind: "sidecar.session_started", payload: { sdk_session_id: "sdk-RD", model: "claude-opus-5-5" }, at: 11 },
+    { session: "RD", kind: "sidecar.sdk", payload: { message: { type: "assistant", message: { content: [{ type: "text", text: "3 PRs wait on you: #412 (4 days), #418, #421." }] } } }, at: 12 },
+    { session: "RD", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "3 PRs wait on you: #412 (4 days), #418, #421.", total_cost_usd: 0.04 } }, at: 13 },
+  ], docs: [] },
   busy: { events: busy, docs: [planDoc] },
   signedout: { events: signedOutEvents, docs: [] },
   // Doc lifecycle (MR-151): one stalled with open questions, one ready, one building, one shipped. ?demo=doclife

@@ -17,6 +17,10 @@ pub struct Sidecar {
     idle: Mutex<std::collections::HashSet<String>>,
     /// Waiters for one-shot replies, by request id.
     oneshots: Mutex<std::collections::HashMap<String, std::sync::mpsc::Sender<serde_json::Value>>>,
+    /// Sessions whose flow finished (review published, address pushed): archived already, stopped when the turn ends.
+    closing: Mutex<std::collections::HashSet<String>>,
+    /// Sessions started in a mode of their own (a recurring run's, MR-167) until you set one for all.
+    modes: Mutex<std::collections::HashMap<String, String>>,
 }
 
 /// How many sessions may be mid-turn at once when nothing else says (MR-105; was 6, decision 14).
@@ -49,6 +53,13 @@ pub fn busy(state: &Sidecar) -> usize {
     state.live.lock().unwrap().iter().filter(|s| !idle.contains(*s)).count()
 }
 
+/// Whether this session is live and mid-turn (a recurring run still going, MR-169).
+pub fn mid_turn(app: &AppHandle, session: &str) -> bool {
+    let state = app.state::<Sidecar>();
+    let live = state.live.lock().unwrap().contains(session);
+    live && !state.idle.lock().unwrap().contains(session)
+}
+
 pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let (mut rx, child) = app.shell().sidecar("mr-sidecar")?.env_clear().envs(crate::selfbuild::child_env()).spawn()?;
     *app.state::<Sidecar>().child.lock().unwrap() = Some(child);
@@ -70,7 +81,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         let mut payload = serde_json::from_str::<serde_json::Value>(line)
                             .unwrap_or_else(|_| serde_json::json!({ "type": "raw", "line": line }));
                         // Never ask (I109): allowed here, logged as auto_allowed so no card is drawn.
-                        if payload["type"] == "permission_request" && permission_mode(&handle) == "never" && auto_allows(&payload) {
+                        if payload["type"] == "permission_request" && session_mode(&handle, payload["session"].as_str().unwrap_or("")) == "never" && auto_allows(&payload) {
                             payload["auto_allowed"] = true.into();
                             let decision = serde_json::json!({ "behavior": "allow", "updatedInput": payload["input"] });
                             let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "permission_response", "session": payload["session"], "request_id": payload["request_id"], "decision": decision }));
@@ -108,7 +119,13 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         // The Cockpit layer draws the cards once a turn ends (decision 34).
                         if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
                             if let Some(id) = session.as_deref() {
-                                crate::cockpit_layer::after_turn(handle.clone(), id.to_owned());
+                                crate::schedules::on_turn_end(&handle, id, &payload["message"]);
+                                relay_doc_changes(&handle, id);
+                                if handle.state::<Sidecar>().closing.lock().unwrap().remove(id) {
+                                    let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": id }));
+                                } else {
+                                    crate::cockpit_layer::after_turn(handle.clone(), id.to_owned());
+                                }
                             }
                         }
                         if crate::selftest::enabled() {
@@ -270,6 +287,17 @@ fn permission_mode(app: &AppHandle) -> &'static str {
     fold_permission_mode(evs.iter().map(|e| &e.payload))
 }
 
+/// A session's own mode if it started in one (a recurring run), else everyone's.
+fn session_mode(app: &AppHandle, session: &str) -> String {
+    let own = app.state::<Sidecar>().modes.lock().unwrap().get(session).cloned();
+    own.unwrap_or_else(|| permission_mode(app).to_owned())
+}
+
+/// Whether a new session would be refused for the cap right now.
+pub fn at_cap(app: &AppHandle) -> bool {
+    busy(&app.state::<Sidecar>()) >= session_cap(app)
+}
+
 /// Sets how sessions ask for permission. Logged first, then switched on every running session so
 /// it applies at once; new and resumed sessions start in it.
 #[tauri::command]
@@ -278,6 +306,7 @@ pub fn permission_mode_set(app: AppHandle, state: State<'_, Sidecar>, mode: Stri
         return Err(format!("unknown permission mode: {mode}"));
     }
     crate::eventlog::record(&app, None, "ui.permission_mode_set", &serde_json::json!({ "mode": mode }), None);
+    state.modes.lock().unwrap().clear();
     let live: Vec<String> = state.live.lock().unwrap().iter().cloned().collect();
     for id in live {
         let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "set_permission_mode", "session": id, "mode": sdk_mode(&mode) }));
@@ -317,7 +346,7 @@ pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout
 pub const VISUAL_GUIDANCE: &str = "You are running inside Cockpit, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
 - The mr tools never get a model call of their own: send each mr call in the same message as real work (parallel tool calls).
 - Name the thread with mcp__mr__title_set (2-6 words) in your first message with tool calls, and again only when its focus clearly shifts.
-- For work with 3 or more steps, publish mcp__mr__plan_set with every step, and send the full list again only when a step starts or finishes, in the message that starts the next step's work. Close it with every finished step done in the same message as your last real tool call (or render_view), before your final reply.
+- For work with 3 or more steps, publish mcp__mr__plan_set with every step, and send the full list again only when a step starts or finishes, in the message that starts the next step's work. Close it (every step done) in the same message as your last real tool call or render_view, or, when you end with a text reply, in that reply's message: the text first, then plan_set. Never send it in a message of its own.
 - When the user must choose between options, use AskUserQuestion with 2-4 concrete options, each with a short description. One decision per question.
 - Write replies in Markdown: short `## ` headings, numbered lists for steps, `- ` bullets for facts. Start a list item with a **bold short title**. Put time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
 - For a status report, summary, comparison, verification result or progress, use mcp__mr__render_view instead of prose (decision 26) as the turn's last call, with no text after it. Review findings → `findings` (with a `tier` first); fixes for one finding → `fix_options`; a number to choose → `tradeoff`; does it already exist → `novelty`; a reviewer's comment → `thread`.
@@ -365,6 +394,54 @@ pub fn session_start(
     preset: Option<String>,
     attachments: Option<Vec<serde_json::Value>>,
 ) -> Result<String, String> {
+    start_with(app, state, cwd, prompt, resume, tools, kind, worktree, session_id, workspace, preset, attachments, Started::default())
+}
+
+/// Appended for a recurring run (MR-167): nobody is watching when it starts.
+pub const UNATTENDED: &str = "This session was started by a schedule (a recurring session); nobody is watching it right now. Do the whole task end to end without stopping to ask: pick sensible defaults and say which you picked. Only ask when you truly can't continue. End with a short report of the result.";
+
+/// The system-prompt append, plus `UNATTENDED` for a recurring run.
+pub fn unattended(append: Option<String>, scheduled: bool) -> Option<String> {
+    if !scheduled {
+        return append;
+    }
+    Some(append.map_or_else(|| UNATTENDED.to_owned(), |a| format!("{a}\n\n{UNATTENDED}")))
+}
+
+/// What only Cockpit itself starts sessions with: a recurring run's schedule and its own mode (MR-167).
+#[derive(Default)]
+pub struct Started {
+    pub schedule: Option<String>,
+    pub permission_mode: Option<String>,
+    /// Nobody is watching: append `UNATTENDED`. A prompt-mode run is; a review a schedule starts
+    /// (MR-171) isn't, since it must stop for you before anything goes to GitHub.
+    pub unattended: bool,
+    /// Spawned by this session's `session_spawn` call (MR-176).
+    pub parent: Option<String>,
+}
+
+/// The system-prompt append a session starts with: the visual guidance, its flow's steps, and
+/// `UNATTENDED` only when `started` says nobody is watching.
+pub fn system_append(kind: &str, layer: bool, started: &Started) -> Option<String> {
+    unattended(append_prompt(kind, layer), started.unattended)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn start_with(
+    app: AppHandle,
+    state: State<'_, Sidecar>,
+    cwd: String,
+    prompt: String,
+    resume: Option<String>,
+    tools: Option<serde_json::Value>,
+    kind: Option<String>,
+    worktree: Option<bool>,
+    session_id: Option<String>,
+    workspace: Option<String>,
+    preset: Option<String>,
+    attachments: Option<Vec<serde_json::Value>>,
+    started: Started,
+) -> Result<String, String> {
     let mut cwd = expand_home(&app, &cwd);
     if !std::path::Path::new(&cwd).is_dir() {
         return Err(format!("not a folder: {cwd}"));
@@ -396,6 +473,18 @@ pub fn session_start(
     if let Some(id) = preset {
         payload["preset"] = id.into();
     }
+    // A recurring run (MR-167): its tile is tagged ↻ and its history lists it.
+    if let Some(id) = &started.schedule {
+        payload["schedule"] = id.clone().into();
+    }
+    if let Some(m) = &started.permission_mode {
+        payload["permission_mode"] = m.clone().into();
+    }
+    // A spawned session (MR-176): its tile names the parent, and it can't spawn more.
+    if let Some(p) = &started.parent {
+        payload["parent"] = p.clone().into();
+    }
+    let spawned = started.parent.is_some() || (resume.is_some() && crate::spawn::spawned_by(&app.state::<crate::eventlog::EventLog>().list(Some(&session), None, 100_000).unwrap_or_default()).is_some());
     // What the session compacts at, so usage reports can tell sessions apart (I63).
     let compact = compact_window(&app);
     payload["compact_window"] = compact.into();
@@ -418,7 +507,14 @@ pub fn session_start(
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
-    msg["permission_mode"] = sdk_mode(permission_mode(&app)).into();
+    let mode = match started.permission_mode.clone().filter(|m| PERMISSION_MODES.contains(&m.as_str())) {
+        Some(m) => {
+            state.modes.lock().unwrap().insert(session.clone(), m.clone());
+            m
+        }
+        None => session_mode(&app, &session),
+    };
+    msg["permission_mode"] = sdk_mode(&mode).into();
     let (model, effort) = model_choice(&app, &session);
     if let Some(m) = model {
         msg["model"] = m.into();
@@ -437,6 +533,9 @@ pub fn session_start(
         if crate::selfbuild::update_available(&cwd) {
             specs.push(crate::selfbuild::update_spec());
         }
+        if !spawned {
+            specs.push(crate::spawn::tool_spec());
+        }
         serde_json::Value::Array(specs)
     });
     let mut env = serde_json::Map::new();
@@ -451,7 +550,8 @@ pub fn session_start(
     }
     // Every session gets the visual-app guidance (MR-56); blank ones the plan nudge (MR-98);
     // Review/Address add their flow steps.
-    if let Some(a) = append_prompt(&kind, layer) {
+    // A recurring run starts with nobody watching: it shouldn't stop to ask what it can decide.
+    if let Some(a) = system_append(&kind, layer, &started) {
         msg["append_system_prompt"] = a.into();
     }
     state.live.lock().unwrap().insert(session.clone());
@@ -468,6 +568,14 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     }
     let attachments = attachments.filter(|a| !a.is_empty());
     let mut sent = serde_json::json!({ "text": text });
+    // Doc changes that waited for your next message go in front of it (MR-168).
+    let mut before = String::new();
+    for (doc_id, note) in app.state::<crate::docs::Docs>().waiting_for(&session) {
+        crate::eventlog::record(&app, Some(&session), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "text": note, "waited": true }), Some(&format!("doc:{doc_id}")));
+        before.push_str(&note);
+        before.push_str("\n\n");
+    }
+    let text = before + &text;
     if let Some(a) = &attachments {
         sent["attachments"] = a.clone().into();
     }
@@ -679,10 +787,11 @@ pub fn tool_result(
     call_id: String,
     text: String,
     is_error: Option<bool>,
+    end_turn: Option<String>,
 ) -> Result<(), String> {
     sidecar_send(
         state,
-        serde_json::json!({ "type": "tool_result", "session": session, "call_id": call_id, "text": text, "is_error": is_error.unwrap_or(false) }),
+        serde_json::json!({ "type": "tool_result", "session": session, "call_id": call_id, "text": text, "is_error": is_error.unwrap_or(false), "end_turn": end_turn }),
     )
 }
 
@@ -693,11 +802,49 @@ pub fn expand_home(app: &AppHandle, path: &str) -> String {
     }
 }
 
+/// The doc changes a session made this turn go to the doc's other running sessions (MR-168): right
+/// away, queued behind their turn if they're mid-turn. Recorded as `doc.relay` on the recipient.
+fn relay_doc_changes(app: &AppHandle, author: &str) {
+    let state = app.state::<Sidecar>();
+    let live = state.live.lock().unwrap().clone();
+    for (to, doc_id, text, now) in app.state::<crate::docs::Docs>().take_relay(author, &live) {
+        let anchor = format!("doc:{doc_id}");
+        if !now {
+            // Not plan-shaping: it waits, in the log, for your next message to that session.
+            crate::eventlog::record(app, Some(&to), "doc.relay_waiting", &serde_json::json!({ "doc_id": doc_id, "from": author, "text": text }), Some(&anchor));
+            continue;
+        }
+        crate::eventlog::record(app, Some(&to), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "from": author, "text": text }), Some(&anchor));
+        // An idle session starts a turn for the note; what it changes then isn't relayed back.
+        if state.idle.lock().unwrap().remove(&to) {
+            app.state::<crate::docs::Docs>().mark_relayed(&to);
+        }
+        let _ = sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "send", "session": to, "text": text }));
+    }
+}
+
 /// Answers a relayed `mr` MCP tool call from the core's own state (docs), then replies to the sidecar.
 fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     let session = payload["session"].as_str().unwrap_or_default().to_owned();
     let call_id = payload["call_id"].as_str().unwrap_or_default().to_owned();
     let tool = payload["tool"].as_str().unwrap_or_default();
+    if tool == crate::spawn::TOOL {
+        // Off the reader loop: a worktree is a few git calls.
+        let (app, args) = (app.clone(), payload["args"].clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            let (text, is_error) = match crate::spawn::handle(&app, &session, &args) {
+                Ok((events, text)) => {
+                    for (kind, p) in events {
+                        crate::eventlog::record(&app, Some(&session), &kind, &p, None);
+                    }
+                    (text, false)
+                }
+                Err(e) => (e, true),
+            };
+            let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error), None);
+        });
+        return;
+    }
     let (events, text, is_error) = if crate::flows::is_flow_tool(tool) {
         crate::flows::handle_tool(tool, &payload["args"])
     } else if crate::views::is_view_tool(tool) {
@@ -710,13 +857,21 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     for (kind, p) in events {
         let anchor = p["doc_id"].as_str().map(|d| format!("doc:{d}"));
         crate::eventlog::record(app, Some(&session), &kind, &p, anchor.as_deref());
+        app.state::<crate::docs::Docs>().note_change(&session, &kind, &p);
     }
-    let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error));
+    if crate::flows::is_flow_tool(tool) && crate::flows::closes_session(tool, &payload["args"]) {
+        // Nothing left for the user: archive it now, stop it once this turn ends.
+        crate::eventlog::record(app, Some(&session), "ui.session_archived", &serde_json::json!({ "by": tool }), None);
+        app.state::<Sidecar>().closing.lock().unwrap().insert(session.clone());
+    }
+    // A shown view or a closed plan can end the turn: the sidecar stops there instead of asking Claude again (MR-174).
+    let end_turn = crate::views::ends_turn(tool, &payload["args"], is_error).map(str::to_owned);
+    let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error), end_turn);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prompt, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
+    use super::{append_prompt, system_append, Started, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, unattended, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, UNATTENDED, VISUAL_GUIDANCE};
 
     #[test]
     fn mcp_add_checks_name_scope_and_transport() {
@@ -743,6 +898,31 @@ mod tests {
         let review = append_prompt("review", false).unwrap();
         assert!(review.starts_with(VISUAL_GUIDANCE) && !review.contains(PLAN_NUDGE));
         assert!(!append_prompt("review", true).unwrap().contains(VISUAL_GUIDANCE));
+    }
+
+    #[test]
+    fn recurring_runs_are_told_nobody_is_watching() {
+        assert_eq!(unattended(None, false), None);
+        assert_eq!(unattended(Some("x".into()), false).as_deref(), Some("x"));
+        assert_eq!(unattended(None, true).as_deref(), Some(UNATTENDED));
+        let both = unattended(append_prompt("blank", false), true).unwrap();
+        assert!(both.starts_with(VISUAL_GUIDANCE) && both.ends_with(UNATTENDED));
+    }
+
+    #[test]
+    fn a_scheduled_review_is_not_unattended_and_still_waits_for_publish() {
+        // MR-171: a review a schedule starts carries its schedule but nobody-is-watching stays off,
+        // so the review flow's "only publish after the user says 'publish'" is the last word.
+        let review = Started { schedule: Some("sch".into()), unattended: false, ..Default::default() };
+        for layer in [false, true] {
+            let a = system_append("review", layer, &review).unwrap();
+            assert!(!a.contains(UNATTENDED), "layer {layer}");
+            assert!(a.contains("only publish to GitHub after the user says 'publish'"), "layer {layer}");
+            assert!(a.contains("call review_publish_ready"), "layer {layer}");
+        }
+        let run = Started { schedule: Some("sch".into()), unattended: true, ..Default::default() };
+        assert!(system_append("blank", false, &run).unwrap().ends_with(UNATTENDED));
+        assert!(!system_append("review", false, &Started::default()).unwrap().contains(UNATTENDED));
     }
 
     #[test]

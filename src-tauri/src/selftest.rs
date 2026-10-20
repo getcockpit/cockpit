@@ -11,12 +11,16 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer" || v == "attach" || v == "move")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer" || v == "attach" || v == "move" || v == "schedule" || v == "spawn")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
 fn bench_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "bench")
+}
+
+fn schedule_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "schedule")
 }
 
 fn workspace_mode() -> bool {
@@ -49,6 +53,10 @@ fn resume_mode() -> bool {
 
 fn update_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "update")
+}
+
+fn spawn_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "spawn")
 }
 
 fn title_mode() -> bool {
@@ -148,6 +156,9 @@ pub fn run(app: AppHandle) {
     if update_mode() {
         return run_update(app);
     }
+    if schedule_mode() {
+        return crate::schedules::selftest(app);
+    }
     tauri::async_runtime::spawn(async move {
         tokio_sleep(Duration::from_secs(2)).await;
         let dir = match std::env::var("MR_BENCH_CWD") {
@@ -184,6 +195,8 @@ pub fn run(app: AppHandle) {
                 "/pr-address 9 — this is a UI test of the address tools, not a real PR: don't look at files, git or GitHub. Pretend PR #9 has three unresolved review threads, t1, t2 and t3, on fetch.ts lines 10, 20 and 30, none addressed yet. Make up a one-line comment and a short code snippet for each.".into()
             } else if resume_mode() || move_mode() {
                 "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
+            } else if spawn_mode() {
+                "This is a UI test. Use the mr session_spawn tool to start one session with worktree false and the prompt 'This is a UI test. Reply with exactly: CHILD DONE'. Then reply with exactly: SELFTEST DONE".into()
             } else if title_mode() {
                 // No tool or format named: the guidance alone should give a title and proposed replies (MR-63).
                 "Create a file notes.txt in the current directory containing one line about rust lifetimes, then tell me in one sentence what you did.".into()
@@ -251,6 +264,16 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 decision,
             );
         }
+        Some("sdk") if payload["message"]["type"] == "result" && schedule_mode() => {
+            // The run's turn is over: its finished notification is logged first (on_turn_end).
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(800)).await; app.exit(0); });
+        }
+        Some("sdk") if payload["message"]["type"] == "result" && spawn_mode() && payload["message"]["result"].as_str().unwrap_or_default().contains("CHILD DONE") => {
+            // The spawned session finished its turn (MR-176); the script checks the log.
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(800)).await; app.exit(0); });
+        }
         Some("sdk") if payload["message"]["type"] == "result" && workspace_mode() => {
             // A fresh workspace isn't signed in: proof that Claude ran in its own config folder.
             let text = payload["message"]["result"].as_str().unwrap_or_default().to_owned();
@@ -311,7 +334,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             for id in ["t1", "t2"] {
                 crate::eventlog::record(app, Some(&session), "ui.address_chosen", &serde_json::json!({ "id": id, "option": "A" }), Some(&format!("address:{id}")));
             }
-            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Thread t1 · Option A and Thread t2 · Option A, and push back on t3. It's a pretend PR: don't edit files or post anything, just report each step with the tools (one passing check per proof, replies posted: true), call address_done, then reply with exactly: SELFTEST DONE".into(), None);
+            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Thread t1 · Option A and Thread t2 · Option A, and push back on t3. It's a pretend PR: don't edit files or post anything, just report each step with the tools (one passing check per proof, replies posted: true), call address_done with pushed: false, then reply with exactly: SELFTEST DONE".into(), None);
         }
         Some("sdk") if payload["message"]["type"] == "result" && resume_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 1 done: stop the session; session_ended triggers the resume below.
@@ -456,6 +479,8 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Keep it simple: this is a throwaway test folder and either name is fine by me. Now ask me again.".into(), None);
         }
+        // The parent's own turn: keep running until the spawned session is done.
+        Some("sdk") if payload["message"]["type"] == "result" && spawn_mode() => {}
         Some("sdk") if payload["message"]["type"] == "result" => {
             let ok = payload["message"]["is_error"] == false;
             eprintln!("[selftest] result ok={ok}: {}", payload["message"]["result"]);

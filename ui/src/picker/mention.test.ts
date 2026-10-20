@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { droppedMentions, insertDropped, insertMention, matchPaths, typedMention } from "./mention";
+import { droppedMentions, insertDropped, insertMention, matchDir, matchPaths, outsideQuery, typedMention } from "./mention";
 
 const PATHS = ["docs/", "src-tauri/", "src-tauri/src/", "ui/", "ui/src/", "ui/src/screens/", "README.md", "src-tauri/src/mentions.rs", "ui/src/screens/Focus.tsx", "ui/src/screens/Wall.tsx"];
 
@@ -47,5 +47,35 @@ describe("dropped files", () => {
   });
   it("replaces a selection", () => {
     expect(insertDropped("see THIS now", 4, 8, ["/f"])).toEqual({ text: "see @/f now", caret: 7 });
+  });
+});
+
+describe("paths outside the session folder", () => {
+  it("splits ~, .. and / queries into the folder and the name typed in it", () => {
+    expect(outsideQuery("~")).toEqual({ dir: "~/", name: "" });
+    expect(outsideQuery("..")).toEqual({ dir: "../", name: "" });
+    expect(outsideQuery("~/Doc")).toEqual({ dir: "~/", name: "Doc" });
+    expect(outsideQuery("../../app/sr")).toEqual({ dir: "../../app/", name: "sr" });
+    expect(outsideQuery("/tmp/x")).toEqual({ dir: "/tmp/", name: "x" });
+    expect(outsideQuery("src/ui")).toBeNull();
+    expect(outsideQuery(".gitignore")).toBeNull();
+  });
+  it("matches the folder's entries by name and hides dotfiles until a . is typed", () => {
+    const ls = ["~/.zshrc", "~/Desktop/", "~/Documents/", "~/notes.md"];
+    expect(matchDir(ls, { dir: "~/", name: "" })).toEqual(["~/Desktop/", "~/Documents/", "~/notes.md"]);
+    expect(matchDir(ls, { dir: "~/", name: "doc" })).toEqual(["~/Documents/"]);
+    expect(matchDir(ls, { dir: "~/", name: ".z" })).toEqual(["~/.zshrc"]);
+  });
+});
+
+describe("paths with spaces", () => {
+  it("reads an open quote as one query, spaces and all", () => {
+    expect(typedMention('see @"~/Library/Application Su', 30)).toEqual({ start: 4, query: "~/Library/Application Su", quoted: true });
+    expect(typedMention('see @"/a b/c" and', 17)).toBeNull();
+  });
+  it("quotes a picked path with spaces, and replaces an open quote", () => {
+    expect(insertMention("@~/Lib", { start: 0, query: "~/Lib" }, "~/Library/Application Support/")).toEqual({ text: '@"~/Library/Application Support/" ', caret: 34 });
+    expect(insertMention('@"~/Library/Application Su', { start: 0, query: "~/Library/Application Su", quoted: true }, "~/Library/Application Support/")).toEqual({ text: '@"~/Library/Application Support/" ', caret: 34 });
+    expect(insertMention('@"~/a b" next', { start: 0, query: "~/a b", quoted: true }, "~/a b c.md")).toEqual({ text: '@"~/a b c.md" next', caret: 14 });
   });
 });

@@ -1,7 +1,7 @@
 import { pickTile, type TileSpec } from "../picker/pick";
 import { sessionTitle } from "../picker/title";
 import { needsQueue } from "../picker/queue";
-import { docStage, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "./docs";
+import { docStage, groupByDoc, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "./docs";
 import type { AppState, SessionState } from "./types";
 
 // The Overview (decision 40, MR-155): every workspace as one rectangle on a free canvas, every open
@@ -22,6 +22,8 @@ export type OverviewBlock = {
   step: string | null; // the plan step in progress, if any (close zoom)
   // What "changed since you last looked" compares: the state that matters, not the live tool line.
   sig?: string;
+  // A session that plans or builds a doc sits right under that doc's block (MR-168).
+  parent?: string; role?: "plan" | "build";
 };
 
 export type Counts = { needs: number; resume: number; progress: number; review: number };
@@ -261,8 +263,23 @@ export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs:
       const st = docStage(d, state.sessions);
       groups[g].push({ kind: "doc", id: d.id, title: d.title, lamp: open ? "needs_you" : g === "review" ? "review" : "working", needs: open > 0, status: open ? `${open} open question${open === 1 ? "" : "s"}` : STAGE_LABEL[st], step: null });
     }
-    // Anything waiting on you goes first in its group; otherwise the order things started in.
-    for (const g of GROUPS) groups[g].sort((a, b) => Number(b.needs) - Number(a.needs));
+    // A doc's sessions leave their own column and follow the doc's block, as one unit (MR-168).
+    const where = new Map(GROUPS.flatMap((g) => groups[g].map((b) => [`${b.kind}:${b.id}`, g] as const)));
+    const byDoc = groupByDoc(wsDocs.filter((d) => where.has(`doc:${d.id}`)), sessions.filter((s) => where.has(`session:${s.id}`)).map((s) => s.id)).groups;
+    const children = new Map<string, OverviewBlock[]>();
+    for (const { doc, sessions: members } of byDoc) {
+      children.set(doc.id, members.map(({ id, role }) => {
+        const g = where.get(`session:${id}`)!, i = groups[g].findIndex((b) => b.kind === "session" && b.id === id);
+        return { ...groups[g].splice(i, 1)[0], parent: doc.id, role };
+      }));
+    }
+    // Anything waiting on you goes first in its group (a doc with its sessions counts as one);
+    // otherwise the order things started in.
+    for (const g of GROUPS) {
+      const units = groups[g].map((b) => [b, ...(b.kind === "doc" ? children.get(b.id) ?? [] : [])]);
+      units.sort((a, b) => Number(b.some((x) => x.needs)) - Number(a.some((x) => x.needs)));
+      groups[g] = units.flat();
+    }
     const counts: Counts = { needs: needsQueue(sessions, wsDocs).length, resume: groups.resume.length, progress: groups.progress.length, review: groups.review.length };
     return { workspace: w.id, name: w.name, index, folder: w.folder, counts, groups, w: AREA_W, h: areaHeight(groups) };
   });

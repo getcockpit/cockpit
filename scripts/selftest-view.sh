@@ -17,6 +17,8 @@ sqlite3 "$db" "SELECT DISTINCT json_extract(b.value,'$.type') FROM events e, jso
 need() { [ "$(sqlite3 "$db" "$1")" != "0" ] || { echo "FAILED: $2"; exit 1; }; }
 need "SELECT COUNT(*) FROM events WHERE kind='view.rendered'" "Claude wrote the report as text instead of calling render_view"
 need "SELECT COUNT(*) FROM events WHERE kind='view.rendered' AND json_array_length(payload,'$.blocks') >= 2" "the view has fewer than 2 blocks"
+# MR-174: a shown view ends the turn; no model call follows it before the turn's result.
+need "SELECT COUNT(*) = 0 FROM events WHERE kind='sidecar.sdk' AND json_extract(payload,'$.message.type')='assistant' AND id > (SELECT MIN(id) FROM events WHERE kind='view.rendered') AND id < (SELECT MIN(id) FROM events WHERE kind='sidecar.sdk' AND json_extract(payload,'$.message.type')='result' AND id > (SELECT MIN(id) FROM events WHERE kind='view.rendered'))" "Claude was asked again after render_view (the turn didn't end there)"
 # MR-71: review findings, again without naming a block, should come back on the severity scale.
 data2="$(mktemp -d)"
 MR_VIEW_PROMPT="This is a UI test; nothing here is real and you don't need to look at any files. Summarise my pretend code review of a payments PR: one critical finding (a charge can run twice on retry, charge.ts:42), one important (the webhook isn't verified, webhook.ts:10) and one nitpick (a stray console.log). Then on a final line reply with exactly: SELFTEST DONE" \

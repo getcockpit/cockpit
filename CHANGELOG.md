@@ -4,6 +4,52 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-20
+
+### Changed
+- **Less usage overhead:** a card or a finished plan now ends Claude's turn on the spot, instead of Claude spending one more call (a full re-read of the context) just to stop. In a benchmark against plain `claude -p`, Cockpit's extra cost fell from about 9% to under 1%.
+- **Recurring review also catches PRs you commented on but haven't approved:** a "ship it" left as a comment no longer drops the PR from review-mode lists. Each unapproved head gets one review.
+- **Doc groups are at most two tiles wide:** a plan and its build session sit side by side instead of spanning the whole Running row.
+
+## [0.1.11] - 2026-10-20
+
+### Added
+- **Recurring review schedules:** a schedule can now run in review mode. Each slot lists the open PRs of the folder's GitHub repo that need you, and starts one Review session per PR whose latest commit isn't reviewed or being reviewed yet (shared with Auto-review, so a PR is never reviewed twice). Reviews still stop before publishing. The editor offers an "Each run" choice, and the history lists the PRs each run started.
+
+## [0.1.10] - 2026-10-19
+
+### Changed
+- **Repeat… sits beside the session title:** a quiet ↻ Repeat… link (Schedule… on a recurring run) instead of a button in the action row, which no longer wraps Mark done onto a second line. ⌘⇧R opens it from anywhere in the session.
+
+## [0.1.9] - 2026-10-19
+
+### Added
+- **Cron-like schedules for recurring sessions:** a visual builder (presets, then rows for minutes, hours, weekdays and days of month) plus an editable cron expression, with a plain-English label and the next five runs. "Every 5 min during work hours" is one click. Existing schedules keep working.
+- **"Only run when…" checks:** a recurring session can have a shell command that runs first, for free. Claude starts only when it exits 0 and prints something new since the last run, and what it printed goes into the prompt. Comes with presets (review requests, your PRs' reviews and CI, new commits on main). The list shows the last check: "checked 2m ago · no change · skipped 7×".
+- **Auto-review can watch chosen repos:** Settings → Sessions → Reviews → Also watch, for teams that never request reviewers.
+
+### Changed
+- A recurring run is skipped while the schedule's previous run is still going.
+- PR review/address suggestions and auto-review show only in the workspace that works in that repo.
+
+## [0.1.8] - 2026-10-19
+
+### Added
+- **Recurring sessions:** save a prompt, folder, workspace and cadence (daily, weekdays, chosen days, every N hours), and Cockpit starts a fresh session when it's due, catching up once on missed runs. Open them from ↻ Recurring on the Wall or the tray, or turn a session into one with **Repeat…**. Finished runs land on the Wall marked new. Cockpit can keep running in the background (tray icon, start at login).
+- **Doc groups:** on the Wall, a working doc and the sessions that plan and build it show as one group (▤ plan / ▤ build); the Overview nests them under the doc too. A session outside a group carries a chip naming its doc, and clicking it opens the doc.
+- **Plan and build stay in sync:** when one session changes the doc's question, design, scope or risk, the doc's other running sessions get a short note right away. Other changes wait and go in front of your next message to that session, even across a restart.
+- Copy button on every rendered text block: turns, code fences and view text.
+- The folder picker can create a folder that doesn't exist yet.
+- @ mentions list folders outside the session folder (`@~/`, `@../`, `@./`, `@/`), including paths with spaces.
+
+### Changed
+- PR review and address sessions archive themselves once the review is posted or the fixes are pushed.
+- ⌘K from inside a session starts the new one in the background instead of jumping to it.
+- Much faster start-up: archived sessions' history loads only when you open them.
+
+### Fixed
+- Sign in… runs `claude auth login`, closes by itself, and resends your message only once the sign-in actually took.
+
 ## [0.1.7] - 2026-10-16
 
 ### Fixed

@@ -2,7 +2,7 @@ import { useEffect, useReducer } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "./listen";
 import { initialState, reduce, replay } from "./reduce";
-import type { AppState, Attachment, MrEvent, PermissionMode } from "./types";
+import type { AppState, Attachment, Cadence, MrEvent, PermissionMode, ScheduleCheck } from "./types";
 import type { McpAddConfig, McpScope } from "../components/mcpAdd";
 
 export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string };
@@ -137,6 +137,8 @@ export const api = {
   prs: (cwd: string, mode: "review" | "address", repo?: string) => invoke<Pr[]>("gh_prs", { cwd, mode, repo }),
   ghRepo: (cwd: string) => invoke<string | null>("gh_repo", { cwd }),
   reviewState: (url: string) => invoke<unknown>("gh_review_state", { url }),
+  // Repos auto-review also scans (MR-170): the core validates them and logs ui.auto_review_repos_set.
+  autoReviewReposSet: (repos: string[]) => invoke<string[]>("auto_review_repos_set", { repos }),
   // Every message you send is acknowledged on screen right away (MR-58), then the session shows it's working.
   send: (session: string, text: string, attachments?: Attachment[]) => {
     const files = attachments?.length ? ` + ${attachments.length} file${attachments.length > 1 ? "s" : ""}` : "";
@@ -161,6 +163,7 @@ export const api = {
   mcpStatus: (session: string) => invoke("session_mcp_status", { session }),
   // @ mentions (MR-108): the files and folders in a session's folder, folders ending in /.
   paths: (cwd: string) => invoke<string[]>("session_paths", { cwd }),
+  mentionDir: (cwd: string, dir: string) => invoke<string[]>("mention_dir", { cwd, dir }),
   mcpAction: (session: string, server: string, action: "reconnect" | "enable" | "disable") => invoke("session_mcp_action", { session, server, action }),
   // Saved with `claude mcp add-json` in scope, then attached to the running session.
   mcpAdd: (session: string, server: string, scope: McpScope, config: McpAddConfig) => invoke("session_mcp_add", { session, server, scope, config }),
@@ -174,6 +177,14 @@ export const api = {
   /** Into another workspace, conversation and all (MR-154). */
   move: (session: string, workspace: string) => invoke("session_move", { session, workspace }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
+  // Recurring sessions (MR-167): saved, run and deleted by the core, which logs each.
+  scheduleSet: (schedule: Record<string, unknown>) => invoke<string>("schedule_set", { schedule }),
+  scheduleDelete: (id: string) => invoke("schedule_delete", { id }),
+  scheduleRunNow: (id: string) => invoke<string>("schedule_run_now", { id }),
+  schedulesNext: () => invoke<Record<string, number>>("schedules_next"),
+  schedulePreview: (cadence: Cadence) => invoke<number[]>("schedule_preview", { cadence }),
+  schedulesChecks: () => invoke<Record<string, ScheduleCheck>>("schedules_checks"),
+  setBackground: (mode: string) => invoke("background_set", { mode }),
   log: (kind: string, payload: Record<string, unknown>, sessionId?: string, anchor?: string) => invoke("event_append", { sessionId, kind, payload, anchor }),
 };
 

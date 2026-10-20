@@ -4,8 +4,10 @@
 
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type { McpServer, MrEvent } from "../state/types";
+import type { Cadence, McpServer, MrEvent } from "../state/types";
+import { cadenceExpr, nextRuns } from "../components/cron";
 import type { Doc } from "../state/docs";
+import { watchSlug } from "../state/prRepo";
 import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
 let seq = 0;
@@ -82,7 +84,8 @@ function scripted(sid: string, text: string): boolean {
     }
     const jump = /^snippet (\d+)$/.exec(text);
     if (jump && REVIEW_SNIPPETS[Number(jump[1]) - 1]) { later(500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[Number(jump[1]) - 1])); done("snippet"); return true; }
-    if (text === "publish" || text === "publish and approve") { later(500, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: text === "publish" ? "Published the review on PR #482." : "Published the review on PR #482 and approved it." }] } })); done("published"); return true; }
+    // Posted: Claude reports it and the core archives the session, nothing is left for you.
+    if (text === "publish" || text === "publish and approve") { later(500, () => { record("R", "flow.review_published", { pr: "#482", comments: 1, approved: text !== "publish" }); record("R", "ui.session_archived", { by: "review_published" }); }); done("published"); return true; }
     if (text.startsWith("note ")) { done("noted"); return true; }
     if (text === "ok") { later(1500, () => record("R", "flow.review_snippet", REVIEW_SNIPPETS[0])); later(1700, () => sdk(sid, { type: "result", is_error: false, result: "snippet", total_cost_usd: 0.04 })); return true; }
     if (text.startsWith("Add this to the review") || text.startsWith("About ")) { later(900, () => sdk(sid, { type: "assistant", message: { content: [{ type: "text", text: "Added to your review." }] } })); done("ok"); return true; }
@@ -224,6 +227,43 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       runAgent(sid, String(a.prompt ?? ""));
       return sid;
     }
+    // Recurring sessions (MR-167): logged like the core; Run now starts a scripted session tagged ↻.
+    case "schedule_set": {
+      const d = (a.schedule as Record<string, unknown>) ?? {};
+      if (!String(d.name ?? "").trim() || !String(d.prompt ?? "").trim()) throw "give it a name and a prompt";
+      const id = (d.id as string) || `sch${Date.now().toString(36)}`;
+      record(null, "ui.schedule_set", { ...d, id, workspace: d.workspace ?? "personal", permission_mode: d.permission_mode ?? "auto", paused: d.paused ?? false });
+      return id;
+    }
+    case "schedule_delete": record(null, "ui.schedule_deleted", { id: a.id }); return null;
+    case "schedules_next": {
+      const out: Record<string, number> = {};
+      for (const e of events) if (e.kind === "ui.schedule_set") out[String(e.payload.id)] = Date.now() + 3_600_000;
+      for (const e of events) if (e.kind === "ui.schedule_deleted" || (e.kind === "ui.schedule_set" && e.payload.paused)) delete out[String(e.payload.id)];
+      return out;
+    }
+    // MR-169: the next runs come from the same expressions; a gated schedule looks checked a minute ago.
+    case "schedule_preview": {
+      const c = a.cadence as Cadence;
+      const next = nextRuns(cadenceExpr(c), Date.now());
+      if (!next.length) throw "that never runs";
+      return next;
+    }
+    case "schedules_checks": {
+      const out: Record<string, unknown> = {};
+      for (const e of events) if (e.kind === "ui.schedule_set") { if (e.payload.check) out[String(e.payload.id)] = { at: Date.now() - 60_000, outcome: "same", skipped: 7, error: null }; else delete out[String(e.payload.id)]; }
+      return out;
+    }
+    case "schedule_run_now": {
+      const set = [...events].reverse().find((e) => e.kind === "ui.schedule_set" && e.payload.id === a.id);
+      if (!set) throw "that schedule was deleted";
+      const sid = `s${Date.now().toString(36)}`;
+      record(sid, "ui.session_requested", { cwd: set.payload.cwd, prompt: set.payload.prompt, kind: "blank", resume: null, workspace: set.payload.workspace ?? "personal", schedule: a.id });
+      record(sid, "schedule.fired", { id: a.id, session: sid, reason: "manual" });
+      runAgent(sid, String(set.payload.prompt ?? ""));
+      return sid;
+    }
+    case "background_set": record(null, "ui.background_set", { mode: a.mode }); return null;
     case "session_send": {
       const sid = String(a.session), text = String(a.text);
       record(sid, "ui.message_sent", { text });
@@ -300,6 +340,13 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     ];
     case "folder_exists": return /^(~|\/Users\/me)(\/(code(\/(shop|billing|cockpit))?|notes))?$/.test(String(a.path));
     case "folder_create": return String(a.path).replace(/^~/, "/Users/me");
+    // Watched repos (MR-170): validated and logged like the core's auto_review_repos_set.
+    case "auto_review_repos_set": {
+      const repos = ((a.repos as string[]) ?? []).map((r) => { const s = watchSlug(r); if (!s) throw new Error(`not a GitHub repo (owner/name): ${r}`); return s; })
+        .filter((r, i, all) => all.findIndex((x) => x.toLowerCase() === r.toLowerCase()) === i);
+      record(null, "ui.auto_review_repos_set", { repos });
+      return repos;
+    }
     case "gh_repo": return /shop|billing|cockpit/.test(String(a.cwd)) ? `acme/${String(a.cwd).split("/").pop()}` : null;
     case "gh_prs": if (a.repo && a.mode === "review") return [
       { number: 491, title: "Checkout: idempotent order ids", url: `https://github.com/${a.repo}/pull/491`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: a.repo }, reviewNote: "new changes since your review" },

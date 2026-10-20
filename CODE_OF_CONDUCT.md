@@ -4,4 +4,4 @@ This project follows the [Contributor Covenant, version 2.1](https://www.contrib
 
 **In short:** be kind, assume good intent, welcome newcomers, and keep criticism about the work, not the person. Harassment, insults, and personal or political attacks are not tolerated, in issues, pull requests, discussions or anywhere else the project is represented.
 
-**Reporting:** email [redacted]. Reports are handled confidentially, and maintainers may remove content or ban participants who break these rules.
+**Reporting:** contact a maintainer privately through [the getcockpit organisation](https://github.com/getcockpit) on GitHub. Reports are handled confidentially, and maintainers may remove content or ban participants who break these rules.
