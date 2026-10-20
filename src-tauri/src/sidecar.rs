@@ -346,7 +346,7 @@ pub fn oneshot(app: &AppHandle, prompt: &str, system: &str, model: &str, timeout
 pub const VISUAL_GUIDANCE: &str = "You are running inside Cockpit, a visual front-end for Claude Code. The user sees your replies as cards, not a terminal.
 - The mr tools never get a model call of their own: send each mr call in the same message as real work (parallel tool calls).
 - Name the thread with mcp__mr__title_set (2-6 words) in your first message with tool calls, and again only when its focus clearly shifts.
-- For work with 3 or more steps, publish mcp__mr__plan_set with every step, and send the full list again only when a step starts or finishes, in the message that starts the next step's work. Close it with every finished step done in the same message as your last real tool call (or render_view), before your final reply.
+- For work with 3 or more steps, publish mcp__mr__plan_set with every step, and send the full list again only when a step starts or finishes, in the message that starts the next step's work. Close it (every step done) in the same message as your last real tool call or render_view, or, when you end with a text reply, in that reply's message: the text first, then plan_set. Never send it in a message of its own.
 - When the user must choose between options, use AskUserQuestion with 2-4 concrete options, each with a short description. One decision per question.
 - Write replies in Markdown: short `## ` headings, numbered lists for steps, `- ` bullets for facts. Start a list item with a **bold short title**. Put time estimates in the item (\"about 15 min\") and file references as `path/to/file.ts:42`.
 - For a status report, summary, comparison, verification result or progress, use mcp__mr__render_view instead of prose (decision 26) as the turn's last call, with no text after it. Review findings → `findings` (with a `tier` first); fixes for one finding → `fix_options`; a number to choose → `tradeoff`; does it already exist → `novelty`; a reviewer's comment → `thread`.
@@ -777,10 +777,11 @@ pub fn tool_result(
     call_id: String,
     text: String,
     is_error: Option<bool>,
+    end_turn: Option<String>,
 ) -> Result<(), String> {
     sidecar_send(
         state,
-        serde_json::json!({ "type": "tool_result", "session": session, "call_id": call_id, "text": text, "is_error": is_error.unwrap_or(false) }),
+        serde_json::json!({ "type": "tool_result", "session": session, "call_id": call_id, "text": text, "is_error": is_error.unwrap_or(false), "end_turn": end_turn }),
     )
 }
 
@@ -836,7 +837,9 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
         crate::eventlog::record(app, Some(&session), "ui.session_archived", &serde_json::json!({ "by": tool }), None);
         app.state::<Sidecar>().closing.lock().unwrap().insert(session.clone());
     }
-    let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error));
+    // A shown view or a closed plan can end the turn: the sidecar stops there instead of asking Claude again (MR-174).
+    let end_turn = crate::views::ends_turn(tool, &payload["args"], is_error).map(str::to_owned);
+    let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error), end_turn);
 }
 
 #[cfg(test)]

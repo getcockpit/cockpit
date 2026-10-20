@@ -42,7 +42,16 @@ class Inbox implements AsyncIterable<UserMsg> {
 
 // dynamic: the servers this session runs beyond its config (mr, and any added from /mcp), since
 // setMcpServers replaces that whole set each time.
-type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; cwd: string; env?: Record<string, string>; dynamic: Record<string, unknown>; init: { skills: string[]; terminal: string[] }; switching: Promise<void>; pending: Map<string, (d: PermissionDecision) => void>; calls: Map<string, (r: { text: string; is_error?: boolean }) => void> };
+type Live = { inbox: Inbox; q: ReturnType<QueryFn> | null; cwd: string; env?: Record<string, string>; dynamic: Record<string, unknown>; init: { skills: string[]; terminal: string[] }; switching: Promise<void>; pending: Map<string, (d: PermissionDecision) => void>; calls: Map<string, (r: { text: string; is_error?: boolean }) => void>; endTurn?: "always" | "after_reply"; replied?: { id: string; text: boolean } };
+
+// Whether the main thread's latest assistant message has text: the SDK streams one message per
+// content block, all with the same id, before its tools run.
+function noteReply(s: Live, msg: unknown) {
+  const a = msg as { type?: string; parent_tool_use_id?: string | null; message?: { id?: string; content?: { type?: string; text?: string }[] } };
+  if (a.type !== "assistant" || a.parent_tool_use_id || !a.message?.id) return;
+  if (s.replied?.id !== a.message.id) s.replied = { id: a.message.id, text: false };
+  if (Array.isArray(a.message.content) && a.message.content.some((b) => b.type === "text" && !!b.text?.trim())) s.replied.text = true;
+}
 
 export class Sessions {
   private live = new Map<string, Live>();
@@ -72,7 +81,7 @@ export class Sessions {
       case "tool_result": return void this.with(m.session, (s) => {
         const r = s.calls.get(m.call_id);
         if (!r) return this.emit({ type: "error", session: m.session, error: `no pending tool call ${m.call_id}` });
-        s.calls.delete(m.call_id); r({ text: m.text, is_error: m.is_error });
+        s.calls.delete(m.call_id); if (m.end_turn && s.endTurn !== "always") s.endTurn = m.end_turn; r({ text: m.text, is_error: m.is_error });
       });
     }
   }
@@ -199,6 +208,15 @@ export class Sessions {
       systemPrompt: m.append_system_prompt ? { type: "preset", preset: "claude_code", append: m.append_system_prompt } : undefined,
       mcpServers: mcpServer ? { mr: mcpServer } : undefined,
       permissionMode: m.permission_mode,
+      // A tool result the core marked end_turn stops the turn once its batch is done, so Claude
+      // doesn't spend one more call re-reading the context only to stop (MR-174): a shown view
+      // always, a closed plan only if the same message already holds Claude's reply text.
+      // Subagent batches never stop the main turn; they only clear the flag.
+      hooks: mcpServer ? { PostToolBatch: [{ hooks: [async (input: { agent_id?: string }) => {
+        const stop = !input.agent_id && (s.endTurn === "always" || (s.endTurn === "after_reply" && !!s.replied?.text));
+        s.endTurn = undefined;
+        return stop ? { continue: false } : {};
+      }] }] } : undefined,
       canUseTool: (tool: string, input: Record<string, unknown>, opts: { signal?: AbortSignal; suggestions?: unknown[]; decisionReason?: string; mcpServer?: { name: string; source: string } }) =>
         new Promise<PermissionDecision>((resolve) => {
           const request_id = `p${++this.seq}`;
@@ -220,6 +238,7 @@ export class Sessions {
             this.emit({ type: "session_started", session: m.session, sdk_session_id: x.session_id ?? "", model: x.model, cwd: x.cwd });
           }
           this.emit({ type: "sdk", session: m.session, message: msg });
+          noteReply(s, msg);
           // The / menu needs descriptions, which init doesn't carry: ask once the session is up.
           if (isInit) void this.commands(m.session, s);
           // One prompt per turn: when a turn finishes and nothing more is queued, the session stays open for `send`.
