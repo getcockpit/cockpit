@@ -743,3 +743,16 @@ test("a doc-change note from Cockpit shows in the transcript as from the doc, no
   expect(queued.transcript.some((t) => t.kind === "user" && t.via === "doc")).toBe(false);
   expect(s.status).toBe("working");
 });
+
+describe("spawned sessions (MR-176)", () => {
+  const ev = (id: string, sid: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: sid, kind, payload, anchor: null, created_at: 1 });
+  test("a session requested with a parent names it; one you start doesn't", () => {
+    const st = replay([
+      ev("A1", "p", "ui.session_requested", { prompt: "Plan the launch", cwd: "/w" }),
+      ev("A2", "c", "ui.session_requested", { prompt: "Write the changelog", cwd: "/w", parent: "p" }),
+      ev("A3", "c", "ui.session_requested", { prompt: "Continue", cwd: "/w", resume: "sdk" }),
+    ]);
+    expect(st.sessions.c.spawnedBy).toEqual({ id: "p", title: "Plan the launch" });
+    expect(st.sessions.p.spawnedBy).toBeNull();
+  });
+});
