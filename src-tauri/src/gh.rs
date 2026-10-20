@@ -27,7 +27,7 @@ fn mine_query(scope: &str) -> String {
 
 // Open PRs in one repo that aren't mine, with when I last reviewed each and its newest commit (MR-81).
 fn unreviewed_query(repo: &str) -> String {
-    format!("query {{ search(query: \"is:pr is:open -author:@me archived:false repo:{repo}\", type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft author {{ login }} repository {{ nameWithOwner }} viewerLatestReview {{ submittedAt }} commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }} }} }} }} }}")
+    format!("query {{ search(query: \"is:pr is:open -author:@me archived:false repo:{repo}\", type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft author {{ login }} repository {{ nameWithOwner }} headRefOid viewerLatestReview {{ submittedAt }} commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }} }} }} }} }}")
 }
 
 /// What's worth reviewing in one repo: PRs I've never reviewed, and PRs with commits newer than
@@ -39,21 +39,31 @@ pub fn rank_unreviewed(data: &serde_json::Value) -> serde_json::Value {
         .filter_map(|mut p| {
             let mine = p["viewerLatestReview"]["submittedAt"].as_str().map(str::to_owned);
             let last = p["commits"]["nodes"][0]["commit"]["committedDate"].as_str().map(str::to_owned);
-            let (tier, note) = match (mine, last) {
+            let (tier, note) = match (mine, last.clone()) {
                 (None, _) => (1, "not reviewed yet"),
                 // RFC 3339 UTC timestamps from GitHub compare correctly as strings.
                 (Some(r), Some(c)) if c > r => (0, "new changes since your review"),
                 _ => return None,
             };
             p["reviewNote"] = note.into();
+            // What a recurring review dedupes on (MR-171): the head it would review, and when it was made.
+            p["headSha"] = p["headRefOid"].clone();
+            p["lastCommitAt"] = last.into();
             let o = p.as_object_mut()?;
             o.remove("viewerLatestReview");
             o.remove("commits");
+            o.remove("headRefOid");
             Some((tier, p))
         })
         .collect();
     prs.sort_by(|(ta, a), (tb, b)| ta.cmp(tb).then_with(|| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str())));
     prs.into_iter().map(|(_, p)| p).collect::<Vec<_>>().into()
+}
+
+/// Every PR in `repo` that needs my review, ranked (`rank_unreviewed`), from the folder `cwd`.
+pub fn unreviewed(cwd: &str, repo: &str) -> Result<serde_json::Value, String> {
+    let repo = safe_slug(repo).ok_or_else(|| format!("not a GitHub repo: {repo}"))?;
+    Ok(rank_unreviewed(&gh(cwd, &["api", "graphql", "-f", &format!("query={}", unreviewed_query(repo))])?["data"]))
 }
 
 /// `owner/name` made only of the characters GitHub allows, so it's safe inside a search query.
@@ -99,7 +109,7 @@ pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>) -
     };
     match mode.as_str() {
         "review" => match repo {
-            Some(r) => Ok(rank_unreviewed(&gh(&cwd, &["api", "graphql", "-f", &format!("query={}", unreviewed_query(r))])?["data"])),
+            Some(r) => unreviewed(&cwd, r),
             None => gh(&cwd, &["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"]),
         },
         "address" => {
@@ -263,6 +273,8 @@ mod tests {
         assert_eq!(r[0]["reviewNote"], "new changes since your review");
         assert_eq!(r[1]["reviewNote"], "not reviewed yet");
         assert!(r[0].get("commits").is_none() && r[0].get("viewerLatestReview").is_none());
+        assert_eq!(r[0]["lastCommitAt"], "2026-10-02T10:00:00Z");
+        assert!(unreviewed_query("a/b").contains("headRefOid"));
         assert!(unreviewed_query("a/b").contains("-author:@me archived:false repo:a/b\""));
     }
 
