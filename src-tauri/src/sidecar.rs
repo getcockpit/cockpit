@@ -120,6 +120,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
                             if let Some(id) = session.as_deref() {
                                 crate::schedules::on_turn_end(&handle, id, &payload["message"]);
+                                crate::spawn::on_turn_end(&handle, id, &payload["message"]);
                                 relay_doc_changes(&handle, id);
                                 if handle.state::<Sidecar>().closing.lock().unwrap().remove(id) {
                                     let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": id }));
@@ -484,7 +485,11 @@ pub fn start_with(
     if let Some(p) = &started.parent {
         payload["parent"] = p.clone().into();
     }
-    let spawned = started.parent.is_some() || (resume.is_some() && crate::spawn::spawned_by(&app.state::<crate::eventlog::EventLog>().list(Some(&session), None, 100_000).unwrap_or_default()).is_some());
+    let parent = started.parent.clone().or_else(|| resume.as_ref().and_then(|_| crate::spawn::spawned_by(&app.state::<crate::eventlog::EventLog>().list(Some(&session), None, 100_000).unwrap_or_default())));
+    let spawned = parent.is_some();
+    if let Some(p) = parent {
+        crate::spawn::remember(&session, &p, &prompt); // its turns report back to the parent
+    }
     // What the session compacts at, so usage reports can tell sessions apart (I63).
     let compact = compact_window(&app);
     payload["compact_window"] = compact.into();
@@ -560,6 +565,17 @@ pub fn start_with(
     Ok(session)
 }
 
+pub fn is_live(app: &AppHandle, session: &str) -> bool {
+    app.state::<Sidecar>().live.lock().unwrap().contains(session)
+}
+
+/// Sends `text` to a running `session` as a message: it starts a turn, or joins the one going.
+pub fn send_to_live(app: &AppHandle, session: &str, text: &str) -> Result<(), String> {
+    let state = app.state::<Sidecar>();
+    state.idle.lock().unwrap().remove(session);
+    sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }))
+}
+
 #[tauri::command]
 pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, text: String, attachments: Option<Vec<serde_json::Value>>) -> Result<(), String> {
     let live = state.live.lock().unwrap().contains(&session);
@@ -572,6 +588,11 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     let mut before = String::new();
     for (doc_id, note) in app.state::<crate::docs::Docs>().waiting_for(&session) {
         crate::eventlog::record(&app, Some(&session), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "text": note, "waited": true }), Some(&format!("doc:{doc_id}")));
+        before.push_str(&note);
+        before.push_str("\n\n");
+    }
+    for (waited, note) in crate::spawn::waiting_for(&app, &session) {
+        crate::eventlog::record(&app, Some(&session), "session.child_report", &serde_json::json!({ "child": waited.1, "text": note, "waited": waited.0 }), None);
         before.push_str(&note);
         before.push_str("\n\n");
     }

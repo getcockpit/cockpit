@@ -756,3 +756,14 @@ describe("spawned sessions (MR-176)", () => {
     expect(st.sessions.p.spawnedBy).toBeNull();
   });
 });
+
+describe("spawned session reports (MR-178)", () => {
+  test("a child's report shows in the parent's transcript as from the child, not from you", () => {
+    const st = replay([
+      { id: "A1", session_id: "p", kind: "ui.session_requested", payload: { prompt: "Plan", cwd: "/w" }, anchor: null, created_at: 1 },
+      { id: "A2", session_id: "p", kind: "session.child_report", payload: { child: "c", text: "[Report from spawned session \"x\" (c), which finished a turn]\nDone" }, anchor: null, created_at: 2 },
+    ]);
+    const last = st.sessions.p.transcript.at(-1);
+    expect(last).toMatchObject({ kind: "user", via: "child" });
+  });
+});

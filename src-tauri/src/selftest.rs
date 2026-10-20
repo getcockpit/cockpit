@@ -196,7 +196,7 @@ pub fn run(app: AppHandle) {
             } else if resume_mode() || move_mode() {
                 "Remember this secret word for later: PINEAPPLE. Reply with exactly: OK".into()
             } else if spawn_mode() {
-                "This is a UI test. Use the mr session_spawn tool to start one session with worktree false and the prompt 'This is a UI test. Reply with exactly: CHILD DONE'. Then reply with exactly: SELFTEST DONE".into()
+                "This is a UI test. Use the mr session_spawn tool to start one session with worktree false and the prompt 'This is a UI test. Reply with exactly: CHILD DONE'. Then reply with exactly: SELFTEST DONE. Later, when that session's report reaches you, reply with exactly: PARENT GOT IT".into()
             } else if title_mode() {
                 // No tool or format named: the guidance alone should give a title and proposed replies (MR-63).
                 "Create a file notes.txt in the current directory containing one line about rust lifetimes, then tell me in one sentence what you did.".into()
@@ -269,8 +269,8 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(800)).await; app.exit(0); });
         }
-        Some("sdk") if payload["message"]["type"] == "result" && spawn_mode() && payload["message"]["result"].as_str().unwrap_or_default().contains("CHILD DONE") => {
-            // The spawned session finished its turn (MR-176); the script checks the log.
+        Some("sdk") if payload["message"]["type"] == "result" && spawn_mode() && payload["message"]["result"].as_str().unwrap_or_default().contains("PARENT GOT IT") => {
+            // The child's report came back to the parent (MR-178); the script checks the log.
             let app = app.clone();
             tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(800)).await; app.exit(0); });
         }
@@ -479,7 +479,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
             let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "Keep it simple: this is a throwaway test folder and either name is fine by me. Now ask me again.".into(), None);
         }
-        // The parent's own turn: keep running until the spawned session is done.
+        // Any other turn: keep running until the child's report reaches the parent.
         Some("sdk") if payload["message"]["type"] == "result" && spawn_mode() => {}
         Some("sdk") if payload["message"]["type"] == "result" => {
             let ok = payload["message"]["is_error"] == false;
