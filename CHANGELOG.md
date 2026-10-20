@@ -4,6 +4,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-20
+
+### Changed
+- **Less usage overhead:** a card or a finished plan now ends Claude's turn on the spot, instead of Claude spending one more call (a full re-read of the context) just to stop. In a benchmark against plain `claude -p`, Cockpit's extra cost fell from about 9% to under 1%.
+- **Recurring review also catches PRs you commented on but haven't approved:** a "ship it" left as a comment no longer drops the PR from review-mode lists. Each unapproved head gets one review.
+- **Doc groups are at most two tiles wide:** a plan and its build session sit side by side instead of spanning the whole Running row.
+
 ## [0.1.11] - 2026-10-20
 
 ### Added
