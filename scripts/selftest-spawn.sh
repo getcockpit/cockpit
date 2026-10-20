@@ -20,6 +20,8 @@ need() { [ "$(sqlite3 "$db" "$1")" != "0" ] || { echo "FAILED: $2"; exit 1; }; }
 none() { [ "$(sqlite3 "$db" "$1")" = "0" ] || { echo "FAILED: $2"; exit 1; }; }
 [ -n "$child" ] || { echo "FAILED: the parent never spawned a session"; exit 1; }
 need "SELECT COUNT(*) FROM events WHERE session_id='$child' AND kind='ui.session_requested' AND json_extract(payload,'$.parent')='$parent'" "the child doesn't name its parent"
+need "SELECT COUNT(*) FROM events WHERE session_id='$child' AND kind='ui.session_requested' AND json_extract(payload,'$.kind')='blank'" "a spawn with no kind isn't a blank session (MR-181)"
+need "SELECT COUNT(*) FROM events WHERE session_id='$parent' AND kind='session.spawned' AND json_extract(payload,'$.kind')='blank'" "session.spawned doesn't record the kind (MR-181)"
 need "SELECT COUNT(*) FROM events WHERE session_id='$child' AND json_extract(payload,'$.message.result') LIKE '%CHILD DONE%'" "the child never finished its turn"
 tools="json_extract(payload,'$.message.tools')"
 need "SELECT COUNT(*) FROM events WHERE session_id='$parent' AND json_extract(payload,'$.message.subtype')='init' AND $tools LIKE '%session_spawn%'" "the parent wasn't offered session_spawn"
