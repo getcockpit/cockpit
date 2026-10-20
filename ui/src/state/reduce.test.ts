@@ -698,6 +698,19 @@ test("moving a session puts it in the other workspace, and a resume keeps it the
   expect(st.order).toEqual(["s1"]);
 });
 
+test("a move asked mid-turn waits for the turn, can be cancelled, and says why it failed (MR-177)", () => {
+  const e = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s1", kind, payload, anchor: null, created_at: Number(id.slice(1)) });
+  const base = [e("Q1", "ui.session_requested", { prompt: "p", cwd: "/w" }), e("Q2", "ui.session_move_queued", { from: "personal", to: "ws_a" })];
+  const queued = replay(base).sessions.s1;
+  expect(queued.moveTo).toBe("ws_a");
+  expect(queued.workspace).toBe("personal");
+  const moved = replay([...base, e("Q3", "ui.session_moved", { from: "personal", to: "ws_a", copied: 1 })]).sessions.s1;
+  expect([moved.workspace, moved.moveTo]).toEqual(["ws_a", null]);
+  expect(replay([...base, e("Q3", "ui.session_move_cancelled", { to: "ws_a" })]).sessions.s1.moveTo).toBeNull();
+  const failed = replay([...base, e("Q3", "ui.session_move_failed", { to: "ws_a", error: "it didn't stop in time; try again" })]).sessions.s1;
+  expect([failed.workspace, failed.moveTo, failed.moveFailed]).toEqual(["personal", null, "it didn't stop in time; try again"]);
+});
+
 describe("expired sign-in (MR-153)", () => {
   let n = 0;
   const ev = (kind: string, payload: Record<string, unknown>): MrEvent => ({ id: `L${String(++n).padStart(3, "0")}`, session_id: "S", kind, payload, anchor: null, created_at: n });
@@ -754,5 +767,16 @@ describe("spawned sessions (MR-176)", () => {
     ]);
     expect(st.sessions.c.spawnedBy).toEqual({ id: "p", title: "Plan the launch" });
     expect(st.sessions.p.spawnedBy).toBeNull();
+  });
+});
+
+describe("spawned session reports (MR-178)", () => {
+  test("a child's report shows in the parent's transcript as from the child, not from you", () => {
+    const st = replay([
+      { id: "A1", session_id: "p", kind: "ui.session_requested", payload: { prompt: "Plan", cwd: "/w" }, anchor: null, created_at: 1 },
+      { id: "A2", session_id: "p", kind: "session.child_report", payload: { child: "c", text: "[Report from spawned session \"x\" (c), which finished a turn]\nDone" }, anchor: null, created_at: 2 },
+    ]);
+    const last = st.sessions.p.transcript.at(-1);
+    expect(last).toMatchObject({ kind: "user", via: "child" });
   });
 });

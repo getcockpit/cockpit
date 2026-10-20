@@ -24,6 +24,8 @@ export type OverviewBlock = {
   sig?: string;
   // A session that plans or builds a doc sits right under that doc's block (MR-168).
   parent?: string; role?: "plan" | "build";
+  // A session another one spawned sits right under its parent's block (MR-179).
+  spawned?: boolean;
 };
 
 export type Counts = { needs: number; resume: number; progress: number; review: number };
@@ -273,10 +275,22 @@ export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs:
         return { ...groups[g].splice(i, 1)[0], parent: doc.id, role };
       }));
     }
+    // Spawned sessions leave their column too and follow their parent's block, wherever it is (MR-179).
+    const placed = new Set([...GROUPS.flatMap((g) => groups[g]), ...[...children.values()].flat()].filter((b) => b.kind === "session").map((b) => b.id));
+    const kids = new Map<string, OverviewBlock[]>();
+    for (const g of GROUPS) {
+      groups[g] = groups[g].filter((b) => {
+        const p = b.kind === "session" ? state.sessions[b.id]?.spawnedBy?.id : undefined;
+        if (!p || !placed.has(p) || p === b.id) return true;
+        kids.set(p, [...(kids.get(p) ?? []), { ...b, parent: p, spawned: true }]);
+        return false;
+      });
+    }
+    const withKids = (b: OverviewBlock) => [b, ...(b.kind === "session" ? kids.get(b.id) ?? [] : [])];
     // Anything waiting on you goes first in its group (a doc with its sessions counts as one);
     // otherwise the order things started in.
     for (const g of GROUPS) {
-      const units = groups[g].map((b) => [b, ...(b.kind === "doc" ? children.get(b.id) ?? [] : [])]);
+      const units = groups[g].map((b) => [...withKids(b), ...(b.kind === "doc" ? (children.get(b.id) ?? []).flatMap(withKids) : [])]);
       units.sort((a, b) => Number(b.some((x) => x.needs)) - Number(a.some((x) => x.needs)));
       groups[g] = units.flat();
     }

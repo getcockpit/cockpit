@@ -4,6 +4,22 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-10-20
+
+### Changed
+- **Spawned sessions sit with their parent:** on the Wall, a session and the sessions it spawned form one group, drawn like a doc and its sessions: a header naming the parent over the children's tiles, each tagged "↳ spawned". Groups share a row, and single sessions get the row below. On the Overview, a spawned session sits under its parent.
+- **Recurring sessions and suggestions stay in their workspace:** the Wall's Recurring count and list show only the current workspace's schedules, and workspace-specific suggestions only show where they apply.
+
+## [0.1.13] - 2026-10-20
+
+### Added
+- **Sessions can start sessions:** Claude can hand independent work to a new Cockpit session with the `session_spawn` tool, with no approval needed. It picks the folder, the workspace and whether the new session gets its own worktree. Spawned sessions show ↳ on the Wall with their parent's name, can't spawn more, and count toward the session cap.
+- **Spawned sessions report back:** each turn a spawned session finishes sends its reply to the session that started it ("↳ child →"). If the parent has stopped, the report waits for your next message to it.
+- **Move a working session:** moving a session that's mid-turn to another workspace is queued until its turn ends, instead of being refused. Cancel it from the same menu.
+
+### Changed
+- **Recurring sessions are generic:** the schedule editor no longer has a PR review mode or PR presets; a recurring session runs any prompt.
+
 ## [0.1.12] - 2026-10-20
 
 ### Changed

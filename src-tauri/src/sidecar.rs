@@ -21,6 +21,8 @@ pub struct Sidecar {
     closing: Mutex<std::collections::HashSet<String>>,
     /// Sessions started in a mode of their own (a recurring run's, MR-167) until you set one for all.
     modes: Mutex<std::collections::HashMap<String, String>>,
+    /// Moves asked for mid-turn (MR-177), by session: the workspace it goes to once the turn ends.
+    moving: Mutex<std::collections::HashMap<String, String>>,
 }
 
 /// How many sessions may be mid-turn at once when nothing else says (MR-105; was 6, decision 14).
@@ -106,6 +108,10 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                             if let Some(id) = payload["session"].as_str() {
                                 handle.state::<Sidecar>().live.lock().unwrap().remove(id);
                                 handle.state::<Sidecar>().idle.lock().unwrap().remove(id);
+                                // Ended before its turn did (interrupted, stopped): the queued move happens now.
+                                if let Some(to) = handle.state::<Sidecar>().moving.lock().unwrap().remove(id) {
+                                    apply_queued_move(&handle, id, to);
+                                }
                             }
                         }
                         if let (Some(id), Some(working)) = (session.as_deref(), (payload["type"] == "sdk").then(|| turn_signal(&payload["message"])).flatten()) {
@@ -120,11 +126,15 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
                             if let Some(id) = session.as_deref() {
                                 crate::schedules::on_turn_end(&handle, id, &payload["message"]);
+                                crate::spawn::on_turn_end(&handle, id, &payload["message"]);
                                 relay_doc_changes(&handle, id);
                                 if handle.state::<Sidecar>().closing.lock().unwrap().remove(id) {
                                     let _ = sidecar_send(handle.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": id }));
                                 } else {
                                     crate::cockpit_layer::after_turn(handle.clone(), id.to_owned());
+                                }
+                                if let Some(to) = handle.state::<Sidecar>().moving.lock().unwrap().remove(id) {
+                                    apply_queued_move(&handle, id, to);
                                 }
                             }
                         }
@@ -140,6 +150,7 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 CommandEvent::Terminated(status) => {
                     handle.state::<Sidecar>().live.lock().unwrap().clear();
                     handle.state::<Sidecar>().idle.lock().unwrap().clear();
+                    handle.state::<Sidecar>().moving.lock().unwrap().clear();
                     let payload = serde_json::json!({ "type": "terminated", "code": status.code });
                     crate::eventlog::record(&handle, None, "sidecar.terminated", &payload, None);
                     let _ = handle.emit("sidecar", payload);
@@ -484,7 +495,11 @@ pub fn start_with(
     if let Some(p) = &started.parent {
         payload["parent"] = p.clone().into();
     }
-    let spawned = started.parent.is_some() || (resume.is_some() && crate::spawn::spawned_by(&app.state::<crate::eventlog::EventLog>().list(Some(&session), None, 100_000).unwrap_or_default()).is_some());
+    let parent = started.parent.clone().or_else(|| resume.as_ref().and_then(|_| crate::spawn::spawned_by(&app.state::<crate::eventlog::EventLog>().list(Some(&session), None, 100_000).unwrap_or_default())));
+    let spawned = parent.is_some();
+    if let Some(p) = parent {
+        crate::spawn::remember(&session, &p, &prompt); // its turns report back to the parent
+    }
     // What the session compacts at, so usage reports can tell sessions apart (I63).
     let compact = compact_window(&app);
     payload["compact_window"] = compact.into();
@@ -560,6 +575,17 @@ pub fn start_with(
     Ok(session)
 }
 
+pub fn is_live(app: &AppHandle, session: &str) -> bool {
+    app.state::<Sidecar>().live.lock().unwrap().contains(session)
+}
+
+/// Sends `text` to a running `session` as a message: it starts a turn, or joins the one going.
+pub fn send_to_live(app: &AppHandle, session: &str, text: &str) -> Result<(), String> {
+    let state = app.state::<Sidecar>();
+    state.idle.lock().unwrap().remove(session);
+    sidecar_send(state, serde_json::json!({ "type": "send", "session": session, "text": text }))
+}
+
 #[tauri::command]
 pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, text: String, attachments: Option<Vec<serde_json::Value>>) -> Result<(), String> {
     let live = state.live.lock().unwrap().contains(&session);
@@ -572,6 +598,11 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     let mut before = String::new();
     for (doc_id, note) in app.state::<crate::docs::Docs>().waiting_for(&session) {
         crate::eventlog::record(&app, Some(&session), "doc.relay", &serde_json::json!({ "doc_id": doc_id, "text": note, "waited": true }), Some(&format!("doc:{doc_id}")));
+        before.push_str(&note);
+        before.push_str("\n\n");
+    }
+    for (waited, note) in crate::spawn::waiting_for(&app, &session) {
+        crate::eventlog::record(&app, Some(&session), "session.child_report", &serde_json::json!({ "child": waited.1, "text": note, "waited": waited.0 }), None);
         before.push_str(&note);
         before.push_str("\n\n");
     }
@@ -634,12 +665,15 @@ fn resume_info(app: &AppHandle, session: &str) -> Option<(String, String, String
 
 /// Moves a session to another workspace (MR-154): copies its Claude conversation into that
 /// workspace's Claude folder, so it resumes there with that workspace's sign-in and memory, and
-/// logs `ui.session_moved`. A session waiting for you is stopped first; one mid-turn can't move.
+/// logs `ui.session_moved`. A session waiting for you is stopped first. One mid-turn is queued
+/// instead (MR-177, `ui.session_move_queued`) and moves when its turn ends; asking to move it back
+/// where it is cancels that. Returns "moved", "queued" or "unchanged".
 #[tauri::command(async)]
-pub fn session_move(app: AppHandle, session: String, workspace: String) -> Result<(), String> {
+pub fn session_move(app: AppHandle, session: String, workspace: String) -> Result<String, String> {
     let from = crate::workspaces::workspace_of(&app, &session);
     if from == workspace {
-        return Ok(());
+        session_move_cancel(app, session)?;
+        return Ok("unchanged".into());
     }
     let target = crate::workspaces::claude_home(&app, &workspace)?;
     if workspace != crate::workspaces::PERSONAL && !target.is_dir() {
@@ -649,10 +683,13 @@ pub fn session_move(app: AppHandle, session: String, workspace: String) -> Resul
         return Err(ELSEWHERE.into());
     }
     let state = app.state::<Sidecar>();
+    if mid_turn(&app, &session) {
+        state.moving.lock().unwrap().insert(session.clone(), workspace.clone());
+        crate::eventlog::record(&app, Some(&session), "ui.session_move_queued", &serde_json::json!({ "from": from, "to": workspace }), None);
+        return Ok("queued".into());
+    }
+    state.moving.lock().unwrap().remove(&session);
     if state.live.lock().unwrap().contains(&session) {
-        if !state.idle.lock().unwrap().contains(&session) {
-            return Err("it's working: wait for its turn to end, or interrupt it, then move it".into());
-        }
         sidecar_send(app.state::<Sidecar>(), serde_json::json!({ "type": "stop", "session": session }))?;
         // Wait for it to end, so its transcript is complete before it's copied.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -669,7 +706,27 @@ pub fn session_move(app: AppHandle, session: String, workspace: String) -> Resul
         None => 0,
     };
     crate::eventlog::record(&app, Some(&session), "ui.session_moved", &serde_json::json!({ "from": from, "to": workspace, "copied": copied }), None);
+    Ok("moved".into())
+}
+
+/// Drops a move queued mid-turn (MR-177); logs `ui.session_move_cancelled` if there was one.
+#[tauri::command]
+pub fn session_move_cancel(app: AppHandle, session: String) -> Result<(), String> {
+    if let Some(to) = app.state::<Sidecar>().moving.lock().unwrap().remove(&session) {
+        crate::eventlog::record(&app, Some(&session), "ui.session_move_cancelled", &serde_json::json!({ "to": to }), None);
+    }
     Ok(())
+}
+
+/// Runs a queued move once the turn is over, off the reader thread: the move waits for the
+/// session to end, which arrives on that thread. A failure is logged as `ui.session_move_failed`.
+fn apply_queued_move(app: &AppHandle, session: &str, to: String) {
+    let (app, session) = (app.clone(), session.to_owned());
+    std::thread::spawn(move || {
+        if let Err(error) = session_move(app.clone(), session.clone(), to.clone()) {
+            crate::eventlog::record(&app, Some(&session), "ui.session_move_failed", &serde_json::json!({ "to": to, "error": error }), None);
+        }
+    });
 }
 
 /// Asks a running session for its slash commands and skills (the / menu); the answer arrives as `sidecar.commands`.

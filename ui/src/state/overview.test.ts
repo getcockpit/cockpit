@@ -26,6 +26,18 @@ function probe(): MrEvent[] {
 const doc = (id: string, session: string | null, extra: Partial<Doc> = {}): Doc => ({ id, title: id, session_id: session, version: 1, blocks: {}, pending_notes: [], pending_changes: [], ...extra });
 const question = { q: { id: "q", section: "question", status: "draft", takeaway: "Which?", key: "", body: "", data: null, order: 0, decision: null, updated: "" } };
 
+describe("Overview spawned sessions (MR-179)", () => {
+  const spawn = (id: string, parent: string) => [ev("ui.session_requested", { prompt: id, cwd: "/w", workspace: "personal", parent }, id), ev("sidecar.session_started", { sdk_session_id: `sdk-${id}`, model: "m" }, id)];
+  it("puts a spawned session right under its parent, even from another column, and keeps orphans in their own", () => {
+    const st = replay([...start("par", "personal"), todos("par", 1, 3), ...start("other", "personal"), todos("other", 1, 3), ...spawn("kid", "par"), todos("kid", 3, 3), result("kid"), ...spawn("orphan", "gone"), todos("orphan", 1, 3)]);
+    const p = overview(st, [], {}).find((a) => a.workspace === "personal")!.groups.progress;
+    const ids = p.map((b) => b.id);
+    expect(ids.indexOf("kid")).toBe(ids.indexOf("par") + 1);
+    expect(p.find((b) => b.id === "kid")).toMatchObject({ parent: "par", spawned: true });
+    expect(p.find((b) => b.id === "orphan")?.spawned).toBeUndefined();
+  });
+});
+
 describe("Overview grouping (decision 40)", () => {
   const events = [
     ev("ui.workspace_created", { id: "ws_b", name: "Client B", config_dir: "/x" }),

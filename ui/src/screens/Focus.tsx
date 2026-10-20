@@ -307,7 +307,7 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
       ) : t.kind === "view" ? (
         <CatalogView key={t.id} id={t.id} title={t.title} blocks={t.blocks} onReply={onReply} onDiscover={onDiscover} live={live && t.id === lastTextId} />
       ) : t.kind === "user" ? (
-        <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)", alignItems: "flex-start" }}><span className="mr-mono mr-dim" data-mr="UserFrom" data-mr-source={t.id}>{t.via === "doc" ? "▤ doc →" : "you →"}</span><span className="mr-grow" style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>{t.text && <UserText text={t.text} commands={commands} />}{t.attachments && <AttachmentRow items={t.attachments} big />}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
+        <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)", alignItems: "flex-start" }}><span className="mr-mono mr-dim" data-mr="UserFrom" data-mr-source={t.id}>{t.via === "doc" ? "▤ doc →" : t.via === "child" ? "↳ child →" : "you →"}</span><span className="mr-grow" style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>{t.text && <UserText text={t.text} commands={commands} />}{t.attachments && <AttachmentRow items={t.attachments} big />}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
       ) : t.kind === "result" ? (
         <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}</div>
       ) : t.kind === "tools" ? (

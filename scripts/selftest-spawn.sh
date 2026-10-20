@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check with real Claude (spends a little usage): a session starts another with the mr
-# session_spawn tool (MR-176); the child runs, names its parent, and isn't offered the tool itself.
+# session_spawn tool (MR-176); the child runs, names its parent, and isn't offered the tool itself;
+# its reply comes back to the parent, which answers it (MR-178).
 set -euo pipefail
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 export PATH="$HOME/.bun/bin:$HOME/.local/share/mise/shims:$HOME/.local/share/mise/installs/bun/latest/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -19,8 +20,12 @@ need() { [ "$(sqlite3 "$db" "$1")" != "0" ] || { echo "FAILED: $2"; exit 1; }; }
 none() { [ "$(sqlite3 "$db" "$1")" = "0" ] || { echo "FAILED: $2"; exit 1; }; }
 [ -n "$child" ] || { echo "FAILED: the parent never spawned a session"; exit 1; }
 need "SELECT COUNT(*) FROM events WHERE session_id='$child' AND kind='ui.session_requested' AND json_extract(payload,'$.parent')='$parent'" "the child doesn't name its parent"
+need "SELECT COUNT(*) FROM events WHERE session_id='$child' AND kind='ui.session_requested' AND json_extract(payload,'$.kind')='blank'" "a spawn with no kind isn't a blank session (MR-181)"
+need "SELECT COUNT(*) FROM events WHERE session_id='$parent' AND kind='session.spawned' AND json_extract(payload,'$.kind')='blank'" "session.spawned doesn't record the kind (MR-181)"
 need "SELECT COUNT(*) FROM events WHERE session_id='$child' AND json_extract(payload,'$.message.result') LIKE '%CHILD DONE%'" "the child never finished its turn"
 tools="json_extract(payload,'$.message.tools')"
 need "SELECT COUNT(*) FROM events WHERE session_id='$parent' AND json_extract(payload,'$.message.subtype')='init' AND $tools LIKE '%session_spawn%'" "the parent wasn't offered session_spawn"
 none "SELECT COUNT(*) FROM events WHERE session_id='$child' AND json_extract(payload,'$.message.subtype')='init' AND $tools LIKE '%session_spawn%'" "the child was offered session_spawn"
+need "SELECT COUNT(*) FROM events WHERE session_id='$parent' AND kind='session.child_report' AND json_extract(payload,'$.child')='$child' AND json_extract(payload,'$.text') LIKE '%CHILD DONE%'" "the child's reply never reached the parent"
+need "SELECT COUNT(*) FROM events WHERE session_id='$parent' AND json_extract(payload,'$.message.result') LIKE '%PARENT GOT IT%'" "the parent never answered the report"
 echo "SELFTEST SPAWN PASSED ($db)"

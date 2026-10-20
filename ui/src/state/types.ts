@@ -21,7 +21,7 @@ export type Question = { question: string; header: string; options: { label: str
 export type TranscriptItem = (
   | { kind: "text"; id: string; text: string; at: number }
   | { kind: "tool"; id: string; toolUseId: string; name: string; input: Record<string, unknown>; result?: unknown; isError?: boolean; background?: Background; at: number }
-  | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery; attachments?: Attachment[]; via?: "doc" } // via: a doc-change note from Cockpit (MR-168)
+  | { kind: "user"; id: string; text: string; at: number; delivery?: Delivery; attachments?: Attachment[]; via?: "doc" | "child" } // via: a doc-change note from Cockpit (MR-168), or a spawned session's report (MR-178)
   | { kind: "view"; id: string; title: string; blocks: ViewBlock[]; at: number }
   | { kind: "result"; id: string; ok: boolean; text: string; costUsd?: number; at: number }
 ) & { step?: string }; // the plan step in progress when it arrived (MR-69)
@@ -123,6 +123,8 @@ export type SessionState = {
   archivedAt: number | null;
   partial: boolean; // loaded without its transcript at boot (archived, MR-162): its full history loads when opened
   fixApplied: number | null;
+  moveTo: string | null; // a workspace it moves to once this turn ends (MR-177)
+  moveFailed: string | null; // why the last queued move didn't happen
   fromDeleted: string | null; // name of the deleted workspace it came from: read-only history (MR-54) // when its fix was applied to your app (MR-47) // a god-mode fix session whose work was applied to your app (MR-47) // marked done: off the wall, into the archive
   commands: CommandRow[]; // its slash commands and skills (MR-87): names from init, descriptions once asked
   mcp: McpState | null; // its MCP servers (MR-87): from init, fresh from /mcp
