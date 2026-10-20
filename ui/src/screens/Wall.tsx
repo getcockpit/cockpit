@@ -11,6 +11,7 @@ import { promptFor } from "./StartPicker";
 import type { Pr } from "../state/store";
 import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
+import { groupSpawned } from "../state/spawn";
 import { docApi, docRole, docStage, groupByDoc, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
@@ -41,6 +42,7 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
   const review = tiles.filter((t) => inReviewTray(t.tile));
   const tileOf = useMemo(() => new Map(running.map((t) => [t.s.id, t])), [running]);
   const grouped = useMemo(() => groupByDoc(docs, running.map((t) => t.s.id)), [docs, running]);
+  const spawned = useMemo(() => groupSpawned(grouped.loose, grouped.groups.flatMap((g) => g.sessions.map((m) => m.id)), state.sessions), [grouped, state.sessions]);
   const count = (k: TileSpec["state"]) => tiles.filter((t) => t.tile.state === k).length;
   const [sel, setSel] = useState(0);
   const cwd = startCwd();
@@ -181,15 +183,35 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
           <div className="mr-grid" style={{ containerType: "inline-size" }}>
             {/* A doc and the sessions that plan and build it, as one group at most two tiles wide (MR-168). */}
-            {grouped.groups.map(({ doc, sessions: members }) => (
-              <div key={doc.id} data-mr="DocGroup" data-mr-source={doc.id} className="mr-docgroup" style={{ ["--mr-span" as string]: Math.min(members.length, 2), display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
-                <DocTile d={doc} sessions={state.sessions} onOpenDoc={onOpenDoc} header />
-                <div className="mr-grid">
-                  {members.map(({ id, role }) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={{ doc, role }} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
+            {grouped.groups.map(({ doc, sessions: members }) => {
+              // Sessions a member spawned sit in its doc group too (MR-179).
+              const kids = members.flatMap(({ id }) => spawned.childrenOf.get(id) ?? []);
+              return (
+                <div key={doc.id} data-mr="DocGroup" data-mr-source={doc.id} className="mr-docgroup" style={{ ["--mr-span" as string]: Math.min(members.length + kids.length, 2), display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
+                  <DocTile d={doc} sessions={state.sessions} onOpenDoc={onOpenDoc} header />
+                  <div className="mr-grid">
+                    {members.map(({ id, role }) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={{ doc, role }} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
+                    {kids.map((id) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={null} compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
+                  </div>
                 </div>
-              </div>
-            ))}
-            {grouped.loose.map((id) => { const { s, tile } = tileOf.get(id)!; return <Tile key={id} s={s} tile={tile} docTag={null} compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(s)} />; })}
+              );
+            })}
+            {/* A session and the sessions it spawned, as one group like a doc's (MR-179). */}
+            {spawned.families.map(({ parent, running: on, children }) => {
+              const members = on ? [parent, ...children] : children;
+              const p = state.sessions[parent] ?? all.sessions[parent];
+              return (
+                <div key={parent} data-mr="SpawnGroup" data-mr-source={parent} className="mr-docgroup" style={{ ["--mr-span" as string]: Math.min(members.length, 2), display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
+                  <button type="button" className="mr-row mr-ellipsis" data-mr="SpawnGroupHead" data-mr-source={parent} onClick={() => p && onOpen(parent)} disabled={!p} title={p ? "Open the session that started these" : undefined} style={{ gap: 6, padding: "2px 4px", border: 0, background: "transparent", font: "inherit", color: "var(--mr-ink-2)", textAlign: "left", cursor: p ? "pointer" : "default" }}>
+                    <span style={{ fontWeight: 700 }}>↳</span><span className="mr-grow mr-ellipsis">{p ? sessionTitle(p) : state.sessions[children[0]]?.spawnedBy?.title || "Another session"}</span><span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{children.length} spawned</span>
+                  </button>
+                  <div className="mr-grid">
+                    {members.map((id) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={null} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
+                  </div>
+                </div>
+              );
+            })}
+            {spawned.loose.map((id) => { const { s, tile } = tileOf.get(id)!; return <Tile key={id} s={s} tile={tile} docTag={null} compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(s)} />; })}
             {grouped.idle.map((d) => <DocTile key={d.id} d={d} sessions={state.sessions} onOpenDoc={onOpenDoc} />)}
             <button type="button" className="mr-tile" onClick={() => onStart()} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
               <span className="mr-row" style={{ padding: 16 }}><kbd className="mr-mono" style={{ padding: "2px 6px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>{keyLabel("⌘K")}</kbd>Start something</span>

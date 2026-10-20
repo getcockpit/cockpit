@@ -326,6 +326,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     { session: "RD", kind: "sidecar.sdk", payload: { message: { type: "result", is_error: false, result: "3 PRs wait on you: #412 (4 days), #418, #421.", total_cost_usd: 0.04 } }, at: 13 },
   ], docs: [] },
   busy: { events: busy, docs: [planDoc] },
+  // Spawned sessions (MR-179): C started two helpers, which sit with it in one block; one has reported back. ?demo=spawn
+  spawn: { events: [...busy,
+    ...start("S1", "Write release notes for the dependency bump", { cwd: "/Users/me/code/billing-worktrees/notes", repo: "/Users/me/code/billing", branch: "mr/notes", parent: "C" }, 2330),
+    todos("S1", 1, [["Read the lockfile diff", "Reading the lockfile diff"], ["Write the notes", "Writing the notes"]], 2340),
+    ...start("S2", "Check which dependency bumps change public types", { cwd: "/Users/me/code/billing", parent: "C" }, 2335),
+    result("S2", "Two bumps change public types: zod 4 (schema inference) and date-fns 4 (Locale).", 2390, 0.05),
+    { session: "C", kind: "session.child_report", payload: { child: "S2", text: "[Report from spawned session \"Check which dependency bumps change public types\" (S2), which finished a turn]\nTwo bumps change public types: zod 4 (schema inference) and date-fns 4 (Locale)." }, at: 2391 },
+  ], docs: [planDoc] },
   signedout: { events: signedOutEvents, docs: [] },
   // Doc lifecycle (MR-151): one stalled with open questions, one ready, one building, one shipped. ?demo=doclife
   doclife: { events: busy, docs: [
