@@ -265,6 +265,11 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending", via: "doc" }];
       s.status = "working";
       break;
+    // A session this one spawned finished a turn; its reply came back (MR-178).
+    case "session.child_report":
+      s.transcript = [...s.transcript, { kind: "user", id: ev.id, text: String(p.text ?? ""), at: ev.created_at, delivery: s.turnOpen ? "queued" : "sending", via: "child" }];
+      s.status = "working";
+      break;
     case "ui.run_started":
       s.runs = [...s.runs, { id: String(p.run_id ?? ev.id), command: String(p.command ?? ""), cwd: String(p.cwd ?? ""), status: "running", code: null, from: ev.created_at, to: null }];
       break;
