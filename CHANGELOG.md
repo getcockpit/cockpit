@@ -4,6 +4,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-10-20
+
+### Changed
+- **Spawned sessions sit with their parent:** on the Wall, a session and the sessions it spawned form one group, drawn like a doc and its sessions: a header naming the parent over the children's tiles, each tagged "↳ spawned". Groups share a row, and single sessions get the row below. On the Overview, a spawned session sits under its parent.
+- **Recurring sessions and suggestions stay in their workspace:** the Wall's Recurring count and list show only the current workspace's schedules, and workspace-specific suggestions only show where they apply.
+
 ## [0.1.13] - 2026-10-20
 
 ### Added
