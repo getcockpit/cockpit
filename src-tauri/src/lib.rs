@@ -23,6 +23,7 @@ mod schedules;
 mod selfbuild;
 mod selftest;
 mod sidecar;
+mod spawn;
 mod terminal;
 mod update;
 mod usage;

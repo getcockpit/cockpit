@@ -132,6 +132,7 @@ export type SessionState = {
   signedOut: { retry: string } | null; // Claude Code refused a turn because its sign-in expired (MR-153): the message to send again once signed in
   kinds: Record<string, ProseKind>; // transcript item id → what picker layer 2 says that prose is doing
   schedule: string | null; // a recurring run: the schedule that started it (MR-167)
+  spawnedBy: { id: string; title: string } | null; // started by another session's session_spawn call (MR-176)
   unread: boolean; // a recurring run you haven't opened yet: marked new on the Wall and in the review tray
 };
 
