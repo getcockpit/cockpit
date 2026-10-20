@@ -83,12 +83,13 @@ export default function App() {
     }
     // Picker layer 3 (diagrams) runs only from the Diagram button: each one is a Haiku call on the user's plan.
   }, [all.sessions]);
-  // Each workspace sees only its own sessions and docs (decision 24).
+  // Each workspace sees only its own sessions, docs and recurring schedules (decision 24).
   const state: AppState = useMemo(() => {
     // Archived sessions stay reachable (focus, archive) but leave the wall's order.
     const mine = all.order.filter((id) => all.sessions[id].workspace === workspace);
     const order = mine.filter((id) => !all.sessions[id].archivedAt);
-    return { ...all, order, sessions: Object.fromEntries(mine.map((id) => [id, all.sessions[id]])) };
+    const schedules = Object.fromEntries(Object.entries(all.schedules).filter(([, sc]) => sc.workspace === workspace));
+    return { ...all, order, sessions: Object.fromEntries(mine.map((id) => [id, all.sessions[id]])), schedules };
   }, [all, workspace]);
   const docs = useMemo(() => allDocs.filter((d) => (d.session_id ? all.sessions[d.session_id]?.workspace === workspace : workspace === "personal")), [allDocs, all, workspace]);
   const [focus, setFocusNow] = useState<string | null>(null);
@@ -254,7 +255,7 @@ export default function App() {
       <Presence show={!!signIn}>{signInPanel}</Presence>
       <Presence show={settings}><Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} /></Presence>
       <Presence show={archive}>{archivePanel}</Presence>
-      <Presence show={!!recurring}>{recurring && <Recurring state={all} workspace={workspace} draft={recurring.draft} onClose={() => setRecurring(null)} onOpenSession={(id) => { setRecurring(null); setDocId(null); setFocus(id); }} />}</Presence>
+      <Presence show={!!recurring}>{recurring && <Recurring state={{ ...all, schedules: state.schedules }} workspace={workspace} draft={recurring.draft} onClose={() => setRecurring(null)} onOpenSession={(id) => { setRecurring(null); setDocId(null); setFocus(id); }} />}</Presence>
       <Toast />
       <Presence show={!!deleting}>{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}</Presence>
       <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>

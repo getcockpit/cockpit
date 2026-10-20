@@ -104,7 +104,7 @@ export function Recurring({ state, workspace, draft, onClose, onOpenSession }: {
                 <div key={sc.id} data-mr="ScheduleRow" data-mr-source={sc.id} className="mr-row" style={{ gap: 12, padding: "10px 12px", background: "var(--mr-well)", opacity: sc.paused ? 0.7 : 1 }}>
                   <span style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1, gap: 2 }}>
                     <strong className="mr-ellipsis">↻ {sc.name}</strong>
-                    <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{cadenceLabel(sc.cadence)} · {sc.cwd}{state.workspaces.length > 1 ? ` · ${state.workspaces.find((w) => w.id === sc.workspace)?.name ?? sc.workspace}` : ""}</span>
+                    <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{cadenceLabel(sc.cadence)} · {sc.cwd}</span>
                     <span className="mr-dim" style={{ fontSize: 12 }} data-mr="ScheduleNext" data-mr-source={sc.id}>
                       {sc.paused ? "Paused" : next[sc.id] ? `Next ${when(next[sc.id])}` : "Next —"}
                       {last ? ` · last ${when(last.at)} (${runLabel(last)})` : " · never run"}
