@@ -42,7 +42,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null, schedule: null, unread: false,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null, schedule: null, spawnedBy: null, unread: false,
   };
 }
 
@@ -183,7 +183,8 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
     const files = attached(p);
     if (files.attachments) fresh.transcript = [{ kind: "user", id: ev.id, text: String(p.prompt ?? ""), at: ev.created_at, ...files }];
     const run = typeof p.schedule === "string" ? { schedule: p.schedule, unread: true } : {};
-    return { ...next, sessions: { ...next.sessions, [sid]: { ...fresh, ...where, ...run, owner: ev.origin ?? null } }, order: [...next.order, sid] };
+    const spawned = typeof p.parent === "string" ? { spawnedBy: { id: p.parent, title: next.sessions[p.parent]?.title ?? "" } } : {};
+    return { ...next, sessions: { ...next.sessions, [sid]: { ...fresh, ...where, ...run, ...spawned, owner: ev.origin ?? null } }, order: [...next.order, sid] };
   }
   if (ev.kind === "picker.layer2" && sid) {
     // A render decision, not session activity: annotate the item and tick the meter, nothing else.

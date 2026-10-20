@@ -204,7 +204,7 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
               {review.map(({ s, tile }) => (
                 <button key={s.id} type="button" className="mr-row" data-mr="ReviewRow" data-mr-source={s.id} {...dragSession(s, sessionTitle(s))} onClick={() => { if (!consumeDrag()) onOpen(s.id); }} style={{ padding: "10px 12px", border: 0, background: "var(--mr-well)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left", touchAction: "none" }}>
                   <StateMark s={tile.state} />
-                  <span className="mr-grow mr-ellipsis">{s.schedule && <RecurringTag s={s} name={state.schedules[s.schedule]?.name} />}{sessionTitle(s)}</span>
+                  <span className="mr-grow mr-ellipsis">{s.schedule && <RecurringTag s={s} name={state.schedules[s.schedule]?.name} />}{s.spawnedBy && <SpawnTag s={s} />}{sessionTitle(s)}</span>
                   {Object.keys(s.files).length > 0 && <span className="mr-mono mr-dim" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{plural(Object.keys(s.files).length, "file")}</span>}
                   <span className="mr-key" role="button" tabIndex={0} title="Mark done and move to the archive" style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.archive(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.archive(s); } }}>Done ✓</span>
                   {s.status === "interrupted" && s.sdkSessionId && <span className="mr-key" role="button" tabIndex={0} style={{ minHeight: 28 }} onClick={(e) => { e.stopPropagation(); void api.resume(s); }} onKeyDown={(e) => { if (keyOf(e) === "Enter") { e.stopPropagation(); void api.resume(s); } }}>Resume ↻</span>}
@@ -280,7 +280,7 @@ function Tile({ s, tile, docTag, grouped, compactWindow, onOpen, onOpenDoc, onDi
       <div className="mr-flag" />
       <div className="mr-tbody">
         <div className="mr-row" style={{ alignItems: "baseline" }}>
-          <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{s.schedule && <RecurringTag s={s} />}{sessionTitle(s)}</strong>
+          <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{s.schedule && <RecurringTag s={s} />}{s.spawnedBy && <SpawnTag s={s} />}{sessionTitle(s)}</strong>
           <StateMark s={tile.state} />
         </div>
         <div className="mr-row" style={{ gap: 8 }}>
@@ -307,6 +307,11 @@ function RecurringTag({ s, name }: { s: SessionState; name?: string }) {
       ↻{s.unread && <span data-mr="Unread" data-mr-source={s.id} className="mr-mono" style={{ marginLeft: 4, padding: "0 4px", fontSize: 11, background: "var(--mr-selected)", color: "var(--mr-tile)" }}>new</span>}
     </span>
   );
+}
+
+// Started by another session (MR-176): ↳, naming the parent on hover.
+function SpawnTag({ s }: { s: SessionState }) {
+  return <span data-mr="SpawnTag" data-mr-source={s.id} title={s.spawnedBy?.title ? `Started by the session “${s.spawnedBy.title}”` : "Started by another session"} style={{ marginRight: 6, fontWeight: 700, color: "var(--mr-ink-2)" }}>↳</span>;
 }
 
 // The tile's last line, only when it needs you: what Claude asks or wants, or where it stopped.

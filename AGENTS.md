@@ -23,7 +23,7 @@ Cockpit is a desktop front-end for Claude Code (macOS first; Linux and Windows t
 python3 -I scripts/e2e/webkit-overview.py  # the Overview canvas in real WebKit (Safari): pinch, wheel, keys, drag; needs the harness, `safaridriver -p 4444` and Safari's "Allow remote automation"
 (cd ui && bunx vite --port 1530)    # UX demo harness: http://127.0.0.1:1530/?demo=fresh|empty|busy|archive (no Claude)
 ./scripts/selftest.sh                # end-to-end through the real app + sidecar + claude (uses a little usage)
-./scripts/selftest-{doc,resume,flow,address,terminal,selfbuild,workspace,view,plan,title,update,layer,skip,askfirst,attach,move}.sh
+./scripts/selftest-{doc,resume,flow,address,terminal,selfbuild,workspace,view,plan,title,update,layer,skip,askfirst,attach,move,spawn}.sh
 ```
 
 **Self-tests:**
@@ -60,6 +60,7 @@ React UI (ui/) ──Tauri IPC──▶ Rust core (src-tauri/) ──NDJSON stdi
 | `cockpit_layer.rs` | The Cockpit layer (decision 34): draws cards, plans and titles after each turn on its own key, and meters every Cockpit model call as `cockpit.usage` |
 | `views.rs` | `render_view` (Claude composes catalog views, decision 26) `plan_set` (Claude's plan for the Plan panel) and `title_set` (the thread's title) |
 | `worktree.rs` | One worktree per blank session |
+| `spawn.rs` | `session_spawn`: a session starts another (one level, no approval) |
 | `workspaces.rs` | Per-workspace `CLAUDE_CONFIG_DIR` with shared files symlinked |
 | `terminal.rs` | PTY takeover |
 | `voice.rs` | Runs the `mr-dictate` helper (`dictate/main.swift`) |
