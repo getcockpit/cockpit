@@ -175,7 +175,9 @@ export const api = {
   runStop: (session: string, runId: string) => invoke("run_stop", { session, runId }),
   stop: (session: string) => invoke("session_stop", { session }),
   /** Into another workspace, conversation and all (MR-154). */
-  move: (session: string, workspace: string) => invoke("session_move", { session, workspace }),
+  /** "moved", or "queued" when it's mid-turn: it moves once the turn ends (MR-177). */
+  move: (session: string, workspace: string) => invoke<string>("session_move", { session, workspace }),
+  moveCancel: (session: string) => invoke("session_move_cancel", { session }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
   // Recurring sessions (MR-167): saved, run and deleted by the core, which logs each.
   scheduleSet: (schedule: Record<string, unknown>) => invoke<string>("schedule_set", { schedule }),
