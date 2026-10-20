@@ -60,10 +60,6 @@
 
 /* Tiles */
 .mr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--mr-gap); }
-/* A doc and its sessions (MR-168): as wide as its sessions, two at most (the plan and the build), one column when the grid has only one. */
-.mr-docgroup { grid-column: span var(--mr-span, 1); }
-.mr-docgroup > .mr-grid { grid-template-columns: repeat(var(--mr-span, 1), minmax(0, 1fr)); }
-@container (width < 648px) { .mr-docgroup { grid-column: auto; } .mr-docgroup > .mr-grid { grid-template-columns: minmax(0, 1fr); } }
 .mr-tile { display: flex; align-items: stretch; background: var(--mr-tile); min-height: 128px; border: 0; padding: 0; text-align: left; color: inherit; cursor: pointer; }
 .mr-tile > .mr-flag { width: 6px; flex-shrink: 0; background: transparent; }
 .mr-tile[data-s="needs_you"] > .mr-flag { background: var(--mr-needs); }
