@@ -162,7 +162,7 @@ describe("the editor's mode choice", () => {
   });
 
   test("review mode hides them and shows the folder's repo", () => {
-    const h = html({ name: "Watch", mode: "review", prompt: "", cwd: "~/go/github.com/acme/forge" });
+    const h = html({ name: "Watch", mode: "review", prompt: "", cwd: "~/go/github.com/globex/forge" });
     expect(h).toMatch(/role="radio" aria-checked="true"[^>]*>Start a review for each PR that needs me</);
     expect(h).not.toContain('aria-label="Prompt"');
     expect(h).not.toContain('data-mr="ScheduleCheckField"');
