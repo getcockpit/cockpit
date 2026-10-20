@@ -15,6 +15,7 @@ import { groupSpawned } from "../state/spawn";
 import { docApi, docRole, docStage, groupByDoc, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import { cached } from "../state/cache";
+import { cloneWorkspaces, prHere } from "../picker/autoReview";
 import { loadPrs as fetchPrs, prInWorkspace, PRS_TTL, startCwd, usePrClones } from "../state/prs";
 import type { AppState, SessionState, Todo } from "../state/types";
 import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow, SignInRow } from "./AskRow";
@@ -72,7 +73,9 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
     const here = (p: Pr) => prInWorkspace(p, clones, all, workspace);
     return { review: prs.review.filter(here), mine: prs.mine.filter(here) };
   }, [prs, clones, all, workspace]);
-  const suggestions = useMemo(() => suggest(state, docs, prsHere, new Set(state.dismissed), appRepo), [state, docs, prsHere, appRepo]);
+  // The usage review too: only where the app repo is worked on (or everywhere, until a workspace does).
+  const usageRepo = useMemo(() => (appRepo && prHere(cloneWorkspaces(all, appRepo), workspace) ? appRepo : null), [appRepo, all, workspace]);
+  const suggestions = useMemo(() => suggest(state, docs, prsHere, new Set(state.dismissed), usageRepo), [state, docs, prsHere, usageRepo]);
   const act = async (g: Suggestion) => {
     const a = g.action;
     if (a.kind === "open_session") onOpen(a.id);
