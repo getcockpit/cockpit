@@ -152,25 +152,19 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
   if (ev.kind === "ui.schedule_set" && p.id) {
     const id = String(p.id);
     const mode = (["auto", "acceptEdits", "default", "never"].includes(String(p.permission_mode)) ? p.permission_mode : "auto") as PermissionMode;
-    const sc: Schedule = { id, name: String(p.name ?? ""), mode: p.mode === "review" ? "review" : "prompt", prompt: String(p.prompt ?? ""), cwd: String(p.cwd ?? ""), workspace: String(p.workspace ?? "personal"), worktree: p.worktree !== false, cadence: (p.cadence ?? { kind: "daily", at: "09:00" }) as Cadence, permissionMode: mode, paused: p.paused === true, fromSession: (p.from_session as string) ?? null, check: typeof p.check === "string" && p.check.trim() ? p.check : null, runs: next.schedules[id]?.runs ?? [] };
+    const sc: Schedule = { id, name: String(p.name ?? ""), prompt: String(p.prompt ?? ""), cwd: String(p.cwd ?? ""), workspace: String(p.workspace ?? "personal"), worktree: p.worktree !== false, cadence: (p.cadence ?? { kind: "daily", at: "09:00" }) as Cadence, permissionMode: mode, paused: p.paused === true, fromSession: (p.from_session as string) ?? null, check: typeof p.check === "string" && p.check.trim() ? p.check : null, runs: next.schedules[id]?.runs ?? [] };
     return { ...next, schedules: { ...next.schedules, [id]: sc } };
   }
   if (ev.kind === "ui.schedule_deleted") { const { [String(p.id)]: _gone, ...rest } = next.schedules; return { ...next, schedules: rest }; }
   if ((ev.kind === "schedule.fired" || ev.kind === "schedule.failed") && next.schedules[String(p.id)]) {
     const sc = next.schedules[String(p.id)];
-    const run: ScheduleRun = { at: ev.created_at, session: (p.session as string) ?? null, reason: (["due", "catchup", "manual"].includes(String(p.reason)) ? p.reason : "due") as ScheduleRun["reason"], ok: ev.kind === "schedule.fired", error: (p.error as string) ?? null, slot: (p.slot as string) ?? null, mode: p.mode === "review" ? "review" : "prompt", reviews: [], url: (p.url as string) ?? null };
+    const run: ScheduleRun = { at: ev.created_at, session: (p.session as string) ?? null, reason: (["due", "catchup", "manual"].includes(String(p.reason)) ? p.reason : "due") as ScheduleRun["reason"], ok: ev.kind === "schedule.fired", error: (p.error as string) ?? null, slot: (p.slot as string) ?? null };
     return { ...next, schedules: { ...next.schedules, [sc.id]: { ...sc, runs: [...sc.runs, run] } } };
   }
-  // MR-171: a review a schedule (or auto-review) started. Both skip a head that's in reviewStarts;
-  // a schedule's review is listed under its latest run (ones left over at the cap start later).
+  // A PR head auto-review started (or the older review-mode schedules did, MR-171): not again.
   if (ev.kind === "schedule.review_started" || ev.kind === "ui.auto_review_started") {
     const key = typeof p.url === "string" ? `${p.url}@${typeof p.head === "string" ? p.head : ""}` : null;
-    const out = key && !next.reviewStarts.includes(key) ? { ...next, reviewStarts: [...next.reviewStarts, key] } : next;
-    const sc = ev.kind === "schedule.review_started" ? out.schedules[String(p.id)] : undefined;
-    const last = sc?.runs[sc.runs.length - 1];
-    if (!sc || !last || typeof p.session !== "string") return out;
-    const review = { at: ev.created_at, url: String(p.url ?? ""), number: typeof p.number === "number" ? p.number : null, title: String(p.title ?? ""), session: p.session };
-    return { ...out, schedules: { ...out.schedules, [sc.id]: { ...sc, runs: [...sc.runs.slice(0, -1), { ...last, reviews: [...(last.reviews ?? []), review] }] } } };
+    return key && !next.reviewStarts.includes(key) ? { ...next, reviewStarts: [...next.reviewStarts, key] } : next;
   }
   if (ev.kind === "ui.run_seen" && sid && next.sessions[sid]?.unread) return { ...next, sessions: { ...next.sessions, [sid]: { ...next.sessions[sid], unread: false } } };
   if (ev.kind === "ui.background_set") return { ...next, background: p.mode === "always" || p.mode === "never" || p.mode === "schedules" ? p.mode : next.background };

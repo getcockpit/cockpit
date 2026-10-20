@@ -10,18 +10,10 @@
 //! A schedule may have a check (MR-169): a shell command run before each slot, for free. The run
 //! starts only when it exits 0 and prints something other than what the last run was started with;
 //! its output is appended to the prompt. Skipped slots aren't logged, only kept in memory (`Checks`).
-//! A schedule in review mode (MR-171) runs no prompt: each slot lists the PRs in its folder's repo
-//! that need your review (`gh::unreviewed`) and starts the cmd+k Review (`/review <url>`, kind
-//! `review`) for each one whose head hasn't been reviewed or started here yet, by a schedule or by
-//! auto-review (`needs_review`). Each start is a `schedule.review_started`; the slot is a
-//! `schedule.fired` even when nothing was new. These reviews aren't unattended: they stop for you
-//! before anything is posted. PRs left over at the session cap start on later ticks (`Reviews`).
-//! PRs you reviewed with nothing new since but haven't approved (MR-173, `gh::NOT_APPROVED`: a
-//! "ship it" left as a comment) get one review per head on their own marker (`not_approved_key`,
-//! logged as `schedule.review_started` with `reason: "not_approved"`), whatever reviewed that head
-//! before; a new push makes them a "new changes" PR again.
+//! Every schedule is a prompt (MR-175): reviewing each PR is a prompt with a gh check like any
+//! other. Schedules saved in the older review mode (MR-171) become one on start (`migrated`), paused.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -316,10 +308,6 @@ impl Schedule {
     fn last_hash(&self) -> Option<&str> {
         self.runs.iter().rev().find(|r| r["ok"] == true && r["check_hash"].is_string()).and_then(|r| r["check_hash"].as_str())
     }
-    /// What it starts on each slot (MR-171): `prompt` (missing means this) or `review`.
-    pub fn mode(&self) -> &'static str {
-        if self.def["mode"] == "review" { "review" } else { "prompt" }
-    }
     /// The session of its last run that started.
     fn last_session(&self) -> Option<&str> {
         self.runs.iter().rev().find(|r| r["ok"] == true).and_then(|r| r["session"].as_str())
@@ -339,8 +327,6 @@ pub struct Check {
     /// Slots skipped since the last run started.
     pub skipped: u32,
     pub error: Option<String>,
-    /// Review mode (MR-171): PRs found but not started yet, waiting for a free session (the cap).
-    pub waiting: u32,
 }
 
 #[derive(Default)]
@@ -381,18 +367,6 @@ pub fn fold(events: &[crate::eventlog::Event]) -> BTreeMap<String, Schedule> {
             "ui.schedule_deleted" => {
                 out.remove(id);
             }
-            // A review a review-mode run started (MR-171): listed under the run it belongs to, the
-            // latest one (PRs left over at the cap start on later ticks, after their run).
-            "schedule.review_started" => {
-                if let Some(run) = out.get_mut(id).and_then(|s| s.runs.last_mut()) {
-                    let mut r = ev.payload.clone();
-                    r["at"] = ev.created_at.into();
-                    if !run["reviews"].is_array() {
-                        run["reviews"] = json!([]);
-                    }
-                    run["reviews"].as_array_mut().expect("just made an array").push(r);
-                }
-            }
             "schedule.fired" | "schedule.failed" => {
                 if let Some(s) = out.get_mut(id) {
                     s.last_run = Some(ev.created_at);
@@ -420,142 +394,44 @@ fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
-/// The events that say a PR was reviewed or is being reviewed here (MR-171).
-const REVIEW_KINDS: &[&str] = &["ui.session_requested", "ui.auto_review_started", "schedule.review_started"];
+/// What a schedule saved in the older review mode (MR-171) starts as now (MR-175): a prompt that
+/// reviews what a gh check lists. Paused, so you read the prompt before it runs unattended.
+pub const REVIEW_PROMPT: &str = "Review each pull request in the check output below that is new or has new commits since the last run: run the /review skill on each, one at a time. Post nothing to GitHub; end with a short list of what each one needs from me.";
+pub const REVIEW_CHECK: &str = r#"gh pr list --search "review-requested:@me" --json url,headRefOid"#;
 
-/// The marker auto-review and recurring reviews share: one review per PR head (`reviewKey` in
-/// `ui/src/picker/autoReview.ts`).
-pub fn review_key(url: &str, head: &str) -> String {
-    format!("{url}@{head}")
+/// The prompt schedule a review-mode one becomes, or `None` when it's a prompt schedule already.
+pub fn migrated(def: &Value) -> Option<Value> {
+    if def["mode"] != "review" {
+        return None;
+    }
+    let mut d = def.clone();
+    let o = d.as_object_mut()?;
+    o.remove("mode");
+    o.insert("prompt".into(), REVIEW_PROMPT.into());
+    o.insert("check".into(), REVIEW_CHECK.into());
+    o.insert("paused".into(), true.into());
+    Some(d)
 }
 
-/// The once-per-head marker of a "not approved yet" review (MR-173): apart from `review_key`, which
-/// the earlier reviews of that same head already hold.
-pub fn not_approved_key(url: &str, head: &str) -> String {
-    format!("{}#not_approved", review_key(url, head))
-}
-
-/// `schedule.review_started`'s `reason` for a "not approved yet" PR.
-const NOT_APPROVED_REASON: &str = "not_approved";
-
-/// What the log says has been reviewed here: every head a review was started for (auto-review's
-/// `ui.auto_review_started`, a schedule's `schedule.review_started`) and every Review session's
-/// first prompt with when it started.
-#[derive(Debug, Default)]
-pub struct Reviewed {
-    heads: HashSet<String>,
-    /// `not_approved_key`s: heads a "not approved yet" review was started for.
-    unapproved: HashSet<String>,
-    sessions: Vec<(String, i64)>,
-}
-
-pub fn reviewed(events: &[crate::eventlog::Event]) -> Reviewed {
-    let mut r = Reviewed::default();
-    for ev in events {
-        let p = &ev.payload;
-        match ev.kind.as_str() {
-            "ui.auto_review_started" | "schedule.review_started" => {
-                if let Some(url) = p["url"].as_str() {
-                    let head = p["head"].as_str().unwrap_or_default();
-                    r.heads.insert(review_key(url, head));
-                    if p["reason"] == NOT_APPROVED_REASON {
-                        r.unapproved.insert(not_approved_key(url, head));
-                    }
-                }
-            }
-            "ui.session_requested" if p["kind"] == "review" && p["resume"].is_null() => {
-                r.sessions.push((p["prompt"].as_str().unwrap_or_default().to_owned(), ev.created_at));
-            }
-            _ => {}
+/// Logs the new definition of every review-mode schedule, so both folds (here, `reduce.ts`) see a
+/// plain prompt schedule.
+fn migrate(app: &AppHandle) {
+    for s in list(app).values() {
+        if let Some(def) = migrated(&s.def) {
+            crate::eventlog::record(app, None, "ui.schedule_set", &def, None);
         }
     }
-    r
 }
 
-/// Whether a Review session's first prompt (`/review <url|#n|n|owner/name#n>`) is about this PR (`isAbout`).
-fn about(prompt: &str, url: &str, number: u64, slug: Option<&str>) -> bool {
-    let arg = prompt.trim();
-    let arg = arg.strip_prefix("/review").map_or(arg, str::trim);
-    arg.contains(url) || arg == number.to_string() || arg == format!("#{number}") || slug.is_some_and(|s| arg == format!("{s}#{number}"))
-}
-
-/// Whether `gh::unreviewed` listed this PR as reviewed by you, unchanged since, and not approved.
-pub fn not_approved(pr: &Value) -> bool {
-    pr["reviewNote"] == crate::gh::NOT_APPROVED
-}
-
-/// Start a review of this PR (from `gh::unreviewed`, so never reviewed on GitHub, new commits
-/// since, or not approved yet)? Auto-review's rule (`needsAutoReview`): not a draft, no review
-/// started for this head yet, and no Review session here since its newest commit. A "not approved
-/// yet" PR fails that by definition (its head was reviewed), so it has its own rule: one review per
-/// head, on its own marker (MR-173).
-pub fn needs_review(pr: &Value, seen: &Reviewed) -> bool {
-    let Some(url) = pr["url"].as_str() else { return false };
-    let head = pr["headSha"].as_str().unwrap_or_default();
-    if pr["isDraft"] == true {
-        return false;
-    }
-    if not_approved(pr) {
-        return !seen.unapproved.contains(&not_approved_key(url, head));
-    }
-    if seen.heads.contains(&review_key(url, head)) {
-        return false;
-    }
-    let (n, slug) = (pr["number"].as_u64().unwrap_or(0), pr["repository"]["nameWithOwner"].as_str());
-    let Some(local) = seen.sessions.iter().filter(|(p, _)| about(p, url, n, slug)).map(|(_, at)| *at).max() else { return true };
-    let commit = pr["lastCommitAt"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map(|t| t.timestamp_millis());
-    commit.is_some_and(|c| c > local)
-}
-
-/// The notification of a run that started reviews: "↻ Watch: started 2 reviews (#59, #61)".
-pub fn reviews_title(name: &str, prs: &[Value]) -> String {
-    let nums: Vec<String> = prs.iter().filter_map(|p| p["number"].as_u64()).map(|n| format!("#{n}")).collect();
-    format!("↻ {name}: started {} review{} ({})", prs.len(), if prs.len() == 1 { "" } else { "s" }, nums.join(", "))
-}
-
-/// The prompt cmd+k's Review starts with (`promptFor("review", url)`).
-pub fn review_prompt(url: &str) -> String {
-    format!("/review {url}")
-}
-
-/// How a schedule's sessions start: tagged with it; a prompt run in its own permission mode and
-/// unattended, a review (MR-171) like one you start, in your mode and with you in the loop.
+/// How a schedule's sessions start: tagged with it, unattended, in its own permission mode.
 pub fn started_for(s: &Schedule) -> crate::sidecar::Started {
-    let review = s.mode() == "review";
     crate::sidecar::Started {
         schedule: Some(s.id.clone()),
-        permission_mode: if review { None } else { s.def["permission_mode"].as_str().map(str::to_owned) },
-        unattended: !review,
+        permission_mode: s.def["permission_mode"].as_str().map(str::to_owned),
+        unattended: true,
     }
 }
 
-/// Review mode's state, in memory: whether a pass is running, and the PRs it found but couldn't
-/// start at the cap. They start on the next ticks with room; a restart forgets them, and the next
-/// slot finds them again.
-#[derive(Default)]
-pub struct Reviews(Mutex<HashMap<String, (bool, Vec<Value>)>>);
-
-impl Reviews {
-    fn begin(&self, id: &str) -> bool {
-        let mut m = self.0.lock().unwrap();
-        let e = m.entry(id.to_owned()).or_default();
-        !std::mem::replace(&mut e.0, true)
-    }
-    fn end(&self, id: &str) {
-        if let Some(e) = self.0.lock().unwrap().get_mut(id) {
-            e.0 = false;
-        }
-    }
-    fn has_waiting(&self, id: &str) -> bool {
-        self.0.lock().unwrap().get(id).is_some_and(|e| !e.1.is_empty())
-    }
-    fn take_waiting(&self, id: &str) -> Vec<Value> {
-        self.0.lock().unwrap().get_mut(id).map(|e| std::mem::take(&mut e.1)).unwrap_or_default()
-    }
-    fn set_waiting(&self, id: &str, prs: Vec<Value>) {
-        self.0.lock().unwrap().entry(id.to_owned()).or_default().1 = prs;
-    }
-}
 
 pub fn list(app: &AppHandle) -> BTreeMap<String, Schedule> {
     fold(&app.state::<crate::eventlog::EventLog>().list_prefixed(KIND_PREFIXES).unwrap_or_default())
@@ -614,121 +490,6 @@ fn fire(app: &AppHandle, s: &Schedule, reason: &str, slot: Option<NaiveDateTime>
     res
 }
 
-/// One review-mode slot (MR-171): lists the PRs in the folder's repo that need your review, logs the
-/// slot as `schedule.fired` (with how many were new, none included), then starts their reviews.
-fn review_pass(app: &AppHandle, s: &Schedule, reason: &str, slot: Option<NaiveDateTime>) -> Result<Vec<String>, String> {
-    let cwd = check_dir(app, s).display().to_string();
-    let prs = crate::gh::gh_repo(app.clone(), cwd.clone())
-        .ok_or_else(|| format!("{cwd} isn't a GitHub repo (no github.com origin)"))
-        .and_then(|repo| crate::gh::unreviewed(&cwd, &repo));
-    let prs = match prs {
-        Ok(p) => p.as_array().cloned().unwrap_or_default(),
-        Err(e) => {
-            app.state::<Checks>().note(&s.id, now_ms(), "error", Some(e.clone()));
-            return Err(e);
-        }
-    };
-    let seen = reviewed(&app.state::<crate::eventlog::EventLog>().list_prefixed(REVIEW_KINDS).unwrap_or_default());
-    let todo: Vec<Value> = prs.into_iter().filter(|p| needs_review(p, &seen)).collect();
-    let slot = slot.map(|t| t.format("%Y-%m-%dT%H:%M").to_string());
-    crate::eventlog::record(app, None, "schedule.fired", &json!({ "id": s.id, "mode": "review", "reason": reason, "slot": slot, "new": todo.len() }), None);
-    Ok(start_reviews(app, s, todo))
-}
-
-/// Starts a review for each PR that still needs one (the log is read again: auto-review may have
-/// started one meanwhile), as cmd+k does. At the cap the rest wait in `Reviews` for a later tick.
-/// One notification for the reviews it started. Returns their sessions.
-fn start_reviews(app: &AppHandle, s: &Schedule, prs: Vec<Value>) -> Vec<String> {
-    let seen = reviewed(&app.state::<crate::eventlog::EventLog>().list_prefixed(REVIEW_KINDS).unwrap_or_default());
-    let d = &s.def;
-    let (mut started, mut sessions, mut waiting) = (Vec::new(), Vec::new(), Vec::new());
-    for pr in prs.into_iter().filter(|p| needs_review(p, &seen)) {
-        if !waiting.is_empty() || crate::sidecar::at_cap(app) {
-            waiting.push(pr);
-            continue;
-        }
-        let url = pr["url"].as_str().unwrap_or_default().to_owned();
-        let res = crate::sidecar::start_with(
-            app.clone(),
-            app.state::<crate::sidecar::Sidecar>(),
-            d["cwd"].as_str().unwrap_or_default().to_owned(),
-            review_prompt(&url),
-            None,
-            None,
-            Some("review".into()),
-            Some(d["worktree"].as_bool().unwrap_or(false)),
-            None,
-            d["workspace"].as_str().filter(|w| crate::workspaces::exists(app, w)).map(str::to_owned),
-            None,
-            None,
-            started_for(s),
-        );
-        match res {
-            Ok(session) => {
-                let mut ev = json!({ "id": s.id, "url": url, "number": pr["number"], "title": pr["title"], "head": pr["headSha"], "session": session });
-                if not_approved(&pr) {
-                    ev["reason"] = NOT_APPROVED_REASON.into();
-                }
-                crate::eventlog::record(app, Some(&session), "schedule.review_started", &ev, None);
-                sessions.push(session);
-                started.push(pr);
-            }
-            // Filled up since the check above (another start): it waits like the rest.
-            Err(_) if crate::sidecar::at_cap(app) => waiting.push(pr),
-            Err(e) => {
-                crate::eventlog::record(app, None, "schedule.failed", &json!({ "id": s.id, "reason": "review", "url": url, "error": e }), None);
-            }
-        }
-    }
-    let checks = app.state::<Checks>();
-    let outcome = if !started.is_empty() { "fired" } else if !waiting.is_empty() { "queued" } else { "nothing" };
-    checks.note(&s.id, now_ms(), outcome, None);
-    if let Some(c) = checks.0.lock().unwrap().get_mut(&s.id) {
-        c.waiting = waiting.len() as u32;
-    }
-    app.state::<Reviews>().set_waiting(&s.id, waiting);
-    if let Some(first) = sessions.first() {
-        let titles: Vec<String> = started.iter().map(|p| format!("#{} {}", p["number"], p["title"].as_str().unwrap_or_default())).collect();
-        let note = crate::notify::Note {
-            key: format!("recurring-review:{}:{first}", s.id),
-            session: Some(first.clone()),
-            title: reviews_title(s.name(), &started),
-            subtitle: "Recurring review".into(),
-            body: titles.join("\n").chars().take(200).collect(),
-            actions: vec![],
-            reply: false,
-        };
-        let _ = crate::notify::notify(app.clone(), note);
-    }
-    sessions
-}
-
-/// Runs a review-mode slot (`job`), or the PRs left over at the cap (`None`), on its own thread:
-/// gh is slow. One at a time per schedule.
-fn spawn_review(app: &AppHandle, s: &Schedule, job: Option<(&'static str, NaiveDateTime)>) {
-    if !app.state::<Reviews>().begin(&s.id) {
-        if job.is_some() {
-            app.state::<Checks>().note(&s.id, now_ms(), "busy", None);
-        }
-        return;
-    }
-    if job.is_some() {
-        app.state::<Checks>().note(&s.id, now_ms(), "checking", None);
-    }
-    let (app, s) = (app.clone(), s.clone());
-    std::thread::spawn(move || {
-        match job {
-            Some((reason, slot)) => {
-                let _ = review_pass(&app, &s, reason, Some(slot));
-            }
-            None => {
-                let prs = app.state::<Reviews>().take_waiting(&s.id);
-                start_reviews(&app, &s, prs);
-            }
-        }
-        app.state::<Reviews>().end(&s.id);
-    });
-}
 
 /// Claims a slot so only one running copy of Cockpit (dev, /Applications) starts it (MR-99).
 fn claim(app: &AppHandle, id: &str, slot: NaiveDateTime) -> bool {
@@ -766,14 +527,7 @@ pub fn tick(app: &AppHandle) {
             continue;
         }
         let Some(c) = s.cadence() else { continue };
-        let review = s.mode() == "review";
-        let slot = due(&c, local(s.since().max(checks.since(&s.id))), now);
-        // Review mode: PRs left over at the cap start as soon as there's room, not at the next slot.
-        if review && slot.is_none() && app.state::<Reviews>().has_waiting(&s.id) && !crate::sidecar::at_cap(app) {
-            spawn_review(app, s, None);
-            continue;
-        }
-        let Some(slot) = slot else { continue };
+        let Some(slot) = due(&c, local(s.since().max(checks.since(&s.id))), now) else { continue };
         if crate::sidecar::at_cap(app) {
             return;
         }
@@ -784,11 +538,6 @@ pub fn tick(app: &AppHandle) {
             continue;
         }
         let reason = if now_ms - to_ms(slot) > LATE_MS { "catchup" } else { "due" };
-        // Review mode has no check: the PR list is its gate, and each PR is deduped by its head.
-        if review {
-            spawn_review(app, s, Some((reason, slot)));
-            continue;
-        }
         if s.last_session().is_some_and(|p| crate::sidecar::mid_turn(app, p)) {
             checks.note(&s.id, now_ms, "busy", None);
             continue;
@@ -815,7 +564,7 @@ fn tick_every() -> Duration {
 pub fn start(app: &AppHandle) {
     app.manage(Runs::default());
     app.manage(Checks::default());
-    app.manage(Reviews::default());
+    migrate(app);
     let app = app.clone();
     std::thread::spawn(move || {
         // Let the sidecar come up before the first catch-up.
@@ -846,19 +595,12 @@ pub fn on_turn_end(app: &AppHandle, session: &str, result: &Value) {
     let _ = crate::notify::notify(app.clone(), note);
 }
 
-/// A schedule's fields, without the folder (`validate` checks that): returns its mode (MR-171),
-/// `prompt` when it has none. A review-mode schedule needs no prompt.
-pub fn check_def(def: &Value) -> Result<&'static str, String> {
-    let mode = match &def["mode"] {
-        Value::Null => "prompt",
-        Value::String(m) if m == "prompt" => "prompt",
-        Value::String(m) if m == "review" => "review",
-        m => return Err(format!("unknown mode: {} (prompt or review)", m.as_str().map_or_else(|| m.to_string(), str::to_owned))),
-    };
+/// A schedule's fields, without the folder (`validate` checks that).
+pub fn check_def(def: &Value) -> Result<(), String> {
     if def["name"].as_str().is_none_or(|s| s.trim().is_empty()) {
         return Err("give it a name".into());
     }
-    if mode == "prompt" && def["prompt"].as_str().is_none_or(|s| s.trim().is_empty()) {
+    if def["prompt"].as_str().is_none_or(|s| s.trim().is_empty()) {
         return Err("the prompt is empty".into());
     }
     if let Some(m) = def["permission_mode"].as_str() && !crate::sidecar::PERMISSION_MODES.contains(&m) {
@@ -867,31 +609,27 @@ pub fn check_def(def: &Value) -> Result<&'static str, String> {
     if !(def["check"].is_null() || def["check"].is_string()) {
         return Err("the check must be a command".into());
     }
-    Cadence::parse(&def["cadence"]).map(|_| mode)
+    Cadence::parse(&def["cadence"]).map(|_| ())
 }
 
-fn validate(def: &Value, app: &AppHandle) -> Result<&'static str, String> {
-    let mode = check_def(def)?;
+fn validate(def: &Value, app: &AppHandle) -> Result<(), String> {
+    check_def(def)?;
     let cwd = crate::sidecar::expand_home(app, def["cwd"].as_str().unwrap_or_default());
     if !std::path::Path::new(&cwd).is_dir() {
         return Err(format!("not a folder: {cwd}"));
     }
-    if mode == "review" && crate::gh::gh_repo(app.clone(), cwd.clone()).is_none() {
-        return Err(format!("review mode needs a GitHub repo: {cwd} has no github.com origin"));
-    }
-    Ok(mode)
+    Ok(())
 }
 
 /// Creates or updates a schedule; returns its id. Logged here, in the command that does it.
 #[tauri::command]
 pub fn schedule_set(app: AppHandle, schedule: Value) -> Result<String, String> {
-    let mode = validate(&schedule, &app)?;
+    validate(&schedule, &app)?;
     let id = schedule["id"].as_str().filter(|s| !s.is_empty()).map(str::to_owned).unwrap_or_else(|| ulid::Ulid::new().to_string());
     let d = &schedule;
     let payload = json!({
         "id": id,
         "name": d["name"].as_str().unwrap_or_default().trim(),
-        "mode": mode,
         "prompt": d["prompt"],
         "cwd": d["cwd"],
         "workspace": d["workspace"].as_str().unwrap_or(crate::workspaces::PERSONAL),
@@ -925,20 +663,10 @@ pub fn pause_all(app: &AppHandle, paused: bool) {
 }
 
 /// Run now: a run outside the cadence. Its next slot stays where it was. A check still runs, so
-/// the run gets its output, but whatever it says, the run starts. A review-mode one returns the
-/// first review it started, or "" when nothing needed one.
+/// the run gets its output, but whatever it says, the run starts.
 #[tauri::command(async)]
 pub fn schedule_run_now(app: AppHandle, id: String) -> Result<String, String> {
     let s = list(&app).remove(&id).ok_or("that schedule was deleted")?;
-    // Review mode: one pass now; the first review it started, or "" when nothing was new.
-    if s.mode() == "review" {
-        if !app.state::<Reviews>().begin(&s.id) {
-            return Err("it's already looking for PRs; try again in a moment".into());
-        }
-        let res = review_pass(&app, &s, "manual", None);
-        app.state::<Reviews>().end(&s.id);
-        return res.map(|v| v.into_iter().next().unwrap_or_default());
-    }
     let checked = s.check().and_then(|c| match gate(run_check(c, &check_dir(&app, &s), CHECK_TIMEOUT), None) {
         Gate::Fire { output, hash } => Some((output, hash)),
         Gate::Skip { .. } => None,
@@ -1156,130 +884,32 @@ mod tests {
         assert!(with_output("Review them", "gh pr list", "").ends_with("```\n(no output)\n```"));
     }
 
-    // MR-171: review mode.
     fn sched(def: Value) -> Schedule {
         Schedule { id: "w".into(), def, set_at: 0, last_run: None, runs: vec![] }
     }
 
     #[test]
-    fn mode_is_prompt_unless_review_and_is_validated() {
+    fn every_schedule_needs_a_prompt() {
         let base = json!({ "name": "Watch", "prompt": "Do it", "cadence": { "kind": "cron", "expr": "*/5 9-17 * * 1-5" } });
-        assert_eq!(check_def(&base), Ok("prompt"));
-        assert_eq!(sched(base.clone()).mode(), "prompt");
-        let mut review = base.clone();
-        review["mode"] = "review".into();
-        assert_eq!(check_def(&review), Ok("review"));
-        assert_eq!(sched(review.clone()).mode(), "review");
-        // A review needs no prompt; a prompt run does.
-        review["prompt"] = "".into();
-        assert_eq!(check_def(&review), Ok("review"));
+        assert_eq!(check_def(&base), Ok(()));
         let mut empty = base.clone();
         empty["prompt"] = " ".into();
         assert_eq!(check_def(&empty), Err("the prompt is empty".into()));
-        for bad in [json!("reviews"), json!(1), json!(true)] {
-            let mut d = base.clone();
-            d["mode"] = bad;
-            assert!(check_def(&d).unwrap_err().starts_with("unknown mode"));
-        }
-        let mut p = base.clone();
-        p["mode"] = "prompt".into();
-        assert_eq!(check_def(&p), Ok("prompt"));
+        let runs = started_for(&sched(json!({ "permission_mode": "default" })));
+        assert_eq!((runs.schedule.as_deref(), runs.permission_mode.as_deref(), runs.unattended), (Some("w"), Some("default"), true));
     }
 
+    // MR-175: the older review mode becomes a paused prompt schedule with a gh check.
     #[test]
-    fn review_runs_are_tagged_but_not_unattended_and_use_your_mode() {
-        let review = started_for(&sched(json!({ "mode": "review", "permission_mode": "never" })));
-        assert_eq!((review.schedule.as_deref(), review.permission_mode.as_deref(), review.unattended), (Some("w"), None, false));
-        let prompt = started_for(&sched(json!({ "permission_mode": "default" })));
-        assert_eq!((prompt.permission_mode.as_deref(), prompt.unattended), (Some("default"), true));
-        // And what such a review starts with: no nobody-is-watching, the flow's wait for 'publish'.
-        let append = crate::sidecar::system_append("review", false, &review).unwrap();
-        assert!(!append.contains(crate::sidecar::UNATTENDED) && append.contains("only publish to GitHub after the user says 'publish'"));
-        assert_eq!(review_prompt("https://github.com/a/b/pull/7"), "/review https://github.com/a/b/pull/7");
-    }
-
-    #[test]
-    fn fold_lists_started_reviews_under_their_run() {
-        let evs = vec![
-            ev("ui.schedule_set", json!({ "id": "w", "name": "Watch", "mode": "review" }), 1),
-            ev("schedule.fired", json!({ "id": "w", "mode": "review", "reason": "due", "new": 0 }), 2),
-            ev("schedule.fired", json!({ "id": "w", "mode": "review", "reason": "due", "new": 2 }), 3),
-            ev("schedule.review_started", json!({ "id": "w", "url": "u/59", "number": 59, "head": "h1", "session": "s1" }), 4),
-            ev("schedule.review_started", json!({ "id": "w", "url": "u/61", "number": 61, "head": "h2", "session": "s2" }), 5),
-            ev("schedule.review_started", json!({ "id": "gone", "url": "u/1", "session": "s3" }), 6),
-        ];
-        let m = fold(&evs);
-        let w = &m["w"];
-        assert_eq!(w.mode(), "review");
-        assert_eq!(w.runs.len(), 2);
-        assert!(w.runs[0]["reviews"].is_null());
-        let started: Vec<_> = w.runs[1]["reviews"].as_array().unwrap().iter().map(|r| (r["number"].as_u64().unwrap(), r["session"].as_str().unwrap())).collect();
-        assert_eq!(started, [(59, "s1"), (61, "s2")]);
-        assert_eq!(w.last_run, Some(3));
-        // The run of a review schedule has no session of its own, so it's never "still going".
-        assert_eq!(w.last_session(), None);
-        assert_eq!(reviews_title("Watch", &[json!({ "number": 59 }), json!({ "number": 61 })]), "↻ Watch: started 2 reviews (#59, #61)");
-        assert_eq!(reviews_title("Watch", &[json!({ "number": 7 })]), "↻ Watch: started 1 review (#7)");
-    }
-
-    #[test]
-    fn a_review_starts_once_per_head_and_again_on_a_new_one() {
-        let url = "https://github.com/acme/shop/pull/59";
-        let pr = |head: &str, last: &str| json!({ "number": 59, "url": url, "headSha": head, "lastCommitAt": last, "repository": { "nameWithOwner": "acme/shop" } });
-        let at = |iso: &str| chrono::DateTime::parse_from_rfc3339(iso).unwrap().timestamp_millis();
-        let one = pr("h1", "2026-10-19T09:00:00Z");
-        assert!(needs_review(&one, &reviewed(&[])));
-        // Started by a schedule (or by auto-review) for this head: skipped.
-        let by_schedule = [ev("schedule.review_started", json!({ "id": "w", "url": url, "head": "h1", "session": "s1" }), at("2026-10-19T09:05:00Z"))];
-        assert!(!needs_review(&one, &reviewed(&by_schedule)));
-        let by_auto = [ev("ui.auto_review_started", json!({ "url": url, "head": "h1" }), at("2026-10-19T09:05:00Z"))];
-        assert!(!needs_review(&one, &reviewed(&by_auto)));
-        // A new head starts again.
-        let two = pr("h2", "2026-10-19T10:00:00Z");
-        assert!(needs_review(&two, &reviewed(&by_schedule)));
-        // A Review session you started by hand (cmd+k) after the newest commit covers it; one before doesn't.
-        let by_hand = |when: &str, prompt: &str| [ev("ui.session_requested", json!({ "kind": "review", "prompt": prompt, "resume": null }), at(when))];
-        assert!(!needs_review(&two, &reviewed(&by_hand("2026-10-19T10:30:00Z", &format!("/review {url}")))));
-        assert!(!needs_review(&two, &reviewed(&by_hand("2026-10-19T10:30:00Z", "/review acme/shop#59"))));
-        assert!(!needs_review(&two, &reviewed(&by_hand("2026-10-19T10:30:00Z", "/review #59"))));
-        assert!(needs_review(&two, &reviewed(&by_hand("2026-10-19T09:30:00Z", &format!("/review {url}")))));
-        assert!(needs_review(&two, &reviewed(&by_hand("2026-10-19T10:30:00Z", "/review https://github.com/acme/shop/pull/60"))));
-        // Not a review, or a resume: doesn't count. A draft never starts.
-        let blank = [ev("ui.session_requested", json!({ "kind": "blank", "prompt": url, "resume": null }), at("2026-10-19T10:30:00Z"))];
-        assert!(needs_review(&two, &reviewed(&blank)));
-        let mut draft = two.clone();
-        draft["isDraft"] = true.into();
-        assert!(!needs_review(&draft, &reviewed(&[])));
-        assert_eq!(review_key(url, "h1"), format!("{url}@h1"));
-    }
-
-    #[test]
-    fn an_unapproved_head_gets_one_review_of_its_own() {
-        let url = "https://github.com/acme/shop/pull/59";
-        let at = |iso: &str| chrono::DateTime::parse_from_rfc3339(iso).unwrap().timestamp_millis();
-        let pr = |head: &str, last: &str| json!({ "number": 59, "url": url, "headSha": head, "lastCommitAt": last, "reviewNote": crate::gh::NOT_APPROVED, "repository": { "nameWithOwner": "acme/shop" } });
-        let one = pr("h1", "2026-10-19T09:00:00Z");
-        // This head was reviewed already: by a schedule, by auto-review and by hand after its commit.
-        let before = vec![
-            ev("schedule.review_started", json!({ "id": "w", "url": url, "head": "h1", "session": "s1" }), at("2026-10-19T09:05:00Z")),
-            ev("ui.auto_review_started", json!({ "url": url, "head": "h1" }), at("2026-10-19T09:06:00Z")),
-            ev("ui.session_requested", json!({ "kind": "review", "prompt": format!("/review {url}"), "resume": null }), at("2026-10-19T09:30:00Z")),
-        ];
-        assert!(needs_review(&one, &reviewed(&before)));
-        // Once its own marker is logged, not again on later ticks.
-        let mut after = before.clone();
-        after.push(ev("schedule.review_started", json!({ "id": "w", "url": url, "head": "h1", "session": "s2", "reason": "not_approved" }), at("2026-10-19T10:00:00Z")));
-        assert!(!needs_review(&one, &reviewed(&after)));
-        // A new head (still unapproved) starts once more.
-        assert!(needs_review(&pr("h2", "2026-10-19T11:00:00Z"), &reviewed(&after)));
-        // The marker also counts as a plain review of that head, so auto-review's rule holds too.
-        let mut plain = one.clone();
-        plain.as_object_mut().unwrap().remove("reviewNote");
-        assert!(!needs_review(&plain, &reviewed(&after)));
-        let mut draft = one.clone();
-        draft["isDraft"] = true.into();
-        assert!(!needs_review(&draft, &reviewed(&[])));
-        assert_eq!(not_approved_key(url, "h1"), format!("{url}@h1#not_approved"));
+    fn review_mode_schedules_become_paused_prompt_schedules() {
+        let old = json!({ "id": "w", "name": "Review each new PR", "mode": "review", "prompt": "", "cwd": "~/shop", "cadence": { "kind": "cron", "expr": "*/5 9-17 * * 1-5" }, "check": null, "paused": false });
+        let new = migrated(&old).unwrap();
+        assert!(new["mode"].is_null());
+        assert_eq!((new["prompt"].as_str(), new["check"].as_str(), new["paused"].as_bool()), (Some(REVIEW_PROMPT), Some(REVIEW_CHECK), Some(true)));
+        assert_eq!((&new["id"], &new["cwd"], &new["cadence"]), (&old["id"], &old["cwd"], &old["cadence"]));
+        assert_eq!(check_def(&new), Ok(()));
+        assert_eq!(migrated(&new), None);
+        assert_eq!(migrated(&json!({ "name": "Digest", "prompt": "Do it" })), None);
     }
 
     #[cfg(unix)]
