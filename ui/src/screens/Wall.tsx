@@ -184,36 +184,33 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
 
         {(running.length > 0 || docs.length > 0) && <section aria-label="Running" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h2 className="mr-h" id="mr-running" style={{ scrollMarginTop: 12 }}>Running <span className="mr-dim">{running.length}</span></h2>
-          <div className="mr-grid" style={{ containerType: "inline-size" }}>
-            {/* A doc and the sessions that plan and build it, as one group at most two tiles wide (MR-168). */}
+          {/* Groups share a row (MR-179): a doc with the sessions that plan and build it, and a session
+              with the sessions it spawned, drawn alike: a header tile over their tiles, at most two wide. */}
+          {(grouped.groups.length > 0 || spawned.families.length > 0) && <div className="mr-grid" data-mr="GroupRow" data-mr-source="running" style={{ containerType: "inline-size" }}>
             {grouped.groups.map(({ doc, sessions: members }) => {
-              // Sessions a member spawned sit in its doc group too (MR-179).
+              // Sessions a member spawned sit in its doc group too.
               const kids = members.flatMap(({ id }) => spawned.childrenOf.get(id) ?? []);
               return (
                 <div key={doc.id} data-mr="DocGroup" data-mr-source={doc.id} className="mr-docgroup" style={{ ["--mr-span" as string]: Math.min(members.length + kids.length, 2), display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
                   <DocTile d={doc} sessions={state.sessions} onOpenDoc={onOpenDoc} header />
                   <div className="mr-grid">
                     {members.map(({ id, role }) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={{ doc, role }} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
-                    {kids.map((id) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={null} compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
+                    {kids.map((id) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={null} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
                   </div>
                 </div>
               );
             })}
-            {/* A session and the sessions it spawned, as one group like a doc's (MR-179). */}
-            {spawned.families.map(({ parent, running: on, children }) => {
-              const members = on ? [parent, ...children] : children;
-              const p = state.sessions[parent] ?? all.sessions[parent];
-              return (
-                <div key={parent} data-mr="SpawnGroup" data-mr-source={parent} className="mr-docgroup" style={{ ["--mr-span" as string]: Math.min(members.length, 2), display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
-                  <button type="button" className="mr-row mr-ellipsis" data-mr="SpawnGroupHead" data-mr-source={parent} onClick={() => p && onOpen(parent)} disabled={!p} title={p ? "Open the session that started these" : undefined} style={{ gap: 6, padding: "2px 4px", border: 0, background: "transparent", font: "inherit", color: "var(--mr-ink-2)", textAlign: "left", cursor: p ? "pointer" : "default" }}>
-                    <span style={{ fontWeight: 700 }}>↳</span><span className="mr-grow mr-ellipsis">{p ? sessionTitle(p) : state.sessions[children[0]]?.spawnedBy?.title || "Another session"}</span><span className="mr-mono mr-dim" style={{ fontSize: 12 }}>{children.length} spawned</span>
-                  </button>
-                  <div className="mr-grid">
-                    {members.map((id) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={null} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
-                  </div>
+            {spawned.families.map(({ parent, running: on, children }) => (
+              <div key={parent} data-mr="SpawnGroup" data-mr-source={parent} className="mr-docgroup" style={{ ["--mr-span" as string]: Math.min(children.length, 2), display: "flex", flexDirection: "column", gap: 6, padding: 8, background: "var(--mr-well)" }}>
+                <SessionHead id={parent} s={state.sessions[parent] ?? all.sessions[parent]} tile={on ? tileOf.get(parent)?.tile : undefined} spawned={children.length} fallback={state.sessions[children[0]]?.spawnedBy?.title ?? ""} onOpen={onOpen} />
+                <div className="mr-grid">
+                  {children.map((id) => tileOf.get(id) && <Tile key={id} s={tileOf.get(id)!.s} tile={tileOf.get(id)!.tile} docTag={null} grouped compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(tileOf.get(id)!.s)} />)}
                 </div>
-              );
-            })}
+              </div>
+            ))}
+          </div>}
+          {/* Single sessions and docs nothing works on yet: their own row. */}
+          <div className="mr-grid" style={{ containerType: "inline-size" }}>
             {spawned.loose.map((id) => { const { s, tile } = tileOf.get(id)!; return <Tile key={id} s={s} tile={tile} docTag={null} compactWindow={state.compactWindow} onOpen={onOpen} onOpenDoc={onOpenDoc} onDiscover={() => void discover(s)} />; })}
             {grouped.idle.map((d) => <DocTile key={d.id} d={d} sessions={state.sessions} onOpenDoc={onOpenDoc} />)}
             <button type="button" className="mr-tile" onClick={() => onStart()} style={{ alignItems: "center", justifyContent: "center", color: "var(--mr-ink-3)", background: "var(--mr-well)" }}>
@@ -305,11 +302,12 @@ function Tile({ s, tile, docTag, grouped, compactWindow, onOpen, onOpenDoc, onDi
       <div className="mr-flag" />
       <div className="mr-tbody">
         <div className="mr-row" style={{ alignItems: "baseline" }}>
-          <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{s.schedule && <RecurringTag s={s} />}{s.spawnedBy && <SpawnTag s={s} />}{sessionTitle(s)}</strong>
+          <strong className="mr-grow mr-ellipsis" style={{ fontSize: 15 }}>{s.schedule && <RecurringTag s={s} />}{s.spawnedBy && !grouped && <SpawnTag s={s} />}{sessionTitle(s)}</strong>
           <StateMark s={tile.state} />
         </div>
         <div className="mr-row" style={{ gap: 8 }}>
           <span className="mr-mono mr-dim mr-ellipsis mr-grow" style={{ fontSize: 12 }}>{s.kind !== "blank" && s.kind !== docTag?.role ? `${s.kind} · ` : ""}{s.branch ?? s.cwd}</span>
+          {grouped && s.spawnedBy && !docTag && <span className="mr-mono" data-mr="SpawnedChip" data-mr-source={s.id} title={s.spawnedBy.title ? `Spawned by the session “${s.spawnedBy.title}”` : "Spawned by another session"} style={{ fontSize: 12, padding: "0 6px", background: "var(--mr-well)", color: "var(--mr-ink-2)", flexShrink: 0 }}>↳ spawned</span>}
           {docTag && <span role="link" tabIndex={-1} className="mr-mono mr-ellipsis" data-mr="DocTag" data-mr-source={docTag.doc.id} title={`${docTag.role === "build" ? "Builds" : "Plans"} the working doc “${docTag.doc.title}”: click to open it`} onClick={(e) => { e.stopPropagation(); onOpenDoc(docTag.doc.id); }} style={{ fontSize: 12, padding: "0 6px", background: "var(--mr-well)", color: "var(--mr-ink-2)", flexShrink: 0, maxWidth: "60%", cursor: "pointer" }}>▤ {docTag.role}{grouped ? "" : ` · ${docTag.doc.title}`}</span>}
           {s.goal && <span className="mr-mono" data-mr="GoalMark" data-mr-source={s.id} title={`Goal: ${s.goal.condition}`} style={{ fontSize: 12, color: "var(--mr-selected)" }}>◎ goal</span>}
           <ContextMeter s={s} compactWindow={compactWindow} running={false} slim />
@@ -337,6 +335,27 @@ function RecurringTag({ s, name }: { s: SessionState; name?: string }) {
 // Started by another session (MR-176): ↳, naming the parent on hover.
 function SpawnTag({ s }: { s: SessionState }) {
   return <span data-mr="SpawnTag" data-mr-source={s.id} title={s.spawnedBy?.title ? `Started by the session “${s.spawnedBy.title}”` : "Started by another session"} style={{ marginRight: 6, fontWeight: 700, color: "var(--mr-ink-2)" }}>↳</span>;
+}
+
+// A spawn group's header (MR-179), drawn like a doc group's DocTile header: the session that
+// spawned the tiles below. Opens it; when it has stopped, it still names it.
+function SessionHead({ id, s, tile, spawned, fallback, onOpen }: { id: string; s?: SessionState; tile?: TileSpec; spawned: number; fallback: string; onOpen: (id: string) => void }) {
+  const t = tile ?? (s ? pickTile(s) : undefined);
+  const note = t ? tileNote(t) || t.step : "";
+  return (
+    <button type="button" className="mr-tile" data-mr="SpawnHead" data-mr-source={id} data-s={t?.state ?? "done"} onClick={() => s && onOpen(id)} disabled={!s} style={{ minHeight: 0 }}>
+      <div className="mr-flag" />
+      <div className="mr-tbody" style={{ gap: 4, padding: "8px 14px" }}>
+        <span className="mr-row" style={{ gap: 12, alignItems: "baseline", minWidth: 0 }}>
+          <span className="mr-mono mr-dim" aria-hidden="true" style={{ fontSize: 12, whiteSpace: "nowrap" }}>↳ session</span>
+          <strong className="mr-ellipsis mr-grow" style={{ fontSize: 15 }}>{s ? sessionTitle(s) : fallback || "Another session"}</strong>
+          {t && <StateMark s={t.state} />}
+        </span>
+        <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }}>{[s?.branch ?? s?.cwd, `${spawned} spawned`].filter(Boolean).join(" · ")}</span>
+        {note && <span className="mr-ink2 mr-ellipsis">{note}</span>}
+      </div>
+    </button>
+  );
 }
 
 // The tile's last line, only when it needs you: what Claude asks or wants, or where it stopped.
