@@ -38,7 +38,7 @@ export type Inbound =
   | { type: "set_permission_mode"; session: string; mode: PermissionMode }
   | { type: "stop"; session: string }
   | { type: "permission_response"; session: string; request_id: string; decision: PermissionDecision }
-  | { type: "tool_result"; session: string; call_id: string; text: string; is_error?: boolean }
+  | { type: "tool_result"; session: string; call_id: string; text: string; is_error?: boolean; end_turn?: "always" | "after_reply" | null }
   | { type: "commands"; session: string }
   | { type: "mcp_status"; session: string }
   | { type: "mcp_action"; session: string; server: string; action: Exclude<McpAction, "add"> }

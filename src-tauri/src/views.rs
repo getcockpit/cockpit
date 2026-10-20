@@ -97,7 +97,7 @@ Every block except next and text carries Deeper / Discover actions. Use AskUserQ
 pub fn plan_spec() -> Value {
     json!({
         "name": PLAN,
-        "description": "Publish your plan for the current work so the user can follow it (the app shows it as a plan with progress). Call it before starting any work with 3 or more steps, and again every time a step starts or finishes, always with the full list. steps: [{step: short imperative ('Migrate the readers'), status: 'done'|'doing'|'todo'}]; exactly one step is 'doing' while you work. Add or drop steps when the plan changes. Don't repeat the plan as text.",
+        "description": "Publish your plan for the current work so the user can follow it (the app shows it as a plan with progress). Call it before starting any work with 3 or more steps, and again every time a step starts or finishes, always with the full list. steps: [{step: short imperative ('Migrate the readers'), status: 'done'|'doing'|'todo'}]; exactly one step is 'doing' while you work. Add or drop steps when the plan changes. Send it with real work or your reply, never alone. Don't repeat the plan as text.",
         "params": { "steps": "array" },
         "always_load": true
     })
@@ -129,6 +129,20 @@ pub fn validate_title(args: &Value) -> Result<Value, String> {
 }
 
 /// Checks a plan. Ok: the event payload. Err: what to fix.
+/// Whether a successful call ends the turn there, so Claude isn't asked again only to stop (MR-174).
+/// `always`: a shown view is the turn's last call. `after_reply`: a plan with every step done closes
+/// the work, but only once Claude has written its reply in the same message (the sidecar checks).
+pub fn ends_turn(tool: &str, args: &Value, is_error: bool) -> Option<&'static str> {
+    if is_error {
+        return None;
+    }
+    if tool == TOOL {
+        return Some("always");
+    }
+    let all_done = args["steps"].as_array().is_some_and(|s| !s.is_empty() && s.iter().all(|x| x["status"] == "done"));
+    (tool == PLAN && all_done).then_some("after_reply")
+}
+
 pub fn validate_plan(args: &Value) -> Result<Value, String> {
     let steps = args["steps"].as_array().filter(|s| !s.is_empty()).ok_or("steps must be a non-empty array of {step, status}")?;
     let mut errors = vec![];
@@ -210,6 +224,18 @@ pub fn handle_tool(tool: &str, args: &Value) -> (Vec<(String, Value)>, String, b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_view_or_a_finished_plan_ends_the_turn() {
+        let done = json!({ "steps": [{ "step": "a", "status": "done" }, { "step": "b", "status": "done" }] });
+        let open = json!({ "steps": [{ "step": "a", "status": "done" }, { "step": "b", "status": "doing" }] });
+        assert_eq!(ends_turn(TOOL, &json!({}), false), Some("always"));
+        assert_eq!(ends_turn(TOOL, &json!({}), true), None);
+        assert_eq!(ends_turn(PLAN, &done, false), Some("after_reply"));
+        assert_eq!(ends_turn(PLAN, &open, false), None);
+        assert_eq!(ends_turn(PLAN, &json!({ "steps": [] }), false), None);
+        assert_eq!(ends_turn(TITLE, &json!({ "title": "x" }), false), None);
+    }
 
     #[test]
     fn valid_views_become_events() {
