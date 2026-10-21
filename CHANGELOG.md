@@ -4,6 +4,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-10-21
+
+### Added
+- **Timestamps everywhere in a session:** every transcript row shows its time in a left gutter, including rows under a plan step and tool calls in an opened step or group. A clock in the same minute as the row above appears on hover, a divider marks each new day, and hovering any clock gives the full date. "Turn finished" now says how long the turn took. A 12-hour clock says AM/PM only where it changes.
+- **Doc blocks say when they were last updated:** an open block shows "Updated Yesterday 10:03", and a block tile gives the full time on hover.
+
+### Fixed
+- **Spawned reviews get the review flow:** `session_spawn` takes a kind (blank, review or address), so a review or address that a session starts opens with its own flow instead of as a plain session.
+
 ## [0.1.14] - 2026-10-20
 
 ### Changed
