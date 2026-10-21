@@ -7,6 +7,7 @@ import { emit } from "@tauri-apps/api/event";
 import type { Cadence, McpServer, MrEvent } from "../state/types";
 import { cadenceExpr, nextRuns } from "../components/cron";
 import type { Doc } from "../state/docs";
+import { ulidAt } from "../picker/stamp";
 import { watchSlug } from "../state/prRepo";
 import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
@@ -183,7 +184,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       const sid = String(a.session);
       const did = `doc_brief${Date.now().toString(36)}`;
       const blk = (bid: string, section: string, takeaway: string, key: string, body: string, order: number, view: unknown[], data: Doc["blocks"][string]["data"] = null) =>
-        ({ id: bid, section, status: "", takeaway, key, body, data, order, decision: null, updated: "", view: view as never });
+        ({ id: bid, section, status: "", takeaway, key, body, data, order, decision: null, updated: ulidAt(Date.now()), view: view as never });
       // The brief matches the session it's for (MR-139): the finished settings refactor, else the login fix.
       const settings = sid === "D";
       docs = [...docs, { id: did, title: settings ? "Catch-up: Refactor the settings schema" : "Catch-up: Fix the login redirect loop", session_id: sid, version: 1, kind: "brief", blocks: {}, pending_notes: [], pending_changes: [] }];
