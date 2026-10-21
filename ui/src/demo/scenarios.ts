@@ -1,4 +1,5 @@
 import type { Doc } from "../state/docs";
+import { ulidAt } from "../picker/stamp";
 import REPORT_REPLY from "./fixtures/report-reply.md?raw";
 import REVIEW_OVERVIEW from "./fixtures/review-overview.json";
 import planDocFixture from "./fixtures/plan-doc.json";
@@ -85,7 +86,7 @@ const planDoc: Doc = {
     { id: "b5", section: "question", status: "open", takeaway: "Sync for small accounts, or always through the queue?", key: "Sync or queue?", body: "Sync is instant for 95% of accounts but adds a second code path.", view: [{ type: "compare", criteria: ["Code paths", "Small accounts wait", "Test effort"], rows: [{ option: "Always queue", values: ["1", "~20 s", "Low"], recommended: true }, { option: "Sync under 10k rows", values: ["2", "none", "Double"] }] }], data: { options: [{ label: "Always queue", description: "One path, simpler; a short wait for small accounts" }, { label: "Sync under 10k rows", description: "Instant for most; two code paths to test" }] } },
     { id: "b7", section: "question", status: "open", takeaway: "Which formats ship in v1?", key: "Formats", body: "Finance asked for CSV; two teams also want XLSX.", data: { multiSelect: true, options: [{ label: "CSV", description: "what finance asked for" }, { label: "XLSX", description: "opens in Excel without import" }, { label: "JSON", description: "for the data team" }] } },
     { id: "b6", section: "verification", status: "proposed", takeaway: "Golden-file test on a fixture account plus a 2M-row load test.", key: "Golden file + load test", body: "", view: [{ type: "checklist", items: [{ label: "Golden file matches on the fixture account", ok: null, proof: "vitest export.golden" }, { label: "2M rows export in under 15 min", ok: null, proof: "load test on staging" }, { label: "Signed link expires after 24 h", ok: null }] }] },
-  ].map((b, i) => [b.id, { data: null, decision: null, updated: "", since: 1, was: null, ...b, order: i }])),
+  ].map((b, i) => [b.id, { data: null, decision: null, updated: ulidAt(Date.now() - (6 - i) * 7 * 60_000 - (i < 2 ? 86_400_000 : 0)), since: 1, was: null, ...b, order: i }])),
 } as Doc;
 
 // The plan doc with every question answered by its first option.

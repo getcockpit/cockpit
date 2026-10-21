@@ -1,4 +1,5 @@
 import { keyOf } from "../components/keys";
+import { fullTime, ulidTime, whenLabel } from "../picker/stamp";
 import { keyLabel, modKey } from "../platform";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Key, PickAny } from "../components";
@@ -253,7 +254,7 @@ const clamp = (lines: number): React.CSSProperties => ({ display: "-webkit-box",
 function BlockTile({ doc, b, dim, changedIn, thread, onClick }: { doc: Doc; b: Block; dim: boolean; changedIn: number | null; thread?: string; onClick: (e: React.MouseEvent) => void }) {
   const openQ = isOpenQuestion(b), kicker = kickerOf(b);
   return (
-    <button type="button" data-mr="DocBlock" data-mr-source={`${doc.id}:${b.id}`} onClick={onClick} aria-label={`Open ${kicker}: ${b.takeaway}`}
+    <button type="button" data-mr="DocBlock" data-mr-source={`${doc.id}:${b.id}`} onClick={onClick} aria-label={`Open ${kicker}: ${b.takeaway}`} title={ulidTime(b.updated) != null ? `Updated ${fullTime(ulidTime(b.updated)!)}` : undefined}
       style={{ border: 0, borderLeft: `6px solid ${edgeOf(b, isBrief(doc))}`, padding: "14px 16px", background: "var(--mr-tile)", opacity: dim ? 0.35 : 1, transition: "opacity 200ms", textAlign: "left", font: "inherit", color: "var(--mr-ink)", cursor: "zoom-in", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
       <span style={{ fontSize: 12, color: openQ ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: 700 }}>{openQ ? "◆ " : b.decision === "Wrong" && b.section === "risk" ? "✕ " : b.decision ? "✓ " : ""}{kicker}</span>
       <span style={{ fontSize: 16, lineHeight: 1.3, fontWeight: 700, ...clamp(4) }}>{b.takeaway || "(no takeaway)"}</span>
@@ -287,6 +288,8 @@ function BlockOpen(props: {
           style={{ fontSize: 22, fontWeight: 700, outline: "none", borderBottom: "1px dotted var(--mr-ink-3)", cursor: "text" }}>{b.takeaway}</span>
         <span className="mr-dim" style={{ whiteSpace: "nowrap" }}>{kicker}</span>
       </div>
+      {/* When it was last written (MR-182): its last block_set's event id carries the time. */}
+      {ulidTime(b.updated) != null && <time data-mr="BlockStamp" data-mr-source={`${doc.id}:${b.id}`} className="mr-mono mr-dim" style={{ fontSize: 12, marginTop: -6 }} dateTime={new Date(ulidTime(b.updated)!).toISOString()} title={fullTime(ulidTime(b.updated)!)}>Updated {whenLabel(ulidTime(b.updated)!, Date.now())}</time>}
       {props.changedIn && b.was && <span style={{ color: "var(--mr-selected)" }}>Changed in v{props.changedIn}. Was: <s className="mr-dim">{b.was}</s></span>}
       <span contentEditable suppressContentEditableWarning aria-label="Edit key detail" className="mr-ink2"
         onBlur={(e) => { const v = e.currentTarget.textContent ?? ""; if (v.trim() && v !== b.key) void docApi.edit(doc, b.id, "key", v.trim()); }}
