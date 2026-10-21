@@ -8,6 +8,16 @@ export function clockTime(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** The clock split from its AM/PM (empty in 24-hour locales): the gutter says the period only when
+ *  it changes, so a column of 12-hour clocks doesn't repeat "AM" on every row. */
+export function clockParts(at: number): { time: string; period: string } {
+  const parts = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(at));
+  return {
+    time: parts.filter((p) => p.type !== "dayPeriod").map((p) => p.value).join("").trim(),
+    period: parts.find((p) => p.type === "dayPeriod")?.value ?? "",
+  };
+}
+
 /** "Wed 21 Oct 2026, 14:32:05": the tooltip, so the exact moment is one hover away. */
 export function fullTime(at: number): string {
   return new Date(at).toLocaleString([], { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });

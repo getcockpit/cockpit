@@ -28,7 +28,7 @@ import { CatalogView, viewReplies } from "../components/CatalogView";
 import { Mark } from "../components/Turn";
 import { useTick } from "../components/Now";
 import { ago } from "../picker/now";
-import { clockTime, dayKey, dayLabel, fullTime, minuteKey } from "../picker/stamp";
+import { clockParts, dayKey, dayLabel, fullTime, minuteKey } from "../picker/stamp";
 import { LiveTrack } from "../components/Now";
 import { MoveWorkspace } from "../components/MoveWorkspace";
 import { ReviewChanges } from "./ReviewChanges";
@@ -299,29 +299,20 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
   // hover otherwise, a day divider when the day does, the full date in its tooltip. Rows are stamped
   // in reading order, so a step's clock is taken before the rows under it.
   const now = Date.now();
-  let lastMin = "", lastDay = "";
-  const mark = (at: number | undefined) => {
-    if (at == null || !Number.isFinite(at)) return null;
-    const m = { at, divider: dayKey(at) !== lastDay, dup: minuteKey(at) === lastMin };
-    lastDay = dayKey(at); lastMin = minuteKey(at);
-    return m;
-  };
-  const stamped = (m: ReturnType<typeof mark>, id: string, nested: boolean, node: React.ReactNode): React.ReactNode => !m || node == null ? node : (
+  const mark = stamper();
+  const stamped = (m: Stamp | null, id: string, nested: boolean, node: React.ReactNode): React.ReactNode => !m || node == null ? node : (
     <Fragment key={id}>
-      {m.divider && <div data-mr="DayDivider" data-mr-source={id} className="mr-day" data-nested={nested || undefined}><span>{dayLabel(m.at, now)}</span></div>}
-      <div className="mr-stamped" data-nested={nested || undefined}>
-        <time className="mr-stamp" data-mr="Stamp" data-mr-source={id} dateTime={new Date(m.at).toISOString()} title={fullTime(m.at)} data-dup={m.dup || undefined}>{clockTime(m.at)}</time>
-        <div style={{ minWidth: 0 }}>{node}</div>
-      </div>
+      {m.divider && <div data-mr="DayDivider" data-mr-source={id} className="mr-day" data-indent={nested || undefined} style={nested ? { "--mr-indent": "24px" } as React.CSSProperties : undefined}><span>{dayLabel(m.at, now)}</span></div>}
+      <Stamped m={m} id={id} indent={nested ? 24 : 0}>{node}</Stamped>
     </Fragment>
   );
   const rowAt = (t: Row): number | undefined => t.kind === "step" ? t.from : t.kind === "tools" || t.kind === "checks" ? t.tools[0]?.at : t.at;
   // Your message → the turn that answered it: how long the turn took, beside "turn finished".
   const asked = new Map<string, number>();
   { let from: number | null = null; for (const t of items) { if (t.kind === "user" && from == null) from = t.at; if (t.kind === "result") { if (from != null) asked.set(t.id, from); from = null; } } }
-  const one = (t: Row, nested = false): React.ReactNode => t.kind === "step" ? null : stamped(mark(rowAt(t)), t.id, nested, row(t));
+  const one = (t: Row, nested = false): React.ReactNode => t.kind === "step" ? null : stamped(mark(rowAt(t)), t.id, nested, row(t, nested));
   // One transcript row: Claude's prose, a composed view, your message, a turn marker or tool steps.
-  const row = (t: Exclude<Row, StepRow>): React.ReactNode => t.kind === "text" ? (
+  const row = (t: Exclude<Row, StepRow>, nested: boolean): React.ReactNode => t.kind === "text" ? (
         <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {diagrams[t.id] && <FlowDiagram d={diagrams[t.id]!} />}
           <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} actions={t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
@@ -337,7 +328,7 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
       ) : t.kind === "result" ? (
         <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}{asked.has(t.id) && t.at - asked.get(t.id)! >= 1000 && <span className="mr-dim">· took {ago(t.at - asked.get(t.id)!)}</span>}</div>
       ) : t.kind === "tools" ? (
-        <ToolGroup key={t.id} tools={t.tools} onDiscover={onDiscover} />
+        <ToolGroup key={t.id} tools={t.tools} indent={nested ? 48 : 24} onDiscover={onDiscover} />
       ) : t.kind === "checks" ? (
         <CheckList key={t.id} tools={t.tools} />
       ) : (() => {
@@ -407,6 +398,41 @@ export function nextReplies(s: SessionState): string[] {
 }
 
 type Tool = Extract<TranscriptItem, { kind: "tool" }>;
+// One row's clock (MR-182). said: this clock spells out AM/PM (the first of a day, or where it flips);
+// elsewhere its space stays reserved so the digits line up down the gutter. dup: same minute as the row above.
+type Stamp = { at: number; time: string; period: string; said: boolean; divider: boolean; dup: boolean };
+
+/** Stamps rows in reading order. `after`: the row just above, for a list that opens under it. */
+function stamper(after?: number): (at: number | undefined) => Stamp | null {
+  let lastMin = after == null ? "" : minuteKey(after), lastDay = after == null ? "" : dayKey(after), lastPeriod = after == null ? "" : clockParts(after).period;
+  return (at) => {
+    if (at == null || !Number.isFinite(at)) return null;
+    const { time, period } = clockParts(at);
+    const divider = dayKey(at) !== lastDay;
+    const m = { at, time, period, said: !!period && (divider || period !== lastPeriod), divider, dup: minuteKey(at) === lastMin };
+    lastDay = dayKey(at); lastMin = minuteKey(at); lastPeriod = period;
+    return m;
+  };
+}
+
+/** A row with its clock out in the transcript's gutter. indent: how far right of the gutter the row
+ *  already sits (under a step, inside an opened list), so the clock is pulled back by as much. */
+function Stamped({ m, id, indent, children }: { m: Stamp | null; id: string; indent: number; children: React.ReactNode }) {
+  if (!m) return <>{children}</>;
+  return (
+    <div className="mr-stamped" data-indent={indent || undefined} style={indent ? { "--mr-indent": `${indent}px` } as React.CSSProperties : undefined}>
+      <time className="mr-stamp" data-mr="Stamp" data-mr-source={id} dateTime={new Date(m.at).toISOString()} title={fullTime(m.at)} data-dup={m.dup || undefined}>{m.time}{m.period && <span className="mr-stamp-period" data-said={m.said || undefined}> {m.period}</span>}</time>
+      <div style={{ minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
+/** Tool rows opened under a step or a folded group, each with its clock. */
+function ToolRows({ tools, after, indent, onDiscover }: { tools: Tool[]; after?: number; indent: number; onDiscover: (what: string) => void }) {
+  const mark = stamper(after);
+  return <>{tools.map((x) => <Stamped key={x.id} m={mark(x.at)} id={x.id} indent={indent}><ToolRow t={x} onDiscover={onDiscover} /></Stamped>)}</>;
+}
+
 type StepRow = { kind: "step"; id: string; step: string; tools: Tool[]; signal: Row[]; from: number; to: number };
 type Row = TranscriptItem | { kind: "tools"; id: string; tools: Tool[] } | { kind: "checks"; id: string; tools: Tool[] } | StepRow;
 
@@ -464,7 +490,7 @@ function StepGroup({ g, todo, live, onDiscover, folded, children }: { g: StepRow
           {g.tools.length > 0 && <span className="mr-mono" style={{ fontSize: 12 }}>{open ? "▾" : "▸"}</span>}
         </button>
         <StepSummary tools={[...g.tools, ...g.signal.filter((x): x is Tool => x.kind === "tool" && !!x.isError)]} source={g.id} />
-        {open && <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{g.tools.map((x) => <ToolRow key={x.id} t={x} onDiscover={onDiscover} />)}</div>}
+        {open && <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}><ToolRows tools={g.tools} after={g.from} indent={24} onDiscover={onDiscover} /></div>}
       </div>
       {folded && (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)", paddingLeft: 24 }}>
@@ -516,7 +542,7 @@ function summarise(tools: Tool[]): string {
   return [...counts].map(([k, n]) => { const [verb, noun] = k.split("|"); return `${verb} ${n} ${noun}${n === 1 ? "" : "s"}`; }).join(" · ");
 }
 
-function ToolGroup({ tools, onDiscover }: { tools: Tool[]; onDiscover: (what: string) => void }) {
+function ToolGroup({ tools, indent, onDiscover }: { tools: Tool[]; indent: number; onDiscover: (what: string) => void }) {
   const [open, setOpen] = useState(false);
   const failed = tools.some((t) => t.isError);
   const pending = tools.some((t) => t.result === undefined);
@@ -527,7 +553,7 @@ function ToolGroup({ tools, onDiscover }: { tools: Tool[]; onDiscover: (what: st
         <span className="mr-ink2 mr-grow mr-ellipsis">{summarise(tools)}</span>
         <span className="mr-mono" style={{ fontSize: 12, color: failed ? "var(--mr-error)" : pending ? "var(--mr-ink-3)" : "var(--mr-done)" }}>{failed ? "✕" : pending ? "…" : "✓"} <span className="mr-chev" data-open={open}>▸</span></span>
       </button>
-      {open && <div className="mr-reveal mr-stream" style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}>{tools.map((t) => <ToolRow key={t.id} t={t} onDiscover={onDiscover} />)}</div>}
+      {open && <div className="mr-reveal mr-stream" style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 0 6px 24px" }}><ToolRows tools={tools} after={tools[0]?.at} indent={indent} onDiscover={onDiscover} /></div>}
     </div>
   );
 }
