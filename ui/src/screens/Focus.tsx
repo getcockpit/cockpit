@@ -1,6 +1,6 @@
 import { keyLabel } from "../platform";
 import { focusKey } from "../components/keys";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DeliveryMark, Key, StateMark } from "../components";
 import { pickTile } from "../picker/pick";
@@ -28,6 +28,7 @@ import { CatalogView, viewReplies } from "../components/CatalogView";
 import { Mark } from "../components/Turn";
 import { useTick } from "../components/Now";
 import { ago } from "../picker/now";
+import { clockTime, dayKey, dayLabel, fullTime, minuteKey } from "../picker/stamp";
 import { LiveTrack } from "../components/Now";
 import { MoveWorkspace } from "../components/MoveWorkspace";
 import { ReviewChanges } from "./ReviewChanges";
@@ -294,8 +295,33 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
   const seen = useRef(false);
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest", behavior: seen.current ? "smooth" : "auto" }); seen.current = true; }, [items.length]);
   if (items.length === 0) return <div className="mr-dim" style={{ padding: 12, background: "var(--mr-tile)" }}>Waiting for the first message…</div>;
+  // When each row happened (MR-182): a clock in the left gutter, shown when the minute changes and on
+  // hover otherwise, a day divider when the day does, the full date in its tooltip. Rows are stamped
+  // in reading order, so a step's clock is taken before the rows under it.
+  const now = Date.now();
+  let lastMin = "", lastDay = "";
+  const mark = (at: number | undefined) => {
+    if (at == null || !Number.isFinite(at)) return null;
+    const m = { at, divider: dayKey(at) !== lastDay, dup: minuteKey(at) === lastMin };
+    lastDay = dayKey(at); lastMin = minuteKey(at);
+    return m;
+  };
+  const stamped = (m: ReturnType<typeof mark>, id: string, nested: boolean, node: React.ReactNode): React.ReactNode => !m || node == null ? node : (
+    <Fragment key={id}>
+      {m.divider && <div data-mr="DayDivider" data-mr-source={id} className="mr-day" data-nested={nested || undefined}><span>{dayLabel(m.at, now)}</span></div>}
+      <div className="mr-stamped" data-nested={nested || undefined}>
+        <time className="mr-stamp" data-mr="Stamp" data-mr-source={id} dateTime={new Date(m.at).toISOString()} title={fullTime(m.at)} data-dup={m.dup || undefined}>{clockTime(m.at)}</time>
+        <div style={{ minWidth: 0 }}>{node}</div>
+      </div>
+    </Fragment>
+  );
+  const rowAt = (t: Row): number | undefined => t.kind === "step" ? t.from : t.kind === "tools" || t.kind === "checks" ? t.tools[0]?.at : t.at;
+  // Your message → the turn that answered it: how long the turn took, beside "turn finished".
+  const asked = new Map<string, number>();
+  { let from: number | null = null; for (const t of items) { if (t.kind === "user" && from == null) from = t.at; if (t.kind === "result") { if (from != null) asked.set(t.id, from); from = null; } } }
+  const one = (t: Row, nested = false): React.ReactNode => t.kind === "step" ? null : stamped(mark(rowAt(t)), t.id, nested, row(t));
   // One transcript row: Claude's prose, a composed view, your message, a turn marker or tool steps.
-  const one = (t: Row): React.ReactNode => t.kind === "step" ? null : t.kind === "text" ? (
+  const row = (t: Exclude<Row, StepRow>): React.ReactNode => t.kind === "text" ? (
         <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {diagrams[t.id] && <FlowDiagram d={diagrams[t.id]!} />}
           <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} actions={t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
@@ -309,7 +335,7 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
       ) : t.kind === "user" ? (
         <div key={t.id} className="mr-row" style={{ padding: "10px 14px", background: "var(--mr-well)", alignItems: "flex-start" }}><span className="mr-mono mr-dim" data-mr="UserFrom" data-mr-source={t.id}>{t.via === "doc" ? "▤ doc →" : t.via === "child" ? "↳ child →" : "you →"}</span><span className="mr-grow" style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>{t.text && <UserText text={t.text} commands={commands} />}{t.attachments && <AttachmentRow items={t.attachments} big />}</span>{t.delivery && <DeliveryMark d={t.delivery} source={t.id} />}</div>
       ) : t.kind === "result" ? (
-        <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}</div>
+        <div key={t.id} className="mr-row mr-mono" style={{ padding: "6px 14px", color: t.ok ? "var(--mr-done)" : "var(--mr-error)", fontSize: 12 }}>{t.ok ? "✓ turn finished" : "✕ turn failed"}{asked.has(t.id) && t.at - asked.get(t.id)! >= 1000 && <span className="mr-dim">· took {ago(t.at - asked.get(t.id)!)}</span>}</div>
       ) : t.kind === "tools" ? (
         <ToolGroup key={t.id} tools={t.tools} onDiscover={onDiscover} />
       ) : t.kind === "checks" ? (
@@ -325,10 +351,12 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
         ? items.map((t) => <pre key={t.id} className="mr-code" style={{ fontSize: 11 }}>{JSON.stringify(t, null, 1)}</pre>)
         : groupSteps(items.filter((t) => !(t.kind === "tool" && HIDDEN_TOOLS.has(t.name)))).map((t) => t.kind === "step"
           ? (() => {
+              const m = mark(t.from);
               // More than three edits in a step fold behind one button: its summary already lists the files (MR-76).
               const edits = t.signal.filter((x) => x.kind === "tool" && editCard(x));
               const fold = edits.length > 3;
-              return <StepGroup key={t.id} g={t} todo={plan.find((x) => x.content === t.step) ?? null} live={running} onDiscover={onDiscover} folded={fold ? edits.map(one) : undefined}>{mergeChecks(fold ? t.signal.filter((x) => !edits.includes(x)) : t.signal).map(one)}</StepGroup>;
+              const rest = mergeChecks(fold ? t.signal.filter((x) => !edits.includes(x)) : t.signal).map((x) => one(x, true));
+              return stamped(m, t.id, false, <StepGroup key={t.id} g={t} todo={plan.find((x) => x.content === t.step) ?? null} live={running} onDiscover={onDiscover} folded={fold ? edits.map((x) => one(x, true)) : undefined}>{rest}</StepGroup>);
             })()
           : one(t))}
       <div ref={end} />

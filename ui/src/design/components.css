@@ -170,3 +170,16 @@ textarea.mr-input { display: block; padding: 10px 12px; line-height: 1.4; resize
 /* Copy buttons on text blocks: shown on hover or keyboard focus, kept while saying "Copied". */
 .mr-copy { opacity: 0; transition: opacity var(--mr-fast) var(--mr-ease); }
 .mr-copyable:hover .mr-copy, .mr-copy:focus-visible, .mr-copy[data-state="done"], .mr-copy[data-state="failed"] { opacity: 1; }
+/* Transcript clocks (MR-182): a left gutter with each row's time. Clocks sit on the first line of their row
+   (baseline). A row in the same minute as the one above keeps its clock hidden until hovered. Rows under a plan step pull their clock back out to the
+   gutter, past the step's 24px indent, so every clock lines up. */
+.mr-stream { --mr-stamp-w: 64px; }
+.mr-stamped { display: grid; grid-template-columns: var(--mr-stamp-w) minmax(0, 1fr); align-items: baseline; }
+.mr-stamped[data-nested] { margin-left: calc(-1 * (var(--mr-stamp-w) + 24px)); grid-template-columns: var(--mr-stamp-w) 24px minmax(0, 1fr); }
+.mr-stamped[data-nested] > :last-child { grid-column: 3; }
+.mr-stamp { font-family: var(--mr-mono); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--mr-ink-3); text-align: right; white-space: nowrap; padding-right: 10px; cursor: default; transition: opacity var(--mr-fast) var(--mr-ease); }
+.mr-stamp[data-dup] { opacity: 0; }
+.mr-stamped:hover > .mr-stamp { opacity: 1; }
+.mr-day { display: flex; align-items: center; gap: 10px; padding: 6px 0 2px var(--mr-stamp-w); font-size: 12px; font-weight: 700; color: var(--mr-ink-3); }
+.mr-day[data-nested] { margin-left: calc(-1 * (var(--mr-stamp-w) + 24px)); }
+.mr-day::after { content: ""; flex: 1; height: 2px; background: var(--mr-well); }
