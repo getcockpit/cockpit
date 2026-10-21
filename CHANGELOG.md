@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-10-21
+
+### Fixed
+- **A session whose worktree was deleted can continue:** sending it a message re-creates the worktree from its `mr/<name>` branch at the same path, so the conversation picks up where it left off. The change map says so, instead of git's "cannot change to" error.
+
 ## [0.1.15] - 2026-10-21
 
 ### Added
