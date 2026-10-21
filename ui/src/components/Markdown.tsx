@@ -12,9 +12,10 @@ export function Markdown({ text }: { text: string }) {
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     if (l.startsWith("```")) {
+      const before = i > 0 ? lines[i - 1] : "";
       const code: string[] = [];
       for (i++; i < lines.length && !lines[i].startsWith("```"); i++) code.push(lines[i]);
-      const cmd = fenceCommand(l.slice(3), code);
+      const cmd = fenceCommand(l.slice(3), code, before);
       out.push(
         <div key={i} className="mr-copyable" style={{ position: "relative" }}>
           <pre className="mr-code" style={{ fontSize: 12, margin: 0 }}>{code.join("\n")}</pre>
@@ -102,15 +103,15 @@ export function inline(t: string): ReactNode[] {
   return t.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g).map((part, i, parts) =>
     part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong>
     : part.length > 2 && part.startsWith("*") && part.endsWith("*") ? <em key={i}>{part.slice(1, -1)}</em>
-    : part.startsWith("`") && part.endsWith("`") ? <Code key={i} code={part.slice(1, -1)} before={parts.slice(0, i).join("")} />
+    : part.startsWith("`") && part.endsWith("`") ? <Code key={i} code={part.slice(1, -1)} before={parts.slice(0, i).join("")} after={parts.slice(i + 1).join("")} />
     : part,
   );
 }
 
 // Inline code; a command Claude tells you to run gets a Run button after it (MR-85), and a file
 // that exists becomes a chip that shows it in Finder (MR-112).
-function Code({ code, before }: { code: string; before: string }) {
-  const cmd = inlineCommand(code, before);
+function Code({ code, before, after }: { code: string; before: string; after: string }) {
+  const cmd = inlineCommand(code, before, after);
   const plain = <code className="mr-mono" style={{ background: "var(--mr-well)", padding: "0 4px" }}>{code}</code>;
   return <>{cmd ? plain : <FileRefChip text={code} fallback={plain} />}{cmd && <RunKey command={cmd} compact />}</>;
 }

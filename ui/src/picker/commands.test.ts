@@ -34,3 +34,15 @@ test("an unlabelled fence counts only when every line is a command (MR-111)", ()
   expect(fenceCommand("", ["cd ui", "bun run test"])).toBe("cd ui\nbun run test");
   expect(fenceCommand("", ["npm test", "PASS 12 tests"])).toBeNull();
 });
+
+// God-mode mark: "Run this in your terminal" over an unlabelled `gcloud auth …` fence had no Run button.
+test("an unlabelled fence the line before says to run gets Run", () => {
+  const login = ["gcloud auth application-default login"];
+  expect(fenceCommand("", login)).toBe("gcloud auth application-default login");
+  expect(fenceCommand("", ["terraform-ish thing"], "Run this in your terminal (about 1 min):")).toBe("terraform-ish thing");
+  expect(fenceCommand("", ["make"], "Run this:")).toBe("make");
+  expect(fenceCommand("", ["make"])).toBeNull();
+  expect(fenceCommand("", ["const x = 1;"], "Run this:")).toBeNull();
+  expect(fenceCommand("", ["a", "b", "c", "d"], "Run this:")).toBeNull();
+  expect(fenceCommand("json", ['{"a": 1}'], "Run with this config:")).toBeNull();
+});
