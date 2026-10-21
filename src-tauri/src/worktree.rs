@@ -50,6 +50,20 @@ pub fn create(dir: &Path, prompt: &str, id: &str) -> Result<Worktree, String> {
     Ok(Worktree { repo, path, branch })
 }
 
+/// Re-creates a session's worktree whose folder was deleted, from its `mr/<name>` branch, so the
+/// session can resume there (Claude keeps its transcript under that exact path).
+pub fn restore(path: &Path) -> Result<(), String> {
+    let name = path.file_name().and_then(|n| n.to_str()).ok_or("bad path")?;
+    let base = path.parent().ok_or("bad path")?;
+    let repo_name = base.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix("-worktrees")).ok_or("not a session worktree")?;
+    let repo = base.parent().ok_or("bad path")?.join(repo_name);
+    let branch = format!("mr/{name}");
+    git(&repo, &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")]).map_err(|_| format!("its branch {branch} is gone too"))?;
+    // A folder deleted by hand leaves git's registration behind, which blocks `worktree add`.
+    git(&repo, &["worktree", "prune"])?;
+    git(&repo, &["worktree", "add", path.to_str().ok_or("bad path")?, &branch]).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +88,26 @@ mod tests {
         assert!(wt.path.join(".git").exists());
         assert_eq!(repo_root(&wt.path).unwrap().canonicalize().unwrap(), wt.path.canonicalize().unwrap());
         assert!(repo_root(&root).is_none());
+    }
+
+    // God-mode mark: a session whose worktree folder was deleted couldn't resume ("cannot change to").
+    #[test]
+    fn restores_a_deleted_worktree_from_its_branch() {
+        let root = std::env::temp_dir().join(format!("mr-wt-{}", ulid::Ulid::new()));
+        let repo = root.join("demo");
+        std::fs::create_dir_all(&repo).unwrap();
+        for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
+            assert!(Command::new("git").arg("-C").arg(&repo).args(&args).status().unwrap().success());
+        }
+        let wt = create(&repo, "Do detailed scan", "01ABCDEFGHJK").unwrap();
+        std::fs::remove_dir_all(&wt.path).unwrap();
+        restore(&wt.path).unwrap();
+        assert!(wt.path.join(".git").exists());
+        assert_eq!(git(&wt.path, &["branch", "--show-current"]).unwrap(), wt.branch);
+        // Without its branch there's nothing to restore.
+        std::fs::remove_dir_all(&wt.path).unwrap();
+        git(&repo, &["worktree", "prune"]).unwrap();
+        git(&repo, &["branch", "-D", &wt.branch]).unwrap();
+        assert!(restore(&wt.path).unwrap_err().contains("branch"));
     }
 }

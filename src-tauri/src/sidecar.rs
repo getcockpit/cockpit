@@ -454,6 +454,10 @@ pub fn start_with(
     started: Started,
 ) -> Result<String, String> {
     let mut cwd = expand_home(&app, &cwd);
+    if resume.is_some() && !std::path::Path::new(&cwd).is_dir() {
+        // Its worktree was removed: bring it back from the branch so the conversation continues.
+        crate::worktree::restore(std::path::Path::new(&cwd)).map_err(|e| format!("this session's folder was removed and can't be restored: {e}"))?;
+    }
     if !std::path::Path::new(&cwd).is_dir() {
         return Err(format!("not a folder: {cwd}"));
     }

@@ -21,5 +21,5 @@ test("other git errors show only their first line", () => {
 // God-mode mark: a session whose worktree was deleted showed git's raw "cannot change to '<path>'" error.
 test("a deleted session folder says the worktree is gone, not git's chdir error", () => {
   const raw = "fatal: cannot change to '/Users/me/go/github.com/acme/platform-worktrees/do-detailed-scan-check-how-s0qn': No such file or directory";
-  expect(changesError(raw)).toBe("this session's folder no longer exists (its worktree was removed), so it can't continue there");
+  expect(changesError(raw)).toBe("this session's folder no longer exists (its worktree was removed); send a message to restore it from its branch");
 });
