@@ -179,6 +179,8 @@ textarea.mr-input { display: block; padding: 10px 12px; line-height: 1.4; resize
 .mr-stamped[data-nested] > :last-child { grid-column: 3; }
 .mr-stamp { font-family: var(--mr-mono); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--mr-ink-3); text-align: right; white-space: nowrap; padding-right: 10px; cursor: default; transition: opacity var(--mr-fast) var(--mr-ease); }
 .mr-stamp[data-dup] { opacity: 0; }
+.mr-stamp-period { font-size: 10px; }
+.mr-stamp-period:not([data-said]) { visibility: hidden; }
 .mr-stamped:hover > .mr-stamp { opacity: 1; }
 .mr-day { display: flex; align-items: center; gap: 10px; padding: 6px 0 2px var(--mr-stamp-w); font-size: 12px; font-weight: 700; color: var(--mr-ink-3); }
 .mr-day[data-nested] { margin-left: calc(-1 * (var(--mr-stamp-w) + 24px)); }

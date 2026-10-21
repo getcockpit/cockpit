@@ -28,7 +28,7 @@ import { CatalogView, viewReplies } from "../components/CatalogView";
 import { Mark } from "../components/Turn";
 import { useTick } from "../components/Now";
 import { ago } from "../picker/now";
-import { clockTime, dayKey, dayLabel, fullTime, minuteKey } from "../picker/stamp";
+import { clockParts, dayKey, dayLabel, fullTime, minuteKey } from "../picker/stamp";
 import { LiveTrack } from "../components/Now";
 import { MoveWorkspace } from "../components/MoveWorkspace";
 import { ReviewChanges } from "./ReviewChanges";
@@ -299,18 +299,22 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
   // hover otherwise, a day divider when the day does, the full date in its tooltip. Rows are stamped
   // in reading order, so a step's clock is taken before the rows under it.
   const now = Date.now();
-  let lastMin = "", lastDay = "";
+  // A 12-hour clock says AM/PM only on the first clock of a day and when it flips; elsewhere its space
+  // stays reserved so the digits line up down the gutter.
+  let lastMin = "", lastDay = "", lastPeriod = "";
   const mark = (at: number | undefined) => {
     if (at == null || !Number.isFinite(at)) return null;
-    const m = { at, divider: dayKey(at) !== lastDay, dup: minuteKey(at) === lastMin };
-    lastDay = dayKey(at); lastMin = minuteKey(at);
+    const { time, period } = clockParts(at);
+    const divider = dayKey(at) !== lastDay;
+    const m = { at, time, period, said: !!period && (divider || period !== lastPeriod), divider, dup: minuteKey(at) === lastMin };
+    lastDay = dayKey(at); lastMin = minuteKey(at); lastPeriod = period;
     return m;
   };
   const stamped = (m: ReturnType<typeof mark>, id: string, nested: boolean, node: React.ReactNode): React.ReactNode => !m || node == null ? node : (
     <Fragment key={id}>
       {m.divider && <div data-mr="DayDivider" data-mr-source={id} className="mr-day" data-nested={nested || undefined}><span>{dayLabel(m.at, now)}</span></div>}
       <div className="mr-stamped" data-nested={nested || undefined}>
-        <time className="mr-stamp" data-mr="Stamp" data-mr-source={id} dateTime={new Date(m.at).toISOString()} title={fullTime(m.at)} data-dup={m.dup || undefined}>{clockTime(m.at)}</time>
+        <time className="mr-stamp" data-mr="Stamp" data-mr-source={id} dateTime={new Date(m.at).toISOString()} title={fullTime(m.at)} data-dup={m.dup || undefined}>{m.time}{m.period && <span className="mr-stamp-period" data-said={m.said || undefined}> {m.period}</span>}</time>
         <div style={{ minWidth: 0 }}>{node}</div>
       </div>
     </Fragment>
