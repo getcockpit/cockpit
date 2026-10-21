@@ -17,3 +17,9 @@ Diff output format options
 test("other git errors show only their first line", () => {
   expect(changesError("fatal: bad revision 'HEAD'\nusage: git diff ...\n  -p")).toBe("fatal: bad revision 'HEAD'");
 });
+
+// God-mode mark: a session whose worktree was deleted showed git's raw "cannot change to '<path>'" error.
+test("a deleted session folder says the worktree is gone, not git's chdir error", () => {
+  const raw = "fatal: cannot change to '/Users/me/go/github.com/acme/platform-worktrees/do-detailed-scan-check-how-s0qn': No such file or directory";
+  expect(changesError(raw)).toBe("this session's folder no longer exists (its worktree was removed), so it can't continue there");
+});

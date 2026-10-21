@@ -13,6 +13,8 @@ export type Changed = { path: string; added: number; removed: number; status: st
 // show a short line, never the raw dump.
 export function changesError(error: string): string {
   if (/not a git repository/i.test(error)) return "not a git repository";
+  // The session's folder was deleted (a removed worktree): say so plainly, and that the session can't run there.
+  if (/cannot change to .*no such file or directory/i.test(error)) return "this session's folder no longer exists (its worktree was removed), so it can't continue there";
   const first = error.split("\n").find((l) => l.trim()) ?? error;
   return first.trim().slice(0, 160);
 }
