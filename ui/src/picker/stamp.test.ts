@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayKey, dayLabel, minuteKey, ulidAt, ulidTime, whenLabel, clockTime } from "./stamp";
+import { clockParts, dayKey, dayLabel, minuteKey, ulidAt, ulidTime, whenLabel, clockTime } from "./stamp";
 
 const at = (y: number, mo: number, d: number, h = 12, mi = 0, s = 0) => new Date(y, mo - 1, d, h, mi, s).getTime();
 
@@ -19,6 +19,12 @@ describe("stamp", () => {
     expect(minuteKey(at(2026, 10, 21, 9, 5, 1))).toBe(minuteKey(at(2026, 10, 21, 9, 5, 59)));
     expect(minuteKey(at(2026, 10, 21, 9, 5))).not.toBe(minuteKey(at(2026, 10, 21, 9, 6)));
     expect(dayKey(at(2026, 10, 21, 0, 0))).toBe(dayKey(at(2026, 10, 21, 23, 59)));
+  });
+  it("splits AM/PM off the clock", () => {
+    const am = clockParts(at(2026, 10, 21, 9, 5)), pm = clockParts(at(2026, 10, 21, 21, 5));
+    expect(am.time).not.toMatch(/AM|PM/i);
+    expect(`${am.time} ${am.period}`.trim().replace(/\s+/g, " ")).toBe(clockTime(at(2026, 10, 21, 9, 5)).replace(/\s+/g, " "));
+    if (am.period) expect(pm.period).not.toBe(am.period); // 12-hour locale: the period flips at noon
   });
   it("reads the time out of a ULID", () => {
     // The first 10 characters are the ms, big-endian Crockford base32.
