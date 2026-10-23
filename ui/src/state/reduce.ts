@@ -42,7 +42,7 @@ export const initialState: AppState = {
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
   return {
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
-    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, moveTo: null, moveFailed: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null, schedule: null, spawnedBy: null, unread: false,
+    pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, runCostUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, moveTo: null, moveFailed: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null, schedule: null, spawnedBy: null, unread: false,
   };
 }
 
@@ -498,13 +498,17 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
   }
   if (type === "result") {
     const ok = !m.is_error;
-    s.costUsd += Number(m.total_cost_usd ?? 0);
+    // total_cost_usd is a running total for the run; a lower one means a new run (the app restarted, or the session resumed).
+    const total = Number(m.total_cost_usd ?? 0);
+    const turnCost = total >= s.runCostUsd ? total - s.runCostUsd : total;
+    s.costUsd += turnCost;
+    s.runCostUsd = total;
     // The session's own model is the one that cost the most this turn; side calls (titles, haiku) cost little.
     const main = Object.values((m.modelUsage ?? {}) as Record<string, { costUSD?: number; contextWindow?: number }>).sort((a, b) => Number(b.costUSD ?? 0) - Number(a.costUSD ?? 0))[0];
     if (main?.contextWindow) s.context = { ...s.context, window: main.contextWindow };
     s.turnOpen = false;
     s.transcript = settle(s.transcript, ["taken"], "answered");
-    s.transcript = [...s.transcript, { kind: "result", id: ev.id, ok, text: String(m.result ?? ""), costUsd: Number(m.total_cost_usd ?? 0), at: ev.created_at }];
+    s.transcript = [...s.transcript, { kind: "result", id: ev.id, ok, text: String(m.result ?? ""), costUsd: turnCost, at: ev.created_at }];
     // Turn finished: waiting for the next message, unless one is already queued for the next turn.
     if (s.status !== "needs_you") s.status = s.transcript.some((t) => t.kind === "user" && t.delivery === "queued") ? "working" : "idle";
   }

@@ -114,7 +114,8 @@ export type SessionState = {
   files: Record<string, FileChange>;
   activity: number[]; // events per minute, last 30 minutes (sparkline)
   spans: Span[]; // status history, newest last (Timeline, MR-32)
-  costUsd: number;
+  costUsd: number; // what the session spent: the sum of each turn's share, not of the SDK's running totals
+  runCostUsd: number; // the latest total_cost_usd: the SDK reports a running total for the whole run
   context: { used: number | null; window: number | null }; // tokens in context after the latest main-thread reply (null: unknown since a compact); window: the model's, from Claude Code's result
   error: string | null;
   review: ReviewFlow | null;
