@@ -343,8 +343,7 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       s.error = p.ok ? null : String(p.reason ?? "session failed");
       s.pending = [];
       s.turnOpen = false;
-      // The goal lives in the run: a resumed session reports it again if Claude Code restores it.
-      s.goal = null;
+      // The goal stays: Claude Code keeps it with the session, and a resume doesn't report it again.
       s.transcript = settle(s.transcript, ["sending", "queued", "taken"], "lost");
       break;
   }
@@ -366,7 +365,7 @@ function ownedBy(s: SessionState, origin: string | null | undefined): boolean {
 function interrupt(sessions: AppState["sessions"], at: number, which: (s: SessionState) => boolean): AppState["sessions"] {
   const out = { ...sessions };
   for (const [id, s] of Object.entries(sessions)) {
-    if (which(s) && !["ended", "error", "interrupted"].includes(s.status)) out[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", at), pending: [], turnOpen: false, goal: null, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
+    if (which(s) && !["ended", "error", "interrupted"].includes(s.status)) out[id] = { ...s, status: "interrupted", spans: track(s, "interrupted", at), pending: [], turnOpen: false, transcript: settle(s.transcript, ["sending", "queued", "taken"], "lost") };
   }
   return out;
 }
@@ -407,6 +406,16 @@ function bump(s: SessionState, at: number): number[] {
   return a;
 }
 
+// Claude Code answers `/goal …` with a synthetic reply ("Goal set: …", "Goal cleared: …",
+// "No goal set"); over the SDK that reply is the only sign a goal exists.
+function goalCommand(s: SessionState, m: Record<string, unknown>, ev: MrEvent) {
+  const run = m.local_command_run as { command?: unknown; args?: unknown } | undefined;
+  if (run?.command !== "goal") return;
+  const out = String(m.local_command_source ?? "").replace(/<\/?local-command-stdout>/g, "").trim();
+  if (out.startsWith("Goal set:")) s.goal = { condition: String(run.args ?? "").trim() || out.slice(9).trim(), iterations: 0, setAt: ev.created_at, lastReason: null };
+  else if (out.startsWith("Goal cleared") || out.startsWith("No goal set")) s.goal = null;
+}
+
 function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app: AppState) {
   const type = m.type as string;
   if (type === "rate_limit_event") {
@@ -417,7 +426,8 @@ function applySdk(s: SessionState, m: Record<string, unknown>, ev: MrEvent, app:
     return;
   }
   if (type === "assistant") {
-    const content = ((m.message as { content?: unknown[] })?.content ?? []) as Record<string, unknown>[];
+    goalCommand(s, m, ev);
+    const content =((m.message as { content?: unknown[] })?.content ?? []) as Record<string, unknown>[];
     const add: TranscriptItem[] = [];
     for (const [i, c] of content.entries()) {
       if (c.type === "text" && String(c.text ?? "").trim()) add.push({ kind: "text", id: `${ev.id}:${i}`, text: String(c.text), at: ev.created_at });

@@ -164,7 +164,15 @@ test("an active /goal shows until it's met, cleared or the session ends", () => 
   const notMet = [...base, goal("G3", { condition: "bun test exits 0", iterations: 2, set_at: 5, tokens_at_start: 100, last_reason: "2 tests fail" })];
   expect(replay(notMet).sessions.s.goal).toMatchObject({ iterations: 2, lastReason: "2 tests fail" });
   expect(replay([...notMet, goal("G4", null)]).sessions.s.goal).toBeNull();
-  expect(replay([...notMet, ev("G4", "sidecar.session_ended", { ok: true })]).sessions.s.goal).toBeNull();
+});
+
+test("a /goal shows from Claude Code's reply to the command, and survives a resume", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "s", kind, payload, anchor: null, created_at: 7 });
+  const reply = (id: string, args: string, out: string) => ev(id, "sidecar.sdk", { message: { type: "assistant", local_command_run: { command: "goal", args }, local_command_source: `<local-command-stdout>${out}</local-command-stdout>`, message: { content: [{ type: "text", text: out }] } } });
+  const set = [ev("G1", "ui.session_requested", { prompt: "p", cwd: "/w" }), reply("G2", "", "No goal set. Usage: `/goal <condition>`"), reply("G3", "ship it\nall of it", "Goal set: ship it\nall of it")];
+  expect(replay(set).sessions.s.goal).toEqual({ condition: "ship it\nall of it", iterations: 0, setAt: 7, lastReason: null });
+  expect(replay([...set, ev("G4", "sidecar.session_ended", { ok: true })]).sessions.s.goal).not.toBeNull();
+  expect(replay([...set, reply("G4", "clear", "Goal cleared: ship it")]).sessions.s.goal).toBeNull();
 });
 
 test("layer 2 catches a question asked without a question mark, and meters the call", () => {
