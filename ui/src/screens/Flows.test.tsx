@@ -84,3 +84,18 @@ test("when every thread is handled, address offers the next steps", () => {
   expect(html).toContain("Push and re-request review");
   expect(flowWaiting(s)).toBe("All threads handled · next: Push and re-request review");
 });
+
+// Options weren't the only answer: you can write your own, or ask Claude why before deciding.
+test("a thread takes your own answer or a question, and your own answer queues it like a pick", () => {
+  let s = replay(start).sessions["X"];
+  let html = renderToStaticMarkup(<AddressView s={s} />);
+  expect(html).toContain('data-mr="AddressCompose"');
+  expect(html).toContain("Use as my answer");
+  expect(html).toContain("Why? Dig deeper");
+  s = replay([...start, ev("A5", "ui.address_chosen", { id: "t1", option: "own", text: "Rename it instead" })]).sessions["X"];
+  expect(s.address?.own?.t1).toBe("Rename it instead");
+  html = renderToStaticMarkup(<AddressView s={s} />);
+  expect(html).toContain("a.ts:1 · queued");
+  const u = (id: string, text: string): TranscriptItem => ({ kind: "user", id, text, at: 0 });
+  expect(flowChat([u("1", "/pr-address 9"), u("2", "Thread t1 · My own answer: Rename it\ninstead"), u("3", "About thread t2 (a.ts:2): why?")]).map((x) => x.ask.text)).toEqual(["About thread t2 (a.ts:2): why?"]);
+});

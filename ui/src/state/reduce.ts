@@ -574,7 +574,7 @@ function addressStep(a: SessionState["address"], kind: string, p: Record<string,
   if (kind === "flow.address_proof") return { ...f, proofs: { ...f.proofs, [id]: (p.checks ?? []) as never } };
   if (kind === "flow.address_reply") return { ...f, replies: { ...f.replies, [id]: p as never }, current: f.current === id && p.posted ? null : f.current };
   if (kind === "flow.address_done") return { ...f, done: p as never, current: null };
-  if (kind === "ui.address_chosen") return { ...f, chosen: { ...f.chosen, [id]: String(p.option) } };
+  if (kind === "ui.address_chosen") return { ...f, chosen: { ...f.chosen, [id]: String(p.option) }, ...(typeof p.text === "string" ? { own: { ...f.own, [id]: p.text } } : {}) };
   return f;
 }
 

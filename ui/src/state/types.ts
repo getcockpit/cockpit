@@ -71,6 +71,7 @@ export type AddressFlow = {
   replies: Record<string, { text?: string; sha?: string; posted?: boolean }>;
   current: string | null; // the thread Claude is fixing now (address_fixing)
   chosen: Record<string, string>;
+  own?: Record<string, string>; // your own answer to a thread, typed instead of picking an option (chosen = "own")
   done?: { summary?: string; pushed?: boolean; next?: { label: string; reply?: string }[] };
 };
 
