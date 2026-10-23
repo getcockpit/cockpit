@@ -780,3 +780,15 @@ describe("spawned session reports (MR-178)", () => {
     expect(last).toMatchObject({ kind: "user", via: "child" });
   });
 });
+
+describe("session cost", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "S", kind, payload, anchor: null, created_at: 2 });
+  const start = ev("0", "ui.session_requested", { prompt: "hi", cwd: "/x", kind: "blank" });
+  const result = (id: string, total: number) => ev(id, "sidecar.sdk", { message: { type: "result", is_error: false, result: "", total_cost_usd: total } });
+
+  it("adds each turn's share of the SDK's running total, and starts over when a new run reports less", () => {
+    const s = replay([start, result("1", 1.0), result("2", 1.5), result("3", 2.25), result("4", 0.5), result("5", 0.75)]).sessions.S;
+    expect(s.costUsd).toBeCloseTo(3.0);
+    expect(s.transcript.flatMap((t) => (t.kind === "result" ? [t.costUsd] : []))).toEqual([1.0, 0.5, 0.75, 0.5, 0.25]);
+  });
+});
