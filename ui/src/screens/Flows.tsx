@@ -180,7 +180,7 @@ export function AddressView({ s }: { s: SessionState }) {
     const opt = a.threads[t.id]?.options?.find((o) => o.id === a.chosen[t.id]);
     if (opt && /push back|defer|later|skip/i.test(opt.label)) return "deferred";
     if (a.replies[t.id]) return "fixed";
-    if (opt) return t.id === a.current ? "fixing" : "picked";
+    if (a.chosen[t.id]) return t.id === a.current ? "fixing" : "picked";
     return t.state ?? "open";
   };
   const threads = (a.list?.threads ?? []).map((t) => ({ ...t, state: stateOf(t) }));
@@ -198,6 +198,14 @@ export function AddressView({ s }: { s: SessionState }) {
     void api.send(s.id, `Thread ${id} · Option ${opt.id}: ${opt.label}`);
     setViewing(null);
   };
+  // Your own answer instead of an option, or a question about the thread (it lands in the conversation below).
+  const answerOwn = (id: string, text: string) => {
+    void api.log("ui.address_chosen", { id, option: "own", text }, s.id, `address:${id}`);
+    void api.send(s.id, `Thread ${id} · My own answer: ${text}`);
+    setViewing(null);
+  };
+  const ask = (id: string, at: string | undefined, text: string) =>
+    void api.send(s.id, `About thread ${id}${at ? ` (${at})` : ""}: ${text || "walk me through your reasoning in more depth: what you checked in the code, why that verdict and recommendation, and what else you considered."}`);
   const proof = shownId ? a.proofs[shownId] : undefined;
   const replyMsg = shownId ? a.replies[shownId] : undefined;
   const canChoose = !!cur && !a.chosen[cur.id] && !a.done;
@@ -269,6 +277,12 @@ export function AddressView({ s }: { s: SessionState }) {
                 <FixOptions b={{ type: "fix_options", options: cur.options ?? [] }} live={canChoose} picked={a.chosen[cur.id]} onReply={() => {}}
                   onPick={(o) => { const opt = (cur.options ?? []).find((x) => x.id === o.id); if (opt) choose(cur.id, opt); }} />
               )}
+              {a.chosen[cur.id] === "own" && a.own?.[cur.id] && (
+                <div data-mr="AddressOwnAnswer" data-mr-source={cur.id} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "10px 12px", background: "var(--mr-ink)", color: "var(--mr-tile)" }}>
+                  <strong>Your answer</strong><span style={{ whiteSpace: "pre-wrap" }}>{a.own[cur.id]}</span>
+                </div>
+              )}
+              {!a.done && <AddressCompose key={cur.id} source={cur.id} canAnswer={canChoose} onAnswer={(t) => answerOwn(cur.id, t)} onAsk={(t) => ask(cur.id, cur.at, t)} />}
               {canChoose && undecided && drawn.filter((t) => t.state === "open").length > 1 && <span className="mr-dim">Pick in any order · the next thread opens as you pick · Claude fixes them as your picks arrive</span>}
             </>
           ) : <span className="mr-dim">{threads.length ? (working ? "Claude is reading the threads · the first one appears here in a moment…" : "No thread to show yet.") : "Fetching the review threads…"}</span>}
@@ -296,9 +310,30 @@ export function AddressView({ s }: { s: SessionState }) {
   );
 }
 
+// Under a thread's options: write your own answer (sent as the decision), or ask Claude about the
+// thread before deciding. An empty ask asks Claude to explain its reasoning in more depth.
+export function AddressCompose({ source, canAnswer, onAnswer, onAsk }: { source: string; canAnswer: boolean; onAnswer: (text: string) => void; onAsk: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const t = text.trim();
+  const answer = () => { if (canAnswer && t) { onAnswer(t); setText(""); } };
+  const askIt = () => { onAsk(t); setText(""); };
+  return (
+    <div data-mr="AddressCompose" data-mr-source={source} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} aria-label="Your own answer or a question about this thread"
+        placeholder={canAnswer ? "Your own answer, or a question about this thread…" : "Ask Claude about this thread…"}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (modKey(e) || !canAnswer) askIt(); else answer(); } }}
+        style={{ padding: "8px 10px", border: 0, font: "inherit", resize: "vertical", background: "var(--mr-well)", color: "var(--mr-ink)" }} />
+      <div className="mr-row" style={{ flexWrap: "wrap" }}>
+        {canAnswer && <Key k="↵" tone="primary" disabled={!t} onClick={answer}>Use as my answer</Key>}
+        <Key k={canAnswer ? "⌘↵" : "↵"} onClick={askIt}>{t ? "Ask Claude" : "Why? Dig deeper"}</Key>
+      </div>
+    </div>
+  );
+}
+
 // The flow's own button replies (next, note f1, Option 2: …) drive the visuals above; anything else
 // you type is a question, so it and Claude's answer show here instead of vanishing.
-const CONTROL = /^(ok|next|publish( and approve)?|review anyway|(un)?note \S+|snippet \d+|(Thread \S+ · )?Option [^:]+: .*|Add this to the review as a comment: [\s\S]*|Remove this from the review: [\s\S]*)$/i;
+const CONTROL = /^(ok|next|publish( and approve)?|review anyway|(un)?note \S+|snippet \d+|(Thread \S+ · )?Option [^:]+: .*|Thread \S+ · My own answer: [\s\S]*|Add this to the review as a comment: [\s\S]*|Remove this from the review: [\s\S]*)$/i;
 
 export type Exchange = { ask: Extract<TranscriptItem, { kind: "user" }>; answer: Extract<TranscriptItem, { kind: "text" | "view" }>[] };
 

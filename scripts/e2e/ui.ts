@@ -197,6 +197,8 @@ const flows: Flow[] = [
     await ui.open("address");
     await ui.click("button", "↵ Continue");
     await ui.tags("SessionName", 1);
+    await ui.tags("AddressCompose", 1); // your own answer, or ask Claude why
+    await ui.see("button", "⌘↵ Why? Dig deeper");
   } },
   { name: "J9 mark a finished session done", run: async () => {
     await ui.open("busy");
