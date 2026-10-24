@@ -11,7 +11,8 @@ use std::sync::{Mutex, OnceLock};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
-/// Paths whose changes need the app rebuilt. UI changes don't: Vite serves them live.
+/// Paths whose changes need the app rebuilt. In the dev loop UI changes don't (Vite serves them
+/// live); an installed app bundles its UI, so there `ui` counts too.
 const APP_PATHS: &[&str] = &["src-tauri", "sidecar", "dictate", "scripts/build-sidecar.sh", "scripts/bootstrap.sh"];
 
 static RUNNING: OnceLock<String> = OnceLock::new();
@@ -42,19 +43,24 @@ fn other_slot() -> String {
 }
 
 /// Commits on `head` past `running` that touch the app (newest first): "sha\tsubject" lines.
-pub fn pending(dir: &Path, running: &str, head: &str) -> Vec<(String, String)> {
+pub fn pending(dir: &Path, running: &str, head: &str, ui: bool) -> Vec<(String, String)> {
     if running.is_empty() || running == head {
         return vec![];
     }
     let range = format!("{running}..{head}");
     let mut args = vec!["log", "--no-merges", "--format=%h%x09%s", range.as_str(), "--"];
     args.extend_from_slice(APP_PATHS);
+    if ui {
+        args.push("ui");
+    }
     git(dir, &args).lines().filter_map(|l| l.split_once('\t').map(|(a, b)| (a.to_owned(), b.to_owned()))).collect()
 }
 
-/// Called once at startup: remember what this app was built from and say so in the log.
+/// Called once at startup: remember what this app was built from and say so in the log. The commit
+/// is stamped in at compile time (build.rs): the repo's HEAD at startup only matches it in the dev
+/// loop, and an installed app reopened after main moved would think it had those commits (MR-186).
 pub fn on_start(app: &AppHandle) {
-    let sha = repo().map(|r| git(&r, &["rev-parse", "HEAD"])).unwrap_or_default();
+    let sha = Some(env!("MR_GIT_SHA")).filter(|s| !s.is_empty()).map(str::to_owned).or_else(|| repo().map(|r| git(&r, &["rev-parse", "HEAD"]))).unwrap_or_default();
     let _ = RUNNING.set(sha.clone());
     crate::eventlog::record(app, None, "app.started", &json!({ "sha": sha, "slot": std::env::var("MR_DEV_SLOT").ok(), "dev_loop": dev_loop() }), None);
     // Started by the crash guard after a newer build crashed at start (MR-70): say so, with the log.
@@ -74,7 +80,7 @@ pub fn update_status() -> Value {
     let Some(dir) = repo() else { return json!({ "mode": "unavailable", "pending": [] }) };
     let running = RUNNING.get().cloned().unwrap_or_default();
     let head = git(&dir, &["rev-parse", "HEAD"]);
-    let list: Vec<Value> = pending(&dir, &running, &head).into_iter().map(|(sha, subject)| json!({ "sha": sha, "subject": subject })).collect();
+    let list: Vec<Value> = pending(&dir, &running, &head, !dev_loop()).into_iter().map(|(sha, subject)| json!({ "sha": sha, "subject": subject })).collect();
     let b = BUILD.lock().unwrap().clone();
     json!({
         "mode": if dev_loop() { "ready" } else { "manual" },
@@ -97,7 +103,7 @@ pub fn update_start(app: AppHandle) -> Result<(), String> {
         }
         let running = RUNNING.get().cloned().unwrap_or_default();
         let head = git(&dir, &["rev-parse", "HEAD"]);
-        let subjects = pending(&dir, &running, &head).into_iter().map(|(_, s)| s).collect();
+        let subjects = pending(&dir, &running, &head, false).into_iter().map(|(_, s)| s).collect();
         *b = Some(Built { slot: other_slot(), sha: head, subjects, done: false });
     }
     let built = BUILD.lock().unwrap().clone().unwrap();
@@ -163,10 +169,12 @@ mod tests {
         sh(&dir, &format!("echo 1 > src-tauri/src/a && git add . && {c} -m 'Core change'"));
         sh(&dir, &format!("echo 1 > sidecar/b && git add . && {c} -m 'Sidecar change'"));
         let head = git(&dir, &["rev-parse", "HEAD"]);
-        let subjects: Vec<String> = pending(&dir, &base, &head).into_iter().map(|(_, s)| s).collect();
-        assert_eq!(subjects, vec!["Sidecar change", "Core change"]);
-        assert!(pending(&dir, &head, &head).is_empty());
-        assert!(pending(&dir, "", &head).is_empty());
+        let subjects = |ui| pending(&dir, &base, &head, ui).into_iter().map(|(_, s)| s).collect::<Vec<_>>();
+        assert_eq!(subjects(false), vec!["Sidecar change", "Core change"]);
+        // An installed app bundles its UI: there UI-only commits are updates too.
+        assert_eq!(subjects(true), vec!["Sidecar change", "Core change", "UI only"]);
+        assert!(pending(&dir, &head, &head, true).is_empty());
+        assert!(pending(&dir, "", &head, true).is_empty());
     }
 
     #[test]
