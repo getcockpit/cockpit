@@ -4,6 +4,21 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-10-27
+
+### Added
+- **Your own answer on any review thread:** a box under each thread's options sends your text as the decision, queued like a pick. ⌘Enter, or "Why? Dig deeper" on an empty box, asks Claude about the thread instead, and the answer lands in the flow's conversation.
+
+### Fixed
+- **The installed app sees every update:** the running commit is stamped in at build time, so reopening the app after main moved no longer hides the Update banner, and UI-only commits count as updates outside the dev loop.
+- **Session cost shows real spend:** each turn adds only its share of the run's total, instead of summing running totals (which overstated cost about 7x).
+- **An active /goal shows in the session:** the goal strip reads Claude Code's reply to /goal, and the goal survives a session end or sidecar restart.
+- **Run buttons where they belong:** short unlabelled command fences after "Run this" (and common cloud CLIs such as gcloud) get one; commands the reply reports as already run don't.
+- **Background tasks show as running** in the transcript.
+- **Flow diagram labels stay readable:** edge labels sit on their curve beside the source column instead of stacking on each other or hiding under nodes.
+- **Doc groups get their own row** with a one-line header again.
+- **The Update banner's building line** no longer overflows with long commit subjects.
+
 ## [0.1.16] - 2026-10-21
 
 ### Fixed
