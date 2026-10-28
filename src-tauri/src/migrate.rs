@@ -60,25 +60,20 @@ fn old_service(service: &str) -> Option<String> {
 
 /// Reads a Keychain secret; one still under the old service name moves to the new one on first
 /// read. Lazy rather than at startup: a self-build relaunched with MR_DATA_DIR skips the folder
-/// move but must still find its keys.
+/// move but must still find its keys. The old names only ever lived in the macOS Keychain.
 pub fn keychain_get(service: &str, account: &str) -> Option<String> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-    let find = |s: &str| {
-        let out = Command::new("security").args(["find-generic-password", "-s", s, "-a", account, "-w"]).output().ok()?;
-        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned()).filter(|v| !v.is_empty())
-    };
-    if let Some(v) = find(service) {
+    use crate::sys::{keychain_find, keychain_set};
+    if let Some(v) = keychain_find(service, account) {
         return Some(v);
     }
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
     let from = old_service(service)?;
-    let secret = find(&from)?;
-    // Through `security -i` on stdin, so the secret never shows up in a process list.
-    if let Ok(mut child) = Command::new("security").arg("-i").stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
-        let saved = child.stdin.take().is_some_and(|mut i| i.write_all(format!("add-generic-password -U -s {service} -a {account} -w {secret}\n").as_bytes()).is_ok());
-        if saved && child.wait().is_ok_and(|s| s.success()) && find(service).as_deref() == Some(secret.as_str()) {
-            let _ = Command::new("security").args(["delete-generic-password", "-s", &from, "-a", account]).output();
-        }
+    let secret = keychain_find(&from, account)?;
+    if keychain_set(service, account, &secret).is_ok() && keychain_find(service, account).as_deref() == Some(secret.as_str()) {
+        #[cfg(target_os = "macos")]
+        crate::sys::keychain_delete(&from, account);
     }
     Some(secret)
 }

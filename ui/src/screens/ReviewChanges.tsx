@@ -6,6 +6,7 @@ import { plural } from "../picker/title";
 import { api } from "../state/store";
 import type { SessionState } from "../state/types";
 import { DiffView, useChanges } from "./ChangeMap";
+import { basename } from "../fspath";
 
 // Reviewing the code a session wrote (MR-49, J11), in the main column: files on the left, the diff
 // on the right, notes on any line. Then either send the notes back, or call it good and ship.
@@ -62,7 +63,7 @@ export function ReviewChanges({ s, start, onClose }: { s: SessionState; start: s
             return (
               <button key={f.path} type="button" onClick={() => setPath(f.path)} title={f.path}
                 style={{ display: "flex", flexDirection: "column", gap: 2, padding: "7px 10px", border: 0, borderLeft: `4px solid ${f.risky ? "var(--mr-needs)" : "transparent"}`, background: f.path === path ? "var(--mr-ink)" : "var(--mr-tile)", color: f.path === path ? "var(--mr-tile)" : "var(--mr-ink)", font: "inherit", textAlign: "left", cursor: "pointer" }}>
-                <span className="mr-mono mr-ellipsis" style={{ fontSize: 12 }}>{f.path.split("/").pop()}</span>
+                <span className="mr-mono mr-ellipsis" style={{ fontSize: 12 }}>{basename(f.path)}</span>
                 <span className="mr-mono" style={{ fontSize: 11, opacity: 0.75 }}>+{f.added} −{f.removed}{f.risky ? ` · ${f.risky}` : ""}{n ? ` · ${plural(n, "note")}` : ""}</span>
               </button>
             );

@@ -3,7 +3,6 @@
 //! falls back to the previous build if the new one doesn't report healthy in time.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
@@ -31,14 +30,14 @@ fn builds_dir(app: &AppHandle) -> PathBuf {
 }
 
 pub(crate) fn sh_path() -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = crate::sys::home_str();
     format!(
         "{home}/.cargo/bin:{home}/.bun/bin:{home}/.local/share/mise/shims:{home}/.local/share/mise/installs/bun/latest/bin:{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
     )
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {
-    Command::new("git").arg("-C").arg(dir).args(args).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned()).unwrap_or_default()
+    crate::sys::cmd("git").arg("-C").arg(dir).args(args).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned()).unwrap_or_default()
 }
 
 /// The ordered build steps; each runs in the worktree with a full PATH.
@@ -78,7 +77,7 @@ fn start(app: AppHandle, dir: PathBuf, relaunch: bool) -> Result<String, String>
         let started = std::time::Instant::now();
         for (name, cmd) in steps() {
             record(&app2, "selfbuild.step", serde_json::json!({ "build_id": id2, "step": name }));
-            let out = Command::new("bash").arg("-c").arg(cmd).current_dir(&dir).env("PATH", sh_path()).output();
+            let out = crate::sys::cmd("bash").arg("-c").arg(cmd).current_dir(&dir).env("PATH", sh_path()).output();
             let ok = out.as_ref().map(|o| o.status.success()).unwrap_or(false);
             if !ok {
                 UPDATING.store(false, Ordering::SeqCst);
@@ -204,7 +203,7 @@ pub fn selfbuild_relaunch(app: AppHandle, build_id: String) -> Result<(), String
     let install = install_target(&me, &builds, Path::new("/Applications/Cockpit.app"));
     record(&app, "selfbuild.relaunch", serde_json::json!({ "build_id": build_id, "fallback": me, "install": install }));
     let install = install.map(|p| p.display().to_string()).unwrap_or_default();
-    Command::new("bash")
+    crate::sys::cmd("bash")
         .arg(&script)
         .args([std::process::id().to_string(), bin.display().to_string(), build_id, me.display().to_string(), data.display().to_string(), "90".into(), install])
         .spawn()
@@ -436,9 +435,9 @@ mod tests {
         let prev = dir.join("prev.sh");
         std::fs::write(&prev, format!("#!/bin/bash\ntouch {}/fallback-ran\n", dir.display())).unwrap();
         for p in [&bad, &prev] {
-            Command::new("chmod").arg("+x").arg(p).status().unwrap();
+            crate::sys::cmd("chmod").arg("+x").arg(p).status().unwrap();
         }
-        let st = Command::new("bash").arg(&script).args(["999999", bad.to_str().unwrap(), "B1", prev.to_str().unwrap(), dir.to_str().unwrap(), "3"]).status().unwrap();
+        let st = crate::sys::cmd("bash").arg(&script).args(["999999", bad.to_str().unwrap(), "B1", prev.to_str().unwrap(), dir.to_str().unwrap(), "3"]).status().unwrap();
         assert!(st.success());
         // The fallback is launched detached: wait for it (generously, so a busy machine can't flake this).
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -477,7 +476,7 @@ mod tests {
         std::fs::write(&script, supervisor_script()).unwrap();
         let sh = |p: PathBuf, body: &str| {
             std::fs::write(&p, format!("#!/bin/bash\n{body}\n")).unwrap();
-            Command::new("chmod").arg("+x").arg(&p).status().unwrap();
+            crate::sys::cmd("chmod").arg("+x").arg(&p).status().unwrap();
         };
         sh(app.join("Contents/MacOS/Cockpit"), "");
         sh(dir.join("builds/B3/Cockpit"), &format!("touch {}/healthy-$MR_BUILD_ID; sleep 2", dir.display()));
@@ -488,7 +487,7 @@ mod tests {
         let new = dir.join("builds/B3/Cockpit");
         let prev = app.join("Contents/MacOS/Cockpit");
         let run = |timeout: &str| {
-            let st = Command::new("bash").arg(&script).args(["999999", new.to_str().unwrap(), "B3", prev.to_str().unwrap(), dir.to_str().unwrap(), timeout, app.to_str().unwrap()]).status().unwrap();
+            let st = crate::sys::cmd("bash").arg(&script).args(["999999", new.to_str().unwrap(), "B3", prev.to_str().unwrap(), dir.to_str().unwrap(), timeout, app.to_str().unwrap()]).status().unwrap();
             assert!(st.success());
         };
         run("5");
@@ -544,9 +543,9 @@ mod tests {
         let prev = dir.join("prev.sh");
         std::fs::write(&prev, format!("#!/bin/bash\ntouch {}/fallback-ran\n", dir.display())).unwrap();
         for p in [&good, &prev] {
-            Command::new("chmod").arg("+x").arg(p).status().unwrap();
+            crate::sys::cmd("chmod").arg("+x").arg(p).status().unwrap();
         }
-        let st = Command::new("bash").arg(&script).args(["999999", good.to_str().unwrap(), "B2", prev.to_str().unwrap(), dir.to_str().unwrap(), "5"]).status().unwrap();
+        let st = crate::sys::cmd("bash").arg(&script).args(["999999", good.to_str().unwrap(), "B2", prev.to_str().unwrap(), dir.to_str().unwrap(), "5"]).status().unwrap();
         assert!(st.success());
         assert!(!dir.join("fallback-ran").exists());
     }

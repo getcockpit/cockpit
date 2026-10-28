@@ -24,6 +24,7 @@ mod selfbuild;
 mod selftest;
 mod sidecar;
 mod spawn;
+mod sys;
 mod terminal;
 mod update;
 mod usage;
@@ -212,7 +213,7 @@ pub fn run() {
 /// The login shell's PATH, if it answers within a few seconds (a slow rc file must not block launch).
 fn login_path() -> Option<String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let mut child = std::process::Command::new(shell)
+    let mut child = crate::sys::cmd(shell)
         .args(["-l", "-c", "printf %s \"$PATH\""])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())

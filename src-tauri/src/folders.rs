@@ -17,11 +17,13 @@ pub struct Folder {
 }
 
 /// `<repo>-worktrees/<name>` → `<repo>`; Claude Code's `.claude/worktrees/<name>` → the repo too.
+/// Either separator: Windows cwds use `\`.
 pub fn fold_worktree(p: &str) -> String {
+    let fwd = p.replace('\\', "/"); // same byte offsets as `p`
     for marker in ["-worktrees/", "/.claude/worktrees/"] {
-        if let Some(i) = p.rfind(marker) {
+        if let Some(i) = fwd.rfind(marker) {
             // Only a worktree's root folds; deeper paths are real folders that happen to sit inside one.
-            if !p[i + marker.len()..].trim_end_matches('/').contains('/') {
+            if !fwd[i + marker.len()..].trim_end_matches('/').contains('/') {
                 return p[..i].to_owned();
             }
         }
@@ -30,7 +32,8 @@ pub fn fold_worktree(p: &str) -> String {
 }
 
 fn is_temp(p: &str) -> bool {
-    ["/tmp/", "/private/", "/var/folders/"].iter().any(|t| p.starts_with(t) || p.contains("/T/"))
+    let p = p.replace('\\', "/");
+    ["/tmp/", "/private/", "/var/folders/"].iter().any(|t| p.starts_with(t) || p.contains("/T/")) || p.to_ascii_lowercase().contains("/appdata/local/temp/")
 }
 
 fn cwd_of(jsonl: &Path) -> Option<String> {
@@ -67,14 +70,13 @@ pub fn scan(projects: &Path, limit: usize) -> Vec<Folder> {
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
 #[tauri::command(async)]
 pub fn recent_folders() -> Vec<Folder> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    scan(&Path::new(&home).join(".claude/projects"), 15)
+    scan(&Path::new(&crate::sys::home_str()).join(".claude").join("projects"), 15)
 }
 
 /// `~/x` → `<home>/x`; other paths as they are.
 fn expand(path: &str, home: &str) -> PathBuf {
     match path.strip_prefix('~') {
-        Some(rest) if rest.is_empty() || rest.starts_with('/') => PathBuf::from(format!("{home}{rest}")),
+        Some(rest) if rest.is_empty() || rest.starts_with(std::path::is_separator) => PathBuf::from(format!("{home}{rest}")),
         _ => PathBuf::from(path),
     }
 }
@@ -82,7 +84,7 @@ fn expand(path: &str, home: &str) -> PathBuf {
 /// Whether a typed path is already a folder, so the picker can offer to create it instead.
 #[tauri::command(async)]
 pub fn folder_exists(path: String) -> bool {
-    expand(path.trim(), &std::env::var("HOME").unwrap_or_default()).is_dir()
+    expand(path.trim(), &crate::sys::home_str()).is_dir()
 }
 
 /// Creates a typed folder (and its parents) so a new workspace or session can start there.
@@ -101,7 +103,7 @@ pub fn create(path: &str, home: &str) -> Result<String, String> {
 
 #[tauri::command(async)]
 pub fn folder_create(path: String) -> Result<String, String> {
-    create(&path, &std::env::var("HOME").unwrap_or_default())
+    create(&path, &crate::sys::home_str())
 }
 
 #[cfg(test)]
@@ -114,6 +116,10 @@ mod tests {
         assert_eq!(fold_worktree("/u/app/.claude/worktrees/fix"), "/u/app");
         assert_eq!(fold_worktree("/u/app"), "/u/app");
         assert_eq!(fold_worktree("/u/app-worktrees/x/sub/dir"), "/u/app-worktrees/x/sub/dir");
+        assert_eq!(fold_worktree(r"C:\u\app-worktrees\mr-1-x"), r"C:\u\app");
+        assert_eq!(fold_worktree(r"C:\u\app\.claude\worktrees\fix\"), r"C:\u\app");
+        assert_eq!(fold_worktree(r"C:\u\app-worktrees\x\sub"), r"C:\u\app-worktrees\x\sub");
+        assert!(is_temp(r"C:\Users\me\AppData\Local\Temp\x") && !is_temp(r"C:\Users\me\code\app"));
     }
 
     #[test]

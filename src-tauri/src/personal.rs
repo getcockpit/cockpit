@@ -4,14 +4,13 @@
 //! single changes, and builds/relaunches from it (rollback = launch an earlier build).
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::Serialize;
 
 pub const BRANCH: &str = "mine";
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output().map_err(|e| format!("git: {e}"))?;
+    let out = crate::sys::cmd("git").arg("-C").arg(dir).args(args).output().map_err(|e| format!("git: {e}"))?;
     if out.status.success() { Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_owned()) }
 }
 
@@ -125,7 +124,7 @@ pub fn preview_merge(repo: &Path, tag: &str) -> Result<Option<Preview>, String> 
     let count = |range: String| git(repo, &["rev-list", "--count", "--no-merges", &range]).ok().and_then(|n| n.parse().ok()).unwrap_or(0);
     let (yours, brings) = (count(format!("{tag}..{BRANCH}")), count(format!("{BRANCH}..{tag}")));
     // Exit 1 with the conflicted files listed after the tree id; exit 0 when clean.
-    let out = Command::new("git").arg("-C").arg(repo).args(["merge-tree", "--write-tree", "--name-only", "--no-messages", BRANCH, tag]).output().map_err(|e| format!("git: {e}"))?;
+    let out = crate::sys::cmd("git").arg("-C").arg(repo).args(["merge-tree", "--write-tree", "--name-only", "--no-messages", BRANCH, tag]).output().map_err(|e| format!("git: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout);
     let conflicts = match out.status.code() {
         Some(0) => vec![],
@@ -239,7 +238,7 @@ mod tests {
     use super::*;
 
     fn run(dir: &Path, args: &[&str]) {
-        let ok = Command::new("git").arg("-C").arg(dir).args(["-c", "user.email=t@t", "-c", "user.name=t"]).args(args).status().unwrap().success();
+        let ok = crate::sys::cmd("git").arg("-C").arg(dir).args(["-c", "user.email=t@t", "-c", "user.name=t"]).args(args).status().unwrap().success();
         assert!(ok, "git {args:?}");
     }
 

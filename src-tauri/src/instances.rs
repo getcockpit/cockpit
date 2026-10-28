@@ -87,9 +87,9 @@ fn alive_file(path: &Path) -> bool {
 
 fn pid_alive(pid: u32) -> bool {
     #[cfg(unix)]
-    return std::process::Command::new("/bin/kill").args(["-0", &pid.to_string()]).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
+    return crate::sys::cmd("/bin/kill").args(["-0", &pid.to_string()]).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
     #[cfg(windows)]
-    return std::process::Command::new("tasklist")
+    return crate::sys::cmd("tasklist")
         .args(["/NH", "/FI", &format!("PID eq {pid}")])
         .output()
         .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()));

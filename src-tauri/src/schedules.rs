@@ -214,15 +214,17 @@ pub fn gate(res: Result<(i32, String, String), String>, last: Option<&str>) -> G
 fn shell(cmd: &str) -> std::process::Command {
     #[cfg(windows)]
     {
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/C", cmd]);
+        // Verbatim, so quotes and `&` in the check reach cmd as typed; /S strips just the outer quotes.
+        let mut c = crate::sys::cmd("cmd");
+        c.args(["/S", "/C"]);
+        std::os::windows::process::CommandExt::raw_arg(&mut c, format!("\"{cmd}\""));
         c
     }
     #[cfg(not(windows))]
     {
         // A login shell, so a check sees the PATH you'd have in a terminal (gh, git, brew).
         let sh = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/sh".into());
-        let mut c = std::process::Command::new(sh);
+        let mut c = crate::sys::cmd(sh);
         c.args(["-lc", cmd]);
         c
     }
@@ -257,7 +259,7 @@ pub fn run_check(cmd: &str, cwd: &Path, timeout: Duration) -> Result<(i32, Strin
         }
         if Instant::now() >= deadline {
             #[cfg(unix)]
-            let _ = std::process::Command::new("kill").args(["-9", &format!("-{}", child.id())]).status();
+            let _ = crate::sys::cmd("kill").args(["-9", &format!("-{}", child.id())]).status();
             let _ = child.kill();
             let _ = child.wait();
             return Err(format!("timed out after {} s", timeout.as_secs()));

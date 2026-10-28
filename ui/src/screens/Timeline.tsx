@@ -11,6 +11,7 @@ import type { Doc } from "../state/docs";
 import type { AppState, SessionState, Span } from "../state/types";
 import { inReviewTray, sideThread } from "./Wall";
 import { ViewTabs } from "../components/ViewTabs";
+import { basename } from "../fspath";
 
 // The Timeline (decision 29, MR-32): the wall is now, this is before and after. One lane per
 // session over 30 minutes back and 15 ahead: solid = what happened (activity per minute, waits on
@@ -146,7 +147,7 @@ function LaneRow({ l, now, order, onOpen }: { l: Lane; now: number; order?: numb
       style={{ display: "grid", gridTemplateColumns: "200px 1fr 170px", gap: 12, alignItems: "center", padding: "8px 0 8px 12px", border: 0, background: "var(--mr-tile)", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" }}>
       <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
         <strong className="mr-ellipsis" style={{ fontSize: 14 }}>{sessionTitle(s)}</strong>
-        <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 11 }}>{done} of {s.todos.length} · {s.branch ?? s.cwd.split("/").pop()}</span>
+        <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 11 }}>{done} of {s.todos.length} · {s.branch ?? basename(s.cwd)}</span>
       </span>
       <span style={{ position: "relative", height: H + 18 }}>
         <svg viewBox={`0 0 1000 ${H}`} preserveAspectRatio="none" width="100%" height={H} style={{ position: "absolute", top: 0, left: 0, display: "block" }} aria-hidden="true">

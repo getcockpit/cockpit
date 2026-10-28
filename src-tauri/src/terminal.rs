@@ -20,17 +20,23 @@ pub struct Terminals {
     terms: Mutex<HashMap<String, Term>>,
 }
 
-/// The user's own claude, same order as the sidecar: MR_CLAUDE_PATH, ~/.local/bin, PATH.
+/// The user's own claude, same order as the sidecar: MR_CLAUDE_PATH, ~/.local/bin, PATH. On
+/// Windows PATH is searched here through PATHEXT: a bare `claude` only ever finds `claude.exe`,
+/// never npm's `claude.cmd` (a full .cmd path runs, through cmd).
 pub fn claude_path() -> String {
     if let Ok(p) = std::env::var("MR_CLAUDE_PATH") {
         return p;
     }
     let exe = if cfg!(windows) { "claude.exe" } else { "claude" };
     let native = dirs::home_dir().map(|h| h.join(".local").join("bin").join(exe));
-    match native.filter(|p| p.exists()) {
-        Some(p) => p.display().to_string(),
-        None => "claude".into(),
+    if let Some(p) = native.filter(|p| p.exists()) {
+        return p.display().to_string();
     }
+    #[cfg(windows)]
+    if let Some(p) = crate::sys::which("claude") {
+        return p.display().to_string();
+    }
+    "claude".into()
 }
 
 /// Runs `argv` in a PTY under `key`, streaming output as `term-data` and calling `on_exit` when it ends.

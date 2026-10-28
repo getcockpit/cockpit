@@ -51,28 +51,15 @@ pub fn scan(projects_dir: &Path) -> Vec<(String, i64)> {
 }
 
 fn day_of(ms: i64) -> String {
-    // Local calendar day; chrono-free: shift by the local UTC offset reported by `date`.
+    // Local calendar day: shift by the current local UTC offset.
     let offset = local_offset_secs();
     let days = (ms / 1000 + offset).div_euclid(86_400);
     civil_from_days(days)
 }
 
 fn local_offset_secs() -> i64 {
-    std::process::Command::new("date")
-        .arg("+%z")
-        .output()
-        .ok()
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
-            let sign = if s.starts_with('-') { -1 } else { 1 };
-            let d: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
-            if d.len() == 4 {
-                Some(sign * (d[..2].parse::<i64>().ok()? * 3600 + d[2..].parse::<i64>().ok()? * 60))
-            } else {
-                None
-            }
-        })
-        .unwrap_or(0)
+    // chrono rather than `date +%z`: Windows has no such `date`, and it saves a process per call.
+    i64::from(chrono::Local::now().offset().local_minus_utc())
 }
 
 // Howard Hinnant's days-from-civil inverse.
@@ -117,8 +104,8 @@ pub fn compute(files: &[(String, i64)], app_ids: &HashSet<String>, now_ms: i64, 
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
 #[tauri::command(async)]
 pub fn daily_driver(app: tauri::AppHandle, log: tauri::State<'_, crate::eventlog::EventLog>) -> Result<DailyDriver, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let mut files = scan(&Path::new(&home).join(".claude/projects"));
+    let home = crate::workspaces::home()?;
+    let mut files = scan(&home.join(".claude").join("projects"));
     // Isolated workspaces keep their own transcripts (decision 24).
     if let Ok(rd) = std::fs::read_dir(crate::selfbuild::data_dir(&app).join("workspaces")) {
         for ws in rd.flatten() {

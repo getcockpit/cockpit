@@ -1,4 +1,4 @@
-import { NO_CLAUDE } from "./claude-path";
+import { claudeLaunch, NO_CLAUDE, type ClaudeLaunch } from "./claude-path";
 import { userContent } from "./attachments";
 import type { Attachment, CommandRow, Effort, Inbound, McpAction, McpAddConfig, McpScope, McpServer, ModelRow, Outbound, PermissionDecision, PermissionMode, ToolSpec } from "./protocol";
 
@@ -157,7 +157,8 @@ export class Sessions {
     try {
       const claude = this.claude();
       if (!claude) throw new Error(NO_CLAUDE);
-      const proc = Bun.spawn([claude, "mcp", "add-json", "--scope", scope, server, JSON.stringify(config)], { cwd: s.cwd, env: s.env ? { ...process.env, ...s.env } : process.env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+      const run = claudeLaunch(claude);
+      const proc = Bun.spawn([run.command, ...run.args, "mcp", "add-json", "--scope", scope, server, JSON.stringify(config)], { cwd: s.cwd, env: s.env ? { ...process.env, ...s.env } : process.env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
       const [code, out, err] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
       if (code !== 0) throw new Error((err.trim() || out.trim() || `claude mcp add-json exited with ${code}`).split("\n").slice(-3).join(" "));
       try {
@@ -185,6 +186,8 @@ export class Sessions {
     if (this.live.has(m.session)) return this.emit({ type: "error", session: m.session, error: "session already running" });
     const claudePath = this.claude();
     if (!claudePath) return this.emit({ type: "session_ended", session: m.session, ok: false, reason: NO_CLAUDE });
+    let launch: ClaudeLaunch;
+    try { launch = claudeLaunch(claudePath); } catch (e) { return this.emit({ type: "session_ended", session: m.session, ok: false, reason: e instanceof Error ? e.message : String(e) }); }
     const s: Live = { inbox: new Inbox(), q: null, cwd: m.cwd, env: m.env, dynamic: {}, init: { skills: [], terminal: [] }, switching: Promise.resolve(), pending: new Map(), calls: new Map() };
     this.live.set(m.session, s);
     s.inbox.push(m.prompt, m.attachments);
@@ -204,7 +207,7 @@ export class Sessions {
       env: m.env ? { ...process.env, ...m.env } : undefined,
       model: m.model,
       effort: m.effort,
-      pathToClaudeCodeExecutable: claudePath,
+      ...launch.sdk,
       systemPrompt: m.append_system_prompt ? { type: "preset", preset: "claude_code", append: m.append_system_prompt } : undefined,
       mcpServers: mcpServer ? { mr: mcpServer } : undefined,
       permissionMode: m.permission_mode,

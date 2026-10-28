@@ -9,6 +9,7 @@ import { decideQuestion, type Doc } from "./docs";
 import { listen } from "./listen";
 import { api } from "./store";
 import type { AppState, SessionState } from "./types";
+import { basename } from "../fspath";
 
 // macOS notifications for the needs-you queue (MR-94). Each new item, while Cockpit is in the
 // background, becomes one notification with the ask in it. Clicking it opens that decision (deep
@@ -21,8 +22,8 @@ type Response = { kind: "open" } | { kind: "action"; value: string } | { kind: "
 /** macOS gets the dropdown as one comma-joined string, so the core drops commas; match the same way. */
 export const cleanAction = (a: string) => a.replace(/,/g, " ").split(/\s+/).filter(Boolean).join(" ");
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
-const project = (s: SessionState) => (s.repo ?? s.cwd).split("/").filter(Boolean).pop() ?? s.cwd;
-const base = (p: string) => p.split("/").pop() ?? p;
+const project = (s: SessionState) => basename(s.repo ?? s.cwd) || s.cwd;
+const base = (p: string) => basename(p) || p;
 
 /** What a queue item says on the lock screen: what kind of decision, where it's from, and the ask itself. */
 export function noteFor(item: QueueItem, sessions: Record<string, SessionState>, workspaceName: (id: string) => string | null): Note {

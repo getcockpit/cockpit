@@ -1,6 +1,7 @@
 import { asksUser, proseQuestion } from "./queue";
 import type { PendingAsk, SessionState } from "../state/types";
 import riskRules from "./risk-rules.json";
+import { basename } from "../fspath";
 
 // Picker layer 1 (decision 5): plain code maps typed agent state to catalog components.
 // No model involved; anything this layer can't classify falls through to layer 2 (MR-20).
@@ -131,7 +132,7 @@ export function pickTile(s: SessionState): TileSpec {
     : running ? `Running: ${running[0].description || "a background task"}${running.length > 1 ? ` (+${running.length - 1} more)` : ""}`
     : ask
     ? ask.kind === "question" ? `Asks: ${ask.questions[0]?.question ?? "a question"}` : `Wants to use ${ask.tool}`
-    : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${String(lastTool.input.file_path).split("/").pop()}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");
+    : current?.activeForm ?? (lastTool && lastTool.kind === "tool" ? `${lastTool.name}${lastTool.input.command ? `: ${String(lastTool.input.command).slice(0, 60)}` : lastTool.input.file_path ? ` ${basename(String(lastTool.input.file_path))}` : ""}` : lastText && lastText.kind === "text" ? lastText.text.slice(0, 80) : "Starting…");
   return {
     state,
     step: running ? "Running in background" : state === "review" ? `All ${total} steps done` : planOpen ? `Plan left open · ${done} of ${total}` : total ? `Step ${Math.min(done + 1, total)} of ${total}` : s.status === "idle" ? "Your turn" : "Working",

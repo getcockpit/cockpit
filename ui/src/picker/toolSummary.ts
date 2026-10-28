@@ -1,7 +1,9 @@
 // One-line, human summary of a tool call for the transcript (god-mode mark: raw commands were unreadable).
 // The raw input stays available when the row is expanded.
 
-const base = (p: unknown) => String(p ?? "").split("/").filter(Boolean).pop() ?? "";
+import { basename } from "../fspath";
+
+const base = (p: unknown) => basename(String(p ?? ""));
 const files = (args: string[]) => args.filter((a) => !a.startsWith("-") && /[./]/.test(a) && !/^\d/.test(a)).map(base);
 const list = (xs: string[]) => (xs.length > 2 ? `${xs.slice(0, 2).join(", ")} +${xs.length - 2}` : xs.join(", "));
 

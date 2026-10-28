@@ -83,7 +83,7 @@ fn repo() -> Option<PathBuf> {
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().map_err(|e| format!("git: {e}"))?;
+    let out = crate::sys::cmd("git").arg("-C").arg(dir).args(args).output().map_err(|e| format!("git: {e}"))?;
     if out.status.success() { Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_owned()) }
 }
 

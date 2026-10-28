@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import type { DecisionSpec, Risk, TileSpec } from "../picker/pick";
 import type { Delivery } from "../state/types";
 import { keyLabel } from "../platform";
+import { basename } from "../fspath";
 
 // The component catalog (decision 16). Screens are composed only from these.
 
@@ -102,7 +103,7 @@ export function wayOut(questions: { question: string }[], x: { kind: "reply"; te
 export function DecisionCard({ spec, onAnswer }: { spec: DecisionSpec; onAnswer: (a: Answer) => void }) {
   if (spec.component === "QuestionCard") return <QuestionCard questions={spec.questions} onAnswer={onAnswer} />;
   const title = spec.component === "CommandCard" ? (spec.description || "Run a command")
-    : spec.component === "DiffCard" ? `${spec.tool === "Write" ? "Create" : "Edit"} ${spec.path.split("/").pop()}`
+    : spec.component === "DiffCard" ? `${spec.tool === "Write" ? "Create" : "Edit"} ${basename(spec.path)}`
     : `Use ${spec.tool}`;
   const body = spec.component === "CommandCard" ? spec.command : spec.component === "DiffCard" ? spec.preview : spec.summary;
   return (

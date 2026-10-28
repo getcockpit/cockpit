@@ -6,6 +6,7 @@ import { shortError } from "../components/ErrorLine";
 import { pickDecision } from "../picker/pick";
 import { api } from "../state/store";
 import type { PendingAsk, SessionState } from "../state/types";
+import { basename } from "../fspath";
 
 // Sends one answer for a pending ask (card click or keyboard).
 export function answerAsk(s: SessionState, a: PendingAsk, x: Answer) {
@@ -35,7 +36,7 @@ export function AskRow({ s, a, selected, onOpen }: { s: SessionState; a: Pending
   );
 }
 
-const where = (s: SessionState) => (s.repo ?? s.cwd).split("/").filter(Boolean).pop() ?? s.cwd;
+const where = (s: SessionState) => basename(s.repo ?? s.cwd) || s.cwd;
 
 // A session that asked in prose (MR-41): the question on its own, quick replies it offers, and a
 // reply box, so it's answered from the queue like any card.

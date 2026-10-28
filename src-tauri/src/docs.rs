@@ -661,7 +661,7 @@ mod tests {
     fn a_branch_counts_as_merged_only_once_it_moved_and_landed() {
         let dir = std::env::temp_dir().join(format!("mr-docs-merged-{}", ulid::Ulid::new()));
         std::fs::create_dir_all(&dir).unwrap();
-        let git = |args: &[&str]| assert!(std::process::Command::new("git").arg("-C").arg(&dir).args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]).args(args).output().unwrap().status.success(), "{args:?}");
+        let git = |args: &[&str]| assert!(crate::sys::cmd("git").arg("-C").arg(&dir).args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]).args(args).output().unwrap().status.success(), "{args:?}");
         git(&["init", "-q", "-b", "main"]);
         git(&["commit", "-q", "--allow-empty", "-m", "a"]);
         git(&["branch", "mr/fresh"]);
@@ -714,7 +714,7 @@ pub struct BuildRef {
 /// moved past where it was created (a fresh branch is trivially an ancestor). A branch that's
 /// gone counts too: `git branch -d` only deletes merged branches, which is how builds end here.
 pub fn branch_merged(repo: &std::path::Path, branch: &str) -> bool {
-    let git = |args: &[&str]| std::process::Command::new("git").arg("-C").arg(repo).args(args).output().ok();
+    let git = |args: &[&str]| crate::sys::cmd("git").arg("-C").arg(repo).args(args).output().ok();
     let ok = |args: &[&str]| git(args).map(|o| o.status.success()).unwrap_or(false);
     if !repo.join(".git").exists() {
         return false;

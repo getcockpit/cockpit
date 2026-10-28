@@ -2,7 +2,6 @@
 //! disk, not what the transcript claims. Also where god mode's marks go (MR-22).
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde::Serialize;
 
@@ -22,7 +21,7 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 // Never an empty error: the UI reads "" as "still loading" (a missing git once left the change map
 // on "Reading git…" forever). 127 is the shell's "command not found", which some spawns report.
 fn git_with(bin: &str, dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new(bin).arg("-C").arg(dir).args(args).output().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { NO_GIT.to_owned() } else { format!("git: {e}") })?;
+    let out = crate::sys::cmd(bin).arg("-C").arg(dir).args(args).output().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { NO_GIT.to_owned() } else { format!("git: {e}") })?;
     if out.status.success() {
         return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
     }
@@ -144,10 +143,10 @@ pub fn main_checkout(dir: &Path) -> PathBuf {
     if dir.join(".git").is_dir() {
         return dir.to_path_buf();
     }
-    let out = Command::new("git").arg("-C").arg(dir).args(["rev-parse", "--path-format=absolute", "--git-common-dir"]).output();
+    let out = crate::sys::cmd("git").arg("-C").arg(dir).args(["rev-parse", "--path-format=absolute", "--git-common-dir"]).output();
     match out {
         Ok(o) if o.status.success() => {
-            let common = PathBuf::from(String::from_utf8_lossy(&o.stdout).trim());
+            let common = crate::sys::native_path(String::from_utf8_lossy(&o.stdout).trim());
             common.parent().filter(|_| common.ends_with(".git")).map(Path::to_path_buf).unwrap_or_else(|| dir.to_path_buf())
         }
         _ => dir.to_path_buf(),
@@ -209,7 +208,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mr-main-{}", ulid::Ulid::new()));
         let repo = root.join("app");
         std::fs::create_dir_all(&repo).unwrap();
-        let run = |args: &[&str]| assert!(Command::new("git").arg("-C").arg(&repo).args(["-c", "user.email=t@t", "-c", "user.name=t"]).args(args).status().unwrap().success());
+        let run = |args: &[&str]| assert!(crate::sys::cmd("git").arg("-C").arg(&repo).args(["-c", "user.email=t@t", "-c", "user.name=t"]).args(args).status().unwrap().success());
         run(&["init", "-q", "-b", "main"]);
         run(&["commit", "-q", "--allow-empty", "-m", "init"]);
         let wt = root.join("app-worktrees").join("installer");
@@ -228,7 +227,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("mr-installed-{}", ulid::Ulid::new()));
         let repo = root.join("app");
         std::fs::create_dir_all(repo.join("src-tauri")).unwrap();
-        assert!(Command::new("git").arg("-C").arg(&repo).args(["init", "-q", "-b", "main"]).status().unwrap().success());
+        assert!(crate::sys::cmd("git").arg("-C").arg(&repo).args(["init", "-q", "-b", "main"]).status().unwrap().success());
         let installed = root.join("Applications/Cockpit.app/Contents/MacOS/Cockpit");
         let in_repo = repo.join("src-tauri/target/debug/Cockpit");
         assert_eq!(repo_for(&in_repo, Path::new("/nowhere/src-tauri")), Some(repo.clone()));
@@ -242,7 +241,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mr-changes-{}", ulid::Ulid::new()));
         std::fs::create_dir_all(dir.join("db/migrations")).unwrap();
         std::fs::write(dir.join("a.ts"), "one\n").unwrap();
-        let run = |args: &[&str]| assert!(Command::new("git").arg("-C").arg(&dir).args(args).status().unwrap().success());
+        let run = |args: &[&str]| assert!(crate::sys::cmd("git").arg("-C").arg(&dir).args(args).status().unwrap().success());
         run(&["init", "-q", "-b", "main"]);
         run(&["add", "."]);
         run(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]);
