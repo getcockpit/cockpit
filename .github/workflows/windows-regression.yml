@@ -1,0 +1,109 @@
+name: Windows regression
+
+# Run by hand: everything CI checks only on Linux/macOS, on Windows. The UI and sidecar suites,
+# the UI end-to-end flows, and the real installer: install it, start it, check the sidecar boots
+# and finds an installed `claude` (no login, so no sessions).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: UI + sidecar tests (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: ui
+      - run: bun run test
+        working-directory: ui
+      - run: bun run build
+        working-directory: ui
+      - run: bun install --frozen-lockfile
+        working-directory: sidecar
+      - run: bunx tsc --noEmit -p .
+        working-directory: sidecar
+      - run: bun test
+        working-directory: sidecar
+      - run: bun test scripts/
+
+  e2e-ui:
+    name: UI end-to-end (Windows, PinchTab)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g pinchtab@0.15.2
+      - run: bun install --frozen-lockfile
+        working-directory: ui
+      - run: ./scripts/e2e-ui.sh
+
+  app:
+    name: Installer, start, sidecar ready (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: ./scripts/build-helpers.sh
+      - run: bun install --frozen-lockfile
+        working-directory: ui
+      - run: node ../ui/node_modules/@tauri-apps/cli/tauri.js build --bundles nsis
+        working-directory: src-tauri
+        env:
+          VITE_MR_PACKAGED: "1"
+      # The npm install puts claude.cmd on PATH, the way most Windows users have it.
+      - run: npm install -g @anthropic-ai/claude-code && claude --version
+      - name: Install silently, start, wait for the sidecar
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *-setup.exe | Select-Object -First 1
+          Start-Process $exe.FullName -ArgumentList '/S' -Wait
+          $app = Get-ChildItem "$env:LOCALAPPDATA\Cockpit" -Recurse -Filter Cockpit.exe | Select-Object -First 1
+          if (-not $app) { throw "Cockpit.exe not installed" }
+          Get-ChildItem $app.Directory | ForEach-Object { $_.Name }
+          $data = Join-Path $env:RUNNER_TEMP "mr-data"
+          New-Item -ItemType Directory -Force $data | Out-Null
+          $env:MR_DATA_DIR = $data
+          $p = Start-Process $app.FullName -PassThru
+          $db = Join-Path $data "events.sqlite"
+          $ready = $null
+          foreach ($i in 1..60) {
+            Start-Sleep 1
+            if ($p.HasExited) { throw "Cockpit exited early with code $($p.ExitCode)" }
+            if (Test-Path $db) {
+              $ready = python -c "import sqlite3,sys; r=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True).execute(""SELECT payload FROM events WHERE kind='sidecar.ready' LIMIT 1"").fetchone(); print(r[0] if r else '')" $db
+              if ($ready) { break }
+            }
+          }
+          if (-not $ready) { throw "no sidecar.ready in 60 s" }
+          Write-Host "sidecar.ready: $ready"
+          $claude = ($ready | ConvertFrom-Json).claude
+          if (-not $claude) { throw "the sidecar did not find claude" }
+          Get-Process | Where-Object { $_.ProcessName -like "mr-sidecar*" } | Format-Table Id, ProcessName
+          Start-Sleep 10
+          if ($p.HasExited) { throw "Cockpit exited after ready with code $($p.ExitCode)" }
+          python -c "import sqlite3,sys; [print(k, n) for k, n in sqlite3.connect(sys.argv[1]).execute('SELECT kind, COUNT(*) FROM events GROUP BY kind')]" $db
+          Stop-Process $p.Id -Force
