@@ -64,7 +64,8 @@ const ui = {
     // motion=off: a headless tab draws no frames, so entry animations would leave tiles at opacity 0,
     // which PinchTab's click treats as hidden. landing=wall: flows start on the Wall, not the
     // Overview a launch with several workspaces lands on (decision 40), unless they test that.
-    pt("nav", `${BASE}/?demo=${demo}&motion=off${opts.overview ? "" : "&landing=wall"}`, "--block-images");
+    // Retried: a cold browser (the first flow on a Windows runner) can answer "instance not ready" for a while.
+    await until("page loaded", () => pt("nav", `${BASE}/?demo=${demo}&motion=off${opts.overview ? "" : "&landing=wall"}`, "--block-images"), 60_000);
     // Generous: on a cold CI runner, Vite compiles the app on the first request.
     await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); }, 45_000);
   },
