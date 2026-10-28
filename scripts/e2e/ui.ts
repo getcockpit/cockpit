@@ -66,7 +66,7 @@ const ui = {
     // Overview a launch with several workspaces lands on (decision 40), unless they test that.
     pt("nav", `${BASE}/?demo=${demo}&motion=off${opts.overview ? "" : "&landing=wall"}`, "--block-images");
     // Generous: on a cold CI runner, Vite compiles the app on the first request.
-    await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); }, 20_000);
+    await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); }, 45_000);
   },
   count: (css: string) => Number(pt("count", css).trim()),
   // `within` (CSS) scopes the lookup when the same label shows twice, e.g. two Send buttons.
@@ -226,7 +226,7 @@ const flows: Flow[] = [
     await ui.click("button", "↵ Continue");
     await ui.tags("SessionName", 1);
     await ui.tags("AddressCompose", 1); // your own answer, or ask Claude why
-    await ui.see("button", "⌘↵ Why? Dig deeper");
+    await ui.see("button", send("Why\\? Dig deeper"));
   } },
   { name: "J9 mark a finished session done", run: async () => {
     await ui.open("busy");
@@ -382,8 +382,7 @@ const flows: Flow[] = [
     await ui.tags("OverviewCanvas", 0);
     await ui.key("Mod+0");
     await ui.tags("OverviewCanvas", 1);
-    await ui.click("button", "Open Approve the event-log migration");
-    await ui.tags("SessionName", 1);
+    await ui.clickUntil("button", "Open Approve the event-log migration", undefined, "SessionName");
     await ui.key("Mod+0");
     await ui.tags("OverviewCanvas", 1);
     // Coming back is a return: the camera is where you left it (100%), not refitted by an old ⌘0…
