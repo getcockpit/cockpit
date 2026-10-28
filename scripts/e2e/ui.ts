@@ -957,7 +957,7 @@ const flows: Flow[] = [
     await ui.fill("Message this session", "Add a changelog entry");
     pt("press", ui.find("textbox", "Message this session").ref, "Enter");
     await until("the message was sent", () => { if (!ui.text('[data-mr="UserText"]').includes("Add a changelog entry")) throw new Error("not in the transcript"); });
-    await until("box cleared", () => { if (pt("text", "css:[data-mr=PromptBox] textarea").trim()) throw new Error("box not empty"); });
+    await until("box cleared", () => { if (pt("text", "css:[data-mr=PromptBox] textarea").trim()) throw new Error("box not empty"); }, 15_000); // the demo turn takes ~4 s, longer on a Windows runner
     pt("press", ui.find("textbox", "Message this session").ref, "ArrowUp");
     await until("history recalled", () => { if (!pt("html", "css:[data-mr=PromptBox] textarea").includes("Add a changelog entry")) throw new Error("not recalled"); });
   } },
