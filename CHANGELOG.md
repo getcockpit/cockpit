@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-10-28
+
+### Fixed
+- **Workspaces work on Windows:** creating, deleting and signing in to a workspace no longer fail where `HOME` isn't set; the home folder comes from the OS, and the native `claude.exe` is found.
+
 ## [0.1.17] - 2026-10-27
 
 ### Added
