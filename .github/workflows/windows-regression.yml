@@ -49,9 +49,20 @@ jobs:
       - run: npm install -g pinchtab@0.15.2
       # PinchTab doesn't find the runner's preinstalled Chrome on Windows by itself.
       - run: pinchtab config set browser.binary "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      # The demo pages hold made-up risky commands (kubectl apply, rm -rf) that its injection scanner would block.
+      - run: pinchtab config set security.idpi.strictMode false
       - run: bun install --frozen-lockfile
         working-directory: ui
       - run: ./scripts/e2e-ui.sh
+        env:
+          MR_E2E_SHOTS: ${{ runner.temp }}/mr-e2e
+      - name: Screenshots of failed flows
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-ui-failures-windows
+          path: ${{ runner.temp }}/mr-e2e/
+          if-no-files-found: ignore
 
   app:
     name: Installer, start, sidecar ready (Windows)
