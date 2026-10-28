@@ -25,9 +25,12 @@ pub fn claude_path() -> String {
     if let Ok(p) = std::env::var("MR_CLAUDE_PATH") {
         return p;
     }
-    let home = std::env::var("HOME").unwrap_or_default();
-    let native = format!("{home}/.local/bin/claude");
-    if std::path::Path::new(&native).exists() { native } else { "claude".into() }
+    let exe = if cfg!(windows) { "claude.exe" } else { "claude" };
+    let native = dirs::home_dir().map(|h| h.join(".local").join("bin").join(exe));
+    match native.filter(|p| p.exists()) {
+        Some(p) => p.display().to_string(),
+        None => "claude".into(),
+    }
 }
 
 /// Runs `argv` in a PTY under `key`, streaming output as `term-data` and calling `on_exit` when it ends.

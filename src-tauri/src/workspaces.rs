@@ -50,6 +50,12 @@ fn copy_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The user's home folder. Not `$HOME`: Windows doesn't set it (USERPROFILE instead), which made
+/// every workspace action fail there.
+pub fn home() -> Result<PathBuf, String> {
+    dirs::home_dir().ok_or_else(|| "couldn't find your home folder".to_string())
+}
+
 /// Personal, or a workspace whose folder is still there (deleting one moves it to the Trash).
 pub fn exists(app: &AppHandle, workspace: &str) -> bool {
     config_dir(app, workspace).is_none_or(|c| c.is_dir())
@@ -71,7 +77,7 @@ pub fn workspace_create(app: AppHandle, name: String) -> Result<String, String> 
     }
     let id = format!("ws_{}", &ulid::Ulid::new().to_string()[16..].to_lowercase());
     let config = config_dir(&app, &id).ok_or("bad id")?;
-    let home = PathBuf::from(std::env::var("HOME").map_err(|e| e.to_string())?).join(".claude");
+    let home = home()?.join(".claude");
     prepare_config_dir(&config, &home).map_err(|e| e.to_string())?;
     crate::eventlog::record(&app, None, "ui.workspace_created", &serde_json::json!({ "id": id, "name": name, "config_dir": config }), Some(&format!("workspace:{id}")));
     Ok(id)
@@ -152,7 +158,7 @@ pub fn workspace_delete(app: AppHandle, id: String, name: String) -> Result<(), 
         return Err("the Personal workspace can't be deleted".into());
     }
     let stopped = crate::sidecar::stop_sessions_in(&app, &id);
-    let home = PathBuf::from(std::env::var("HOME").map_err(|e| e.to_string())?);
+    let home = home()?;
     let folder = crate::selfbuild::data_dir(&app).join("workspaces").join(&id);
     let trashed = to_trash(&folder, &name, &home)?;
     crate::eventlog::record(&app, None, "ui.workspace_deleted", &serde_json::json!({ "id": id, "name": name, "stopped": stopped, "trashed_to": trashed }), Some(&format!("workspace:{id}")));
@@ -167,7 +173,7 @@ pub fn workspace_sign_in(app: AppHandle, id: String, cols: u16, rows: u16) -> Re
     let env = config_dir(&app, &id).map(|c| vec![("CLAUDE_CONFIG_DIR".to_string(), c.display().to_string())]).unwrap_or_default();
     let key = format!("login:{id}");
     crate::eventlog::record(&app, None, "ui.sign_in_opened", &serde_json::json!({ "workspace": id }), Some(&format!("workspace:{id}")));
-    crate::terminal::open_command(&app, &key, sign_in_argv(crate::terminal::claude_path()), &std::env::var("HOME").unwrap_or_default(), env, cols, rows)?;
+    crate::terminal::open_command(&app, &key, sign_in_argv(crate::terminal::claude_path()), &home().map(|h| h.display().to_string()).unwrap_or_default(), env, cols, rows)?;
     Ok(key)
 }
 
@@ -221,7 +227,7 @@ pub fn claude_home(app: &AppHandle, workspace: &str) -> Result<PathBuf, String> 
     if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()) {
         return Ok(PathBuf::from(dir));
     }
-    Ok(PathBuf::from(std::env::var("HOME").map_err(|e| e.to_string())?).join(".claude"))
+    Ok(home()?.join(".claude"))
 }
 
 /// Copies one conversation's transcript (`projects/<folder>/<sdk>.jsonl`, plus its `<sdk>/` folder
