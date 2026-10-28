@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Mutex;
 
 use serde_json::json;
@@ -87,14 +87,16 @@ fn spawn(cwd: &str, command: &str, output: &Path) -> Result<std::process::Child,
     #[cfg(unix)]
     let (shell, mut cmd) = {
         let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
-        let mut cmd = Command::new(&shell);
+        let mut cmd = crate::sys::cmd(&shell);
         cmd.args(["-lc", command]).process_group(0); // its own group, so Stop reaches whatever it started
         (shell, cmd)
     };
     #[cfg(windows)]
     let (shell, mut cmd) = {
-        let mut cmd = Command::new("cmd");
-        cmd.args(["/C", command]);
+        // Verbatim, so quotes and `&` reach cmd as typed; /S strips just the outer quotes.
+        let mut cmd = crate::sys::cmd("cmd");
+        cmd.args(["/S", "/C"]);
+        std::os::windows::process::CommandExt::raw_arg(&mut cmd, format!("\"{command}\""));
         ("cmd".to_owned(), cmd)
     };
     cmd.current_dir(cwd)
@@ -108,9 +110,9 @@ fn spawn(cwd: &str, command: &str, output: &Path) -> Result<std::process::Child,
 /// Ends the run's whole process group, children included.
 fn stop(pid: u32) -> Result<(), String> {
     #[cfg(unix)]
-    Command::new("/bin/kill").args(["-TERM", "--", &format!("-{pid}")]).status().map_err(|e| e.to_string())?;
+    crate::sys::cmd("/bin/kill").args(["-TERM", "--", &format!("-{pid}")]).status().map_err(|e| e.to_string())?;
     #[cfg(windows)]
-    Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).status().map_err(|e| e.to_string())?;
+    crate::sys::cmd("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).status().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -166,7 +168,7 @@ mod tests {
         let status = child.wait().unwrap();
         assert!(t.elapsed().as_secs() < 5);
         assert_eq!(outcome(status.code(), true), "stopped");
-        let left = Command::new("/usr/bin/pgrep").args(["-g", &child.id().to_string()]).output().unwrap();
+        let left = crate::sys::cmd("/usr/bin/pgrep").args(["-g", &child.id().to_string()]).output().unwrap();
         assert!(left.stdout.is_empty(), "background child survived");
     }
 

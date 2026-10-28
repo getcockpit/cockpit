@@ -1,5 +1,7 @@
 // @ mentions in the message box (MR-108): point Claude at a file or folder, as in Claude Code.
 
+import { basename } from "../fspath";
+
 export type TypedMention = { start: number; query: string; quoted?: true };
 
 /**
@@ -14,7 +16,7 @@ export function typedMention(text: string, caret: number): TypedMention | null {
   return m ? { start: m.index + m[1].length, query: m[2] } : null;
 }
 
-const base = (p: string) => p.replace(/\/$/, "").split("/").pop()!.toLowerCase();
+const base = (p: string) => basename(p).toLowerCase();
 
 // Every character of q in order: "fcs" finds "Focus.tsx".
 function subsequence(q: string, s: string): boolean {

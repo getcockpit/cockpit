@@ -1,4 +1,4 @@
-import { NO_CLAUDE } from "./claude-path";
+import { claudeLaunch, NO_CLAUDE } from "./claude-path";
 import type { Outbound } from "./protocol";
 import type { QueryFn } from "./sessions";
 
@@ -21,12 +21,12 @@ export async function oneshot(
     settingSources: [],
     persistSession: false,
     env: m.env ? { ...process.env, ...m.env } : undefined,
-    pathToClaudeCodeExecutable: claudePath,
     canUseTool: async () => ({ behavior: "deny", message: "no tools in a one-shot" }),
   };
   const t0 = Date.now();
   try {
     if (!claudePath) throw new Error(NO_CLAUDE);
+    Object.assign(options, claudeLaunch(claudePath).sdk);
     let text = "";
     let ok = false;
     for await (const msg of query({ prompt: prompt(), options })) {

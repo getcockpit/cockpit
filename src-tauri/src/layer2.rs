@@ -1,9 +1,8 @@
 //! Picker layer 2 (decision 5, MR-20): when plain code can't tell what a piece of agent prose is,
 //! Cloudflare's Clef-flash decision model classifies it in one call (probabilities, no text).
 //! Without credentials it falls back to the code rule, so nothing depends on the network.
-//! Credentials live in the macOS Keychain, never in files.
+//! Credentials live in the OS keychain, never in files.
 
-use std::process::Command;
 use std::time::Instant;
 
 use serde_json::{json, Value};
@@ -32,8 +31,11 @@ fn creds() -> Option<(String, String)> {
 #[tauri::command(async)]
 pub fn layer2_save_credentials(account_id: String, api_token: String) -> Result<(), String> {
     for (acct, val) in [("account_id", account_id), ("api_token", api_token)] {
-        let st = Command::new("security").args(["add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", acct, "-w", val.trim()]).status().map_err(|e| e.to_string())?;
-        if !st.success() {
+        #[cfg(target_os = "macos")]
+        let ok = crate::sys::cmd("security").args(["add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", acct, "-w", val.trim()]).status().map_err(|e| e.to_string())?.success();
+        #[cfg(not(target_os = "macos"))]
+        let ok = crate::sys::keychain_set(KEYCHAIN_SERVICE, acct, val.trim()).is_ok();
+        if !ok {
             return Err("couldn't save to the Keychain".into());
         }
     }

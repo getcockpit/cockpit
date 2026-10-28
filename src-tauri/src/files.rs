@@ -3,7 +3,6 @@
 //! `ui.file_revealed` is logged here, in the command that performs it.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::json;
 use tauri::{AppHandle, Manager};
@@ -37,12 +36,13 @@ pub fn file_reveal(app: AppHandle, session: Option<String>, cwd: String, path: S
         return Err(format!("not found: {}", full.display()));
     }
     #[cfg(target_os = "macos")]
-    let ok = Command::new("open").arg("-R").arg(&full).status().map_err(|e| e.to_string())?.success();
-    // Explorer's exit code is 1 even when it worked.
+    let ok = crate::sys::cmd("open").arg("-R").arg(&full).status().map_err(|e| e.to_string())?.success();
+    // Explorer's exit code is 1 even when it worked. It wants backslashes and `/select,"<path>"`
+    // verbatim (std's quoting of the whole argument breaks on spaces).
     #[cfg(windows)]
-    let ok = Command::new("explorer").arg(format!("/select,{}", full.display())).status().is_ok();
+    let ok = std::os::windows::process::CommandExt::raw_arg(&mut crate::sys::cmd("explorer"), format!("/select,\"{}\"", crate::sys::native_path(&full.to_string_lossy()).display())).status().is_ok();
     #[cfg(all(unix, not(target_os = "macos")))]
-    let ok = Command::new("xdg-open").arg(full.parent().unwrap_or(&full)).status().map_err(|e| e.to_string())?.success();
+    let ok = crate::sys::cmd("xdg-open").arg(full.parent().unwrap_or(&full)).status().map_err(|e| e.to_string())?.success();
     if !ok {
         return Err(format!("Finder couldn't show {}", full.display()));
     }

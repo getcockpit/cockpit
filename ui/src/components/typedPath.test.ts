@@ -26,4 +26,24 @@ describe("resolveTyped", () => {
     expect(resolveTyped("../..", "~/code", home)).toBe("/Users");
     expect(resolveTyped("~/a/../b", "/x", home)).toBe("~/b");
   });
+  it("takes Windows drive and UNC paths", () => {
+    expect(resolveTyped("C:\\Users\\me\\code", "/x", home)).toBe("C:\\Users\\me\\code");
+    expect(resolveTyped("C:/Users//me/./code/", "/x", home)).toBe("C:\\Users\\me\\code");
+    expect(resolveTyped("d:\\a\\..\\..\\b", "/x", home)).toBe("d:\\b");
+    expect(resolveTyped("C:\\", "/x", home)).toBe("C:\\");
+    expect(resolveTyped("\\\\server\\share\\repo", "/x", home)).toBe("\\\\server\\share\\repo");
+    expect(resolveTyped("\\\\server\\share\\..\\..", "/x", home)).toBe("\\\\server\\share");
+    expect(resolveTyped("C:", "/x", home)).toBeNull();
+    expect(resolveTyped("C:code", "/x", home)).toBeNull();
+  });
+  it("resolves . and .. against a Windows folder", () => {
+    expect(resolveTyped("..", "C:\\code\\app", home)).toBe("C:\\code");
+    expect(resolveTyped(".\\sub", "C:\\code\\app\\", home)).toBe("C:\\code\\app\\sub");
+    expect(resolveTyped("../../..", "C:\\code\\app", home)).toBe("C:\\");
+    expect(resolveTyped("../other", "\\\\srv\\share\\app", home)).toBe("\\\\srv\\share\\other");
+  });
+  it("climbs above a Windows home into its absolute form", () => {
+    expect(resolveTyped("~/..", "/x", "C:\\Users\\me")).toBe("C:\\Users");
+    expect(resolveTyped("~\\code", "/x", "C:\\Users\\me")).toBe("~/code");
+  });
 });

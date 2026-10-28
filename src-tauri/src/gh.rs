@@ -1,16 +1,17 @@
 //! Suggestions for the start picker, from the GitHub CLI (`gh`), run in the chosen folder.
 
-use std::process::Command;
 
 use tauri::AppHandle;
 
 fn gh(cwd: &str, args: &[&str]) -> Result<serde_json::Value, String> {
     let path = std::env::var("PATH").unwrap_or_default();
-    let home = std::env::var("HOME").unwrap_or_default();
-    let out = Command::new("gh")
+    // Where gh usually lives, ahead of the app's minimal GUI PATH; ';'-joined on Windows.
+    let mut first: Vec<std::path::PathBuf> = if cfg!(unix) { vec!["/opt/homebrew/bin".into(), "/usr/local/bin".into()] } else { vec![] };
+    first.push(std::path::Path::new(&crate::sys::home_str()).join(".local").join("bin"));
+    let out = crate::sys::cmd("gh")
         .args(args)
         .current_dir(cwd)
-        .env("PATH", format!("/opt/homebrew/bin:/usr/local/bin:{home}/.local/bin:{path}"))
+        .env("PATH", crate::sys::prepend_path(&first, &path))
         .output()
         .map_err(|e| format!("gh not available: {e}"))?;
     if !out.status.success() {
@@ -116,7 +117,7 @@ pub fn rank_mine(data: &serde_json::Value) -> serde_json::Value {
 #[tauri::command(async)]
 pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>) -> Result<serde_json::Value, String> {
     let cwd = crate::sidecar::expand_home(&app, &cwd);
-    let cwd = if std::path::Path::new(&cwd).is_dir() { cwd } else { std::env::var("HOME").unwrap_or_default() };
+    let cwd = if std::path::Path::new(&cwd).is_dir() { cwd } else { crate::sys::home_str() };
     let repo = match repo.as_deref() {
         Some(r) => Some(safe_slug(r).ok_or_else(|| format!("not a GitHub repo: {r}"))?),
         None => None,
@@ -166,7 +167,7 @@ fn github_slug(url: &str) -> Option<String> {
 #[tauri::command(async)]
 pub fn gh_repo(app: AppHandle, cwd: String) -> Option<String> {
     let cwd = crate::sidecar::expand_home(&app, &cwd);
-    let out = Command::new("git").args(["-C", &cwd, "remote", "get-url", "origin"]).output().ok().filter(|o| o.status.success())?;
+    let out = crate::sys::cmd("git").args(["-C", &cwd, "remote", "get-url", "origin"]).output().ok().filter(|o| o.status.success())?;
     github_slug(&String::from_utf8_lossy(&out.stdout))
 }
 
@@ -187,7 +188,7 @@ pub fn pr_parts(url: &str) -> Option<(String, String, u64)> {
 pub fn gh_review_state(url: String) -> Result<serde_json::Value, String> {
     let (owner, name, n) = pr_parts(&url).ok_or_else(|| format!("not a PR URL: {url}"))?;
     let q = "query($o:String!,$n:String!,$num:Int!){repository(owner:$o,name:$n){pullRequest(number:$num){isDraft headRefOid viewerLatestReview{submittedAt} commits(last:1){nodes{commit{committedDate}}}}}}";
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = crate::sys::home_str();
     let v = gh(&home, &["api", "graphql", "-f", &format!("query={q}"), "-F", &format!("o={owner}"), "-F", &format!("n={name}"), "-F", &format!("num={n}")])?;
     let pr = &v["data"]["repository"]["pullRequest"];
     if pr.is_null() { return Err(format!("PR not found: {url}")); }
@@ -208,7 +209,7 @@ pub fn repo_slug(spec: &str) -> Option<String> {
 }
 
 fn origin_matches(dir: &std::path::Path, slug: &str) -> bool {
-    Command::new("git").arg("-C").arg(dir).args(["remote", "get-url", "origin"]).output().ok()
+    crate::sys::cmd("git").arg("-C").arg(dir).args(["remote", "get-url", "origin"]).output().ok()
         .filter(|o| o.status.success())
         .map(|o| { let u = String::from_utf8_lossy(&o.stdout).trim().trim_end_matches(".git").to_lowercase(); u.ends_with(&format!("/{}", slug.to_lowercase())) || u.ends_with(&format!(":{}", slug.to_lowercase())) })
         .unwrap_or(false)
@@ -233,8 +234,8 @@ pub fn find_clone(home: &std::path::Path, slug: &str, extra: &[String]) -> Optio
 #[tauri::command(async)]
 pub fn pr_repo(spec: String) -> Option<String> {
     let slug = repo_slug(&spec)?;
-    // Windows has no HOME: the profile folder is the same place.
-    let home = std::path::PathBuf::from(std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default());
+    // Not $HOME: Windows has none (its profile folder is the same place).
+    let home = dirs::home_dir().unwrap_or_default();
     let recent: Vec<String> = crate::folders::recent_folders().into_iter().map(|f| f.path).collect();
     find_clone(&home, &slug, &recent)
 }
@@ -361,8 +362,8 @@ mod tests {
         let wrong = home.join("code").join("shop");
         for (d, url) in [(&right, "git@github.com:acme/shop.git"), (&wrong, "https://github.com/someone-else/shop")] {
             std::fs::create_dir_all(d).unwrap();
-            assert!(Command::new("git").arg("-C").arg(d).args(["init", "-q"]).status().unwrap().success());
-            assert!(Command::new("git").arg("-C").arg(d).args(["remote", "add", "origin", url]).status().unwrap().success());
+            assert!(crate::sys::cmd("git").arg("-C").arg(d).args(["init", "-q"]).status().unwrap().success());
+            assert!(crate::sys::cmd("git").arg("-C").arg(d).args(["remote", "add", "origin", url]).status().unwrap().success());
         }
         assert_eq!(find_clone(&home, "acme/shop", &[]), Some(right.display().to_string()));
         assert_eq!(find_clone(&home, "acme/other", &[]), None);

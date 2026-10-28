@@ -185,7 +185,7 @@ fn sign_in_argv(claude: String) -> Vec<String> {
 /// after the sign-in terminal closes, so the refused message only goes again once it took.
 #[tauri::command(async)]
 pub fn workspace_auth_status(app: AppHandle, id: String) -> Result<bool, String> {
-    let mut cmd = std::process::Command::new(crate::terminal::claude_path());
+    let mut cmd = crate::sys::cmd(crate::terminal::claude_path());
     cmd.args(["auth", "status", "--json"]).env_clear().envs(crate::selfbuild::child_env()).stdin(std::process::Stdio::null());
     if let Some(dir) = config_dir(&app, &id) {
         cmd.env("CLAUDE_CONFIG_DIR", dir);

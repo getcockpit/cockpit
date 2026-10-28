@@ -1,4 +1,4 @@
-import { NO_CLAUDE } from "./claude-path";
+import { claudeLaunch, NO_CLAUDE } from "./claude-path";
 import type { Outbound } from "./protocol";
 import type { QueryFn } from "./sessions";
 
@@ -15,7 +15,7 @@ export async function limits(query: QueryFn, claudePath: string | undefined, env
   let q: (ReturnType<QueryFn> & Usage) | undefined;
   try {
     if (!claudePath) throw new Error(NO_CLAUDE);
-    q = query({ prompt: idle, options: { pathToClaudeCodeExecutable: claudePath, settingSources: [], persistSession: false, tools: [], env: env ? { ...process.env, ...env } : undefined } }) as ReturnType<QueryFn> & Usage;
+    q = query({ prompt: idle, options: { ...claudeLaunch(claudePath).sdk, settingSources: [], persistSession: false, tools: [], env: env ? { ...process.env, ...env } : undefined } }) as ReturnType<QueryFn> & Usage;
     const ask = q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
     if (!ask) throw new Error("this SDK has no usage API");
     const r = await Promise.race([ask.call(q, { skipBehaviors: true }), new Promise<never>((_, no) => setTimeout(() => no(new Error("timed out")), 30000))]);
@@ -33,7 +33,7 @@ export async function models(query: QueryFn, claudePath: string | undefined, env
   let q: ReturnType<QueryFn> | undefined;
   try {
     if (!claudePath) throw new Error(NO_CLAUDE);
-    q = query({ prompt: idle, options: { pathToClaudeCodeExecutable: claudePath, settingSources: [], persistSession: false, tools: [], env: env ? { ...process.env, ...env } : undefined } });
+    q = query({ prompt: idle, options: { ...claudeLaunch(claudePath).sdk, settingSources: [], persistSession: false, tools: [], env: env ? { ...process.env, ...env } : undefined } });
     if (!q.supportedModels) throw new Error("this SDK has no model list");
     const rows = await Promise.race([q.supportedModels(), new Promise<never>((_, no) => setTimeout(() => no(new Error("timed out")), 30000))]);
     emit({ type: "models", models: rows.map((r) => ({ value: r.value, resolved: r.resolvedModel ?? null, displayName: r.displayName, description: r.description, efforts: r.supportedEffortLevels ?? [] })) });

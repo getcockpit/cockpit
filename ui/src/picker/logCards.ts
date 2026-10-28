@@ -4,6 +4,7 @@
 
 import type { TranscriptItem } from "../state/types";
 import { summarizeTool } from "./toolSummary";
+import { basename } from "../fspath";
 
 type Tool = Extract<TranscriptItem, { kind: "tool" }>;
 type Hunk = { oldStart?: number; newStart?: number; lines?: string[] };
@@ -12,7 +13,7 @@ export type EditCard = { file: string; path: string; where: string; code: string
 export type CheckRow = { label: string; ok: boolean | null; proof: string };
 
 const MAX_LINES = 40;
-const base = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
+const base = (p: string) => basename(p) || p;
 const rec = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 const prefixed = (s: string, c: string) => (s === "" ? [] : s.replace(/\n$/, "").split("\n").map((l) => c + l));
 

@@ -4,6 +4,7 @@ import { homeDir } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { keyOf } from "./keys";
 import { resolveTyped } from "./typedPath";
+import { basename } from "../fspath";
 
 // Work-folder picker (MR-36): one button showing where the session will run. Opens a list of the
 // folders you actually work in (this app's sessions + Claude Code's history), filter by typing,
@@ -52,7 +53,7 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
   const home = useMemo(() => realHome || (found.find((f) => f.path.startsWith("/Users/"))?.path.split("/").slice(0, 3).join("/") ?? ""), [realHome, found]);
 
   useEffect(() => { invoke<Folder[]>("recent_folders").then(setFound).catch(() => {}); }, []);
-  useEffect(() => { homeDir().then((h) => setRealHome(h.replace(/\/+$/, ""))).catch(() => {}); }, []);
+  useEffect(() => { homeDir().then((h) => setRealHome(h.replace(/(.)[\\/]+$/, "$1"))).catch(() => {}); }, []);
   useEffect(() => {
     if (!openList) return;
     const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpenList(false); };
@@ -62,7 +63,7 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
 
   const all = useMemo(() => {
     const seen = new Set<string>();
-    const fromApp = extra.filter(Boolean).map((p) => ({ path: p, name: p.split("/").filter(Boolean).at(-1) ?? p, repo: true, at: 0 }));
+    const fromApp = extra.filter(Boolean).map((p) => ({ path: p, name: basename(p) || p, repo: true, at: 0 }));
     return [...fromApp, ...found].filter((f) => (seen.has(f.path) ? false : (seen.add(f.path), true)));
   }, [found, extra]);
   const typedPath = resolveTyped(q, value, home);
@@ -96,7 +97,7 @@ export function FolderPicker({ value, onChange, extra }: { value: string; onChan
   useEffect(() => setSel(0), [q, openList]);
 
   const shown = value ? tilde(value, home) : "";
-  const name = value ? shown.split("/").filter(Boolean).at(-1) ?? shown : "Choose a folder…";
+  const name = value ? basename(shown) || shown : "Choose a folder…";
   return (
     <div ref={box} style={{ position: "relative", flex: "0 1 240px", minWidth: 0 }} data-mr="FolderPicker" data-mr-source={value}>
       <button type="button" className="mr-row" aria-label={value ? `Work folder: ${shown}. Change` : "Choose a folder"} onClick={() => setOpenList((x) => !x)}

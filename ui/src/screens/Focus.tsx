@@ -40,6 +40,7 @@ import { UserText } from "../components/UserText";
 import { McpPanel } from "../components/McpPanel";
 import { routeSlash } from "../picker/slash";
 import { lazy, Suspense } from "react";
+import { basename, slashed } from "../fspath";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
 // The app's own repo never changes while it runs: ask once (MR-57).
@@ -52,8 +53,8 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
     appRepo().then((repo) => {
-      const name = repo.split("/").filter(Boolean).pop() ?? "";
-      setIsApp(s.cwd.startsWith(repo) || (!!s.repo && s.repo === repo) || s.cwd.includes(`/${name}-worktrees/`));
+      const name = basename(repo);
+      setIsApp(s.cwd.startsWith(repo) || (!!s.repo && s.repo === repo) || slashed(s.cwd).includes(`/${name}-worktrees/`));
     }).catch(() => setIsApp(false));
   }, [s.cwd, s.repo]);
   const tile = useMemo(() => pickTile(s), [s]);
@@ -82,7 +83,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   // A turn is in flight: only then does interrupting mean anything (F9).
   const running = s.status === "working" || s.status === "starting";
   const finished = tile.state === "review" || tile.state === "done" || tile.state === "idle" || tile.state === "error" || s.status === "ended";
-  const where = [(s.repo ?? s.cwd).split("/").filter(Boolean).pop(), s.branch].filter(Boolean).join(" · ");
+  const where = [basename(s.repo ?? s.cwd), s.branch].filter(Boolean).join(" · ");
   const replies = useMemo(() => nextReplies(s), [s]);
   // A report reply shows its own quick replies inline; the bar below would only repeat them.
   const lastText = [...s.transcript].reverse().find((t) => t.kind === "text" || t.kind === "view");

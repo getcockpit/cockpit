@@ -5,13 +5,12 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 const MAX: usize = 20_000;
 const SKIP: [&str; 6] = ["node_modules", "target", "dist", "build", "__pycache__", ".git"];
 
 fn from_git(cwd: &Path) -> Option<Vec<String>> {
-    let out = Command::new("git").arg("-C").arg(cwd).args(["ls-files", "--cached", "--others", "--exclude-standard", "-z"]).output().ok()?;
+    let out = crate::sys::cmd("git").arg("-C").arg(cwd).args(["ls-files", "--cached", "--others", "--exclude-standard", "-z"]).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -122,7 +121,7 @@ mod tests {
         got.sort();
         assert_eq!(got, vec!["src/", "src/main.rs"]);
         // A repo: git's view, with its ignores.
-        assert!(Command::new("git").arg("-C").arg(&root).arg("init").output().unwrap().status.success());
+        assert!(crate::sys::cmd("git").arg("-C").arg(&root).arg("init").output().unwrap().status.success());
         std::fs::write(root.join(".gitignore"), "node_modules/\n.hidden/\n").unwrap();
         assert_eq!(paths(&root), vec!["src/", ".gitignore", "src/main.rs"]);
         let _ = std::fs::remove_dir_all(&root);

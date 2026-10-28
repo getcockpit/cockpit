@@ -9,8 +9,6 @@
 //! that can be billed on its own. The key is the user's for now (Keychain, never files or the log);
 //! `MR_COCKPIT_BASE_URL` is where a hosted, metered endpoint with a short-lived token would plug in.
 
-use std::io::Write;
-use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use serde_json::{json, Value};
@@ -46,7 +44,7 @@ pub fn valid_key(key: &str) -> bool {
     key.starts_with("sk-ant-") && key.len() > 20 && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// Saves the key through `security -i` on stdin, so it never shows up in a process list.
+/// Saves the key in the OS keychain (macOS: `security -i` on stdin, so it never shows up in a process list).
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
 #[tauri::command(async)]
 pub fn cockpit_save_key(key: String) -> Result<(), String> {
@@ -54,10 +52,7 @@ pub fn cockpit_save_key(key: String) -> Result<(), String> {
     if !valid_key(key) {
         return Err("that doesn't look like an Anthropic API key (sk-ant-…)".into());
     }
-    let mut child = Command::new("security").arg("-i").stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|e| e.to_string())?;
-    let line = format!("add-generic-password -U -s {KEYCHAIN_SERVICE} -a {KEYCHAIN_ACCOUNT} -w {key}\n");
-    child.stdin.take().ok_or("no stdin")?.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
-    child.wait().map_err(|e| e.to_string())?;
+    crate::sys::keychain_set(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, key)?;
     if std::env::var("MR_COCKPIT_API_KEY").is_err() && self::key().as_deref() != Some(key) {
         return Err("couldn't save to the Keychain".into());
     }

@@ -1,5 +1,6 @@
 import type { Pr } from "../state/store";
 import type { AppState, SessionState } from "../state/types";
+import { slashed } from "../fspath";
 
 // Auto-review (MR-72): a PR waiting for your review gets a /review session by itself, unless it's a
 // draft or nothing changed since your last review (on GitHub, or a Review session here).
@@ -33,7 +34,7 @@ export function needsAutoReview(info: ReviewState, url: string, localAt: number 
 }
 
 const inside = (path: string, clone: string) => {
-  const p = path.replace(/\/+$/, ""), c = clone.replace(/\/+$/, "");
+  const p = slashed(path).replace(/\/+$/, ""), c = slashed(clone).replace(/\/+$/, "");
   return p === c || p.startsWith(`${c}/`) || p.startsWith(`${c}-worktrees/`);
 };
 

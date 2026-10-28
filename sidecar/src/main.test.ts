@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 // Drives the real sidecar process over stdio, like the Rust core does, with the scripted fake query.
 // Any existing file passes as claude for the fake query; noClaude hides every copy.
 const withClaude = { MR_CLAUDE_PATH: process.execPath };
-const noClaude = { MR_CLAUDE_PATH: "", PATH: "", HOME: "/nonexistent" };
+const noClaude = { MR_CLAUDE_PATH: "", PATH: "", HOME: "/nonexistent", USERPROFILE: "/nonexistent" }; // homedir() reads USERPROFILE on Windows
 async function run(lines: object[], untilTypes: string[], timeoutMs = 5000, env: Record<string, string> = withClaude) {
   const proc = Bun.spawn([process.execPath, "run", `${import.meta.dir}/main.ts`], { stdin: "pipe", stdout: "pipe", env: { ...process.env, MR_FAKE_QUERY: "1", ...env } });
   const out: Record<string, unknown>[] = [];
@@ -147,10 +147,16 @@ test("MCP servers are listed, toggled and reconnected, and a failed action says 
 
 test("adding an MCP server saves it with claude mcp add-json, then attaches it to the running session", async () => {
   const dir = (await import("node:fs")).mkdtempSync(`${(await import("node:os")).tmpdir()}/mr-mcp-add-`);
-  const claude = `${dir}/claude`, log = `${dir}/args`;
-  // A stand-in claude: logs its args; refuses a server named "taken", as claude does an existing name.
-  await Bun.write(claude, `#!/bin/sh\nprintf '%s\\n' "$@" > "${log}"\n[ "$5" = taken ] && { echo "MCP server taken already exists in local config" >&2; exit 1; }\nexit 0\n`);
-  (await import("node:fs")).chmodSync(claude, 0o755);
+  const { join } = await import("node:path");
+  const claude = join(dir, "claude.cmd"), log = join(dir, "args");
+  // A stand-in claude installed the way npm does on Windows: a .cmd shim, which can't be spawned
+  // without a shell, beside the package's cli.js, which the sidecar runs with node instead.
+  // It logs its args and refuses a server named "taken", as claude does an existing name.
+  await Bun.write(claude, `@ECHO off\r\n"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js" %*\r\n`);
+  await Bun.write(join(dir, "node_modules", "@anthropic-ai", "claude-code", "cli.js"), `const a = process.argv.slice(2);
+require("node:fs").writeFileSync(${JSON.stringify(log)}, a.map((x) => x + "\\n").join(""));
+if (a[4] === "taken") { console.error("MCP server taken already exists in local config"); process.exit(1); }
+`);
   const config = { type: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer x" } };
   const out = await run(
     [{ type: "start", session: "a1", cwd: dir, prompt: "hi" }, { type: "mcp_add", session: "a1", server: "web", scope: "user", config }, { type: "mcp_add", session: "a1", server: "taken", scope: "local", config }],

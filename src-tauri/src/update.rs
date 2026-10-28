@@ -5,7 +5,6 @@
 //! back within seconds and resumes running sessions. A failed build leaves the running app alone.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
@@ -27,7 +26,7 @@ struct Built {
 }
 
 fn git(dir: &Path, args: &[&str]) -> String {
-    Command::new("git").arg("-C").arg(dir).args(args).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned()).unwrap_or_default()
+    crate::sys::cmd("git").arg("-C").arg(dir).args(args).output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned()).unwrap_or_default()
 }
 
 fn repo() -> Option<PathBuf> {
@@ -116,7 +115,7 @@ pub fn update_start(app: AppHandle) -> Result<(), String> {
         ];
         for (name, cmd) in steps {
             crate::eventlog::record(&app, None, "update.step", &json!({ "step": name }), Some("update"));
-            let out = Command::new("bash").arg("-c").arg(&cmd).current_dir(&dir).env("PATH", crate::selfbuild::sh_path()).env_remove("CARGO_TARGET_DIR").output();
+            let out = crate::sys::cmd("bash").arg("-c").arg(&cmd).current_dir(&dir).env("PATH", crate::selfbuild::sh_path()).env_remove("CARGO_TARGET_DIR").output();
             if !out.as_ref().is_ok_and(|o| o.status.success()) {
                 let log = out.map(|o| { let e = String::from_utf8_lossy(&o.stderr).into_owned(); e[e.len().saturating_sub(4000)..].to_owned() }).unwrap_or_else(|e| e.to_string());
                 *BUILD.lock().unwrap() = None;
@@ -154,7 +153,7 @@ mod tests {
 
     #[cfg(unix)]
     fn sh(dir: &Path, cmd: &str) {
-        assert!(Command::new("bash").arg("-c").arg(cmd).current_dir(dir).status().unwrap().success(), "{cmd}");
+        assert!(crate::sys::cmd("bash").arg("-c").arg(cmd).current_dir(dir).status().unwrap().success(), "{cmd}");
     }
 
     #[cfg(unix)] // on Windows `bash` can resolve to the WSL stub

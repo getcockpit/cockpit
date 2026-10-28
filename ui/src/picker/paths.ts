@@ -28,7 +28,7 @@ export function fileRef(code: string): FileRef | null {
 
 /** The chip's label: the file's name, and the folder it sits in, dimmed. */
 export function splitPath(path: string): { dir: string; name: string } {
-  const p = path.replace(/\/+$/, "");
-  const k = p.lastIndexOf("/");
-  return k < 0 ? { dir: "", name: p } : { dir: p.slice(0, k + 1), name: p.slice(k + 1) + (path.endsWith("/") ? "/" : "") };
+  const p = path.replace(/[\\/]+$/, "");
+  const k = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return k < 0 ? { dir: "", name: p } : { dir: p.slice(0, k + 1), name: p.slice(k + 1) + (/[\\/]$/.test(path) ? path.slice(-1) : "") };
 }

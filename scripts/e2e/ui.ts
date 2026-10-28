@@ -3,14 +3,42 @@
 // No Claude, no usage. Run through scripts/e2e-ui.sh, which starts Vite; `bun scripts/e2e/ui.ts J4`
 // runs only the flows whose name contains "J4".
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 
 const BASE = process.env.MR_E2E_BASE ?? "http://localhost:1530";
-const SHOTS = process.env.MR_E2E_SHOTS ?? "/tmp/mr-e2e";
+const SHOTS = process.env.MR_E2E_SHOTS ?? (process.platform === "win32" ? join(tmpdir(), "mr-e2e") : "/tmp/mr-e2e");
+
+// The command that runs PinchTab. Elsewhere `pinchtab` on PATH. On Windows npm installs a
+// `pinchtab.cmd` shim, which spawnSync can't run without a shell (and a shell would mangle the JSON
+// and URL arguments), so find the Go binary the npm package downloaded next to the shim, or run its
+// Node wrapper directly. MR_PINCHTAB_BIN overrides.
+function pinchtabCommand(): [string, string[]] {
+  if (process.env.MR_PINCHTAB_BIN) return [process.env.MR_PINCHTAB_BIN, []];
+  if (process.platform !== "win32") return ["pinchtab", []];
+  const arch = process.arch === "arm64" ? "arm64" : "amd64";
+  for (const dir of (process.env.PATH ?? process.env.Path ?? "").split(delimiter).filter(Boolean)) {
+    if (existsSync(join(dir, "pinchtab.exe"))) return [join(dir, "pinchtab.exe"), []];
+    const pkg = join(dir, "node_modules", "pinchtab");
+    if (!existsSync(join(dir, "pinchtab.cmd")) || !existsSync(join(pkg, "package.json"))) continue;
+    const version = String(JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")).version ?? "");
+    const exe = `pinchtab-windows-${arch}.exe`;
+    for (const bin of [join(pkg, ".managed-bin", version, exe), join(homedir(), ".pinchtab", "bin", version, exe)]) {
+      if (existsSync(bin)) return [bin, []];
+    }
+    return ["node", [join(pkg, "bin", "pinchtab")]];
+  }
+  return ["pinchtab.exe", []];
+}
+const PINCHTAB = pinchtabCommand();
 
 function pt(...args: string[]): string {
-  const r = spawnSync("pinchtab", args, { encoding: "utf8", env: process.env, timeout: 30_000 });
-  if (r.status !== 0) throw new Error(`pinchtab ${args.join(" ")}: ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
+  const r = spawnSync(PINCHTAB[0], [...PINCHTAB[1], ...args], { encoding: "utf8", env: process.env, timeout: 30_000 });
+  if (r.error || r.status !== 0) {
+    const why = r.error ? `${r.error.message} (${PINCHTAB[0]})` : (r.stderr || r.stdout || `exit ${r.status ?? r.signal}`).trim().split("\n")[0];
+    throw new Error(`pinchtab ${args.join(" ")}: ${why}`);
+  }
   return r.stdout;
 }
 const MOD = process.platform === "darwin" ? "Meta+" : "Control+";

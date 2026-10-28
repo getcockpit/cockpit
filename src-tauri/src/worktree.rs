@@ -2,7 +2,6 @@
 //! on a new branch `mr/<name>`, so parallel sessions never touch each other's files.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub struct Worktree {
     pub repo: PathBuf,
@@ -11,7 +10,7 @@ pub struct Worktree {
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git").arg("-C").arg(dir).args(args).output().map_err(|e| format!("git: {e}"))?;
+    let out = crate::sys::cmd("git").arg("-C").arg(dir).args(args).output().map_err(|e| format!("git: {e}"))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
     } else {
@@ -19,9 +18,10 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// The repo root containing `dir`, if it's inside a git repository.
+/// The repo root containing `dir`, if it's inside a git repository. Native separators: git says
+/// `C:/u/repo` on Windows, and joining onto that gave `C:/u/repo-worktrees\slug`.
 pub fn repo_root(dir: &Path) -> Option<PathBuf> {
-    git(dir, &["rev-parse", "--show-toplevel"]).ok().map(PathBuf::from)
+    git(dir, &["rev-parse", "--show-toplevel"]).ok().map(|s| crate::sys::native_path(&s))
 }
 
 /// A short, readable name from the prompt: "fix the flaky contract test" → "fix-flaky-contract-test".
@@ -80,7 +80,7 @@ mod tests {
         let repo = root.join("demo");
         std::fs::create_dir_all(&repo).unwrap();
         for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
-            assert!(Command::new("git").arg("-C").arg(&repo).args(&args).status().unwrap().success());
+            assert!(crate::sys::cmd("git").arg("-C").arg(&repo).args(&args).status().unwrap().success());
         }
         let wt = create(&repo.join("."), "Add retry worker", "01ABCDEFGHJK").unwrap();
         assert_eq!(wt.branch, "mr/add-retry-worker-ghjk");
@@ -97,7 +97,7 @@ mod tests {
         let repo = root.join("demo");
         std::fs::create_dir_all(&repo).unwrap();
         for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
-            assert!(Command::new("git").arg("-C").arg(&repo).args(&args).status().unwrap().success());
+            assert!(crate::sys::cmd("git").arg("-C").arg(&repo).args(&args).status().unwrap().success());
         }
         let wt = create(&repo, "Do detailed scan", "01ABCDEFGHJK").unwrap();
         std::fs::remove_dir_all(&wt.path).unwrap();

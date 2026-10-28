@@ -169,7 +169,7 @@ pub fn run(app: AppHandle) {
         let _ = std::fs::create_dir_all(&dir);
         if resume_mode() || brief_mode() {
             for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
-                let _ = std::process::Command::new("git").arg("-C").arg(&dir).args(&args).status();
+                let _ = crate::sys::cmd("git").arg("-C").arg(&dir).args(&args).status();
             }
         }
         if layer_mode() {

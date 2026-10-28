@@ -122,7 +122,7 @@ fn folder_of(evs: &[Event]) -> Option<String> {
 }
 
 fn git(folder: &str, args: &[&str]) -> String {
-    std::process::Command::new("git").arg("-C").arg(folder).args(args).output().ok()
+    crate::sys::cmd("git").arg("-C").arg(folder).args(args).output().ok()
         .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default()
 }
 

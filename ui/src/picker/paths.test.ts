@@ -36,5 +36,6 @@ describe("splitPath", () => {
     expect(splitPath("src/a/b.ts")).toEqual({ dir: "src/a/", name: "b.ts" });
     expect(splitPath("b.ts")).toEqual({ dir: "", name: "b.ts" });
     expect(splitPath("design/mockups/")).toEqual({ dir: "design/", name: "mockups/" });
+    expect(splitPath("C:\\code\\app\\b.ts")).toEqual({ dir: "C:\\code\\app\\", name: "b.ts" });
   });
 });

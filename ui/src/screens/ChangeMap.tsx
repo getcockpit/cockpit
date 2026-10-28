@@ -4,6 +4,7 @@ import { Key } from "../components";
 import { pointer } from "../components/pointer";
 import { api } from "../state/store";
 import type { SessionState } from "../state/types";
+import { basename, dirname } from "../fspath";
 
 // Change map (MR-17): what the session changed, from git, grouped by folder and sized by change,
 // with risky areas flagged. Click a file for its diff; click a diff line to leave a note.
@@ -42,7 +43,7 @@ export function ChangeMap({ s, onReview }: { s: SessionState; onReview: (path: s
   const groups = useMemo(() => {
     const g = new Map<string, Changed[]>();
     for (const f of files ?? []) {
-      const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : ".";
+      const dir = dirname(f.path) || ".";
       g.set(dir, [...(g.get(dir) ?? []), f]);
     }
     return [...g.entries()].sort((a, b) => sum(b[1]) - sum(a[1]));
@@ -65,7 +66,7 @@ export function ChangeMap({ s, onReview }: { s: SessionState; onReview: (path: s
                 onClick={pointer({ open: () => onReview(f.path), deeper: () => onReview(f.path), discover: () => discover(f) })}
                 title={`${f.path} · +${f.added} −${f.removed}${f.risky ? ` · ${f.risky}` : ""}`}
                 style={{ flex: `${Math.max(1, Math.round(((f.added + f.removed) / max) * 6))} 1 90px`, minWidth: 90, padding: "6px 8px", border: 0, borderLeft: `4px solid ${f.risky ? "var(--mr-needs)" : f.status === "untracked" ? "var(--mr-done)" : "var(--mr-ink-3)"}`, background: "var(--mr-well)", color: "var(--mr-ink)", font: "inherit", textAlign: "left", cursor: "pointer" }}>
-                <span className="mr-mono mr-ellipsis" style={{ display: "block", fontSize: 12 }}>{f.status === "untracked" ? "+ " : f.status === "deleted" ? "− " : ""}{f.path.split("/").pop()}</span>
+                <span className="mr-mono mr-ellipsis" style={{ display: "block", fontSize: 12 }}>{f.status === "untracked" ? "+ " : f.status === "deleted" ? "− " : ""}{basename(f.path)}</span>
                 <span className="mr-mono" style={{ fontSize: 11, opacity: 0.75 }}>+{f.added} −{f.removed}{f.risky ? ` · ${f.risky}` : ""}</span>
               </button>
             ))}
