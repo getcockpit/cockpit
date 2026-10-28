@@ -4,6 +4,16 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-10-28
+
+### Fixed
+- **Windows: sessions start with an npm install of Claude Code:** `claude.cmd` is followed to the real `claude.exe` (or `node cli.js`) instead of failing to spawn.
+- **Windows: no console window flashes** on every git, gh or claude call.
+- **Windows: recent folders, creating a folder, GitHub calls and auto-review, and the daily counter work** where `HOME` isn't set.
+- **Windows and Linux: the Cockpit layer key saves** to the OS credential store (Credential Manager, the Linux keyring).
+- **Windows paths:** worktree paths use one separator, the UI shows folder names instead of full `C:\…` paths, and typed `C:\` and `\\server` paths are accepted.
+- **Sign-in:** a sign-in that didn't take reliably offers Try again (the check runs once per attempt).
+
 ## [0.1.18] - 2026-10-28
 
 ### Fixed
