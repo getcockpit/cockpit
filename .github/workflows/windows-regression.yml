@@ -47,6 +47,8 @@ jobs:
         with:
           node-version: 22
       - run: npm install -g pinchtab@0.15.2
+      # PinchTab doesn't find the runner's preinstalled Chrome on Windows by itself.
+      - run: pinchtab config set browser.binary "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
       - run: bun install --frozen-lockfile
         working-directory: ui
       - run: ./scripts/e2e-ui.sh
