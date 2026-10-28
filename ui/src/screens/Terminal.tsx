@@ -57,10 +57,15 @@ export function SignInPane({ workspace, onExit }: { workspace: string; onExit: (
   // A ref, not a dependency: a new onExit each render must not reopen the terminal.
   const done = useRef(onExit);
   done.current = onExit;
+  // Once per attempt: a terminal that reports its exit twice (StrictMode's double mount) must not
+  // check twice, or the second check decides instead of the first.
+  const checked = useRef(-1);
   const exited = useCallback(() => {
+    if (checked.current === attempt) return;
+    checked.current = attempt;
     setState("checking");
     invoke<boolean>("workspace_auth_status", { id: workspace }).then((ok) => (ok ? done.current() : setState("failed")), () => setState("failed"));
-  }, [workspace]);
+  }, [workspace, attempt]);
   if (state !== "open") return (
     <div className="mr-qrow" data-mr="SignInResult" data-mr-source={`workspace:${workspace}`}><div className="mr-flag" style={{ background: state === "failed" ? "var(--mr-needs)" : "var(--mr-selected)" }} /><div className="mr-qbody">
       {state === "checking" ? <span>Checking the sign-in…</span> : <>
