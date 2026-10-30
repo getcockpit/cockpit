@@ -34,9 +34,13 @@ jobs:
       - run: bun test scripts/
 
   e2e-ui:
-    name: UI end-to-end (PinchTab)
-    # 22.04: 24.04's AppArmor blocks the user namespaces Chrome's sandbox needs.
-    runs-on: ubuntu-22.04
+    name: UI end-to-end (${{ matrix.os }}, PinchTab)
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.04: 24.04's AppArmor blocks the user namespaces Chrome's sandbox needs.
+        os: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -48,12 +52,14 @@ jobs:
       - run: bun install --frozen-lockfile
         working-directory: ui
       - run: ./scripts/e2e-ui.sh
+        env:
+          MR_E2E_SHOTS: ${{ runner.temp }}/mr-e2e
       - name: Screenshots of failed flows
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-ui-failures
-          path: /tmp/mr-e2e/
+          name: e2e-ui-failures-${{ matrix.os }}
+          path: ${{ runner.temp }}/mr-e2e/
           if-no-files-found: ignore
 
   core:

@@ -1,9 +1,11 @@
 name: Windows regression
 
-# Run by hand: everything CI checks only on Linux/macOS, on Windows. The UI and sidecar suites,
-# the UI end-to-end flows, and the real installer: install it, start it, check the sidecar boots
-# and finds an installed `claude` (no login, so no sessions).
+# Nightly, or by hand: everything CI checks only on Linux/macOS, on Windows. The UI and sidecar
+# suites, the UI end-to-end flows, and the real installer: install it, start it, check the sidecar
+# boots and finds an installed `claude` (no login, so no sessions).
 on:
+  schedule:
+    - cron: "17 3 * * *"
   workflow_dispatch:
 
 permissions:
