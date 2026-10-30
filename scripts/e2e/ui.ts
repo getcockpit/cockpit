@@ -176,9 +176,15 @@ const flows: Flow[] = [
   } },
   { name: "J4 answer a structured question", run: async () => {
     await ui.open("busy");
-    await ui.click("button", "API gateway");
-    await ui.click("button", "429 + Retry-After");
-    await ui.click("button", "☐ /login");
+    // Each answer re-renders the card: on a slow runner the next click can land mid-render and be lost,
+    // so click until the progress line counts it.
+    for (const [n, option] of [[1, "API gateway"], [2, "429 + Retry-After"], [3, "☐ /login"]] as const) {
+      await until(`answer "${option}"`, () => {
+        if (ui.text('[data-mr="QuestionProgress"]').includes(`${n} of 3 answered`)) return;
+        pt("click", ui.find("button", option).ref);
+        throw new Error(ui.text('[data-mr="QuestionProgress"]').trim());
+      }, 8000);
+    }
     await ui.click("button", "Send", '[data-mr="QuestionCard"]');
     await ui.tags("QuestionCard", 0);
     await ui.see("button", "3 need you");
@@ -383,6 +389,16 @@ const flows: Flow[] = [
     await ui.tags("OverviewCanvas", 0);
     await ui.key("Mod+0");
     await ui.tags("OverviewCanvas", 1);
+    // Which workspace 100% landed on depends on the window size, so find flies to the session (keeping 100%).
+    await ui.press("/");
+    await ui.css('[data-mr="OverviewFind"] input', 1);
+    await sleep(100);
+    pt("type", 'css:[data-mr="OverviewFind"] input', "event-log migration");
+    await until("one hit", () => { if (ui.text('[data-mr="OverviewFindCount"]').trim() !== "1 found") throw new Error(ui.text('[data-mr="OverviewFindCount"]')); });
+    await ui.press("Enter");
+    await ui.css('[data-mr="OverviewBlock"][data-current]', 1);
+    await ui.press("Escape");
+    await ui.css('[data-mr="OverviewFind"]', 0);
     await ui.clickUntil("button", "Open Approve the event-log migration", undefined, "SessionName");
     await ui.key("Mod+0");
     await ui.tags("OverviewCanvas", 1);
