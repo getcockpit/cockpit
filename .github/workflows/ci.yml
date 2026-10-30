@@ -56,7 +56,7 @@ jobs:
           MR_E2E_SHOTS: ${{ runner.temp }}/mr-e2e
       - name: Screenshots of failed flows
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-ui-failures-${{ matrix.os }}
           path: ${{ runner.temp }}/mr-e2e/
