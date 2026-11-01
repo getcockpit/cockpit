@@ -231,7 +231,7 @@
 <section id="how">
   <div class="wrap">
     <h2>A morning with eight sessions.</h2>
-    <p class="sub">Four moments where Cockpit saves you the reading.</p>
+    <p class="sub">Five moments where Cockpit saves you the reading.</p>
 
     <div class="step">
       <div class="head"><div class="n">1</div><div><h3>Everything that needs you, in one queue.</h3><p>Questions, permissions and plan approvals from every session, oldest first. Press <span class="key">1</span>–<span class="key">3</span> to pick, <span class="key">A</span> to allow, <span class="key">D</span> to deny. The session carries on by itself.</p></div></div>
@@ -239,29 +239,34 @@
     </div>
 
     <div class="step">
-      <div class="head"><div class="n">2</div><div><h3>Catch the command that sounds harmless.</h3><p>Claude says "drop the old invoices table." The card shows the rest: it's production, and it's <code>CASCADE</code>. Press <span class="key">D</span>, and Claude comes back with a safer plan instead of a restore from backup.</p></div></div>
+      <div class="head"><div class="n">2</div><div><h3>One window per client.</h3><p>Each workspace has its own Claude sign-in, memory and history, and shares your skills and settings. Switch with <span class="key">⌘1</span>–<span class="key">9</span>. Press <span class="key">⌘0</span> for the Overview: every workspace on one map, with what needs you counted beside its name. Click anything on it to jump straight in.</p></div></div>
+      <div class="shot"><img src="assets/overview.jpg" alt="The Overview: three workspaces on one canvas, each with its sessions grouped into resume, in progress and review, and a needs-you count beside its name" loading="lazy"></div>
+    </div>
+
+    <div class="step">
+      <div class="head"><div class="n">3</div><div><h3>Review a PR one finding at a time.</h3><p>Your <code>/review</code> comes back as findings, riskiest first, each with its snippet. Press <span class="key">N</span> to note one, then publish every note as one GitHub review and approve. On your own PRs, Address does the reverse: each reviewer thread becomes a choice, and the session makes the fix.</p></div></div>
+      <div class="shot"><img src="assets/review.jpg" alt="Guided PR review with a noted finding" loading="lazy"></div>
+    </div>
+
+    <div class="step">
+      <div class="head"><div class="n">4</div><div><h3>Catch the command that sounds harmless.</h3><p>Claude says "drop the old invoices table." The card shows the rest: it's production, and it's <code>CASCADE</code>. Press <span class="key">D</span>, and Claude comes back with a safer plan instead of a restore from backup.</p></div></div>
       <div class="shot"><img src="assets/risk.jpg" alt="A production DROP TABLE flagged high risk, waiting for approval" loading="lazy"></div>
       <div class="shot" style="margin-top:4px"><img src="assets/done.jpg" alt="After Deny, Claude proposes running it on staging first" loading="lazy"></div>
     </div>
 
     <div class="step">
-      <div class="head"><div class="n">3</div><div><h3>Claude says it's done. Cockpit checks.</h3><p>Press <span class="key">⌘⇧U</span> on any session for a one-page catch-up: where it is, what it decided without asking, and which claims the log doesn't back up. "All 211 tests pass" with no test in the log is flagged before you open a PR.</p></div></div>
-      <div class="shot"><img src="assets/brief.jpg" alt="A catch-up brief flagging 'All 211 tests pass, but no test ran' as high risk, with an open question Claude never asked" loading="lazy"></div>
-    </div>
-
-    <div class="step">
-      <div class="head"><div class="n">4</div><div><h3>Plans you can read in ten seconds.</h3><p>Ask Claude to plan before it codes and you get a one-page map: goal, scope, design, risks and open questions, each drawn the way it reads best. Mark it up, send every note at once, then hit <b>Build from doc</b>.</p></div></div>
+      <div class="head"><div class="n">5</div><div><h3>Plans you can read in ten seconds.</h3><p>Ask Claude to plan before it codes and you get a one-page map: goal, scope, design, risks and open questions, each drawn the way it reads best. Mark it up, send every note at once, then hit <b>Build from doc</b>.</p></div></div>
       <div class="shot"><img src="assets/doc.jpg" alt="A plan as a map of blocks with open questions pinned to the side" loading="lazy"></div>
     </div>
 
     <h3 style="margin:104px 0 18px;font-size:28px">Also in the box</h3>
     <div class="box">
-      <div><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"><b>Change map</b>Every session's plan with live progress, and the files it touched grouped by folder. Auth and migrations are flagged.</div>
-      <div><img src="assets/timeline.jpg" alt="Timeline of sessions with forecasts" loading="lazy"><b>Timeline</b>What every session did, what it does next, and who will need you in the next 15 minutes.</div>
-      <div><img src="assets/review.jpg" alt="Guided PR review with a noted finding" loading="lazy"><b>PR review, one finding at a time</b>Riskiest snippets first; one key turns a finding into a review comment. Address mode turns reviewer threads into fixes.</div>
       <div><b>A worktree per session</b>Ten sessions on one repo never trip over each other. Start one from anywhere with <span class="key">⌘K</span>.</div>
       <div><b>Your terminal, one key away</b>The raw transcript is <span class="key">⌘R</span>; hand any session to a real terminal with <span class="key">⌘T</span>.</div>
-      <div><b>A workspace per client</b>Separate Claude sign-ins, memory and history per client, sharing your skills and settings. Switch with <span class="key">⌘1</span>–<span class="key">9</span>.</div>
+      <div><b>Schedules and watches</b>Repeat a prompt on a schedule, or watch for something new and run only when the check finds it. Each run lands on the Wall.</div>
+      <div><img src="assets/brief.jpg" alt="A catch-up brief flagging 'All 211 tests pass, but no test ran'" loading="lazy"><b>Catch-up checks the claims</b>Press <span class="key">⌘⇧U</span> on any session: where it is, what it decided without asking, and which claims the log doesn't back up.</div>
+      <div><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"><b>Change map</b>Every session's plan with live progress, and the files it touched grouped by folder. Auth and migrations are flagged.</div>
+      <div><img src="assets/timeline.jpg" alt="Timeline of sessions with forecasts" loading="lazy"><b>Timeline</b>What every session did, what it does next, and who will need you in the next 15 minutes.</div>
     </div>
   </div>
 </section>

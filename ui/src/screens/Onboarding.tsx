@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { NoClaude } from "../components/NoClaude";
 import { PermissionOptions, usePermissionPick } from "../components/PermissionChoice";
 import { Bar, Key, Lamp, Lamps, RiskMeter, StateMark } from "../components";
@@ -10,16 +10,18 @@ import { api } from "../state/store";
 import type { AppState, Diagram, SessionKind } from "../state/types";
 const SignInPane = lazy(() => import("./Terminal").then((m) => ({ default: m.SignInPane })));
 
-// First run (MR-37, made full-screen and hands-on in MR-38). You learn by doing:
-// 1. a live mock wall where you answer a real-looking decision card
-// 2. a wall of agent text that turns into a picture
-// 3. right-click / ⌘ / ⌥ pointing on a demo tile
-// 4. a live check that Claude Code is installed and signed in (the official `claude` /login, never an in-app login)
-// 5. how often sessions ask for permission (I106)
-// 6. your first session.
+// First run (MR-37, made full-screen and hands-on in MR-38, ordered by real usage in MR-190, decision 41).
+// You learn by doing:
+// 1. a live mock wall where you answer a real-looking decision card, then see a plan arrive as a picture
+// 2. workspaces: switch with ⌘2, open the Overview with ⌘0, jump into a session from the map
+// 3. review: note a finding, publish and approve; Address turns reviewer threads into fixes
+// 4. plans: decide a doc's open question, then build from the doc
+// 5. a live check that Claude Code is installed and signed in (the official `claude` /login, never an in-app login)
+// 6. how often sessions ask for permission (I106)
+// 7. your first session (pointing is a tip there: it's rarely used, decision 41).
 // Shows once (ui.onboarded); Settings → Show the intro brings it back.
 
-const STEPS = ["The wall", "Pictures", "Point", "Connect", "Permissions", "Go"] as const;
+const STEPS = ["The wall", "Workspaces", "Review", "Plans", "Connect", "Permissions", "Go"] as const;
 
 export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone: () => void; onStart: (kind: SessionKind) => void }) {
   const [step, setStep] = useState(0);
@@ -51,12 +53,12 @@ export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone
       style={{ position: "fixed", inset: 0, zIndex: 40, background: "var(--mr-base)", display: "flex", flexDirection: "column" }}>
       <header className="mr-band mr-row" style={{ padding: "14px 28px", gap: 20 }}>
         <strong style={{ fontSize: 15 }}>Cockpit</strong>
-        <nav aria-label="Intro steps" className="mr-row" style={{ gap: 4, flex: 1, maxWidth: 640 }}>
+        <nav aria-label="Intro steps" className="mr-row" style={{ gap: 4, flex: 1, maxWidth: 820 }}>
           {STEPS.map((s, i) => (
             <button key={s} type="button" onClick={() => go(i)} aria-current={i === step ? "step" : undefined}
               style={{ flex: 1, border: 0, background: "transparent", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", gap: 6, font: "inherit", textAlign: "left", color: i <= step ? "var(--mr-ink)" : "var(--mr-ink-3)" }}>
               <span style={{ height: 4, background: i < step ? "var(--mr-ink)" : i === step ? "var(--mr-needs)" : "var(--mr-well)", transition: "background .3s" }} />
-              <span style={{ fontSize: 12, fontWeight: i === step ? 700 : 400 }}><span className="mr-mono">{i + 1}</span> {s}</span>
+              <span style={{ fontSize: 12, fontWeight: i === step ? 700 : 400, whiteSpace: "nowrap" }}><span className="mr-mono">{i + 1}</span> {s}</span>
             </button>
           ))}
         </nav>
@@ -67,11 +69,12 @@ export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone
 
       <main key={step} className="mr-zoom-in mr-onb-main" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
         {step === 0 && <WallStep onNext={() => go(1)} />}
-        {step === 1 && <PictureStep onNext={() => go(2)} />}
-        {step === 2 && <PointStep onNext={() => go(3)} />}
-        {step === 3 && <ConnectStep state={state} onNext={() => go(4)} />}
-        {step === 4 && <PermissionStep state={state} onNext={() => go(5)} />}
-        {step === 5 && <GoStep onStart={(k) => finish(k)} />}
+        {step === 1 && <WorkspacesStep onNext={() => go(2)} />}
+        {step === 2 && <ReviewStep onNext={() => go(3)} />}
+        {step === 3 && <PlanStep onNext={() => go(4)} />}
+        {step === 4 && <ConnectStep state={state} onNext={() => go(5)} />}
+        {step === 5 && <PermissionStep state={state} onNext={() => go(6)} />}
+        {step === 6 && <GoStep onStart={(k) => finish(k)} />}
       </main>
     </div>
   );
@@ -165,12 +168,13 @@ function WallStep({ onNext }: { onNext: () => void }) {
           <div className="mr-onb-rise mr-row" style={{ gap: 14 }}>
             <Burst />
             <strong style={{ fontSize: 20 }}>{asked === "denied" ? "Good call." : "Done, in one keystroke."}</strong>
-            <span className="mr-dim">That's the loop: glance, decide, move on. Real cards work the same way: <span className="mr-mono">J/K</span> to move, <span className="mr-mono">A/D</span> to answer.</span>
+            <span className="mr-dim">That's the loop: glance, decide, move on. Real cards work the same way: <span className="mr-mono">J/K</span> to move, <span className="mr-mono">A/D</span> to answer, <span className="mr-mono">{keyLabel("⌘K")}</span> to start a session, <span className="mr-mono">{keyLabel("⇧⌘D")}</span> to mark one done.</span>
           </div>
         )}
+        {(asked === "allowed" || asked === "denied") && <PlanPicture />}
         {asked === null && <span className="mr-dim">Watch the wall. One of these sessions is about to need you…</span>}
       </div>
-      <Next onClick={onNext} ready={asked === "allowed" || asked === "denied"}>Next: pictures</Next>
+      <Next onClick={onNext} ready={asked === "allowed" || asked === "denied"}>Next: workspaces</Next>
     </>
   );
 }
@@ -189,14 +193,7 @@ function Burst() {
   );
 }
 
-// ── 2. Text becomes a picture. ──
-const WALL_OF_TEXT = `I looked into the failing checkout. Here's the plan:
-1. Reproduce it with a failing test against the staging fixture.
-2. Decide whether to patch the currency rounding or replace the helper with the shared one.
-3. Apply the fix and update the three call sites.
-4. Risk: the e2e suite is flaky on CI, so it may need two runs.
-5. Run the whole suite; done when it's green.
-Let me know if you want me to go ahead or adjust anything first.`;
+// A session's plan arrives as a picture, not a wall of text: shown once you've answered the card.
 const PICTURE: Diagram = {
   title: "Fix the failing checkout",
   nodes: [
@@ -209,101 +206,238 @@ const PICTURE: Diagram = {
   edges: [{ from: "a", to: "b" }, { from: "b", to: "c", label: "you pick" }, { from: "c", to: "d" }, { from: "d", to: "e" }],
 };
 
-function PictureStep({ onNext }: { onNext: () => void }) {
-  const [pic, setPic] = useState(false);
-  const [shown, setShown] = useState(0);
+function PlanPicture() {
+  const [shown, setShown] = useState(1);
   useEffect(() => {
-    if (!pic) { setShown(0); return; }
     const t = setInterval(() => setShown((n) => (n >= PICTURE.nodes.length ? n : n + 1)), 260);
     return () => clearInterval(t);
-  }, [pic]);
-  const visible = PICTURE.nodes.slice(0, Math.max(1, shown));
+  }, []);
+  const visible = PICTURE.nodes.slice(0, shown);
   const partial: Diagram = { ...PICTURE, nodes: visible, edges: PICTURE.edges.filter((e) => visible.some((n) => n.id === e.to)) };
-  const done = pic && shown >= PICTURE.nodes.length;
+  return (
+    <div className="mr-onb-rise" style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 18 }}>
+      <span className="mr-dim">And when a session explains itself, you get a picture, not a wall of text. Questions buried in prose come out as decisions:</span>
+      <FlowDiagram d={partial} />
+    </div>
+  );
+}
+
+// A small "done it" checklist the new steps share.
+function Tasks({ items }: { items: { done: boolean; text: React.ReactNode }[] }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {items.map((t, i) => (
+        <div key={i} className="mr-row" style={{ gap: 12, padding: "8px 12px", background: t.done ? "var(--mr-tile)" : "var(--mr-well)", transition: "background .3s" }}>
+          <span key={String(t.done)} className={t.done ? "mr-onb-pop mr-mono" : "mr-mono"} style={{ width: 18, color: t.done ? "var(--mr-done)" : "var(--mr-ink-3)", fontSize: 16 }}>{t.done ? "✓" : "○"}</span>
+          <span>{t.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── 2. Workspaces: one per client, and the Overview of all of them. ──
+type DemoItem = { t: string; s: TileSpec["state"] };
+const DEMO_WS: { name: string; items: DemoItem[] }[] = [
+  { name: "Personal", items: [{ t: "Fix the login redirect", s: "working" }, { t: "Bump dependencies", s: "almost" }] },
+  { name: "Client A", items: [{ t: "Migrate billing to Stripe", s: "needs_you" }, { t: "Review PR #482", s: "working" }, { t: "Q4 export plan", s: "review" }] },
+];
+
+function WorkspacesStep({ onNext }: { onNext: () => void }) {
+  const [at, setAt] = useState(0);
+  const [overview, setOverview] = useState(false);
+  const [switched, setSwitched] = useState(false);
+  const [mapped, setMapped] = useState(false);
+  const [opened, setOpened] = useState<string | null>(null);
+  const pick = (i: number) => { setAt(i); setOverview(false); if (i !== 0) setSwitched(true); };
+  const showMap = () => { setOverview(true); setMapped(true); };
+  // The app's own ⌘0 / ⌘1–9 stand down while a dialog is open (appKey), so the intro handles them here.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (!modKey(e) || e.shiftKey || e.altKey) return;
+      const key = keyOf(e);
+      if (key === "0") { e.preventDefault(); showMap(); }
+      if (key === "1" || key === "2") { e.preventDefault(); pick(Number(key) - 1); }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
+  const needs = (w: (typeof DEMO_WS)[number]) => w.items.filter((x) => x.s === "needs_you").length;
   return (
     <>
-      <Title kicker="Pictures, not transcripts" sub="Long plans, recaps and reviews turn into diagrams, cards and maps you can scan in a second. Questions buried in prose get pulled out as decisions. Flip it and see.">
-        Same message. <span style={{ textDecorationLine: pic ? "none" : "line-through", textDecorationColor: "var(--mr-error)" }}>Wall of text</span>{pic ? " → a picture." : "?"}
+      <Title kicker="One window per client" sub="Each workspace keeps its own Claude sign-in, memory and history, and shares your skills and settings. The Overview shows every workspace at once, so nothing waits unseen in another tab.">
+        Every project, <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>one glance</span>.
       </Title>
-      <div className="mr-row" style={{ gap: 12 }}>
-        <div role="radiogroup" aria-label="Show as" className="mr-row" style={{ gap: 0, background: "var(--mr-well)", padding: 3 }}>
-          {([["Text", false], ["Picture", true]] as const).map(([l, v]) => (
-            <button key={l} type="button" role="radio" aria-checked={pic === v} onClick={() => setPic(v)}
-              style={{ border: 0, padding: "8px 18px", font: "inherit", fontWeight: 600, cursor: "pointer", background: pic === v ? "var(--mr-ink)" : "transparent", color: pic === v ? "var(--mr-tile)" : "var(--mr-ink)", transition: "background .2s" }}>{l}</button>
-          ))}
-        </div>
-        {!pic && <span className="mr-dim mr-onb-nudge">← flip it</span>}
-      </div>
-      <div style={{ minHeight: 240, maxWidth: 1000 }}>
-        {pic ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
-            <FlowDiagram d={partial} />
-            {done && (
-              <div className="mr-onb-rise mr-row" style={{ padding: 14, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-needs)", gap: 12 }}>
-                <StateMark s="needs_you" /><span className="mr-grow">Asks: go ahead, or adjust the plan first?</span>
-                <Key tone="primary">Go ahead</Key><Key>Adjust…</Key>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)", gap: 28, alignItems: "start", maxWidth: 1100 }}>
+        <Tasks items={[
+          { done: switched, text: <>Switch to <b>Client A</b>: press <span className="mr-mono">{keyLabel("⌘2")}</span> or click its tab</> },
+          { done: mapped, text: <>Open the <b>Overview</b>: <span className="mr-mono">{keyLabel("⌘0")}</span></> },
+          { done: opened !== null, text: <>Click a session on the map to jump straight in</> },
+        ]} />
+        <div data-mr="DemoWorkspaces" data-mr-source={overview ? "overview" : DEMO_WS[at].name} style={{ background: "var(--mr-well)", display: "flex", flexDirection: "column" }}>
+          <div className="mr-row" style={{ gap: 2, padding: 3, background: "var(--mr-ink)" }}>
+            {DEMO_WS.map((w, i) => (
+              <button key={w.name} type="button" data-mr="DemoTab" data-mr-source={w.name} aria-pressed={!overview && at === i} onClick={() => pick(i)}
+                style={{ border: 0, padding: "6px 12px", font: "inherit", cursor: "pointer", background: !overview && at === i ? "var(--mr-tile)" : "transparent", color: !overview && at === i ? "var(--mr-ink)" : "var(--mr-tile)", display: "flex", gap: 8, alignItems: "center" }}>
+                {w.name}<span className="mr-mono" style={{ fontSize: 11, opacity: 0.6 }}>{keyLabel(`⌘${i + 1}`)}</span>
+                {needs(w) > 0 && <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 5px", fontSize: 12, fontWeight: 700 }}>{needs(w)}</span>}
+              </button>
+            ))}
+            <span className="mr-grow" />
+            <button type="button" data-mr="DemoTab" data-mr-source="Overview" aria-pressed={overview} onClick={showMap}
+              className={switched && !mapped ? "mr-onb-nudge" : undefined}
+              style={{ border: 0, padding: "6px 12px", font: "inherit", cursor: "pointer", background: overview ? "var(--mr-tile)" : "transparent", color: overview ? "var(--mr-ink)" : "var(--mr-tile)" }}>
+              Overview <span className="mr-mono" style={{ fontSize: 11, opacity: 0.6 }}>{keyLabel("⌘0")}</span>
+            </button>
+          </div>
+          <div key={overview ? "map" : at} className="mr-onb-rise" style={{ padding: 14, minHeight: 210 }}>
+            {overview ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                {DEMO_WS.map((w, i) => (
+                  <div key={w.name} style={{ background: "var(--mr-base)", padding: 10, display: "flex", flexDirection: "column", gap: 6, boxShadow: needs(w) > 0 ? "inset 3px 0 0 var(--mr-needs)" : undefined }}>
+                    <span className="mr-row" style={{ gap: 8 }}><strong>{w.name}</strong>{needs(w) > 0 && <span className="mr-dim" style={{ fontSize: 12 }}>⚠ {needs(w)} needs you</span>}</span>
+                    {w.items.map((x) => (
+                      <button key={x.t} type="button" data-mr="DemoBlock" data-mr-source={x.t} onClick={() => { setOpened(x.t); setAt(i); setOverview(false); }}
+                        style={{ border: 0, padding: "6px 8px", font: "inherit", fontSize: 13, textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span>{x.t}</span><StateMark s={x.s} />
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                {DEMO_WS[at].items.map((x) => (
+                  <div key={x.t} style={{ padding: 12, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 6, boxShadow: opened === x.t ? "inset 0 0 0 3px var(--mr-selected)" : x.s === "needs_you" ? "inset 0 0 0 3px var(--mr-needs)" : undefined }}>
+                    <StateMark s={x.s} /><strong style={{ fontSize: 14 }}>{x.t}</strong>
+                    {opened === x.t && <span className="mr-onb-rise mr-dim" style={{ fontSize: 12 }}>Opened from the map</span>}
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        ) : (
-          <pre style={{ margin: 0, padding: 18, background: "var(--mr-tile)", whiteSpace: "pre-wrap", fontFamily: "var(--mr-mono)", fontSize: 13, lineHeight: 1.6, color: "var(--mr-ink-2)" }}>{WALL_OF_TEXT}</pre>
-        )}
+        </div>
       </div>
-      <Next onClick={onNext} ready={done}>Next: pointing</Next>
+      {opened !== null && (
+        <div className="mr-onb-rise mr-row" style={{ gap: 14 }}>
+          <Burst />
+          <strong style={{ fontSize: 20 }}>Straight there.</strong>
+          <span className="mr-dim">{keyLabel("⌘1–9 jump to a workspace; ⌘0 is the map of all of them, and where Cockpit opens when you have several.")}</span>
+        </div>
+      )}
+      <Next onClick={onNext} ready={opened !== null}>Next: review</Next>
     </>
   );
 }
 
-// ── 3. Point at things. ──
-function PointStep({ onNext }: { onNext: () => void }) {
-  const [tried, setTried] = useState<Set<string>>(new Set());
-  const ref = useRef<HTMLDivElement>(null);
+// ── 3. Review a PR one finding at a time; Address turns reviewer threads into fixes. ──
+function ReviewStep({ onNext }: { onNext: () => void }) {
+  const [noted, setNoted] = useState(false);
+  const [published, setPublished] = useState(false);
+  const [fix, setFix] = useState<string | null>(null);
+  const note = () => setNoted(true);
+  const publish = () => { if (noted) setPublished(true); };
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const mark = (k: string) => setTried((t) => new Set(t).add(k));
-    const ctx = () => mark("right");
-    const click = (e: MouseEvent) => { if (modKey(e)) mark("deeper"); else if (e.altKey) mark("discover"); };
-    el.addEventListener("contextmenu", ctx);
-    el.addEventListener("click", click);
-    return () => { el.removeEventListener("contextmenu", ctx); el.removeEventListener("click", click); };
-  }, []);
-  const moves = [
-    { k: "right", key: "Right-click", what: "Mark it wrong. A session fixes the app itself and adds a test (god mode)." },
-    { k: "deeper", key: "⌘-click", what: "Go deeper: open the session, file or block behind it." },
-    { k: "discover", key: "⌥-click", what: "Discover: a side session explains it and flags risks, changing nothing." },
-    { k: "voice", key: "⌥Space", what: "Hold and talk to whatever is under the pointer, or tap to talk hands-free." },
+    const k = (e: KeyboardEvent) => {
+      const key = keyOf(e);
+      if (key === "n" && !modKey(e)) { e.preventDefault(); note(); }
+      if (key === "Enter" && modKey(e)) { e.preventDefault(); publish(); }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
+  return (
+    <>
+      <Title kicker="Review, one finding at a time" sub={<>Start a review from <span className="mr-mono">{keyLabel("⌘K")}</span> and your <span className="mr-mono">/review</span> comes back as findings, riskiest first, each with its snippet. Note the ones that matter and publish them as one GitHub review.</>}>
+        Read the <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>risk</span>, not the whole diff.
+      </Title>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)", gap: 28, alignItems: "start", maxWidth: 1100 }}>
+        <Tasks items={[
+          { done: noted, text: <>Note the finding: press <span className="mr-mono">N</span></> },
+          { done: published, text: <>Publish and approve: <span className="mr-mono">{keyLabel("⌘↵")}</span></> },
+        ]} />
+        <div data-mr="DemoReview" data-mr-source={published ? "published" : noted ? "noted" : "finding"} style={{ background: "var(--mr-tile)", padding: 16, display: "flex", flexDirection: "column", gap: 10, boxShadow: "inset 4px 0 0 var(--mr-error)" }}>
+          <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>PR #482 · Retry the billing export · finding 1 of 3 · riskiest first</span>
+          <strong style={{ fontSize: 17 }}>Retries forever, with no backoff</strong>
+          <code className="mr-code mr-mono" style={{ padding: 8, whiteSpace: "pre", fontSize: 12 }}>{"billing/export.ts:42\n  while (!ok) ok = await send(batch);"}</code>
+          <span className="mr-dim">A provider outage turns into a tight loop that hammers it and never gives up.</span>
+          {noted && <span className="mr-onb-rise" style={{ padding: "6px 10px", background: "var(--mr-well)", fontSize: 13 }}>Your note on line 42: “Cap the retries and back off.”</span>}
+          <div className="mr-row" style={{ gap: 8 }}>
+            {!noted && <Key k="N" tone="primary" onClick={note}>Note it</Key>}
+            {noted && !published && <span className="mr-onb-nudge"><Key k="⌘↵" tone="primary" onClick={publish}>Publish and approve</Key></span>}
+            {published && <span className="mr-onb-rise mr-row" style={{ gap: 10 }}><Burst /><strong>Published: 1 comment, approved.</strong></span>}
+          </div>
+        </div>
+      </div>
+      {published && (
+        <div className="mr-onb-rise" style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 1100 }}>
+          <span className="mr-dim">On your own PRs it runs the other way. <b>Address</b> takes each reviewer thread and asks how to answer it; the session makes the fix:</span>
+          <div className="mr-row" style={{ gap: 12, padding: 14, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-needs)", flexWrap: "wrap" }}>
+            <span className="mr-grow">Reviewer: “Can this reuse the shared backoff helper?”</span>
+            {["Fix it", "Reply", "Skip"].map((o) => <Key key={o} tone={fix === o ? "primary" : undefined} pressed={fix === o} onClick={() => setFix(o)}>{o}</Key>)}
+          </div>
+        </div>
+      )}
+      <Next onClick={onNext} ready={published}>Next: plans</Next>
+    </>
+  );
+}
+
+// ── 4. Plans: a working doc you decide on before any code. ──
+function PlanStep({ onNext }: { onNext: () => void }) {
+  const [where, setWhere] = useState<string | null>(null);
+  const [built, setBuilt] = useState(false);
+  const blocks = [
+    { h: "Goal", b: "Finance gets a monthly CSV of every invoice, without asking an engineer." },
+    { h: "Scope", b: "In: invoices, refunds. Out: payouts, tax reports." },
+    { h: "Risk", b: "Large months may time out the API. Mitigation: stream rows." },
   ];
   return (
     <>
-      <Title kicker="Point, don't type" sub="Everything on screen is something you can point at. Try these on the card on the right.">
-        The same moves work <i>everywhere</i>.
+      <Title kicker="Plan first, code later" sub={<>Pick <b>Plan</b> when you start and Claude writes a working doc before touching code: goal, scope, design, risks and open questions, each drawn the way it reads best. Decide the questions, leave notes, then build from it.</>}>
+        A plan you can read in <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>ten seconds</span>.
       </Title>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 28, alignItems: "start", maxWidth: 1100 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {moves.map((m) => (
-            <div key={m.k} className="mr-row" style={{ gap: 14, padding: 12, background: tried.has(m.k) ? "var(--mr-tile)" : "var(--mr-well)", transition: "background .3s" }}>
-              <span key={String(tried.has(m.k))} className={tried.has(m.k) ? "mr-onb-pop mr-mono" : "mr-mono"} style={{ width: 22, color: tried.has(m.k) ? "var(--mr-done)" : "var(--mr-ink-3)", fontSize: 18 }}>{tried.has(m.k) ? "✓" : "○"}</span>
-              <kbd className="mr-mono" style={{ padding: "3px 8px", background: "var(--mr-ink)", color: "var(--mr-tile)", minWidth: 96, textAlign: "center" }}>{keyLabel(m.key)}</kbd>
-              <span>{m.what}</span>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)", gap: 28, alignItems: "start", maxWidth: 1100 }}>
+        <Tasks items={[
+          { done: where !== null, text: <>Decide the open question</> },
+          { done: built, text: <>Build from the doc</> },
+        ]} />
+        <div data-mr="DemoPlan" data-mr-source={built ? "built" : where ?? "open"} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <strong style={{ fontSize: 17 }}>Plan: billing export</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+            {blocks.map((x) => (
+              <div key={x.h} style={{ padding: 12, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="mr-mono mr-dim" style={{ fontSize: 11, textTransform: "uppercase" }}>{x.h}</span>
+                <span style={{ fontSize: 14 }}>{x.b}</span>
+              </div>
+            ))}
+          </div>
+          <div className={where === null ? "mr-onb-pulse" : undefined} style={{ padding: 12, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 8 }}>
+            <span className="mr-mono mr-dim" style={{ fontSize: 11, textTransform: "uppercase" }}>Open question</span>
+            <strong>Where does the export run?</strong>
+            <div className="mr-row" style={{ gap: 8, flexWrap: "wrap" }}>
+              {[["Nightly job", "Ready each morning; one more cron to watch"], ["On demand", "Always fresh; slow for big months"]].map(([o, d]) => (
+                <button key={o} type="button" aria-pressed={where === o} onClick={() => setWhere(o)}
+                  style={{ border: 0, padding: "8px 12px", font: "inherit", textAlign: "left", cursor: "pointer", background: "var(--mr-well)", color: "var(--mr-ink)", boxShadow: where === o ? "inset 3px 0 0 var(--mr-selected)" : undefined, display: "flex", flexDirection: "column", gap: 2 }}>
+                  <strong>{o}</strong><span className="mr-dim" style={{ fontSize: 12 }}>{d}</span>
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
-        <div ref={ref} data-mr="DemoTile" data-mr-source="onboarding" className={tried.size === 0 ? "mr-onb-pulse" : undefined}
-          style={{ padding: 18, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 10, cursor: "context-menu" }}>
-          <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>{keyLabel("try me: right-click · ⌘-click · ⌥-click")}</span>
-          <StateMark s="almost" />
-          <strong style={{ fontSize: 18 }}>Migrate settings to the new schema</strong>
-          <span className="mr-dim">Step 4 of 5 · Running the migration test</span>
-          <Bar value={0.82} />
+          </div>
+          <div className="mr-row" style={{ gap: 10 }}>
+            <span className="mr-grow" />
+            {!built ? <span className={where !== null ? "mr-onb-nudge" : undefined}><Key tone="primary" disabled={where === null} onClick={() => setBuilt(true)}>Build from doc</Key></span>
+              : <span className="mr-onb-rise mr-row" style={{ gap: 10 }}><Burst /><strong>A build session starts from the doc.</strong></span>}
+          </div>
         </div>
       </div>
-      <Next onClick={onNext} ready={tried.size > 0}>Next: connect</Next>
+      {built && <span className="mr-onb-rise mr-dim" style={{ maxWidth: 1100 }}>Its progress tracks the doc's steps, and the doc stays the reference: open it any time from the session or the Wall.</span>}
+      <Next onClick={onNext} ready={built}>Next: connect</Next>
     </>
   );
 }
 
-// ── 4. Connect: live checks. ──
+// ── 5. Connect: live checks. ──
 function ConnectStep({ state, onNext }: { state: AppState; onNext: () => void }) {
   const [signIn, setSignIn] = useState(false);
   const claude = state.sidecar.claude;
@@ -358,7 +492,7 @@ function Check({ ok, title, detail, action, optional }: { ok: boolean | null; ti
   );
 }
 
-// ── 5. How often sessions ask. ──
+// ── 6. How often sessions ask. ──
 function PermissionStep({ state, onNext }: { state: AppState; onNext: () => void }) {
   // The pick is logged right away, so skipping the intro after this step keeps it.
   const { pick, dialog } = usePermissionPick();
@@ -374,7 +508,7 @@ function PermissionStep({ state, onNext }: { state: AppState; onNext: () => void
   );
 }
 
-// ── 6. Go. ──
+// ── 7. Go. ──
 function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
   const kinds = [
     { id: "blank" as const, t: "Blank", d: "Any task. Gets its own git worktree, so your checkout stays clean.", k: "⌘1" },
@@ -402,7 +536,7 @@ function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
         ))}
       </div>
       <div className="mr-row" style={{ gap: 18, marginTop: "auto" }}>
-        <span className="mr-dim">Any time: <span className="mr-mono">{keyLabel("⌘K")}</span> start · <span className="mr-mono">{keyLabel("⌘,")}</span> settings · <span className="mr-mono">{keyLabel("⌘⇧G")}</span> god mode · right-click anything</span>
+        <span className="mr-dim">Any time: <span className="mr-mono">{keyLabel("⌘K")}</span> start · <span className="mr-mono">{keyLabel("⌘,")}</span> settings · <span className="mr-mono">{keyLabel("⌘⇧G")}</span> god mode · right-click anything that's wrong · <span className="mr-mono">{keyLabel("⌥-click")}</span> to ask about it</span>
         <span className="mr-grow" />
         <span className="mr-onb-nudge"><Key k="↵" tone="primary" onClick={() => onStart("blank")}>Start my first session</Key></span>
       </div>
