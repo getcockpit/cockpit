@@ -50,9 +50,11 @@ function snap(within?: string): Node[] {
   return [...pt("snap", ...(within ? [within] : [])).matchAll(/^(e\d+):(\S+) "(.*)"/gm)].map(([, ref, role, name]) => ({ ref, role, name }));
 }
 
+// Slow runners (GitHub's macOS ones) settle later: MR_E2E_SCALE stretches every wait (CI sets it there).
+const SCALE = Number(process.env.MR_E2E_SCALE) || 1;
 // Polls until `check` passes or the timeout hits; the last failure is the error.
 async function until<T>(what: string, check: () => T, ms = 5000): Promise<T> {
-  const end = Date.now() + ms;
+  const end = Date.now() + ms * SCALE;
   for (;;) {
     try { return check(); } catch (e) { if (Date.now() > end) throw new Error(`${what}: ${(e as Error).message}`); }
     await sleep(200);
