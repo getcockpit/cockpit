@@ -31,8 +31,13 @@ fn builds_dir(app: &AppHandle) -> PathBuf {
 
 pub(crate) fn sh_path() -> String {
     let home = crate::sys::home_str();
+    // Rust may live under a custom CARGO_HOME (GitHub's macOS runners), and whatever PATH the app was
+    // started with goes last: the known folders still win, but a toolchain found nowhere else is kept.
+    let cargo = std::env::var("CARGO_HOME").map(|c| format!("{c}/bin:")).unwrap_or_default();
+    // Unix only: a Windows PATH is ;-separated, with drive letters that would break this list.
+    let inherited = std::env::var("PATH").ok().filter(|_| cfg!(unix)).map(|p| format!(":{p}")).unwrap_or_default();
     format!(
-        "{home}/.cargo/bin:{home}/.bun/bin:{home}/.local/share/mise/shims:{home}/.local/share/mise/installs/bun/latest/bin:{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        "{cargo}{home}/.cargo/bin:{home}/.bun/bin:{home}/.local/share/mise/shims:{home}/.local/share/mise/installs/bun/latest/bin:{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin{inherited}"
     )
 }
 
