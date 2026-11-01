@@ -146,9 +146,9 @@ def whoosh(length=0.45):
     n = int(length * SR); t = t_arr(n)
     x = rng.standard_normal(n); x = lp(x, 0.12) - lp(x, 0.02)
     return x * np.sin(np.pi * t / t[-1]) ** 2 * 0.5
-for c in (4.6, 9.0, 12.3, 15.6):          # the keycaps
+for c in (4.6, 9.0, 12.3, 13.8, 20.6):    # the keycaps
     place(click(), c, 1.0)
-for s in (6.4, 9.6, 13.2, 15.8, 21.2, 28.8):
+for s in (6.4, 9.6, 13.5, 18.4, 23.6, 28.8):
     place(whoosh(), s - 0.2, 0.9, pan=0.3)
 place(whoosh(0.8), DROP - 0.5, 1.0)
 
