@@ -147,7 +147,41 @@ const flows: Flow[] = [
   { name: "J1 first run shows the onboarding", run: async () => {
     await ui.open("fresh");
     await ui.tags("Onboarding", 1);
-    for (const step of ["1 The wall", "2 Pictures", "3 Point", "4 Connect"]) await ui.see("button", step);
+    for (const step of ["1 The wall", "2 Workspaces", "3 Review", "4 Plans", "5 Connect", "6 Permissions", "7 Go"]) await ui.see("button", step);
+  } },
+  { name: "J1 intro: switch workspaces, open the Overview, jump in from the map", run: async () => {
+    await ui.open("fresh");
+    await ui.key("ArrowRight");
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Workspaces"]', 1);
+    await ui.key("Mod+2");
+    await ui.css('[data-mr="DemoWorkspaces"][data-mr-source="Client A"]', 1);
+    await ui.key("Mod+0");
+    await ui.css('[data-mr="DemoWorkspaces"][data-mr-source="overview"]', 1);
+    await ui.clickCss('[data-mr="DemoBlock"][data-mr-source="Review PR #482"]');
+    await ui.seeText("Opened from the map");
+    await ui.click("button", /Next: review/);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Review"]', 1);
+  } },
+  { name: "J1 intro: note a finding, publish and approve", run: async () => {
+    await ui.open("fresh");
+    await ui.key("ArrowRight", "ArrowRight");
+    await ui.css('[data-mr="DemoReview"][data-mr-source="finding"]', 1);
+    await ui.key("n");
+    await ui.css('[data-mr="DemoReview"][data-mr-source="noted"]', 1);
+    await ui.key("Mod+Enter");
+    await ui.css('[data-mr="DemoReview"][data-mr-source="published"]', 1);
+    await ui.see("button", "Fix it"); // Address, on your own PRs
+  } },
+  { name: "J1 intro: decide a plan's question, then build from it", run: async () => {
+    await ui.open("fresh");
+    await ui.key("ArrowRight", "ArrowRight", "ArrowRight");
+    await ui.css('[data-mr="DemoPlan"][data-mr-source="open"]', 1);
+    await ui.click("button", "On demand");
+    await ui.css('[data-mr="DemoPlan"][data-mr-source="On demand"]', 1);
+    await ui.click("button", "Build from doc");
+    await ui.css('[data-mr="DemoPlan"][data-mr-source="built"]', 1);
+    await ui.click("button", /Next: connect/);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Connect"]', 1);
   } },
   { name: "J2 start a session from the empty wall", run: async () => {
     await ui.open("empty");
@@ -787,9 +821,9 @@ const flows: Flow[] = [
     await ui.open("fresh");
     await ui.css('[data-mr="Onboarding"][data-mr-source="The wall"]', 1);
     await ui.key("ArrowRight");
-    await ui.css('[data-mr="Onboarding"][data-mr-source="Pictures"]', 1);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Workspaces"]', 1);
     await ui.key("ArrowRight", "ArrowLeft");
-    await ui.css('[data-mr="Onboarding"][data-mr-source="Pictures"]', 1);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Workspaces"]', 1);
     await ui.key("Escape");
     await ui.tags("Onboarding", 0);
   } },
@@ -804,7 +838,7 @@ const flows: Flow[] = [
   } },
   { name: "Keys: intro Enter on the last step closes it", run: async () => {
     await ui.open("fresh");
-    for (let i = 0; i < 5; i++) await ui.key("ArrowRight");
+    for (let i = 0; i < 6; i++) await ui.key("ArrowRight");
     await ui.css('[data-mr="Onboarding"][data-mr-source="Go"]', 1);
     await ui.key("Enter");
     await ui.tags("Onboarding", 0);
