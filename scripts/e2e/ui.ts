@@ -65,9 +65,16 @@ const ui = {
     // which PinchTab's click treats as hidden. landing=wall: flows start on the Wall, not the
     // Overview a launch with several workspaces lands on (decision 40), unless they test that.
     // Retried: a cold browser (the first flow on a Windows runner) can answer "instance not ready" for a while.
-    await until("page loaded", () => pt("nav", `${BASE}/?demo=${demo}&motion=off${opts.overview ? "" : "&landing=wall"}`, "--block-images"), 60_000);
-    // Generous: on a cold CI runner, Vite compiles the app on the first request.
-    await until("app rendered", () => { if (ui.count("[data-mr]") === 0) throw new Error("no data-mr element"); }, 45_000);
+    const url = `${BASE}/?demo=${demo}&motion=off${opts.overview ? "" : "&landing=wall"}`;
+    await until("page loaded", () => pt("nav", url, "--block-images"), 60_000);
+    // Generous: on a cold CI runner, Vite compiles the app on the first request, and a first load can
+    // stall mid-compile; reload every 30 s rather than wait on a page that will never render.
+    let reload = Date.now() + 30_000;
+    await until("app rendered", () => {
+      if (ui.count("[data-mr]") > 0) return;
+      if (Date.now() > reload) { reload = Date.now() + 30_000; pt("nav", url, "--block-images"); }
+      throw new Error("no data-mr element");
+    }, 90_000);
   },
   count: (css: string) => Number(pt("count", css).trim()),
   // `within` (CSS) scopes the lookup when the same label shows twice, e.g. two Send buttons.
@@ -96,6 +103,16 @@ const ui = {
     pt("fill", n.ref, text);
   },
   async press(key: string) { pt("press", key); },
+  // The Overview's find box (opened with "/") focuses a tick after it mounts, so early keystrokes can be
+  // lost on a slow runner: fill it (which replaces the value) until it reports exactly one hit.
+  async findOnMap(text: string) {
+    await ui.css('[data-mr="OverviewFind"] input', 1);
+    await until(`one hit for "${text}"`, () => {
+      if (ui.text('[data-mr="OverviewFindCount"]').trim() === "1 found") return;
+      pt("fill", 'css:[data-mr="OverviewFind"] input', text);
+      throw new Error(ui.text('[data-mr="OverviewFindCount"]').trim() || "no count");
+    }, 8000);
+  },
   // A shortcut, with "Mod" for the platform's command key (⌘ on a Mac, Ctrl in Linux CI).
   // PinchTab drops modifiers on punctuation and types unknown names as text, so ⌘, ⌘. and ⌥Space
   // are unit-tested in ui/src/components/keys.test.ts instead; Space is " ".
@@ -425,10 +442,7 @@ const flows: Flow[] = [
     await ui.tags("OverviewCanvas", 1);
     // Which workspace 100% landed on depends on the window size, so find flies to the session (keeping 100%).
     await ui.press("/");
-    await ui.css('[data-mr="OverviewFind"] input', 1);
-    await sleep(100);
-    pt("type", 'css:[data-mr="OverviewFind"] input', "event-log migration");
-    await until("one hit", () => { if (ui.text('[data-mr="OverviewFindCount"]').trim() !== "1 found") throw new Error(ui.text('[data-mr="OverviewFindCount"]')); });
+    await ui.findOnMap("event-log migration");
     await ui.press("Enter");
     await ui.css('[data-mr="OverviewBlock"][data-current]', 1);
     await ui.press("Escape");
@@ -468,10 +482,7 @@ const flows: Flow[] = [
     await ui.tags("OverviewLost", 0);
     await ui.key("Mod+0");
     await ui.press("/"); // find on the map…
-    await ui.css('[data-mr="OverviewFind"] input', 1);
-    await sleep(100);
-    pt("type", 'css:[data-mr="OverviewFind"] input', "refund");
-    await until("one hit", () => { if (ui.text('[data-mr="OverviewFindCount"]').trim() !== "1 found") throw new Error(ui.text('[data-mr="OverviewFindCount"]')); });
+    await ui.findOnMap("refund");
     await ui.css('[data-mr="OverviewArea"][data-dim]', 5); // …everything else fades back…
     await ui.press("Enter"); // …and Enter flies to it
     await ui.css('[data-mr="OverviewBlock"][data-current]', 1);
