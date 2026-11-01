@@ -4,6 +4,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-11-01
+
+### Changed
+- **A new intro, built around what people use most:** seven hands-on steps: the Wall (now ending with a plan as a picture), Workspaces (switch, open the Overview, jump in from the map), Review and Address, Plans, then Connect, Permissions and your first session. The pointing step is now a tip. Settings → Show the intro brings it back.
+
+### Fixed
+- **Self-build finds Rust under a custom `CARGO_HOME`:** the app's own build no longer fails with "rustc: command not found" when Rust isn't in `~/.cargo/bin`, and a failed build now says which step broke and why.
+
 ## [0.1.20] - 2026-11-01
 
 ### Changed
