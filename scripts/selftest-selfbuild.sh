@@ -10,8 +10,10 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 (cd "$root/src-tauri" && cargo build -q)
 data="$(mktemp -d)"
 MR_SELFTEST=selfbuild MR_DATA_DIR="$data" MR_APP_REPO="$root" "$root/src-tauri/target/debug/Cockpit" || true
-id="$(ls "$data/builds" | grep -v fallbacks | head -1)"
-[ -n "$id" ] || { echo "FAILED: no build stored"; sqlite3 "$data/events.sqlite" "SELECT payload FROM events WHERE kind='selfbuild.finished'"; exit 1; }
+# No builds/ folder at all when the build failed: list nothing rather than let set -e end the script
+# before it prints which step failed and why.
+id="$(ls "$data/builds" 2>/dev/null | grep -v fallbacks | head -1 || true)"
+[ -n "$id" ] || { echo "FAILED: no build stored"; sqlite3 "$data/events.sqlite" "SELECT json_extract(payload, '$.step'), json_extract(payload, '$.log') FROM events WHERE kind='selfbuild.finished'"; exit 1; }
 for _ in $(seq 1 120); do [ -f "$data/healthy-$id" ] && break; sleep 1; done
 [ -f "$data/healthy-$id" ] || { echo "FAILED: new build $id never reported healthy"; cat "$data/builds/$id/run.log" 2>/dev/null | tail -20; exit 1; }
 [ ! -f "$data/builds/fallbacks.log" ] || { echo "FAILED: supervisor fell back"; cat "$data/builds/fallbacks.log"; exit 1; }

@@ -54,6 +54,8 @@ jobs:
       - run: ./scripts/e2e-ui.sh
         env:
           MR_E2E_SHOTS: ${{ runner.temp }}/mr-e2e
+          # GitHub's macOS runners are slow enough that 5 s waits miss now and then.
+          MR_E2E_SCALE: ${{ startsWith(matrix.os, 'macos') && '3' || '1' }}
       - name: Screenshots of failed flows
         if: failure()
         uses: actions/upload-artifact@v4

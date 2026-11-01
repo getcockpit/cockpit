@@ -559,9 +559,9 @@ fn run_selfbuild(app: AppHandle) {
         let marker = crate::selfbuild::data_dir(&app).join("builds").join(&id).join("build.json");
         let log = app.state::<crate::eventlog::EventLog>();
         for _ in 0..900 {
-            let failed = log.list(None, None, i64::MAX).unwrap_or_default().into_iter().any(|e| e.kind == "selfbuild.finished" && e.payload["ok"] == false);
-            if failed {
-                eprintln!("[selftest] build failed");
+            let failed = log.list(None, None, i64::MAX).unwrap_or_default().into_iter().find(|e| e.kind == "selfbuild.finished" && e.payload["ok"] == false);
+            if let Some(e) = failed {
+                eprintln!("[selftest] build failed at step {}:\n{}", e.payload["step"], e.payload["log"].as_str().unwrap_or(""));
                 std::process::exit(1);
             }
             if marker.exists() {
