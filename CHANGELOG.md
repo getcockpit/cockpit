@@ -4,6 +4,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-11-01
+
+### Changed
+- **CI tests macOS and Windows UI flows:** every push runs all 96 UI end-to-end flows on Linux and macOS, and the full Windows regression (tests, UI flows, installer, app start) runs nightly.
+
+### Fixed
+- **End-to-end flows hold on slower machines:** answering a structured question and opening a session from the Overview no longer depend on render timing or window size.
+
 ## [0.1.19] - 2026-10-28
 
 ### Fixed
