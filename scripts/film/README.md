@@ -15,6 +15,8 @@ ffmpeg -framerate 60 -i frames/%05d.jpg -c:v libx264 -crf 18 -pix_fmt yuv420p -m
 ffmpeg -framerate 60 -i frames/%05d.jpg -frames:v 790 -vf scale=1600:-2 -c:v libx264 -crf 26 -preset slow -pix_fmt yuv420p -an -movflags +faststart hero-loop.mp4
 ```
 
+The site's poster is the frame at 4.3 s (the `1` keycap over the question): `cp frames/00258.jpg ../../site/assets/poster.jpg`, and the site's `cockpit-demo.mp4` is the scored `cockpit-film.mp4`.
+
 Sound: `score.py` synthesizes an original 120 BPM score (no samples, no licence): the drop on 2.2 s when a session turns amber, the groove dropping out at 28.8 s as the wall goes calm, and clicks on every keycap. It needs numpy; then mux and normalise it:
 
 ```bash
@@ -24,4 +26,4 @@ ffmpeg -i cockpit-demo.mp4 -i score.wav -map 0:v -map 1:a -c:v copy -af loudnorm
 
 `social.html` is the 1280×640 link-preview card (render it with headless Chrome at that window size).
 
-Script (MR-139), one story where every answer is a key: the calm wall → one session needs you → `1` → "Drop the old table" on production → `D` → Claude's safer plan → `⌥1` → "All 211 tests pass" → `⌘⇧U` Catch me up flags that no test ran → the plan map → the wall goes calm → "Less reading. Less tired." → the end card. Edit `SCENES`, `CAM`, `KEYS`, `CAPS` and `HEADS` in `film.html`; `?format=45` renders the same film at 1080×1350. Captures come from the demo harness (`calm`, `timeline`, `busy`). It needs Chrome at the default macOS path (change `executablePath` elsewhere).
+Script (MR-139; v3 in MR-190, decision 41: the middle follows what gets used most), one story where every answer is a key: the calm wall → one session needs you → `1` → "Drop the old table" on production → `D` → Claude's safer plan → `⌥1` → `⌘0` the Overview of every workspace, zooming onto the one that needs you → a PR review, riskiest finding first → `1` notes it → the plan map → the wall goes calm → "Less reading. Less tired." → the end card. Edit `SCENES`, `CAM`, `KEYS`, `CAPS` and `HEADS` in `film.html`; `?format=45` renders the same film at 1080×1350. Captures come from the demo harness (`calm`, `timeline`, `busy`, `workspaces`, `review`); `FILM_BASE=http://127.0.0.1:<port> bun capture.ts` points them at a harness on another port. It needs Chrome at the default macOS path (change `executablePath` elsewhere).

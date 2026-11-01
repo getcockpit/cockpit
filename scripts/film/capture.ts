@@ -4,7 +4,7 @@ import puppeteer, { type Page } from "puppeteer-core";
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const W = 1600, H = 1000, DPR = 2;
-const BASE = "http://localhost:1530/?demo=";
+const BASE = (process.env.FILM_BASE ?? "http://localhost:1530") + "/?demo=";
 mkdirSync("shots", { recursive: true });
 const boxes: Record<string, Record<string, { x: number; y: number; w: number; h: number }>> = {};
 
@@ -16,10 +16,12 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 
-async function go(demo: string) {
-  await page.goto(BASE + demo, { waitUntil: "networkidle0" });
+// Lands on the Wall (several workspaces would land on the Overview, decision 40) unless `overview`.
+async function go(demo: string, overview = false) {
+  const url = BASE + demo + "&motion=off" + (overview ? "" : "&landing=wall");
+  await page.goto(url, { waitUntil: "networkidle0" });
   await page.evaluate(() => localStorage.clear());
-  await page.goto(BASE + demo, { waitUntil: "networkidle0" });
+  await page.goto(url, { waitUntil: "networkidle0" });
   await new Promise((r) => setTimeout(r, 1500));
 }
 // The smallest visible element whose text starts with `text` (or matches a CSS selector with css:).
@@ -59,35 +61,34 @@ async function shot(name: string, targets: Record<string, string>) {
   console.log("shot", name);
 }
 
-// One story (MR-139): calm wall → one needs you → 1 → the risk card → D → staging → Catch me up → the plan map.
+// One story (MR-139, v3 in MR-190): calm wall → one needs you → 1 → the risk card → D → staging → ⌘0 the
+// Overview → a PR review, N to note → the plan map.
 await go("calm");
-await click("Wall");
 await shot("calm", { running: "css:[data-mr=Tile]" });
 await go("timeline");
-await click("Wall");
 await shot("one", { q: "Run the migration on staging now?", opt1: "1Yes" });
 await click("1Yes");
 await new Promise((r) => setTimeout(r, 800));
 await shot("one-answered", {});
 await go("busy");
-await click("Wall");
 await click("Open Retire the old invoices table");
 await new Promise((r) => setTimeout(r, 800));
 await shot("focus", { risk: "Drop the old invoices table", deny: "DDeny", cmd: "css:pre.mr-code", title: "Retire the old invoices table" });
 await click("DDeny");
 await new Promise((r) => setTimeout(r, 1500));
 await shot("focus-denied", { reply: "Okay, production is untouched", yes: "⌥1Yes, go ahead" });
-await page.keyboard.press("Escape");
-await new Promise((r) => setTimeout(r, 1200));
-await click("✓ Done Refactor the settings schema");
+// v3 (MR-190, decision 41): the middle follows what gets used most: the Overview, then a PR review.
+await go("workspaces", true); // several workspaces: launch lands on the Overview
+await shot("overview", { needs: "css:[data-mr=OverviewArea][data-mr-source=ws_cockpit]", tab: "Overview" });
+await go("review");
+await click("↵Continue review");
 await new Promise((r) => setTimeout(r, 800));
-await shot("settings", { recap: "Refactor is finished", catchup: "Catch me up" });
-await click("⌘⇧UCatch me up");
-await new Promise((r) => setTimeout(r, 3500));
-await shot("brief", { risk: "Risk\"All 211 tests pass\"", wrong: "Looks wrong?", q: "Keep reading v1 settings files" });
+await shot("review", { finding: "Retrying a charge without an idempotency key", note: "1Note it", snippet: "Retry loop around the charge call" });
+await click("1Note it");
+await new Promise((r) => setTimeout(r, 800));
+await shot("review-noted", { finding: "Retrying a charge without an idempotency key", noted: "1 noted" });
 await go("busy");
-await click("Wall");
-await click("CSV export for invoices v2");
+await click("Open map ↵");
 await shot("doc", { goal: "Goal · proposed", design: "Design · proposed", decide: "Decide first", q: "Open question · open" });
 
 writeFileSync("shots/boxes.json", JSON.stringify(boxes, null, 1));
