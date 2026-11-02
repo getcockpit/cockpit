@@ -38,7 +38,7 @@ portable-pty = "0.9"
 ureq = { version = "3", features = ["json"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }  # no "zip": updates ship as raw .exe/.AppImage, and zip 4.x has open advisories
 tauri-plugin-autostart = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
