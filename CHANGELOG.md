@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-11-02
+
+### Security
+- **All open dependency advisories fixed:** rustls 0.23.46 (four TLS advisories); the in-app updater no longer pulls in `zip` (three advisories, one critical), since updates ship as plain installers; zod 4.6.6, fast-uri, ip-address and qs in the sidecar; happy-dom 21.0.4 in the UI tests.
+
 ## [0.1.21] - 2026-11-01
 
 ### Changed
