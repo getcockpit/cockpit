@@ -10,6 +10,7 @@ import { api } from "../state/store";
 import { ReviewOverview } from "./ReviewOverview";
 import { plural } from "../picker/title";
 import type { SessionState, TranscriptItem } from "../state/types";
+import { useDraft } from "../state/drafts";
 
 // Review (mirrors /review) and Address (mirrors pr-address), drawn from the flow.* steps Claude
 // reports. User actions go back as the replies those commands already expect.
@@ -70,7 +71,7 @@ export function ReviewView({ s }: { s: SessionState }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {o && <ReviewOverview o={o} started={r.current !== null || !!r.publish} onReply={reply} raised={r.noted}
+      {o && <ReviewOverview source={s.id} o={o} started={r.current !== null || !!r.publish} onReply={reply} raised={r.noted}
         onRaise={(id, text) => {
           const on = r.noted.includes(id);
           void api.log(on ? "ui.review_unnoted" : "ui.review_noted", { finding_id: id }, s.id, `review:${id}`);
@@ -313,7 +314,7 @@ export function AddressView({ s }: { s: SessionState }) {
 // Under a thread's options: write your own answer (sent as the decision), or ask Claude about the
 // thread before deciding. An empty ask asks Claude to explain its reasoning in more depth.
 export function AddressCompose({ source, canAnswer, onAnswer, onAsk }: { source: string; canAnswer: boolean; onAnswer: (text: string) => void; onAsk: (text: string) => void }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(`address:${source}`);
   const t = text.trim();
   const answer = () => { if (canAnswer && t) { onAnswer(t); setText(""); } };
   const askIt = () => { onAsk(t); setText(""); };

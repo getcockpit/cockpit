@@ -5,6 +5,7 @@ import { pointer } from "../components/pointer";
 import { api } from "../state/store";
 import type { SessionState } from "../state/types";
 import { basename, dirname } from "../fspath";
+import { useDraft } from "../state/drafts";
 
 // Change map (MR-17): what the session changed, from git, grouped by folder and sized by change,
 // with risky areas flagged. Click a file for its diff; click a diff line to leave a note.
@@ -82,7 +83,7 @@ const sum = (fs: Changed[]) => fs.reduce((a, f) => a + f.added + f.removed, 0);
 export function DiffView({ cwd, path, notes, onNote }: { cwd: string; path: string; notes: { line: string; text: string }[]; onNote: (line: string, text: string) => void }) {
   const [diff, setDiff] = useState<string | null>(null);
   const [at, setAt] = useState<string | null>(null);
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(`diff-note:${cwd}:${path}:${at}`);
   useEffect(() => { invoke<string>("session_diff", { cwd, path }).then(setDiff).catch((e) => setDiff(`# ${e}`)); }, [cwd, path]);
   if (diff === null) return <span className="mr-dim">Loading diff…</span>;
   let newLine = 0;

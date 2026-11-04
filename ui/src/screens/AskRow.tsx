@@ -7,6 +7,7 @@ import { pickDecision } from "../picker/pick";
 import { api } from "../state/store";
 import type { PendingAsk, SessionState } from "../state/types";
 import { basename } from "../fspath";
+import { useDraft } from "../state/drafts";
 
 // Sends one answer for a pending ask (card click or keyboard).
 export function answerAsk(s: SessionState, a: PendingAsk, x: Answer) {
@@ -41,8 +42,8 @@ const where = (s: SessionState) => basename(s.repo ?? s.cwd) || s.cwd;
 // A session that asked in prose (MR-41): the question on its own, quick replies it offers, and a
 // reply box, so it's answered from the queue like any card.
 export function ProseRow({ s, question, options, selected, onOpen }: { s: SessionState; question: string; options: string[]; selected?: boolean; onOpen: () => void }) {
-  const [text, setText] = useState("");
-  const send = (t: string) => { if (t.trim()) void api.send(s.id, t.trim()); };
+  const [text, setText] = useDraft(`reply:${s.id}`);
+  const send = (t: string) => { if (t.trim()) { void api.send(s.id, t.trim()); setText(""); } };
   return (
     <div className="mr-qrow" data-mr="ProseAsk" data-mr-source={s.id} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
       <div className="mr-flag" />

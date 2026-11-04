@@ -41,6 +41,7 @@ import { McpPanel } from "../components/McpPanel";
 import { routeSlash } from "../picker/slash";
 import { lazy, Suspense } from "react";
 import { basename, slashed } from "../fspath";
+import { useDraft } from "../state/drafts";
 const TerminalPane = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalPane })));
 
 // The app's own repo never changes while it runs: ask once (MR-57).
@@ -261,7 +262,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
 // The message box (components/PromptBox): / for commands and skills, @ for files, pasted or
 // dropped images and files attach, ↑ brings back what you sent.
 function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean; onSubmit: (text: string, attachments: Attachment[]) => void }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(`prompt:${s.id}`);
   const box = useRef<PromptBoxHandle>(null);
   // Names come with init; descriptions need one ask of the running session.
   const asked = useRef(false);

@@ -1151,6 +1151,24 @@ const flows: Flow[] = [
     await ui.tags("UserText", 0);
     await until("the draft is still there", () => { if (!pt("html", "css:[data-mr=PromptBox] textarea").includes("first line")) throw new Error("draft gone"); });
   } },
+  { name: "Drafts: what you typed survives leaving the session and closing the picker", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.fill("Message this session", "unsent thought");
+    await ui.key("Escape"); // a field with a draft is only left…
+    await ui.key("Escape"); // …then Esc goes back to the wall
+    await ui.tags("SessionName", 0);
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await until("the session's draft came back", () => { if (!pt("html", "css:[data-mr=PromptBox] textarea").includes("unsent thought")) throw new Error("draft gone"); });
+    await ui.key("Escape");
+    await ui.key("Mod+k");
+    await ui.tags("KindTile", (c) => c >= 4);
+    pt("fill", "css:[data-mr=PromptBox][data-mr-source=start] textarea", "a new idea");
+    await ui.key("Escape");
+    await until("picker closed", async () => { if (ui.count('[data-mr="KindTile"]')) { await ui.key("Escape"); throw new Error("still open"); } });
+    await ui.key("Mod+k");
+    await until("the picker's draft came back", () => { if (!pt("html", "css:[data-mr=PromptBox][data-mr-source=start] textarea").includes("a new idea")) throw new Error("draft gone"); });
+  } },
   { name: "Keys: Tab completes a slash command", run: async () => {
     await ui.open("busy");
     await ui.click("button", "Ready to review Refactor the settings schema");

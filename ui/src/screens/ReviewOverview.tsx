@@ -6,6 +6,7 @@ import { keyOf } from "../components/keys";
 import { modKey } from "../platform";
 import { plural } from "../picker/title";
 import type { ReviewFlow } from "../state/types";
+import { useDraft } from "../state/drafts";
 
 // The review overview as a pyramid (MR-58): the answer first (one verdict line with counts), then
 // a few one-line key points you can open, act on or skip, then the supporting detail, folded.
@@ -47,13 +48,13 @@ const TAG: Record<Point["tag"], { bg: string; fg: string }> = {
   Context: { bg: "transparent", fg: "var(--mr-ink-3)" },
 };
 
-export function ReviewOverview({ o, started, onReply, onRaise, raised }: { o: Overview; started: boolean; onReply: (t: string) => void; onRaise: (id: string, text: string) => void; raised: string[] }) {
+export function ReviewOverview({ source, o, started, onReply, onRaise, raised }: { source: string; o: Overview; started: boolean; onReply: (t: string) => void; onRaise: (id: string, text: string) => void; raised: string[] }) {
   const pts = keyPoints(o);
   const graph = (o.edges ?? []).length > 0;
   const [sel, setSel] = useState(0);
   const [open, setOpen] = useState<number | null>(null);
   const [skipped, setSkipped] = useState<number[]>([]);
-  const [ask, setAsk] = useState("");
+  const [ask, setAsk] = useDraft(`review-ask:${source}:${open}`);
   const summary = (o.summary ?? "").split(/(?<=[.!?])\s+(?=[A-Z"/])/).filter(Boolean);
 
   useEffect(() => {

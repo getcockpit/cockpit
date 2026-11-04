@@ -3,6 +3,7 @@ import type { DecisionSpec, Risk, TileSpec } from "../picker/pick";
 import type { Delivery } from "../state/types";
 import { keyLabel } from "../platform";
 import { basename } from "../fspath";
+import { useDraft } from "../state/drafts";
 
 // The component catalog (decision 16). Screens are composed only from these.
 
@@ -211,13 +212,13 @@ export function PickAny({ source, options, decision, onDecide }: { source: strin
 
 /** The row under a question's options (I75): answer in your own words, have Claude ask first, or skip. */
 export function WayOut({ source, placeholder, onOut }: { source: string; placeholder?: string; onOut: (x: { kind: "reply"; text: string } | { kind: "ask_first" } | { kind: "skip" }) => void }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(`wayout:${source}`);
   return (
     <form className="mr-row" data-mr="WayOut" data-mr-source={source} style={{ gap: 8, flexWrap: "wrap" }} onSubmit={(e) => { e.preventDefault(); if (text.trim()) { onOut({ kind: "reply", text: text.trim() }); setText(""); } }}>
       <input className="mr-input" value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder ?? "None fit? Answer in your own words…"} aria-label="Answer in your own words" style={{ flex: "1 1 240px", background: "var(--mr-well)" }} />
       {text.trim() && <Key submit>Send</Key>}
-      <Key onClick={() => onOut({ kind: "ask_first" })}>Ask me first</Key>
-      <Key k="S" onClick={() => onOut({ kind: "skip" })}>Skip</Key>
+      <Key onClick={() => { setText(""); onOut({ kind: "ask_first" }); }}>Ask me first</Key>
+      <Key k="S" onClick={() => { setText(""); onOut({ kind: "skip" }); }}>Skip</Key>
     </form>
   );
 }

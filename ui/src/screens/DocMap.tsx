@@ -9,6 +9,7 @@ import { CatalogView, ViewGlance } from "../components/CatalogView";
 import { blockView, buildDoc, continueBrief, continueLabel, decideQuestion, docStage, isDecision, docApi, sendDocFeedback, isBrief, isOpenQuestion, orderedBlocks, SECTION_LABEL, STAGE_LABEL, type Block, type Doc } from "../state/docs";
 import { api } from "../state/store";
 import type { AppState } from "../state/types";
+import { useDraft } from "../state/drafts";
 
 // The working doc as a map (decision 12): the overview shows every block's takeaway at reading size,
 // sized to its text; opening one zooms into a reading pane with the whole block and an outline of the
@@ -273,8 +274,8 @@ function BlockOpen(props: {
   onReply?: (t: string) => void; // a view's replies (Deeper, Use <x>) go to the plan session while it runs
 }) {
   const { doc, b, deep, thread } = props;
-  const [note, setNote] = useState("");
-  const [ask, setAsk] = useState("");
+  const [note, setNote] = useDraft(`doc-note:${doc.id}:${b.id}`);
+  const [ask, setAsk] = useDraft(`doc-ask:${doc.id}:${b.id}`);
   const question = b.section === "question";
   // A slide leads with its shape: a question's options or a view come first, the prose on ⌘-click (MR-102).
   const folded = question || blockView(b).length > 0;
