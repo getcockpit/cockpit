@@ -8,6 +8,7 @@ import { promptFor } from "../screens/StartPicker";
 import { api } from "../state/store";
 import { workspaceFolder } from "../state/reduce";
 import type { AppState, SessionKind } from "../state/types";
+import { useDraft } from "../state/drafts";
 
 // The empty wall's start (MR-42, F5): nothing is running, so the wall's whole job is to get
 // something running. Folder, words, kind, ↵ — the same as ⌘K, without having to know ⌘K.
@@ -18,7 +19,7 @@ const KINDS: { id: SessionKind; name: string; what: string }[] = [
 
 export function QuickStart({ state, workspace, onStarted, onMore }: { state: AppState; workspace: string; onStarted: (id: string) => void; onMore: (mode: "review" | "address") => void }) {
   const [cwd, setCwd] = useWorkFolder(workspaceFolder(state, workspace));
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(`quickstart:${workspace}`);
   const [kind, setKind] = useState<SessionKind>(() => { try { return localStorage.getItem("mr.mode") === "plan" ? "plan" : "blank"; } catch { return "blank"; } });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -33,7 +34,7 @@ export function QuickStart({ state, workspace, onStarted, onMore }: { state: App
   const start = async () => {
     if (!text.trim() || busy) return;
     setBusy(true); setError("");
-    try { onStarted(await api.start(cwd, promptFor(kind, text), kind)); } catch (e) { setError(shortError(e)); setBusy(false); }
+    try { const id = await api.start(cwd, promptFor(kind, text), kind); setText(""); onStarted(id); } catch (e) { setError(shortError(e)); setBusy(false); }
   };
   return (
     <section data-mr="QuickStart" aria-label="Start something" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 880, margin: "6vh auto 0", width: "100%" }}>

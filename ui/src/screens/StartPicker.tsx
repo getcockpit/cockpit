@@ -11,6 +11,7 @@ import { Key } from "../components";
 import { api, type Pr } from "../state/store";
 import { addressNote, toAddress } from "../picker/suggest";
 import type { AppState, Attachment, CommandRow, Preset, SessionKind } from "../state/types";
+import { useDraft, writeDraft } from "../state/drafts";
 
 // ⌘K start picker (decision 18): Review / Address / Plan / Blank, each with its own suggestions.
 const MODES: { id: SessionKind; name: string; what: string; placeholder: string }[] = [
@@ -70,7 +71,9 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   const modeId = preset ? modeRaw : mode;
   const tiles = [...MODES.map((x) => ({ id: x.id as string, name: x.name, what: x.what, mono: false })), ...state.presets.map((x) => ({ id: presetMode(x.id), name: x.name, what: x.template, mono: true }))];
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [text, setText] = useState(initialText);
+  // What you typed survives closing the picker or switching workspaces; dictated text replaces it.
+  const [text, setText] = useDraft("start");
+  useState(() => { if (initialText) writeDraft("start", initialText); });
   const [cwd, setCwd] = useWorkFolder(workspaceFolder(state, workspace));
   const [prs, setPrs] = useState<Pr[] | null>(null);
   const [error, setError] = useState("");

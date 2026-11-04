@@ -11,13 +11,15 @@ import { attachmentNotes, clearDrafts, getDrafts } from "./reviewDraft";
 import { burnIn } from "./Lightbox";
 import { sendsOnEnter, useAutoGrow } from "./autoGrow";
 import { keyOf } from "./keys";
+import { readDraft, useDraftValue } from "../state/drafts";
 
 // The message box, as in Claude Code and then some (one for a session and the start picker):
 // - / lists the session's commands and skills (MR-87), @ files and folders (MR-108);
 // - @files, the /command and folded pastes are marked as you type;
 // - pasting or dropping an image or PDF attaches it with a thumbnail (Claude sees it at once),
 //   any other file by path; the clip button picks files; a long paste folds into a token;
-// - ↑ in an empty box brings back what you sent before.
+// - ↑ in an empty box brings back what you sent before;
+// - attached files and folded pastes are kept per box (state/drafts.ts), like the text its owner keeps.
 
 // A folder's files for the @ menu, listed once a minute at most: typing shouldn't re-run git (MR-108).
 const pathsCache = new Map<string, { at: number; paths: Promise<string[]> }>();
@@ -76,10 +78,10 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
   const [active, setActive] = useState(0);
   const [closed, setClosed] = useState(false); // Esc hides the menu for what's typed now
   const [paths, setPaths] = useState<string[] | null>(null);
-  const [files, setFiles] = useState<Attachment[]>([]);
+  const [files, setFiles] = useDraftValue<Attachment[]>(`box:${source}:files`, []);
+  const [pastes, setPastes] = useDraftValue<Record<number, string>>(`box:${source}:pastes`, {});
   const [busy, setBusy] = useState(0);
-  const pastes = useRef<Record<number, string>>({});
-  const seq = useRef(0);
+  const seq = useRef(Math.max(0, ...Object.keys(readDraft<Record<number, string>>(`box:${source}:pastes`, {})).map(Number)));
   const back = useRef<number | null>(null); // where ↑ is in the history
   useAutoGrow(input, text);
 
@@ -167,7 +169,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
     if (plain && foldsPaste(plain)) {
       e.preventDefault();
       const n = ++seq.current;
-      pastes.current[n] = plain;
+      setPastes((xs) => ({ ...xs, [n]: plain }));
       insert(pasteToken(n, plain));
     }
   };
@@ -189,7 +191,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
   };
 
   const submit = () => {
-    const typed = expandPastes(text, pastes.current).trim();
+    const typed = expandPastes(text, pastes).trim();
     if (!typed && !files.length) return;
     if (busy) { toast("Still attaching: one moment"); return; }
     const draftOf = (path: string) => getDrafts(notesKey(path), 1)[0];
@@ -200,7 +202,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
       files.forEach((f) => clearDrafts(notesKey(f.path)));
       p.onSubmit([typed, notes].filter(Boolean).join("\n\n"), [...files, ...extra]);
       setText(""); setCaret(0); setClosed(false); setFiles([]);
-      pastes.current = {};
+      setPastes({});
       back.current = null;
     };
     const drawn = files.filter((f) => draftOf(f.path).ink?.length);
@@ -227,10 +229,10 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
 
   // Expand a folded paste back into the box, to edit it.
   const unfold = (n: number) => {
-    const t = pastes.current[n];
+    const t = pastes[n];
     if (t == null) return;
     setText(text.replace(new RegExp(`\\[Pasted text #${n} · \\d+ lines\\]`), () => t));
-    delete pastes.current[n];
+    setPastes(({ [n]: _, ...rest }) => rest);
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -270,7 +272,7 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
     p.onKeyDown?.(e);
   };
 
-  const folded = pastesIn(text).filter((n) => pastes.current[n] != null);
+  const folded = pastesIn(text).filter((n) => pastes[n] != null);
   const field: CSSProperties = { position: "relative", flex: 1, minWidth: 0, background: (p.fieldStyle?.background as string) ?? "var(--mr-tile)", borderRadius: "var(--mr-radius)" };
   const font: CSSProperties = { fontSize: p.fieldStyle?.fontSize ?? 15 };
   return (
@@ -281,12 +283,12 @@ export const PromptBox = forwardRef<PromptBoxHandle, Props>(function PromptBox(p
         <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--mr-gap)", alignItems: "center" }}>
           <AttachmentRow items={files} onRemove={(a) => { clearDrafts(notesKey(a.path)); setFiles((xs) => xs.filter((x) => x.path !== a.path)); }} />
           {folded.map((n) => (
-            <button key={n} type="button" data-mr="PasteChip" data-mr-source={`paste-${n}`} onClick={() => unfold(n)} title={pastes.current[n].slice(0, 600)}
+            <button key={n} type="button" data-mr="PasteChip" data-mr-source={`paste-${n}`} onClick={() => unfold(n)} title={pastes[n].slice(0, 600)}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 52, padding: "0 10px", border: 0, borderRadius: "var(--mr-radius)", background: "var(--mr-well)", color: "var(--mr-ink)", font: "inherit", fontSize: 13, cursor: "pointer" }}>
               <span className="mr-mono" style={{ padding: "2px 4px", fontSize: 10, background: "var(--mr-ink)", color: "var(--mr-tile)" }}>TEXT</span>
               <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2, textAlign: "left" }}>
                 <strong>Pasted text #{n}</strong>
-                <span className="mr-dim mr-mono" style={{ fontSize: 11 }}>{pastes.current[n].split("\n").length} lines · click to expand</span>
+                <span className="mr-dim mr-mono" style={{ fontSize: 11 }}>{pastes[n].split("\n").length} lines · click to expand</span>
               </span>
             </button>
           ))}
