@@ -49,15 +49,12 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
   const cwd = startCwd();
   // Cached across wall mounts (MR-57): a workspace switch shows the last values instantly.
   const loadPrs = () => fetchPrs(cwd);
-  const loadDaily = () => invoke<{ streak: number; goal: number }>("daily_driver");
   const [prs, setPrs] = useState<{ review: Pr[]; mine: Pr[] }>(() => cached("prs", PRS_TTL, loadPrs, () => {}) ?? { review: [], mine: [] });
-  const [daily, setDaily] = useState<{ streak: number; goal: number } | null>(() => cached("daily", 10 * 60_000, loadDaily, () => {}) ?? null);
 
   useEffect(() => {
     let alive = true;
     const load = () => {
       cached("prs", PRS_TTL, loadPrs, (v) => alive && setPrs(v));
-      cached("daily", 10 * 60_000, loadDaily, (v) => alive && setDaily(v));
     };
     load();
     const t = setInterval(load, 60_000);
@@ -237,10 +234,9 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
         )}
       </main>
       <footer className="mr-band mr-row mr-dim" style={{ padding: "8px 24px", fontSize: 12 }}>
-        {/* Calm footer (MR-53): one hint, the two places you go from here, and a quiet progress note. */}
+        {/* Calm footer (MR-53): one hint, and the two places you go from here. */}
         <span>Right-click anything for actions · {keyLabel("⌘-click")} to go deeper</span>
         <span className="mr-grow" />
-        {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-3)" }}>{daily.streak}/{daily.goal} days</span>}
         <button type="button" className="mr-link" onClick={() => api.report()}>Report a bug</button>
         <button type="button" className="mr-link" onClick={onArchive}>Archive{archived ? ` (${archived})` : ""} <kbd className="mr-mono">{keyLabel("⌘⇧A")}</kbd></button>
         <Key k="⌘K" tone="primary" onClick={() => onStart()}>Start</Key>

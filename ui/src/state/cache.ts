@@ -1,5 +1,5 @@
 // Slow lookups shared across screens (MR-57): the wall remounts on every workspace switch, so its
-// PR suggestions, daily count and the app's repo path are cached here and refreshed in the
+// PR suggestions and the app's repo path are cached here and refreshed in the
 // background instead of being fetched again (each costs 0.5–2 s of gh or disk work).
 type Entry<T> = { at: number; value: T | undefined; pending: Promise<T> | null };
 const entries = new Map<string, Entry<unknown>>();
