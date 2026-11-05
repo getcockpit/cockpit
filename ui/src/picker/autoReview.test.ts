@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneWorkspaces, isAbout, lastLocalReview, needsAutoReview, prHere, reviewKey, reviewStatus } from "./autoReview";
+import { cloneWorkspaces, isAbout, lastLocalReview, needsAutoReview, prHere, rankReview, reviewKey, reviewStatus, workspaceFolders } from "./autoReview";
 import type { SessionState } from "../state/types";
 
 const pr = { number: 482, title: "Retry payments", url: "https://github.com/acme/shop/pull/482", updatedAt: "", repository: { nameWithOwner: "acme/shop" } };
@@ -92,5 +92,29 @@ describe("the start picker's review status", () => {
     const gh = { ...at, reviewNote: "asked again, nothing new", myLastReviewAt: "2026-10-12T10:00:00Z" };
     expect(reviewStatus(gh, [s("a", "ended", T("2026-10-11T10:00:00Z"))], "work").note).toBe("asked again, nothing new");
     expect(reviewStatus(at, [s("x", "working", 0, "work", "/review 999")], "work").note).toBe("not reviewed yet");
+  });
+});
+
+describe("the Review list's order", () => {
+  const p = (number: number, o: Partial<{ requested: boolean; needsReview: boolean; isDraft: boolean }> = {}) =>
+    ({ number, title: "", url: `https://github.com/acme/shop/pull/${number}`, updatedAt: "", repository: { nameWithOwner: "acme/shop" }, reviewNote: "not reviewed yet", needsReview: true, requested: false, ...o });
+
+  it("asks-for-my-review first, then others that need it, then the rest, drafts last and labelled", () => {
+    const rows = rankReview([p(1), p(2, { isDraft: true, requested: true }), p(3, { needsReview: false }), p(4, { requested: true }), p(5, { isDraft: true })], [], "work");
+    expect(rows.map((r) => r.pr.number)).toEqual([4, 1, 3, 2, 5]);
+    expect(rows[3]).toMatchObject({ note: "draft · not reviewed yet", hot: false });
+  });
+
+  it("drops a PR reviewed here with nothing new out of the needs-review tiers", () => {
+    const s = { id: "a", kind: "review", workspace: "work", title: "/review https://github.com/acme/shop/pull/4", status: "ended", startedAt: T("2026-10-11T10:00:00Z") } as unknown as SessionState;
+    const rows = rankReview([p(4, { requested: true }), p(1), p(3, { needsReview: false })].map((x) => ({ ...x, lastCommitAt: "2026-10-10T10:00:00Z" })), [s], "work");
+    expect(rows.map((r) => r.pr.number)).toEqual([1, 4, 3]);
+  });
+
+  it("takes the workspace's folders: pinned first, then its sessions', newest first, once each", () => {
+    const st = { workspaces: [{ id: "work", folder: "/code/a" }], order: ["1", "2", "3", "4"], sessions: {
+      1: { workspace: "work", cwd: "/code/b", repo: null }, 2: { workspace: "home", cwd: "/code/x", repo: null },
+      3: { workspace: "work", cwd: "/code/a-worktrees/t", repo: "/code/a" }, 4: { workspace: "work", cwd: "/code/c", repo: null, fromDeleted: "w" } } } as unknown as Parameters<typeof workspaceFolders>[0];
+    expect(workspaceFolders(st, "work")).toEqual(["/code/a", "/code/b"]);
   });
 });

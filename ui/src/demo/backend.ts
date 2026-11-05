@@ -348,7 +348,13 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       return repos;
     }
     case "gh_repo": return /shop|billing|cockpit/.test(String(a.cwd)) ? `acme/${String(a.cwd).split("/").pop()}` : null;
-    case "gh_prs": if (a.repo && a.mode === "review") return [
+    case "gh_prs": if (a.mode === "review_repos") return ((a.repos as string[]) ?? []).flatMap((r) => [
+      { number: 497, title: "Search: typo tolerance", url: `https://github.com/${r}/pull/497`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: r }, reviewNote: "new changes since your review", requested: true, needsReview: true, isDraft: false, lastCommitAt: new Date().toISOString(), myLastReviewAt: "2026-01-01T00:00:00Z" },
+      { number: 482, title: "Checkout: retry failed payments", url: `https://github.com/${r}/pull/482`, updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: r }, reviewNote: "not reviewed yet", requested: true, needsReview: true, isDraft: false, lastCommitAt: "2026-01-01T00:00:00Z", myLastReviewAt: null },
+      { number: 495, title: "Cart: keep items across devices", url: `https://github.com/${r}/pull/495`, updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: r }, reviewNote: "not reviewed yet", requested: false, needsReview: true, isDraft: false },
+      { number: 470, title: "Docs: API errors", url: `https://github.com/${r}/pull/470`, updatedAt: new Date().toISOString(), author: { login: "lee" }, repository: { nameWithOwner: r }, reviewNote: "approved by you", requested: false, needsReview: false, isDraft: false },
+      { number: 499, title: "WIP: new pricing page", url: `https://github.com/${r}/pull/499`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: r }, reviewNote: "not reviewed yet", requested: true, needsReview: true, isDraft: true }]);
+      if (a.repo && a.mode === "review") return [
       { number: 491, title: "Checkout: idempotent order ids", url: `https://github.com/${a.repo}/pull/491`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: a.repo }, reviewNote: "new changes since your review" },
       { number: 495, title: "Cart: keep items across devices", url: `https://github.com/${a.repo}/pull/495`, updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: a.repo }, reviewNote: "not reviewed yet" }];
       if (a.repo) return (handle("gh_prs", { ...a, repo: undefined }) as { repository: { nameWithOwner: string } }[]).filter((p) => p.repository.nameWithOwner === a.repo);
