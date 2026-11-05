@@ -4,6 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-11-05
+
+### Changed
+- **A plan doc only says it needs you:** on the Wall, in its session and in notifications, a plan doc with open questions shows as one "Needs you" row that opens the doc. Its questions are no longer lifted out as separate cards, and the doc counts once.
+- **The Review picker lists every PR in the workspace's repos:** requested reviews first, drafts last, each with its review status and any review already running.
+- **The Address picker shows what's new since your last address,** and which addresses are running now.
+- **Fewer Wall suggestions:** PR review and address suggestions are gone; the pickers cover them. The Wall footer's daily-driver counter is gone too.
+
+### Fixed
+- **Typed drafts survive switches:** what you type in a session, the start picker, Quick start or a reply stays when you switch sessions, tabs or workspaces.
+
 ## [0.1.22] - 2026-11-02
 
 ### Security
