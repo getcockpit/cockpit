@@ -18,7 +18,7 @@ import { cached } from "../state/cache";
 import { cloneWorkspaces, prHere } from "../picker/autoReview";
 import { loadPrs as fetchPrs, prInWorkspace, PRS_TTL, startCwd, usePrClones } from "../state/prs";
 import type { AppState, SessionState, Todo } from "../state/types";
-import { answerAsk, AskRow, DocQuestionRow, FixRow, FlowRow, ProseRow, SignInRow } from "./AskRow";
+import { answerAsk, AskRow, DocNeedsRow, FixRow, FlowRow, ProseRow, SignInRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
 import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
@@ -116,10 +116,8 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
       if (cur.kind === "ask" && k === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
       else if (cur.kind === "ask" && k === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
       else if (cur.kind === "ask" && k === "s" && cur.a.kind === "question") { e.preventDefault(); void answerAsk(cur.s, cur.a, wayOut(cur.a.questions, { kind: "skip" })); }
-      else if (cur.kind === "doc" && k === "s") { e.preventDefault(); (document.querySelector(`[data-mr-source="${cur.d.id}:${cur.b.id}"] [data-mr="WayOut"] button:last-child`) as HTMLButtonElement | null)?.click(); }
       else if (cur.kind === "prose" && /^[1-9]$/.test(k) && cur.options[Number(k) - 1]) { e.preventDefault(); void api.send(cur.s.id, cur.options[Number(k) - 1]); }
       else if (cur.kind === "prose" && k === "r") { e.preventDefault(); (document.querySelector(`[data-reply="${cur.s.id}"]`) as HTMLInputElement | null)?.focus(); }
-      else if (cur.kind === "doc" && /^[1-9]$/.test(k)) { const o = (cur.b.data?.options ?? [])[Number(k) - 1]; if (o) { e.preventDefault(); (document.querySelector(`[data-mr-source="${cur.d.id}:${cur.b.id}"] [data-option="${Number(k) - 1}"]`) as HTMLButtonElement | null)?.click(); } }
       else if (k === "Enter") { e.preventDefault(); if (cur.kind === "doc") onOpenDoc(cur.d.id); else if (cur.kind === "signin" && onSignIn) onSignIn(cur.s); else onOpen(cur.s.id); }
     };
     window.addEventListener("keydown", onKey);
@@ -168,7 +166,7 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
                 : q.kind === "fix" ? <FixRow key={q.key} s={q.s} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "flow" ? <FlowRow key={q.key} s={q.s} what={q.what} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "prose" ? <ProseRow key={q.key} s={q.s} question={q.question} options={q.options} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
-                : <DocQuestionRow key={q.key} d={q.d} b={q.b} session={q.d.session_id ? state.sessions[q.d.session_id] : null} selected={i === sel} onOpen={() => onOpenDoc(q.d.id)} />)}
+                : <DocNeedsRow key={q.key} d={q.d} open={q.open} selected={i === sel} onOpen={() => onOpenDoc(q.d.id)} />)}
             </div>}
             {/* Your call (MR-107): worth doing, but nothing is blocked on it, so no amber, no count, no notification. */}
             {suggestions.length > 0 && <>

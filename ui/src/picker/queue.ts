@@ -1,4 +1,4 @@
-import { isOpenQuestion, type Block, type Doc } from "../state/docs";
+import { isOpenQuestion, type Doc } from "../state/docs";
 import type { PendingAsk, SessionState } from "../state/types";
 import { flowWaiting, pickTile } from "./pick";
 import { parseReport } from "./report";
@@ -10,7 +10,7 @@ import { parseReport } from "./report";
 export type QueueItem =
   | { kind: "ask"; key: string; s: SessionState; a: PendingAsk; at: number }
   | { kind: "prose"; key: string; s: SessionState; question: string; options: string[]; at: number }
-  | { kind: "doc"; key: string; d: Doc; b: Block; at: number }
+  | { kind: "doc"; key: string; d: Doc; open: number; at: number }
   | { kind: "flow"; key: string; s: SessionState; what: string; at: number }
   | { kind: "fix"; key: string; s: SessionState; at: number }
   | { kind: "signin"; key: string; s: SessionState; at: number };
@@ -104,10 +104,12 @@ export function needsQueue(sessions: SessionState[], docs: Doc[]): QueueItem[] {
   for (const d of docs) {
     const owner = d.session_id ? sessions.find((s) => s.id === d.session_id) : null;
     if (owner?.archivedAt) continue;
-    for (const b of Object.values(d.blocks).filter(isOpenQuestion)) out.push({ kind: "doc", key: `doc:${d.id}:${b.id}`, d, b, at: 0 });
+    // The doc itself needs you, once: its questions are decided inside the doc, not on the Wall.
+    const open = Object.values(d.blocks).filter(isOpenQuestion).length;
+    if (open) out.push({ kind: "doc", key: `doc:${d.id}`, d, open, at: 0 });
   }
-  // A plan session asking in prose about its doc's open question is the same ask: keep the doc card
-  // (it can be decided in place) and drop the prose duplicate.
+  // A plan session asking in prose about its doc's open questions is the same ask: keep the doc row
+  // and drop the prose duplicate.
   const docSessions = new Set(out.filter((x) => x.kind === "doc").map((x) => (x as { d: Doc }).d.session_id));
   return out.filter((x) => !(x.kind === "prose" && docSessions.has(x.s.id))).sort((a, b) => a.at - b.at);
 }

@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { proseQuestion, replyOptions } from "./queue";
+import { needsQueue, proseQuestion, replyOptions } from "./queue";
+import type { Doc } from "../state/docs";
 
 test("finds the question at the end of a turn", () => {
   expect(proseQuestion("Done. Here's what changed:\n1. A\n2. B\nWant me to open a PR, or keep going on the follow-ups?")).toBe("Want me to open a PR, or keep going on the follow-ups?");
@@ -20,4 +21,11 @@ test("session titles drop the scaffolding", () => {
   expect(cleanTitle('Side thread about the session "Fix login" (working in /x). Without changing anything…')).toBe("About “Fix login”");
   expect(cleanTitle("a ".repeat(60)).endsWith("…")).toBe(true);
   expect(cleanTitle("")).toBe("Untitled");
+});
+
+test("a plan doc with open questions needs you once, without lifting its questions onto the Wall", () => {
+  const q = (id: string, decision: string | null) => ({ id, section: "question", status: "", takeaway: id, key: "", body: "", data: null, order: 0, decision, updated: "" });
+  const d = { id: "d1", title: "Plan", session_id: null, version: 1, blocks: { a: q("a", null), b: q("b", null), c: q("c", "Yes") }, pending_notes: [], pending_changes: [] } as unknown as Doc;
+  expect(needsQueue([], [d])).toEqual([{ kind: "doc", key: "doc:d1", d, open: 2, at: 0 }]);
+  expect(needsQueue([], [{ ...d, blocks: { c: q("c", "Yes") } } as unknown as Doc])).toEqual([]);
 });
