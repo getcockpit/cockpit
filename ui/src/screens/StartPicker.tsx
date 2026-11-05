@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
 import { addressNote, toAddress } from "../picker/suggest";
+import { reviewStatus } from "../picker/autoReview";
 import type { AppState, Attachment, CommandRow, Preset, SessionKind } from "../state/types";
 import { useDraft, writeDraft } from "../state/drafts";
 
@@ -57,11 +58,11 @@ const HOW: Record<SessionKind, string> = {
   address: "Runs your /pr-address and walks each reviewer thread",
 };
 
-type Item = { ref: string; title: string; meta: string; hot: boolean; value: string; repo?: string };
+type Item = { ref: string; title: string; meta: string; hot: boolean; value: string; repo?: string; session?: string };
 
 type Draft = { id: string | null; name: string; template: string; worktree: boolean };
 
-export function StartPicker({ state, workspace = "personal", onClose, onStarted, initialText = "", initialMode }: { state: AppState; workspace?: string; onClose: () => void; onStarted: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
+export function StartPicker({ state, workspace = "personal", onClose, onStarted, onOpen = onStarted, initialText = "", initialMode }: { state: AppState; workspace?: string; onClose: () => void; onStarted: (id: string) => void; onOpen?: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
   // Opens on the kind you used last (F6); dictated text always starts a blank session.
   const [modeRaw, setModeRaw] = useState<string>(() => { if (initialMode) return initialMode; if (initialText) return "blank"; try { return localStorage.getItem("mr.mode") || "blank"; } catch { return "blank"; } });
   const setMode = (m: string) => { setModeRaw(m); setDraft(null); try { localStorage.setItem("mr.mode", m); } catch { /* convenience only */ } };
@@ -114,15 +115,19 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
 
   const items: Item[] = useMemo(() => {
     if (mode === "review" || mode === "address") {
-      return (prs ?? []).map((p) => ({
-        ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
-        meta: [p.repository?.nameWithOwner, mode === "address" ? addressNote(p) : p.reviewNote].filter(Boolean).join(" · "),
-        hot: mode === "address" ? toAddress(p) : true,
-      }));
+      const sessions = state.order.map((id) => state.sessions[id]);
+      return (prs ?? []).map((p) => {
+        const r = mode === "review" ? reviewStatus(p, sessions, workspace) : null;
+        return {
+          ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
+          meta: [p.repository?.nameWithOwner, r ? r.note : addressNote(p)].filter(Boolean).join(" · "),
+          hot: r ? r.hot : toAddress(p), session: r?.session,
+        };
+      });
     }
     const recent = state.order.map((id) => state.sessions[id]).filter((s) => s.kind === mode && (s.preset ?? null) === (preset?.id ?? null)).reverse().slice(0, 5);
     return recent.map((s) => { const v = preset ? unfill(preset.template, s.title) : s.title; return { ref: "", value: cleanTitle(v, 400), title: cleanTitle(v), meta: new Date(s.startedAt).toLocaleDateString(), hot: false }; });
-  }, [mode, preset, prs, state]);
+  }, [mode, preset, prs, state, workspace]);
 
   // PR work runs in the PR's own clone (MR-48); if it can't be found, ask once and remember.
   const [askRepo, setAskRepo] = useState<{ slug: string; value: string } | null>(null);
@@ -149,7 +154,8 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   // A PR starts its review straight away; a past prompt only fills the box, so it can be edited
   // instead of silently starting a duplicate session.
   const pick = (it: Item) => {
-    if (mode === "review" || mode === "address") void start(it.value, it.repo);
+    if (it.session) onOpen(it.session); // already being reviewed here: open it, not a second review
+    else if (mode === "review" || mode === "address") void start(it.value, it.repo);
     else { setText(it.value); input.current?.focus(); }
   };
 
@@ -234,7 +240,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           </div>
           {items.length === 0 && prs !== null && !error && <span className="mr-dim" style={{ padding: "4px 8px" }}>Nothing here.</span>}
           {items.map((it, i) => (
-            <button key={i} type="button" onClick={() => pick(it)} onMouseEnter={() => setSel(i)}
+            <button key={i} type="button" onClick={() => pick(it)} data-mr="PickRow" data-mr-source={it.session ?? it.value} title={it.session ? "Being reviewed in this workspace: opens that session" : undefined} onMouseEnter={() => setSel(i)}
               className="mr-row" style={{ padding: "8px", border: 0, borderRadius: "var(--mr-radius)", background: i === sel ? "var(--mr-well)" : "transparent", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer", font: "inherit" }}>
               <span className="mr-mono mr-dim" style={{ width: 64, flexShrink: 0 }}>{it.ref}</span>
               <span className="mr-grow mr-ellipsis">{it.title}</span>

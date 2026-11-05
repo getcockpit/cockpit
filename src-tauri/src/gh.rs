@@ -32,6 +32,33 @@ fn unreviewed_query(repo: &str) -> String {
     format!("query {{ viewer {{ login }} search(query: \"is:pr is:open -author:@me archived:false repo:{repo}\", type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft author {{ login }} repository {{ nameWithOwner }} headRefOid viewerLatestReview {{ submittedAt state }} latestOpinionatedReviews(first: 100) {{ nodes {{ state author {{ login }} }} }} commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }} }} }} }} }}")
 }
 
+// Open PRs in every repo that request my review, with when I last reviewed each and its newest
+// commit, so the start picker can say what changed since my review.
+const REQUESTED_QUERY: &str = "query { search(query: \"is:pr is:open review-requested:@me archived:false\", type: ISSUE, first: 20) { nodes { ... on PullRequest { number title url updatedAt isDraft author { login } repository { nameWithOwner } headRefOid viewerLatestReview { submittedAt } commits(last: 1) { nodes { commit { committedDate } } } } } } }";
+
+/// PRs that request my review, newest first as GitHub gives them, each with a `reviewNote`: never
+/// reviewed, new commits since my last review, or asked again with nothing new. `myLastReviewAt`
+/// and `lastCommitAt` go with it, so a review run in Cockpit (never posted) can count too.
+pub fn annotate_requested(data: &serde_json::Value) -> serde_json::Value {
+    data["search"]["nodes"].as_array().cloned().unwrap_or_default().into_iter()
+        .filter(|p| p["number"].is_number())
+        .map(|mut p| {
+            let mine = p["viewerLatestReview"]["submittedAt"].as_str().map(str::to_owned);
+            let last = p["commits"]["nodes"][0]["commit"]["committedDate"].as_str().map(str::to_owned);
+            p["reviewNote"] = match (&mine, &last) {
+                (None, _) => "not reviewed yet",
+                (Some(r), Some(c)) if c > r => "new changes since your review",
+                _ => "asked again, nothing new",
+            }.into();
+            p["headSha"] = p["headRefOid"].clone();
+            p["lastCommitAt"] = last.into();
+            p["myLastReviewAt"] = mine.into();
+            if let Some(o) = p.as_object_mut() { for k in ["viewerLatestReview", "commits", "headRefOid"] { o.remove(k); } }
+            p
+        })
+        .collect::<Vec<_>>().into()
+}
+
 /// The `reviewNote` of a PR I reviewed, with no commits since, that still lacks my approval (MR-173).
 pub const NOT_APPROVED: &str = "not approved yet";
 
@@ -63,6 +90,7 @@ pub fn rank_unreviewed(data: &serde_json::Value) -> serde_json::Value {
             // What a recurring review dedupes on (MR-171): the head it would review, and when it was made.
             p["headSha"] = p["headRefOid"].clone();
             p["lastCommitAt"] = last.into();
+            p["myLastReviewAt"] = p["viewerLatestReview"]["submittedAt"].clone();
             let o = p.as_object_mut()?;
             o.remove("viewerLatestReview");
             o.remove("latestOpinionatedReviews");
@@ -125,7 +153,7 @@ pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>) -
     match mode.as_str() {
         "review" => match repo {
             Some(r) => unreviewed(&cwd, r),
-            None => gh(&cwd, &["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"]),
+            None => Ok(annotate_requested(&gh(&cwd, &["api", "graphql", "-f", &format!("query={REQUESTED_QUERY}")])?["data"])),
         },
         "address" => {
             let q = mine_query(&repo.map(|r| format!(" repo:{r}")).unwrap_or_default());
@@ -292,6 +320,24 @@ mod tests {
         assert_eq!(r[0]["lastCommitAt"], "2026-10-02T10:00:00Z");
         assert!(unreviewed_query("a/b").contains("headRefOid"));
         assert!(unreviewed_query("a/b").contains("-author:@me archived:false repo:a/b\""));
+    }
+
+    #[test]
+    fn notes_what_changed_since_my_review_on_requested_prs() {
+        let pr = |n: u64, mine: Option<&str>, last: &str| json!({ "number": n, "headRefOid": format!("sha{n}"),
+            "viewerLatestReview": mine.map(|m| json!({ "submittedAt": m })), "commits": { "nodes": [{ "commit": { "committedDate": last } }] } });
+        let data = json!({ "search": { "nodes": [
+            pr(1, None, "2026-10-04T10:00:00Z"),
+            pr(2, Some("2026-10-01T10:00:00Z"), "2026-10-02T10:00:00Z"),
+            pr(3, Some("2026-10-02T10:00:00Z"), "2026-10-01T10:00:00Z"),
+            {},
+        ] } });
+        let r = annotate_requested(&data);
+        let notes: Vec<&str> = r.as_array().unwrap().iter().map(|p| p["reviewNote"].as_str().unwrap()).collect();
+        assert_eq!(notes, vec!["not reviewed yet", "new changes since your review", "asked again, nothing new"]);
+        assert_eq!((r[1]["myLastReviewAt"].as_str(), r[1]["lastCommitAt"].as_str(), r[1]["headSha"].as_str()), (Some("2026-10-01T10:00:00Z"), Some("2026-10-02T10:00:00Z"), Some("sha2")));
+        assert!(r[0]["myLastReviewAt"].is_null() && r[0].get("commits").is_none() && r[0].get("viewerLatestReview").is_none());
+        assert!(REQUESTED_QUERY.contains("review-requested:@me archived:false"));
     }
 
     #[test]
