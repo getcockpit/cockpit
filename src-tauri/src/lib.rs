@@ -3,7 +3,6 @@ mod background;
 mod brief;
 mod changes;
 mod cockpit_layer;
-mod daily;
 mod docs;
 mod eventlog;
 mod flows;
@@ -111,7 +110,6 @@ pub fn run() {
             gh::gh_review_state,
             gh::auto_review_repos_set,
             docs::docs_list,
-            daily::daily_driver,
             changes::session_changes,
             changes::session_diff,
             changes::task_output,

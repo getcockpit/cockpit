@@ -67,7 +67,6 @@ React UI (ui/) ──Tauri IPC──▶ Rust core (src-tauri/) ──NDJSON stdi
 | `changes.rs` | Git changes, diffs, god-mode marks to `evals/marks.jsonl` |
 | `update.rs` | One-click Update: pending app commits on main, background build of the other dev slot, restart via `dev.sh` |
 | `selfbuild.rs` | Build, store, relaunch via supervisor with health check and fallback (god-mode fix builds, history) |
-| `daily.rs` | Daily-driver counter |
 | `selftest.rs` | Self-test modes |
 
 ### UI (`ui/src/`)
