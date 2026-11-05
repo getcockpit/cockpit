@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { DecisionCard, Key, PickAny, WayOut, type Answer } from "../components";
-import { decideQuestion, type Block, type Doc } from "../state/docs";
+import { DecisionCard, Key, type Answer } from "../components";
+import type { Doc } from "../state/docs";
 import { plural, sessionTitle } from "../picker/title";
 import { shortError } from "../components/ErrorLine";
 import { pickDecision } from "../picker/pick";
@@ -62,41 +62,7 @@ export function ProseRow({ s, question, options, selected, onOpen }: { s: Sessio
   );
 }
 
-// A doc question's way out (I75) is recorded as its decision, which Claude reads with the doc.
-const DOC_SKIPPED = "Skipped: none of the options fit. Your call; say what you assumed.";
-const DOC_ASK_FIRST = "None of the options fit. Ask me clarifying questions, then offer better options.";
-
-// An open question in a working doc, decided right here. Deciding the last one sends the doc back
-// to its plan session so it carries on.
-export function DocQuestionRow({ d, b, session, selected, onOpen }: { d: Doc; b: Block; session?: SessionState | null; selected?: boolean; onOpen: () => void }) {
-  const options = (b.data?.options ?? []) as { label: string; description: string }[];
-  const decide = (label: string) => decideQuestion(d, b.id, label, session);
-  return (
-    <div className="mr-qrow" data-mr="DocQuestion" data-mr-source={`${d.id}:${b.id}`} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
-      <div className="mr-flag" />
-      <div className="mr-qbody">
-        <span className="mr-row" style={{ gap: 6 }}>
-          <strong className="mr-ink2">Plan</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{d.title}</span>
-          <span className="mr-grow" /><button type="button" className="mr-key" onClick={onOpen}>Open map ↵</button>
-        </span>
-        <span className="mr-ask">{b.takeaway}</span>
-        {options.length > 0 && b.data?.multiSelect ? <PickAny source={`${d.id}:${b.id}`} options={options} decision={b.decision} onDecide={(l) => void decide(l)} /> : options.length > 0 ? (
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))`, gap: "var(--mr-gap)" }}>
-            {options.map((o, i) => (
-              <button key={o.label} type="button" data-option={i} onClick={() => void decide(o.label)} style={{ display: "flex", flexDirection: "column", gap: 4, padding: 12, border: 0, background: "var(--mr-well)", font: "inherit", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer" }}>
-                <span className="mr-row" style={{ gap: 8 }}><kbd className="mr-mono" style={{ padding: "0 6px", background: "var(--mr-tile)" }}>{i + 1}</kbd><strong>{o.label}</strong></span>
-                <span className="mr-dim">{o.description}</span>
-              </button>
-            ))}
-          </div>
-        ) : <span className="mr-dim">{b.body}</span>}
-        <WayOut source={`${d.id}:${b.id}`} onOut={(x) => void decide(x.kind === "reply" ? x.text : x.kind === "skip" ? DOC_SKIPPED : DOC_ASK_FIRST)} />
-      </div>
-    </div>
-  );
-}
-
-// A plan doc with open questions, on the Wall: it only says the doc needs you and opens it. The
+// A plan doc with open questions, on the Wall and in its session: it only says the doc needs you and opens it. The
 // questions themselves are decided inside the doc.
 export function DocNeedsRow({ d, open, selected, onOpen }: { d: Doc; open: number; selected?: boolean; onOpen: () => void }) {
   return (
