@@ -96,6 +96,23 @@ export function DocQuestionRow({ d, b, session, selected, onOpen }: { d: Doc; b:
   );
 }
 
+// A plan doc with open questions, on the Wall: it only says the doc needs you and opens it. The
+// questions themselves are decided inside the doc.
+export function DocNeedsRow({ d, open, selected, onOpen }: { d: Doc; open: number; selected?: boolean; onOpen: () => void }) {
+  return (
+    <div className="mr-qrow" data-mr="DocNeedsYou" data-mr-source={d.id} aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
+      <div className="mr-flag" />
+      <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
+          <span className="mr-row" style={{ gap: 6 }}><strong className="mr-ink2">Plan</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{d.title}</span></span>
+          <span className="mr-ask">Needs you · {open} open question{open === 1 ? "" : "s"}</span>
+        </span>
+        <Key k="↵" tone="primary" onClick={onOpen}>Open doc</Key>
+      </div>
+    </div>
+  );
+}
+
 // A Review/Address flow waiting on its next step (J8). The flow view is where you act, so this row
 // says what's waiting and opens it.
 export function FlowRow({ s, what, selected, onOpen }: { s: SessionState; what: string; selected?: boolean; onOpen: () => void }) {

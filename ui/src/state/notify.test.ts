@@ -40,20 +40,19 @@ describe("notifications (MR-94)", () => {
   test("clicking lands on the session in its workspace, or on the doc", () => {
     expect(targetFor(ask({ kind: "permission", requestId: "r1", tool: "Read", input: {}, suggestions: null, reason: null, at: 1 }), sessions)).toEqual({ workspace: "work", session: "s1", doc: null });
     const d = { id: "d1", title: "Plan", session_id: "s1", version: 1, blocks: {}, pending_notes: [], pending_changes: [] } as Doc;
-    const b = { id: "b1", section: "question", status: "", takeaway: "Which queue?", key: "", body: "", data: null, order: 0, decision: null, updated: "" };
-    expect(targetFor({ kind: "doc", key: "doc:d1:b1", d, b, at: 0 }, sessions)).toEqual({ workspace: "work", session: null, doc: "d1" });
+    expect(targetFor({ kind: "doc", key: "doc:d1", d, open: 1, at: 0 }, sessions)).toEqual({ workspace: "work", session: null, doc: "d1" });
   });
 
   test("answers from the notification go where the in-app buttons send them", async () => {
     sent.length = 0;
     const a: PendingAsk = { kind: "question", requestId: "r2", questions: [{ question: "Which database?", header: "", options: [{ label: "Postgres, managed", description: "" }] }], input: {}, at: 1 };
     // macOS returns the comma-free label the core showed; it maps back to the real one.
-    expect(await answerFrom(ask(a), { kind: "action", value: cleanAction("Postgres, managed") }, sessions)).toBe(true);
+    expect(await answerFrom(ask(a), { kind: "action", value: cleanAction("Postgres, managed") })).toBe(true);
     expect(sent.at(-1)).toMatchObject({ cmd: "permission_respond", args: { requestId: "r2", decision: { behavior: "allow", updatedInput: { answers: { "Which database?": "Postgres, managed" } } } } });
     const prose: QueueItem = { kind: "prose", key: "prose:t1", s, question: "Name?", options: [], at: 1 };
-    expect(await answerFrom(prose, { kind: "reply", value: "invoices.csv" }, sessions)).toBe(true);
+    expect(await answerFrom(prose, { kind: "reply", value: "invoices.csv" })).toBe(true);
     expect(sent.at(-1)).toMatchObject({ cmd: "session_send", args: { session: "s1", text: "invoices.csv" } });
-    expect(await answerFrom(prose, { kind: "open" }, sessions)).toBe(false);
+    expect(await answerFrom(prose, { kind: "open" })).toBe(false);
   });
 
   test("none of the options fit (I75): a single question takes a typed reply as its answer", async () => {
@@ -62,7 +61,7 @@ describe("notifications (MR-94)", () => {
     const a: PendingAsk = { kind: "question", requestId: "r4", questions: [q], input: {}, at: 1 };
     expect(noteFor(ask(a), sessions, none)).toMatchObject({ reply: true });
     expect(noteFor(ask({ ...a, questions: [q, q] }), sessions, none)).toMatchObject({ reply: false });
-    expect(await answerFrom(ask(a), { kind: "reply", value: "MySQL, we already run it" }, sessions)).toBe(true);
+    expect(await answerFrom(ask(a), { kind: "reply", value: "MySQL, we already run it" })).toBe(true);
     expect(sent.at(-1)).toMatchObject({ args: { requestId: "r4", decision: { behavior: "allow", updatedInput: { answers: { "Which database?": "MySQL, we already run it" } } } } });
   });
 });

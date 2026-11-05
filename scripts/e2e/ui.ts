@@ -213,19 +213,20 @@ const flows: Flow[] = [
   } },
   { name: "J3 the wall shows what needs me", run: async () => {
     await ui.open("busy");
-    await ui.see("button", "4 need you");
+    await ui.see("button", "3 need you");
     await ui.see("button", "4 running");
     await ui.see("button", "1 to review");
     await ui.tags("Tile", 4);
     await ui.tags("CommandCard", 1);
     await ui.tags("QuestionCard", 1);
-    await ui.tags("DocQuestion", 2);
+    await ui.tags("DocNeedsYou", 1);
+    await ui.tags("DocQuestion", 0);
   } },
   { name: "J4 allow a risky command from the queue", run: async () => {
     await ui.open("busy");
     await ui.click("button", "A Allow");
     await ui.tags("CommandCard", 0);
-    await ui.see("button", "3 need you");
+    await ui.see("button", "2 need you");
   } },
   { name: "J4 answer a structured question", run: async () => {
     await ui.open("busy");
@@ -240,7 +241,7 @@ const flows: Flow[] = [
     }
     await ui.click("button", "Send", '[data-mr="QuestionCard"]');
     await ui.tags("QuestionCard", 0);
-    await ui.see("button", "3 need you");
+    await ui.see("button", "2 need you");
   } },
   { name: "J5 open a finished session and see what it did", run: async () => {
     await ui.open("busy");
@@ -252,15 +253,15 @@ const flows: Flow[] = [
   } },
   { name: "J7 open the plan's doc map", run: async () => {
     await ui.open("busy");
-    await ui.click("button", "Open map ↵");
+    await ui.click("button", "↵ Open doc");
     await ui.tags("DocBlock", some);
     await ui.tags("DocNext", 1);
   } },
-  { name: "J7 decide a doc question from the queue", run: async () => {
+  { name: "J7 a plan doc only says it needs you; its questions stay in the doc", run: async () => {
     await ui.open("busy");
-    await ui.click("button", "1 Always queue");
-    await ui.tags("DocQuestion", 1);
     await ui.see("button", "3 need you");
+    await ui.tags("DocNeedsYou", 1);
+    await ui.tags("DocQuestion", 0);
   } },
   { name: "J8 step into a waiting review", run: async () => {
     await ui.open("review");
@@ -326,7 +327,7 @@ const flows: Flow[] = [
   } },
   { name: "J10 right-click, mark as wrong, get a fix session", run: async () => {
     await ui.open("busy");
-    await ui.rightClick("button", "4 need you");
+    await ui.rightClick("button", "3 need you");
     await ui.click("menuitem", "Mark as wrong & fix…");
     await ui.fill("What's wrong", "The lamp counts the doc questions twice");
     await ui.click("button", /Save mark and fix it$/);
@@ -355,7 +356,7 @@ const flows: Flow[] = [
   } },
   { name: "J13 note a plan block and regenerate", run: async () => {
     await ui.open("busy");
-    await ui.click("button", "Open map ↵");
+    await ui.click("button", "↵ Open doc");
     await ui.click("button", "Open Scope");
     await ui.fill("Note on this block", "Include refunds too");
     await ui.press("Enter");
@@ -406,7 +407,7 @@ const flows: Flow[] = [
     await ui.see("button", "Open Migrate the client's billing to Stripe Tax");
     await ui.see("button", "1 need you");
     await ui.click("button", "Personal");
-    await ui.see("button", "4 need you");
+    await ui.see("button", "3 need you");
   } },
   { name: "J19 see every workspace on the Overview and pick where to go", run: async () => {
     await ui.open("workspaces", { overview: true });
@@ -610,14 +611,14 @@ const flows: Flow[] = [
     await ui.key("Mod+3");
     await ui.see("button", "1 need you");
     await ui.key("Mod+1");
-    await ui.see("button", "4 need you");
+    await ui.see("button", "3 need you");
   } },
   { name: "Keys: ⌃Tab and ⌃⇧Tab cycle workspaces, wrapping", macOnly: "Chromium keeps Ctrl+Tab for its tabs", run: async () => {
     await ui.open("busy");
     await ui.key("Control+Tab");
     await ui.see("button", "1 need you");
     await ui.key("Control+Tab");
-    await ui.see("button", "4 need you");
+    await ui.see("button", "3 need you");
     await ui.key("Control+Shift+Tab");
     await ui.see("button", "1 need you");
   } },
@@ -626,7 +627,7 @@ const flows: Flow[] = [
     await ui.key("Mod+k");
     await ui.tags("KindTile", (c) => c >= 4);
     await ui.key("Control+Tab", "Mod+2", "Escape");
-    await ui.see("button", "4 need you");
+    await ui.see("button", "3 need you");
   } },
   { name: "Keys: ⌘J opens the switcher, ↓ Enter switches, Esc closes", run: async () => {
     await ui.open("busy");
@@ -670,8 +671,8 @@ const flows: Flow[] = [
   } },
   { name: "Keys: Wall J/K move the selection across the queue and suggestions", run: async () => {
     await ui.open("busy");
-    await ui.selected("DocQuestion");
-    await ui.key("j", "j");
+    await ui.selected("DocNeedsYou");
+    await ui.key("j");
     await ui.selected("CommandCard");
     await ui.key("j");
     await ui.selected("QuestionCard");
@@ -680,36 +681,34 @@ const flows: Flow[] = [
     for (let i = 0; i < 8; i++) await ui.key("j");
     await ui.selected("Suggestion"); // stops at the last row
     for (let i = 0; i < 10; i++) await ui.key("k");
-    await ui.css('[data-mr="DocQuestion"][data-mr-source="doc1:b5"][aria-current="true"]', 1);
+    await ui.css('[data-mr="DocNeedsYou"][data-mr-source="doc1"][aria-current="true"]', 1);
   } },
   { name: "Keys: Wall A allows the selected command", run: async () => {
     await ui.open("busy");
-    await ui.key("a"); // a doc question is selected: A does nothing there
+    await ui.key("a"); // the plan doc is selected: A does nothing there
     await ui.tags("CommandCard", 1);
-    await ui.key("j", "j", "a");
+    await ui.key("j", "a");
     await ui.tags("CommandCard", 0);
-    await ui.see("button", "3 need you");
+    await ui.see("button", "2 need you");
   } },
   { name: "Keys: Wall D denies the selected command", run: async () => {
     await ui.open("busy");
-    await ui.key("j", "j", "d");
+    await ui.key("j", "d");
     await ui.tags("CommandCard", 0);
-    await ui.see("button", "3 need you");
+    await ui.see("button", "2 need you");
   } },
   { name: "Keys: Wall S skips the selected question", run: async () => {
     await ui.open("busy");
-    await ui.key("j", "j", "j", "s");
+    await ui.key("j", "j", "s");
     await ui.tags("QuestionCard", 0);
-    await ui.see("button", "3 need you");
-  } },
-  { name: "Keys: Wall 1–9 answer the selected doc question, S skips one", run: async () => {
-    await ui.open("busy");
-    await ui.key("2");
-    await ui.tags("DocQuestion", 1);
-    await ui.see("button", "3 need you");
-    await ui.key("s");
-    await ui.tags("DocQuestion", 0);
     await ui.see("button", "2 need you");
+  } },
+  { name: "Keys: Wall 1–9 and S do nothing on a plan doc (it's decided inside the doc)", run: async () => {
+    await ui.open("busy");
+    await ui.key("2", "s");
+    await sleep(300);
+    await ui.tags("DocNeedsYou", 1);
+    await ui.see("button", "3 need you");
   } },
   { name: "Keys: Wall Enter opens the selected row", run: async () => {
     await ui.open("busy");
@@ -717,13 +716,13 @@ const flows: Flow[] = [
     await ui.tags("DocBlock", some);
     await ui.key("Escape");
     await ui.tags("DocBlock", 0);
-    await ui.key("j", "j", "Enter");
+    await ui.key("j", "Enter");
     await ui.tags("SessionName", 1);
   } },
   { name: "Keys: Wall Enter acts on a suggestion, X dismisses it", run: async () => {
     await ui.open("busy");
     await ui.tags("Suggestion", 2);
-    await ui.key("j", "j", "j", "j", "j", "x");
+    await ui.key("j", "j", "j", "j", "x");
     await ui.tags("Suggestion", 1);
     await ui.key("Enter");
     await ui.tags("Suggestion", 0);
@@ -735,7 +734,7 @@ const flows: Flow[] = [
     await ui.key("Escape");
     await ui.fill("Answer in your own words", "jjas");
     await ui.tags("CommandCard", 1);
-    await ui.selected("DocQuestion");
+    await ui.selected("DocNeedsYou");
   } },
   { name: "Keys: Esc leaves a session; with a draft it only leaves the box", run: async () => {
     await ui.open("busy");
@@ -785,7 +784,7 @@ const flows: Flow[] = [
   } },
   { name: "Keys: doc map Space walks, ←/→ step, O and Esc go back to the overview, Esc again leaves", run: async () => {
     await ui.open("busy");
-    await ui.click("button", "Open map ↵");
+    await ui.click("button", "↵ Open doc");
     await ui.css('[data-mr="DocStep"][data-mr-source="0"]', 1);
     await ui.key(" ");
     await ui.css('[data-mr="DocStep"][data-mr-source="1"]', 1);
@@ -802,7 +801,7 @@ const flows: Flow[] = [
   } },
   { name: "Keys: doc map ⌘↵ sends the notes", run: async () => {
     await ui.open("busy");
-    await ui.click("button", "Open map ↵");
+    await ui.click("button", "↵ Open doc");
     await ui.click("button", "Open Scope");
     await ui.fill("Note on this block", "Include refunds too");
     await ui.press("Enter");

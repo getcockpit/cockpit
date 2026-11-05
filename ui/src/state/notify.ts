@@ -5,7 +5,7 @@ import { needsQueue, type QueueItem } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { answerAsk } from "../screens/AskRow";
 import { wayOut } from "../components";
-import { decideQuestion, type Doc } from "./docs";
+import type { Doc } from "./docs";
 import { listen } from "./listen";
 import { api } from "./store";
 import type { AppState, SessionState } from "./types";
@@ -48,7 +48,7 @@ export function noteFor(item: QueueItem, sessions: Record<string, SessionState>,
     case "flow": return note("Ready for you", item.what);
     case "fix": return note("Fix ready", "A god-mode fix is built. Apply it to your app.");
     case "signin": return note("Sign-in expired", "Claude Code's sign-in ran out. Sign in to send your message again.");
-    case "doc": return note("Decision needed", `${item.d.title}: ${item.b.takeaway}`, item.b.data?.multiSelect ? [] : (item.b.data?.options ?? []).map((o) => o.label).slice(0, 4));
+    case "doc": return note("Plan needs you", `${item.d.title}: ${item.open} open question${item.open === 1 ? "" : "s"}`);
   }
 }
 
@@ -59,7 +59,7 @@ export function targetFor(item: QueueItem, sessions: Record<string, SessionState
 }
 
 /** Answers the item with a notification action or reply. False when it can't (then it opens instead). */
-export async function answerFrom(item: QueueItem, r: Response, sessions: Record<string, SessionState>): Promise<boolean> {
+export async function answerFrom(item: QueueItem, r: Response): Promise<boolean> {
   if (r.kind === "open") return false;
   const pick = (options: string[]) => options.find((o) => cleanAction(o) === r.value) ?? null;
   switch (item.kind) {
@@ -82,12 +82,6 @@ export async function answerFrom(item: QueueItem, r: Response, sessions: Record<
       const text = r.kind === "reply" ? r.value : pick(item.options);
       if (!text) return false;
       await api.send(item.s.id, text);
-      return true;
-    }
-    case "doc": {
-      const label = pick((item.b.data?.options ?? []).map((o) => o.label));
-      if (!label) return false;
-      await decideQuestion(item.d, item.b.id, label, item.d.session_id ? sessions[item.d.session_id] : null);
       return true;
     }
     default: return false;
@@ -156,7 +150,7 @@ export function useNotify(all: AppState, docs: Doc[], here: Here, onOpen: (t: Ta
         if (doc || s) onOpen({ workspace: s?.workspace ?? "personal", session: doc ? null : s?.id ?? null, doc });
         return;
       }
-      void answerFrom(item, payload.response, all.sessions).then((done) => {
+      void answerFrom(item, payload.response).then((done) => {
         if (!done) onOpen(targetFor(item, all.sessions));
       }).catch((e) => window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Not answered: ${String(e).split("\n")[0]}` })));
     });
