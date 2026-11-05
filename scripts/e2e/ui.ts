@@ -263,6 +263,15 @@ const flows: Flow[] = [
     await ui.tags("DocNeedsYou", 1);
     await ui.tags("DocQuestion", 0);
   } },
+  { name: "J7 the plan session shows its doc as needing you, not its questions", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", /CSV export for invoices$/);
+    await ui.tags("SessionName", 1);
+    await ui.css('[data-mr="FocusNeeds"] [data-mr="DocNeedsYou"][data-mr-source="doc1"]', 1);
+    await ui.tags("DocQuestion", 0);
+    await ui.click("button", "↵ Open doc");
+    await ui.tags("DocBlock", some);
+  } },
   { name: "J8 step into a waiting review", run: async () => {
     await ui.open("review");
     await ui.click("button", "↵ Continue review");
