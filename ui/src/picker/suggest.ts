@@ -1,9 +1,10 @@
 import { isBrief, isOpenQuestion, isStalled, type Doc } from "../state/docs";
 import type { Pr } from "../state/store";
 import type { AppState } from "../state/types";
+import { isAbout } from "./autoReview";
 import { pickTile } from "./pick";
 import { plural, sessionTitle } from "./title";
-import { fixReady } from "./queue";
+import { fixReady, needsQueue } from "./queue";
 
 // The suggested-next engine (decision 20): plain rules that propose the next useful move, each with
 // its reason, as a one-click action. At most three; dismissed ones stay hidden. PRs to review or
@@ -23,6 +24,28 @@ export const toAddress = (p: Pr) => p.reviewDecision === "CHANGES_REQUESTED" || 
 export function addressNote(p: Pr): string {
   const parts = [p.reviewDecision === "CHANGES_REQUESTED" && "changes requested", p.waiting && `${plural(p.waiting, "thread")} waiting on you`, p.isDraft && "draft"];
   return parts.filter(Boolean).join(" · ");
+}
+
+// Where one of my PRs stands in this workspace's Address sessions: one still open (live), or how
+// many comments from others came after the last one started. Other workspaces don't count.
+export type AddressState = { live: { id: string; working: boolean; waiting: boolean } | null; lastAt: number | null; fresh: number };
+export function addressState(p: Pr, state: AppState, workspace: string): AddressState {
+  const mine = state.order.map((id) => state.sessions[id]).filter((s) => s.workspace === workspace && !s.fromDeleted && s.kind === "address" && isAbout(s.title, p));
+  const open = mine.filter((s) => !s.archivedAt && s.status !== "ended" && s.status !== "error").pop();
+  const lastAt = mine.reduce<number | null>((a, s) => Math.max(a ?? 0, s.startedAt), null);
+  const fresh = lastAt === null ? 0 : (p.feedback ?? []).filter((t) => Date.parse(t) > lastAt).length;
+  // Waiting on you the way the Wall's needs-you queue sees it (an ask, a thread to decide), else working.
+  const live = open ? { id: open.id, working: open.status === "working" || open.status === "starting", waiting: needsQueue([open], []).length > 0 } : null;
+  return { live, lastAt, fresh };
+}
+
+// The note on an Address row: a live session first, then what's new since the last one, else what GitHub says.
+export function addressRow(p: Pr, a: AddressState): { note: string; hot: boolean; session?: string } {
+  if (a.live) return { note: a.live.waiting ? "addressing now · needs you" : a.live.working ? "addressing now" : "address open here", hot: a.live.waiting, session: a.live.id };
+  if (a.lastAt !== null) return a.fresh
+    ? { note: `${plural(a.fresh, "new comment")} since your last address`, hot: true }
+    : { note: "addressed here, nothing new", hot: false };
+  return { note: addressNote(p), hot: toAddress(p) };
 }
 
 // ISO week ("2026-W42"): the weekly usage review is offered once per week.

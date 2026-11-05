@@ -7,9 +7,9 @@ import { slashed } from "../fspath";
 
 export type ReviewState = { isDraft: boolean; headSha: string | null; lastCommitAt: string | null; myLastReviewAt: string | null };
 
-/** Whether a session's first prompt (`/review <url|#n|n>`) is about this PR. */
+/** Whether a session's first prompt (`/review` or `/pr-address <url|#n|n>`) is about this PR. */
 export function isAbout(title: string, pr: Pr): boolean {
-  const arg = title.trim().replace(/^\/review\s+/, "").trim();
+  const arg = title.trim().replace(/^\/(review|pr-address)\s+/, "").trim();
   if (arg.includes(pr.url)) return true;
   const slug = pr.repository?.nameWithOwner;
   return arg === String(pr.number) || arg === `#${pr.number}` || (!!slug && arg === `${slug}#${pr.number}`);

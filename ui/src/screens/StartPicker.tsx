@@ -9,7 +9,7 @@ import { shortError } from "../components/ErrorLine";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
-import { addressNote, toAddress } from "../picker/suggest";
+import { addressRow, addressState } from "../picker/suggest";
 import { reviewStatus } from "../picker/autoReview";
 import type { AppState, Attachment, CommandRow, Preset, SessionKind } from "../state/types";
 import { useDraft, writeDraft } from "../state/drafts";
@@ -58,6 +58,7 @@ const HOW: Record<SessionKind, string> = {
   address: "Runs your /pr-address and walks each reviewer thread",
 };
 
+// session: one for this PR is still open in this workspace, so picking it opens that one.
 type Item = { ref: string; title: string; meta: string; hot: boolean; value: string; repo?: string; session?: string };
 
 type Draft = { id: string | null; name: string; template: string; worktree: boolean };
@@ -116,14 +117,17 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   const items: Item[] = useMemo(() => {
     if (mode === "review" || mode === "address") {
       const sessions = state.order.map((id) => state.sessions[id]);
-      return (prs ?? []).map((p) => {
-        const r = mode === "review" ? reviewStatus(p, sessions, workspace) : null;
+      const rows: Item[] = (prs ?? []).map((p) => {
+        // Both know this workspace's sessions: one open now, or what's new since the last one.
+        const r = mode === "review" ? reviewStatus(p, sessions, workspace) : (({ note, hot, session }) => ({ note, hot, session }))(addressRow(p, addressState(p, state, workspace)));
         return {
           ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
-          meta: [p.repository?.nameWithOwner, r ? r.note : addressNote(p)].filter(Boolean).join(" · "),
-          hot: r ? r.hot : toAddress(p), session: r?.session,
+          meta: [p.repository?.nameWithOwner, r.note].filter(Boolean).join(" · "), hot: r.hot, session: r.session,
         };
       });
+      // Address: in flight first, then what has something new for you, then the rest, each in GitHub's order.
+      const rank = (x: Item) => (x.session ? 0 : x.hot ? 1 : 2);
+      return mode === "address" ? rows.sort((a, b) => rank(a) - rank(b)) : rows;
     }
     const recent = state.order.map((id) => state.sessions[id]).filter((s) => s.kind === mode && (s.preset ?? null) === (preset?.id ?? null)).reverse().slice(0, 5);
     return recent.map((s) => { const v = preset ? unfill(preset.template, s.title) : s.title; return { ref: "", value: cleanTitle(v, 400), title: cleanTitle(v), meta: new Date(s.startedAt).toLocaleDateString(), hot: false }; });
@@ -154,7 +158,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   // A PR starts its review straight away; a past prompt only fills the box, so it can be edited
   // instead of silently starting a duplicate session.
   const pick = (it: Item) => {
-    if (it.session) onOpen(it.session); // already being reviewed here: open it, not a second review
+    if (it.session) onOpen(it.session); // already open here: open it, not a second one
     else if (mode === "review" || mode === "address") void start(it.value, it.repo);
     else { setText(it.value); input.current?.focus(); }
   };
@@ -222,7 +226,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           {draft ? <PresetEditor draft={draft} onChange={setDraft} onSave={() => void savePreset(draft)} onCancel={() => setDraft(null)} /> : <>
           <div className="mr-row" style={{ padding: "4px 8px 8px" }}>
           <span className="mr-dim mr-grow">
-            {mode === "review" ? (scope ? "Not reviewed by you, or changed since your review" : "Waiting for your review") : mode === "address" ? `Your open PRs${prs?.some(toAddress) ? ` · ${prs.filter(toAddress).length} to address, first` : ""}` : "Reuse a recent prompt"}
+            {mode === "review" ? (scope ? "Not reviewed by you, or changed since your review" : "Waiting for your review") : mode === "address" ? addressHeader(items) : "Reuse a recent prompt"}
             {prMode && (scope ? ` · in ${scope}` : only && repo === null ? " · this folder isn't a GitHub repo, so every repo" : "")}
             {prMode && prs === null && " · loading…"}
           </span>
@@ -244,7 +248,7 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
               className="mr-row" style={{ padding: "8px", border: 0, borderRadius: "var(--mr-radius)", background: i === sel ? "var(--mr-well)" : "transparent", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer", font: "inherit" }}>
               <span className="mr-mono mr-dim" style={{ width: 64, flexShrink: 0 }}>{it.ref}</span>
               <span className="mr-grow mr-ellipsis">{it.title}</span>
-              <span style={{ color: it.hot ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: it.hot ? 700 : 400 }}>{it.meta}</span>
+              <span data-mr="PrState" data-mr-source={it.session ?? it.value} style={{ color: it.hot ? "var(--mr-needs-ink)" : it.session ? "var(--mr-selected)" : "var(--mr-ink-3)", fontWeight: it.hot || it.session ? 700 : 400 }}>{it.meta}</span>
             </button>
           ))}
           {askRepo && (
@@ -264,6 +268,12 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
       </div>
     </div>
   );
+}
+
+// "Your open PRs · 1 being addressed · 2 to address": what the Address list holds, in this workspace.
+export function addressHeader(items: Item[]): string {
+  const live = items.filter((x) => x.session).length, hot = items.filter((x) => x.hot && !x.session).length;
+  return ["Your open PRs", live && `${live} being addressed`, hot && `${hot} to address`].filter(Boolean).join(" · ");
 }
 
 // Adds or edits one of your own kinds (MR-80): a name and the prompt it sends.
