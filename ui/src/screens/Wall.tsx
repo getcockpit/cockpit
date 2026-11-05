@@ -7,20 +7,15 @@ import { LiveTrack, planSegs } from "../components/Now";
 import { pointer } from "../components/pointer";
 import { consumeDrag, dragSession } from "../components/dragToWorkspace";
 import { suggest, USAGE_REVIEW, type Suggestion } from "../picker/suggest";
-import { promptFor } from "./StartPicker";
-import type { Pr } from "../state/store";
 import { Bar, Key, ProgressTrack, StateMark, wayOut } from "../components";
 import { pickTile, type TileSpec } from "../picker/pick";
 import { groupSpawned } from "../state/spawn";
 import { docApi, docRole, docStage, groupByDoc, isBrief, isOpenQuestion, STAGE_LABEL, type Doc } from "../state/docs";
 import { api } from "../state/store";
-import { cached } from "../state/cache";
 import { cloneWorkspaces, prHere } from "../picker/autoReview";
-import { loadPrs as fetchPrs, prInWorkspace, PRS_TTL, startCwd, usePrClones } from "../state/prs";
 import type { AppState, SessionState, Todo } from "../state/types";
 import { answerAsk, AskRow, DocNeedsRow, FixRow, FlowRow, ProseRow, SignInRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
-import { prRepo, prSlug } from "../state/prRepo";
 import { QuickStart } from "../components/QuickStart";
 import { NoClaude } from "../components/NoClaude";
 import { plural, sessionTitle } from "../picker/title";
@@ -46,36 +41,12 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
   const spawned = useMemo(() => groupSpawned(grouped.loose, grouped.groups.flatMap((g) => g.sessions.map((m) => m.id)), state.sessions), [grouped, state.sessions]);
   const count = (k: TileSpec["state"]) => tiles.filter((t) => t.tile.state === k).length;
   const [sel, setSel] = useState(0);
-  const cwd = startCwd();
-  // Cached across wall mounts (MR-57): a workspace switch shows the last values instantly.
-  const loadPrs = () => fetchPrs(cwd);
-  const loadDaily = () => invoke<{ streak: number; goal: number }>("daily_driver");
-  const [prs, setPrs] = useState<{ review: Pr[]; mine: Pr[] }>(() => cached("prs", PRS_TTL, loadPrs, () => {}) ?? { review: [], mine: [] });
-  const [daily, setDaily] = useState<{ streak: number; goal: number } | null>(() => cached("daily", 10 * 60_000, loadDaily, () => {}) ?? null);
-
-  useEffect(() => {
-    let alive = true;
-    const load = () => {
-      cached("prs", PRS_TTL, loadPrs, (v) => alive && setPrs(v));
-      cached("daily", 10 * 60_000, loadDaily, (v) => alive && setDaily(v));
-    };
-    load();
-    const t = setInterval(load, 60_000);
-    return () => { alive = false; clearInterval(t); };
-  }, [cwd]);
-
   // Only the owner's Mac has the app repo; that gates the weekly usage review (MR-106).
   const [appRepo, setAppRepo] = useState<string | null>(null);
   useEffect(() => { invoke<string>("app_repo_path").then(setAppRepo).catch(() => setAppRepo(null)); }, []);
-  // A PR's suggestion shows only in the workspaces that work in its repo (or everywhere, until one does).
-  const clones = usePrClones([...prs.review, ...prs.mine]);
-  const prsHere = useMemo(() => {
-    const here = (p: Pr) => prInWorkspace(p, clones, all, workspace);
-    return { review: prs.review.filter(here), mine: prs.mine.filter(here) };
-  }, [prs, clones, all, workspace]);
-  // The usage review too: only where the app repo is worked on (or everywhere, until a workspace does).
+  // The usage review: only where the app repo is worked on (or everywhere, until a workspace does).
   const usageRepo = useMemo(() => (appRepo && prHere(cloneWorkspaces(all, appRepo), workspace) ? appRepo : null), [appRepo, all, workspace]);
-  const suggestions = useMemo(() => suggest(state, docs, prsHere, new Set(state.dismissed), usageRepo), [state, docs, prsHere, usageRepo]);
+  const suggestions = useMemo(() => suggest(state, docs, new Set(state.dismissed), usageRepo), [state, docs, usageRepo]);
   const act = async (g: Suggestion) => {
     const a = g.action;
     if (a.kind === "open_session") onOpen(a.id);
@@ -84,12 +55,6 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
     else if (a.kind === "docs_done") { for (const id of a.ids) { const d = docs.find((x) => x.id === id); if (d) await docApi.done(d); } }
     else if (a.kind === "usage_review") { onOpen(await api.start(a.repo, USAGE_REVIEW, "blank", false)); void api.log("ui.suggestion_dismissed", { id: g.id }); }
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
-    else {
-      const slug = prSlug(a.value) ?? a.repo ?? null;
-      const where = slug ? await prRepo(slug) : cwd;
-      if (where) onOpen(await api.start(where, promptFor(a.mode, a.value), a.mode));
-      else onStart({ mode: a.mode, text: a.value }); // the picker asks where the clone is
-    }
   };
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const discover = async (s: SessionState) => onOpen(await sideThread(s));
@@ -235,10 +200,9 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
         )}
       </main>
       <footer className="mr-band mr-row mr-dim" style={{ padding: "8px 24px", fontSize: 12 }}>
-        {/* Calm footer (MR-53): one hint, the two places you go from here, and a quiet progress note. */}
+        {/* Calm footer (MR-53): one hint, and the two places you go from here. */}
         <span>Right-click anything for actions · {keyLabel("⌘-click")} to go deeper</span>
         <span className="mr-grow" />
-        {daily && <span className="mr-mono" title="Days in a row using only this app for Claude Code (v1 goal: 7)" style={{ color: daily.streak >= daily.goal ? "var(--mr-done)" : "var(--mr-ink-3)" }}>{daily.streak}/{daily.goal} days</span>}
         <button type="button" className="mr-link" onClick={() => api.report()}>Report a bug</button>
         <button type="button" className="mr-link" onClick={onArchive}>Archive{archived ? ` (${archived})` : ""} <kbd className="mr-mono">{keyLabel("⌘⇧A")}</kbd></button>
         <Key k="⌘K" tone="primary" onClick={() => onStart()}>Start</Key>

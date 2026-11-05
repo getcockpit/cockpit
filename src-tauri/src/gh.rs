@@ -20,16 +20,91 @@ fn gh(cwd: &str, args: &[&str]) -> Result<serde_json::Value, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())
 }
 
-// My open PRs with their review threads, in one call (search can't see threads); `scope` is
-// empty or ` repo:owner/name` (MR-79).
+// My open PRs with their review threads, reviews and comments, in one call (search can't see
+// threads); `scope` is empty or ` repo:owner/name` (MR-79).
 fn mine_query(scope: &str) -> String {
-    format!("query {{ viewer {{ login }} search(query: \"is:pr is:open author:@me archived:false{scope}\", type: ISSUE, first: 30) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft reviewDecision repository {{ nameWithOwner }} reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ nodes {{ author {{ login }} }} }} }} }} }} }} }} }}")
+    let who = "author { login __typename }";
+    format!("query {{ viewer {{ login }} search(query: \"is:pr is:open author:@me archived:false{scope}\", type: ISSUE, first: 30) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft reviewDecision repository {{ nameWithOwner }} reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 20) {{ nodes {{ createdAt {who} }} }} }} }} reviews(last: 30) {{ nodes {{ submittedAt state body {who} }} }} comments(last: 30) {{ nodes {{ createdAt {who} }} }} }} }} }} }}")
 }
 
 // Open PRs in one repo that aren't mine, with when I last reviewed each and its newest commit (MR-81),
 // and each reviewer's standing APPROVED / CHANGES_REQUESTED, to find mine (MR-173).
 fn unreviewed_query(repo: &str) -> String {
     format!("query {{ viewer {{ login }} search(query: \"is:pr is:open -author:@me archived:false repo:{repo}\", type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft author {{ login }} repository {{ nameWithOwner }} headRefOid viewerLatestReview {{ submittedAt state }} latestOpinionatedReviews(first: 100) {{ nodes {{ state author {{ login }} }} }} commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }} }} }} }} }}")
+}
+
+// Open PRs in every repo that request my review, with when I last reviewed each and its newest
+// commit, so the start picker can say what changed since my review.
+const REQUESTED_QUERY: &str = "query { search(query: \"is:pr is:open review-requested:@me archived:false\", type: ISSUE, first: 20) { nodes { ... on PullRequest { number title url updatedAt isDraft author { login } repository { nameWithOwner } headRefOid viewerLatestReview { submittedAt } commits(last: 1) { nodes { commit { committedDate } } } } } } }";
+
+/// PRs that request my review, newest first as GitHub gives them, each with a `reviewNote`: never
+/// reviewed, new commits since my last review, or asked again with nothing new. `myLastReviewAt`
+/// and `lastCommitAt` go with it, so a review run in Cockpit (never posted) can count too.
+pub fn annotate_requested(data: &serde_json::Value) -> serde_json::Value {
+    data["search"]["nodes"].as_array().cloned().unwrap_or_default().into_iter()
+        .filter(|p| p["number"].is_number())
+        .map(|mut p| {
+            let mine = p["viewerLatestReview"]["submittedAt"].as_str().map(str::to_owned);
+            let last = p["commits"]["nodes"][0]["commit"]["committedDate"].as_str().map(str::to_owned);
+            p["reviewNote"] = match (&mine, &last) {
+                (None, _) => "not reviewed yet",
+                (Some(r), Some(c)) if c > r => "new changes since your review",
+                _ => "asked again, nothing new",
+            }.into();
+            p["headSha"] = p["headRefOid"].clone();
+            p["lastCommitAt"] = last.into();
+            p["myLastReviewAt"] = mine.into();
+            if let Some(o) = p.as_object_mut() { for k in ["viewerLatestReview", "commits", "headRefOid"] { o.remove(k); } }
+            p
+        })
+        .collect::<Vec<_>>().into()
+}
+
+// Every open PR in some repos that isn't mine, and which of them request my review (a team request
+// counts), for the start picker's per-workspace Review list. `repos` are `repo:a/b` qualifiers.
+fn workspace_query(repos: &str) -> String {
+    format!("query {{ viewer {{ login }} all: search(query: \"is:pr is:open -author:@me archived:false {repos}\", type: ISSUE, first: 100) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft author {{ login }} repository {{ nameWithOwner }} headRefOid viewerLatestReview {{ submittedAt }} latestOpinionatedReviews(first: 30) {{ nodes {{ state author {{ login }} }} }} commits(last: 1) {{ nodes {{ commit {{ committedDate }} }} }} }} }} }} requested: search(query: \"is:pr is:open review-requested:@me archived:false {repos}\", type: ISSUE, first: 100) {{ nodes {{ ... on PullRequest {{ url }} }} }} }}")
+}
+
+/// The Review list for a workspace's repos: every open PR, each with `requested` (asks for my
+/// review), `needsReview` and a `reviewNote`. Needs review: never reviewed, commits since my last
+/// review, asked again, or reviewed without approving (MR-173); approved or changes requested with
+/// nothing new doesn't. Order: requested non-drafts that need review, other non-drafts that need
+/// it, the remaining non-drafts, then every draft; within each, new changes first, then never
+/// reviewed, newest first.
+pub fn rank_workspace(data: &serde_json::Value) -> serde_json::Value {
+    let me = data["viewer"]["login"].as_str().unwrap_or_default();
+    let asked: std::collections::HashSet<&str> = data["requested"]["nodes"].as_array().map(|ns| ns.iter().filter_map(|n| n["url"].as_str()).collect()).unwrap_or_default();
+    let mut prs: Vec<(u8, u8, serde_json::Value)> = data["all"]["nodes"].as_array().cloned().unwrap_or_default().into_iter()
+        .filter(|p| p["number"].is_number())
+        .map(|mut p| {
+            let requested = p["url"].as_str().is_some_and(|u| asked.contains(u));
+            let mine = p["viewerLatestReview"]["submittedAt"].as_str().map(str::to_owned);
+            let last = p["commits"]["nodes"][0]["commit"]["committedDate"].as_str().map(str::to_owned);
+            let opinion = p["latestOpinionatedReviews"]["nodes"].as_array()
+                .and_then(|rs| rs.iter().find(|r| !me.is_empty() && r["author"]["login"].as_str() == Some(me)))
+                .and_then(|r| r["state"].as_str().map(str::to_owned));
+            let (sub, needs, note) = match (&mine, &last) {
+                (None, _) => (1, true, "not reviewed yet"),
+                (Some(r), Some(c)) if c > r => (0, true, "new changes since your review"),
+                _ if requested => (2, true, "asked again, nothing new"),
+                _ if opinion.as_deref() == Some("APPROVED") => (2, false, "approved by you"),
+                _ if opinion.as_deref() == Some("CHANGES_REQUESTED") => (2, false, "you asked for changes"),
+                _ => (2, true, NOT_APPROVED),
+            };
+            let tier = if p["isDraft"] == true { 3 } else if needs && requested { 0 } else if needs { 1 } else { 2 };
+            p["requested"] = requested.into();
+            p["needsReview"] = needs.into();
+            p["reviewNote"] = note.into();
+            p["headSha"] = p["headRefOid"].clone();
+            p["lastCommitAt"] = last.into();
+            p["myLastReviewAt"] = mine.into();
+            if let Some(o) = p.as_object_mut() { for k in ["viewerLatestReview", "latestOpinionatedReviews", "commits", "headRefOid"] { o.remove(k); } }
+            (tier, sub, p)
+        })
+        .collect();
+    prs.sort_by(|(ta, sa, a), (tb, sb, b)| ta.cmp(tb).then(sa.cmp(sb)).then_with(|| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str())));
+    prs.into_iter().map(|(_, _, p)| p).collect::<Vec<_>>().into()
 }
 
 /// The `reviewNote` of a PR I reviewed, with no commits since, that still lacks my approval (MR-173).
@@ -63,6 +138,7 @@ pub fn rank_unreviewed(data: &serde_json::Value) -> serde_json::Value {
             // What a recurring review dedupes on (MR-171): the head it would review, and when it was made.
             p["headSha"] = p["headRefOid"].clone();
             p["lastCommitAt"] = last.into();
+            p["myLastReviewAt"] = p["viewerLatestReview"]["submittedAt"].clone();
             let o = p.as_object_mut()?;
             o.remove("viewerLatestReview");
             o.remove("latestOpinionatedReviews");
@@ -88,6 +164,25 @@ fn safe_slug(slug: &str) -> Option<&str> {
     (ok(owner) && ok(name)).then_some(slug)
 }
 
+/// When someone else (not a bot) last said something on my PR: thread comments, reviews and PR
+/// comments, oldest first. A review counts only when it says something itself (its inline
+/// comments are counted as thread comments). The start picker counts the ones newer than your
+/// last address there.
+fn feedback(p: &serde_json::Value, me: &str) -> Vec<String> {
+    let theirs = |n: &serde_json::Value| n["author"]["login"].as_str().is_some_and(|l| l != me) && n["author"]["__typename"] != "Bot";
+    let threads = p["reviewThreads"]["nodes"].as_array().into_iter().flatten().flat_map(|t| t["comments"]["nodes"].as_array().cloned().unwrap_or_default());
+    let reviews = p["reviews"]["nodes"].as_array().cloned().unwrap_or_default().into_iter()
+        .filter(|r| r["state"] == "CHANGES_REQUESTED" || r["body"].as_str().is_some_and(|b| !b.trim().is_empty()))
+        .map(|mut r| { r["createdAt"] = r["submittedAt"].take(); r });
+    let comments = p["comments"]["nodes"].as_array().cloned().unwrap_or_default();
+    let mut at: Vec<String> = threads.chain(reviews).chain(comments)
+        .filter(|n| theirs(n))
+        .filter_map(|n| n["createdAt"].as_str().map(str::to_owned))
+        .collect();
+    at.sort();
+    at
+}
+
 /// What's worth addressing in my open PRs: `waiting` counts unresolved threads whose last word is
 /// someone else's (a reply of mine means the ball is with them). Changes requested first, then
 /// PRs with waiting threads, then the rest, newest first within each.
@@ -98,10 +193,12 @@ pub fn rank_mine(data: &serde_json::Value) -> serde_json::Value {
         .map(|mut p| {
             let threads = p["reviewThreads"]["nodes"].as_array().cloned().unwrap_or_default();
             let open: Vec<_> = threads.iter().filter(|t| t["isResolved"] == false).collect();
-            let waiting = open.iter().filter(|t| t["comments"]["nodes"][0]["author"]["login"].as_str() != Some(me)).count();
+            let last = |t: &&serde_json::Value| t["comments"]["nodes"].as_array().and_then(|c| c.last()).map(|c| c["author"]["login"].clone());
+            let waiting = open.iter().filter(|t| last(t).as_ref().and_then(|l| l.as_str()) != Some(me)).count();
             p["unresolved"] = open.len().into();
             p["waiting"] = waiting.into();
-            p.as_object_mut().map(|o| o.remove("reviewThreads"));
+            p["feedback"] = feedback(&p, me).into();
+            if let Some(o) = p.as_object_mut() { o.remove("reviewThreads"); o.remove("reviews"); o.remove("comments"); }
             p
         })
         .collect();
@@ -115,7 +212,7 @@ pub fn rank_mine(data: &serde_json::Value) -> serde_json::Value {
 /// address first. Both work from any folder (MR-48): every repo by default, or just `repo` (MR-79).
 // Off the main thread: it does I/O, and a sync command would freeze the UI (MR-57).
 #[tauri::command(async)]
-pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>) -> Result<serde_json::Value, String> {
+pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>, repos: Option<Vec<String>>) -> Result<serde_json::Value, String> {
     let cwd = crate::sidecar::expand_home(&app, &cwd);
     let cwd = if std::path::Path::new(&cwd).is_dir() { cwd } else { crate::sys::home_str() };
     let repo = match repo.as_deref() {
@@ -123,9 +220,16 @@ pub fn gh_prs(app: AppHandle, cwd: String, mode: String, repo: Option<String>) -
         None => None,
     };
     match mode.as_str() {
+        // The start picker's Review list for a workspace's repos (every PR there, ranked).
+        "review_repos" => {
+            let repos = clean_watched(&repos.unwrap_or_default())?;
+            if repos.is_empty() { return Ok(serde_json::json!([])); }
+            let q = workspace_query(&repos.iter().map(|r| format!("repo:{r}")).collect::<Vec<_>>().join(" "));
+            Ok(rank_workspace(&gh(&cwd, &["api", "graphql", "-f", &format!("query={q}")])?["data"]))
+        }
         "review" => match repo {
             Some(r) => unreviewed(&cwd, r),
-            None => gh(&cwd, &["search", "prs", "--review-requested=@me", "--state=open", "--limit", "20", "--json", "number,title,url,author,repository,updatedAt,isDraft"]),
+            None => Ok(annotate_requested(&gh(&cwd, &["api", "graphql", "-f", &format!("query={REQUESTED_QUERY}")])?["data"])),
         },
         "address" => {
             let q = mine_query(&repo.map(|r| format!(" repo:{r}")).unwrap_or_default());
@@ -271,6 +375,23 @@ mod tests {
     }
 
     #[test]
+    fn collects_when_others_last_said_something() {
+        let c = |at: &str, by: &str, kind: &str| json!({ "createdAt": at, "author": { "login": by, "__typename": kind } });
+        let data = json!({ "viewer": { "login": "me" }, "search": { "nodes": [{ "number": 1, "updatedAt": "2026-10-03",
+            "reviewThreads": { "nodes": [{ "isResolved": false, "comments": { "nodes": [c("2026-10-02T10:00:00Z", "dana", "User"), c("2026-10-02T11:00:00Z", "me", "User")] } }] },
+            "reviews": { "nodes": [
+                { "submittedAt": "2026-10-02T09:00:00Z", "state": "COMMENTED", "body": "", "author": { "login": "dana", "__typename": "User" } },
+                { "submittedAt": "2026-10-03T09:00:00Z", "state": "CHANGES_REQUESTED", "body": "", "author": { "login": "dana", "__typename": "User" } },
+            ] },
+            "comments": { "nodes": [c("2026-10-01T08:00:00Z", "ci", "Bot"), c("2026-10-01T09:00:00Z", "lee", "User")] },
+        }] } });
+        let r = rank_mine(&data);
+        assert_eq!(r[0]["feedback"], json!(["2026-10-01T09:00:00Z", "2026-10-02T10:00:00Z", "2026-10-03T09:00:00Z"]));
+        assert_eq!(r[0]["waiting"].as_u64(), Some(0), "my reply was the thread's last word");
+        assert!(r[0].get("reviews").is_none() && r[0].get("comments").is_none());
+    }
+
+    #[test]
     fn keeps_prs_i_havent_reviewed_or_that_changed_since() {
         let pr = |n: u64, updated: &str, draft: bool, mine: Option<&str>, last: &str| json!({ "number": n, "updatedAt": updated, "isDraft": draft,
             "viewerLatestReview": mine.map(|m| json!({ "submittedAt": m })), "commits": { "nodes": [{ "commit": { "committedDate": last } }] } });
@@ -292,6 +413,53 @@ mod tests {
         assert_eq!(r[0]["lastCommitAt"], "2026-10-02T10:00:00Z");
         assert!(unreviewed_query("a/b").contains("headRefOid"));
         assert!(unreviewed_query("a/b").contains("-author:@me archived:false repo:a/b\""));
+    }
+
+    #[test]
+    fn notes_what_changed_since_my_review_on_requested_prs() {
+        let pr = |n: u64, mine: Option<&str>, last: &str| json!({ "number": n, "headRefOid": format!("sha{n}"),
+            "viewerLatestReview": mine.map(|m| json!({ "submittedAt": m })), "commits": { "nodes": [{ "commit": { "committedDate": last } }] } });
+        let data = json!({ "search": { "nodes": [
+            pr(1, None, "2026-10-04T10:00:00Z"),
+            pr(2, Some("2026-10-01T10:00:00Z"), "2026-10-02T10:00:00Z"),
+            pr(3, Some("2026-10-02T10:00:00Z"), "2026-10-01T10:00:00Z"),
+            {},
+        ] } });
+        let r = annotate_requested(&data);
+        let notes: Vec<&str> = r.as_array().unwrap().iter().map(|p| p["reviewNote"].as_str().unwrap()).collect();
+        assert_eq!(notes, vec!["not reviewed yet", "new changes since your review", "asked again, nothing new"]);
+        assert_eq!((r[1]["myLastReviewAt"].as_str(), r[1]["lastCommitAt"].as_str(), r[1]["headSha"].as_str()), (Some("2026-10-01T10:00:00Z"), Some("2026-10-02T10:00:00Z"), Some("sha2")));
+        assert!(r[0]["myLastReviewAt"].is_null() && r[0].get("commits").is_none() && r[0].get("viewerLatestReview").is_none());
+        assert!(REQUESTED_QUERY.contains("review-requested:@me archived:false"));
+    }
+
+    #[test]
+    fn ranks_a_workspaces_prs_requested_first_drafts_last() {
+        let pr = |n: u64, updated: &str, draft: bool, mine: Option<&str>, opinion: Option<&str>| json!({ "number": n, "updatedAt": updated, "isDraft": draft,
+            "url": format!("u{n}"), "headRefOid": format!("sha{n}"),
+            "viewerLatestReview": mine.map(|m| json!({ "submittedAt": m })),
+            "latestOpinionatedReviews": { "nodes": opinion.map(|o| json!([{ "state": o, "author": { "login": "me" } }])).unwrap_or(json!([])) },
+            "commits": { "nodes": [{ "commit": { "committedDate": "2026-10-02T10:00:00Z" } }] } });
+        let (old, new) = (Some("2026-10-01T10:00:00Z"), Some("2026-10-03T10:00:00Z"));
+        let data = json!({ "viewer": { "login": "me" }, "requested": { "nodes": [{ "url": "u1" }, { "url": "u2" }, { "url": "u7" }] }, "all": { "nodes": [
+            pr(1, "2026-10-05", false, None, None),                    // requested, never reviewed
+            pr(2, "2026-10-01", false, old, None),                     // requested, new changes: first in its tier
+            pr(3, "2026-10-06", false, None, None),                    // not requested, never reviewed
+            pr(4, "2026-10-07", false, new, Some("APPROVED")),         // approved, nothing new: the rest
+            pr(5, "2026-10-08", true, None, None),                     // draft
+            pr(6, "2026-10-04", false, new, Some("CHANGES_REQUESTED")),
+            pr(7, "2026-10-09", true, None, None),                     // requested, but a draft: last
+            {},
+        ] } });
+        let r = rank_workspace(&data);
+        let order: Vec<u64> = r.as_array().unwrap().iter().map(|p| p["number"].as_u64().unwrap()).collect();
+        assert_eq!(order, vec![2, 1, 3, 4, 6, 7, 5]);
+        assert_eq!((r[0]["requested"].as_bool(), r[0]["needsReview"].as_bool(), r[0]["reviewNote"].as_str()), (Some(true), Some(true), Some("new changes since your review")));
+        assert_eq!((r[3]["needsReview"].as_bool(), r[3]["reviewNote"].as_str()), (Some(false), Some("approved by you")));
+        assert_eq!(r[4]["reviewNote"], "you asked for changes");
+        assert!(r[0].get("latestOpinionatedReviews").is_none() && r[0]["headSha"] == "sha2");
+        let q = workspace_query("repo:a/b repo:c/d");
+        assert!(q.contains("-author:@me archived:false repo:a/b repo:c/d\"") && q.contains("requested: search(query: \"is:pr is:open review-requested:@me"));
     }
 
     #[test]

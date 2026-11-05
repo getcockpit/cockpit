@@ -327,9 +327,9 @@ test("a bug report's fix waits in the queue until applied, then asks for a rebui
   expect(needsQueue(Object.values(s0.sessions), []).map((q) => q.kind)).toEqual(["fix"]);
   const s1 = replay([...base, ev("G4", "ui.fix_applied", { branch: "mr/g" }, "g", 5)]);
   expect(needsQueue(Object.values(s1.sessions), [])).toHaveLength(0);
-  expect(suggest(s1, [], { review: [], mine: [] }, new Set()).map((x) => x.label)).toContain("Rebuild & relaunch");
+  expect(suggest(s1, [], new Set()).map((x) => x.label)).toContain("Rebuild & relaunch");
   const s2 = replay([...base, ev("G4", "ui.fix_applied", { branch: "mr/g" }, "g", 5), ev("B1", "selfbuild.finished", { ok: true }, null, 9)]);
-  expect(suggest(s2, [], { review: [], mine: [] }, new Set()).map((x) => x.label)).not.toContain("Rebuild & relaunch");
+  expect(suggest(s2, [], new Set()).map((x) => x.label)).not.toContain("Rebuild & relaunch");
 });
 
 test("look settings replay and a restyle session is an app change", async () => {

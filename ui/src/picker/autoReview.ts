@@ -7,9 +7,9 @@ import { slashed } from "../fspath";
 
 export type ReviewState = { isDraft: boolean; headSha: string | null; lastCommitAt: string | null; myLastReviewAt: string | null };
 
-/** Whether a session's first prompt (`/review <url|#n|n>`) is about this PR. */
+/** Whether a session's first prompt (`/review` or `/pr-address <url|#n|n>`) is about this PR. */
 export function isAbout(title: string, pr: Pr): boolean {
-  const arg = title.trim().replace(/^\/review\s+/, "").trim();
+  const arg = title.trim().replace(/^\/(review|pr-address)\s+/, "").trim();
   if (arg.includes(pr.url)) return true;
   const slug = pr.repository?.nameWithOwner;
   return arg === String(pr.number) || arg === `#${pr.number}` || (!!slug && arg === `${slug}#${pr.number}`);
@@ -19,6 +19,47 @@ export function isAbout(title: string, pr: Pr): boolean {
 export function lastLocalReview(sessions: SessionState[], pr: Pr): number | null {
   const at = sessions.filter((s) => s.kind === "review" && isAbout(s.title, pr)).map((s) => s.startedAt);
   return at.length ? Math.max(...at) : null;
+}
+
+// A Review session still open: running, or paused between steps (idle waits for your "ok").
+const CLOSED = new Set(["ended", "error", "interrupted"]);
+const OPEN_NOTE: Record<string, string> = { starting: "reviewing now", working: "reviewing now", needs_you: "reviewing now · needs you", idle: "review open here" };
+
+/** What the start picker says about a PR to review, from this workspace's Review sessions and
+ *  GitHub: one reviewing it now (`session`, opened instead of starting another), or new commits
+ *  since the last review here or on GitHub. A review here counts even if it never posted. */
+export function reviewStatus(pr: Pr, sessions: SessionState[], workspace: string): { note: string; hot: boolean; session?: string } {
+  const here = sessions.filter((s) => s.kind === "review" && s.workspace === workspace && isAbout(s.title, pr));
+  const live = here.filter((s) => !CLOSED.has(s.status)).sort((a, b) => b.startedAt - a.startedAt)[0];
+  if (live) return { note: OPEN_NOTE[live.status] ?? "reviewing now", hot: true, session: live.id };
+  const local = here.length ? Math.max(...here.map((s) => s.startedAt)) : null;
+  const gh = pr.myLastReviewAt ? Date.parse(pr.myLastReviewAt) : null;
+  const commit = pr.lastCommitAt ? Date.parse(pr.lastCommitAt) : null;
+  if (local !== null && commit !== null && (gh === null || local > gh)) {
+    return commit > local ? { note: "new changes since your review", hot: true } : { note: "reviewed here, nothing new", hot: false };
+  }
+  return { note: pr.reviewNote ?? "", hot: pr.needsReview ?? true };
+}
+
+/** The Review list's order: PRs asking for my review that need it, other PRs that need it, the
+ *  rest, then every draft (labelled). A review here counts, so the backend's order is redone. */
+export function rankReview(prs: Pr[], sessions: SessionState[], workspace: string): { pr: Pr; note: string; hot: boolean; session?: string }[] {
+  const rows = prs.map((pr) => { const r = reviewStatus(pr, sessions, workspace); return { pr, ...r, note: pr.isDraft ? ["draft", r.note].filter(Boolean).join(" · ") : r.note, hot: r.hot && !pr.isDraft }; });
+  const tier = (x: (typeof rows)[number]) => (x.pr.isDraft ? 3 : !x.hot ? 2 : x.pr.requested === false ? 1 : 0);
+  return rows.map((x, i) => ({ x, i })).sort((a, b) => tier(a.x) - tier(b.x) || a.i - b.i).map(({ x }) => x);
+}
+
+/** Folders this workspace works in (pinned folder first, then its sessions', newest first), for its repos. */
+export function workspaceFolders(state: Pick<AppState, "sessions" | "order" | "workspaces">, workspace: string, cap = 8): string[] {
+  const out: string[] = [];
+  const pinned = state.workspaces.find((w) => w.id === workspace)?.folder;
+  if (pinned) out.push(pinned);
+  for (const id of [...state.order].reverse()) {
+    const s = state.sessions[id];
+    const f = s && !s.fromDeleted && s.workspace === workspace ? s.repo ?? s.cwd : null;
+    if (f && !out.includes(f)) out.push(f);
+  }
+  return out.slice(0, cap);
 }
 
 export const reviewKey = (url: string, headSha: string | null) => `${url}@${headSha ?? ""}`;

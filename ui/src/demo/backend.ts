@@ -116,7 +116,6 @@ const RAW: Record<string, string> = {
   session_diff: "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'",
   recent_folders: "No such file or directory (os error 2)",
   folder_create: "couldn't create ~/x: Permission denied (os error 13)",
-  daily_driver: "database is locked",
   personal_history: "fatal: invalid reference: main\nhint: ...",
   selfbuild_start: "error[E0425]: cannot find value `x` in this scope\n --> src/lib.rs:3:5\n  |\n3 |     x\n  |     ^ not found in this scope",
   fix_apply: "merge conflict, nothing applied: CONFLICT (content): Merge conflict in ui/src/screens/Wall.tsx\nAutomatic merge failed; fix conflicts and then commit the result.",
@@ -349,16 +348,22 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       return repos;
     }
     case "gh_repo": return /shop|billing|cockpit/.test(String(a.cwd)) ? `acme/${String(a.cwd).split("/").pop()}` : null;
-    case "gh_prs": if (a.repo && a.mode === "review") return [
+    case "gh_prs": if (a.mode === "review_repos") return ((a.repos as string[]) ?? []).flatMap((r) => [
+      { number: 497, title: "Search: typo tolerance", url: `https://github.com/${r}/pull/497`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: r }, reviewNote: "new changes since your review", requested: true, needsReview: true, isDraft: false, lastCommitAt: new Date().toISOString(), myLastReviewAt: "2026-01-01T00:00:00Z" },
+      { number: 482, title: "Checkout: retry failed payments", url: `https://github.com/${r}/pull/482`, updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: r }, reviewNote: "not reviewed yet", requested: true, needsReview: true, isDraft: false, lastCommitAt: "2026-01-01T00:00:00Z", myLastReviewAt: null },
+      { number: 495, title: "Cart: keep items across devices", url: `https://github.com/${r}/pull/495`, updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: r }, reviewNote: "not reviewed yet", requested: false, needsReview: true, isDraft: false },
+      { number: 470, title: "Docs: API errors", url: `https://github.com/${r}/pull/470`, updatedAt: new Date().toISOString(), author: { login: "lee" }, repository: { nameWithOwner: r }, reviewNote: "approved by you", requested: false, needsReview: false, isDraft: false },
+      { number: 499, title: "WIP: new pricing page", url: `https://github.com/${r}/pull/499`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: r }, reviewNote: "not reviewed yet", requested: true, needsReview: true, isDraft: true }]);
+      if (a.repo && a.mode === "review") return [
       { number: 491, title: "Checkout: idempotent order ids", url: `https://github.com/${a.repo}/pull/491`, updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: a.repo }, reviewNote: "new changes since your review" },
       { number: 495, title: "Cart: keep items across devices", url: `https://github.com/${a.repo}/pull/495`, updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: a.repo }, reviewNote: "not reviewed yet" }];
       if (a.repo) return (handle("gh_prs", { ...a, repo: undefined }) as { repository: { nameWithOwner: string } }[]).filter((p) => p.repository.nameWithOwner === a.repo);
       return a.mode === "review"
-      ? [{ number: 482, title: "Checkout: retry failed payments", url: "https://github.com/acme/shop/pull/482", updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: "acme/shop" } }]
-      : [{ number: 479, title: "Billing CSV export", url: "https://github.com/acme/billing/pull/479", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, reviewDecision: "CHANGES_REQUESTED", unresolved: 3, waiting: 2 },
-        { number: 486, title: "Invoices: tax line per country", url: "https://github.com/acme/billing/pull/486", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, unresolved: 1, waiting: 1 },
+      ? [{ number: 482, title: "Checkout: retry failed payments", url: "https://github.com/acme/shop/pull/482", updatedAt: new Date().toISOString(), author: { login: "dana" }, repository: { nameWithOwner: "acme/shop" }, reviewNote: "not reviewed yet", lastCommitAt: "2026-01-01T00:00:00Z", myLastReviewAt: null },
+        { number: 488, title: "Billing: prorate plan changes", url: "https://github.com/acme/billing/pull/488", updatedAt: new Date().toISOString(), author: { login: "sam" }, repository: { nameWithOwner: "acme/billing" }, reviewNote: "new changes since your review", lastCommitAt: new Date().toISOString(), myLastReviewAt: "2026-01-01T00:00:00Z" }]
+      : [{ number: 479, title: "Billing CSV export", url: "https://github.com/acme/billing/pull/479", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, reviewDecision: "CHANGES_REQUESTED", unresolved: 3, waiting: 2, feedback: [new Date(Date.now() - 3_600_000).toISOString()] },
+        { number: 486, title: "Invoices: tax line per country", url: "https://github.com/acme/billing/pull/486", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, unresolved: 1, waiting: 1, feedback: [new Date(Date.now() - 600_000).toISOString()] },
         { number: 490, title: "Shop: faster search index", url: "https://github.com/acme/shop/pull/490", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/shop" }, unresolved: 0, waiting: 0 }];
-    case "daily_driver": return { streak: 2, goal: 7 };
     case "selfbuild_list": return [];
     case "personal_history": return { worktree: "/Users/me/code/cockpit-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
     case "app_repo_path": return "/Users/me/code/cockpit";

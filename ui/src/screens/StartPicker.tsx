@@ -9,7 +9,8 @@ import { shortError } from "../components/ErrorLine";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
-import { addressNote, toAddress } from "../picker/suggest";
+import { addressRow, addressState } from "../picker/suggest";
+import { rankReview, workspaceFolders } from "../picker/autoReview";
 import type { AppState, Attachment, CommandRow, Preset, SessionKind } from "../state/types";
 import { useDraft, writeDraft } from "../state/drafts";
 
@@ -57,11 +58,12 @@ const HOW: Record<SessionKind, string> = {
   address: "Runs your /pr-address and walks each reviewer thread",
 };
 
-type Item = { ref: string; title: string; meta: string; hot: boolean; value: string; repo?: string };
+// session: one for this PR is still open in this workspace, so picking it opens that one.
+type Item = { ref: string; title: string; meta: string; hot: boolean; value: string; repo?: string; session?: string };
 
 type Draft = { id: string | null; name: string; template: string; worktree: boolean };
 
-export function StartPicker({ state, workspace = "personal", onClose, onStarted, initialText = "", initialMode }: { state: AppState; workspace?: string; onClose: () => void; onStarted: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
+export function StartPicker({ state, workspace = "personal", onClose, onStarted, onOpen = onStarted, initialText = "", initialMode }: { state: AppState; workspace?: string; onClose: () => void; onStarted: (id: string) => void; onOpen?: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
   // Opens on the kind you used last (F6); dictated text always starts a blank session.
   const [modeRaw, setModeRaw] = useState<string>(() => { if (initialMode) return initialMode; if (initialText) return "blank"; try { return localStorage.getItem("mr.mode") || "blank"; } catch { return "blank"; } });
   const setMode = (m: string) => { setModeRaw(m); setDraft(null); try { localStorage.setItem("mr.mode", m); } catch { /* convenience only */ } };
@@ -100,29 +102,54 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
     api.ghRepo(cwd).then((r) => alive && setRepo(r)).catch(() => alive && setRepo(null));
     return () => { alive = false; };
   }, [cwd]);
+  // The workspace's GitHub repos, from the folders it works in: the PR lists cover only these
+  // (every repo while it has none yet). undefined while the folders' origins are read.
+  const folders = useMemo(() => workspaceFolders(state, workspace), [state, workspace]);
+  const [wsRepos, setWsRepos] = useState<string[] | undefined>(undefined);
+  useEffect(() => {
+    if (!prMode) return;
+    let alive = true;
+    setWsRepos(undefined);
+    void Promise.all(folders.map((f) => api.ghRepo(f).catch(() => null)))
+      .then((rs) => alive && setWsRepos([...new Set(rs.filter((r): r is string => !!r))]));
+    return () => { alive = false; };
+  }, [prMode, folders.join("\n")]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setPrs(null); setSel(0); setError("");
-    if (!prMode || (only && repo === undefined)) return;
+    if (!prMode || (only && repo === undefined) || (!scope && wsRepos === undefined)) return;
     let alive = true;
-    api.prs(cwd, mode, scope).then((r) => alive && setPrs(r)).catch((e) => {
+    const repos = scope ? [scope] : wsRepos ?? [];
+    const inWs = (p: Pr) => !repos.length || repos.some((r) => r.toLowerCase() === (p.repository?.nameWithOwner ?? "").toLowerCase());
+    const load = mode === "review"
+      ? (repos.length ? api.prsIn(cwd, repos) : api.prs(cwd, "review"))
+      : api.prs(cwd, "address", scope).then((r) => r.filter(inWs));
+    load.then((r) => alive && setPrs(r)).catch((e) => {
       // The raw error goes in the log: the line shown is shortened, so it alone can't be traced.
       void api.log("ui.error", { where: "start_picker.prs", mode, cwd, scope: scope ?? null, error: String(e) }).catch(() => {});
       if (alive) { setPrs([]); setError(shortError(e)); }
     });
     return () => { alive = false; };
-  }, [mode, cwd, scope, only && repo === undefined]);
+  }, [mode, cwd, scope, only && repo === undefined, wsRepos?.join(" ")]);
 
   const items: Item[] = useMemo(() => {
     if (mode === "review" || mode === "address") {
-      return (prs ?? []).map((p) => ({
-        ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
-        meta: [p.repository?.nameWithOwner, mode === "address" ? addressNote(p) : p.reviewNote].filter(Boolean).join(" · "),
-        hot: mode === "address" ? toAddress(p) : true,
-      }));
+      const sessions = state.order.map((id) => state.sessions[id]);
+      // Both know this workspace's sessions: one open now, or what's new since the last one.
+      const ranked = mode === "review" ? rankReview(prs ?? [], sessions, workspace)
+        : (prs ?? []).map((p) => ({ pr: p, ...(({ note, hot, session }) => ({ note, hot, session }))(addressRow(p, addressState(p, state, workspace))) }));
+      const rows: Item[] = ranked.map(({ pr: p, ...r }) => {
+        return {
+          ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
+          meta: [p.repository?.nameWithOwner, r.note].filter(Boolean).join(" · "), hot: r.hot, session: r.session,
+        };
+      });
+      // Address: in flight first, then what has something new for you, then the rest, each in GitHub's order.
+      const rank = (x: Item) => (x.session ? 0 : x.hot ? 1 : 2);
+      return mode === "address" ? rows.sort((a, b) => rank(a) - rank(b)) : rows;
     }
     const recent = state.order.map((id) => state.sessions[id]).filter((s) => s.kind === mode && (s.preset ?? null) === (preset?.id ?? null)).reverse().slice(0, 5);
     return recent.map((s) => { const v = preset ? unfill(preset.template, s.title) : s.title; return { ref: "", value: cleanTitle(v, 400), title: cleanTitle(v), meta: new Date(s.startedAt).toLocaleDateString(), hot: false }; });
-  }, [mode, preset, prs, state]);
+  }, [mode, preset, prs, state, workspace]);
 
   // PR work runs in the PR's own clone (MR-48); if it can't be found, ask once and remember.
   const [askRepo, setAskRepo] = useState<{ slug: string; value: string } | null>(null);
@@ -149,7 +176,8 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
   // A PR starts its review straight away; a past prompt only fills the box, so it can be edited
   // instead of silently starting a duplicate session.
   const pick = (it: Item) => {
-    if (mode === "review" || mode === "address") void start(it.value, it.repo);
+    if (it.session) onOpen(it.session); // already open here: open it, not a second one
+    else if (mode === "review" || mode === "address") void start(it.value, it.repo);
     else { setText(it.value); input.current?.focus(); }
   };
 
@@ -216,15 +244,16 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           {draft ? <PresetEditor draft={draft} onChange={setDraft} onSave={() => void savePreset(draft)} onCancel={() => setDraft(null)} /> : <>
           <div className="mr-row" style={{ padding: "4px 8px 8px" }}>
           <span className="mr-dim mr-grow">
-            {mode === "review" ? (scope ? "Not reviewed by you, or changed since your review" : "Waiting for your review") : mode === "address" ? `Your open PRs${prs?.some(toAddress) ? ` · ${prs.filter(toAddress).length} to address, first` : ""}` : "Reuse a recent prompt"}
-            {prMode && (scope ? ` · in ${scope}` : only && repo === null ? " · this folder isn't a GitHub repo, so every repo" : "")}
+            {mode === "review" ? (scope || wsRepos?.length ? "Asking for your review first, drafts last" : "Waiting for your review") : mode === "address" ? addressHeader(items) : "Reuse a recent prompt"}
+            {prMode && (scope ? ` · in ${scope}` : only && repo === null ? " · this folder isn't a GitHub repo, so this workspace's repos"
+              : wsRepos?.length ? ` · in ${wsRepos.length === 1 ? wsRepos[0] : `this workspace's ${wsRepos.length} repos`}` : wsRepos ? " · no GitHub repo in this workspace yet, so every repo" : "")}
             {prMode && prs === null && " · loading…"}
           </span>
           {prMode && (
             <button type="button" data-mr="RepoOnly" data-mr-source={repo ?? cwd} onClick={() => setOnly(!only)} aria-pressed={only}
-              title={only ? "Showing PRs from the folder's repo only. Click to show every repo" : "Show only PRs from one repo; pick it with the folder"}
+              title={only ? "Showing PRs from the folder's repo only. Click to show this workspace's repos" : "Show only PRs from one repo; pick it with the folder"}
               style={{ border: 0, font: "inherit", fontSize: 12, padding: "2px 10px", cursor: "pointer", whiteSpace: "nowrap", borderRadius: "var(--mr-radius)", background: only ? "var(--mr-selected)" : "var(--mr-well)", color: only ? "var(--mr-tile)" : "var(--mr-ink)" }}>
-              {only ? "This repo only" : "All repos"}
+              {only ? "This repo only" : "This workspace"}
             </button>
           )}
           {preset && <>
@@ -234,11 +263,11 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           </div>
           {items.length === 0 && prs !== null && !error && <span className="mr-dim" style={{ padding: "4px 8px" }}>Nothing here.</span>}
           {items.map((it, i) => (
-            <button key={i} type="button" onClick={() => pick(it)} onMouseEnter={() => setSel(i)}
+            <button key={i} type="button" onClick={() => pick(it)} data-mr="PickRow" data-mr-source={it.session ?? it.value} title={it.session ? "Being reviewed in this workspace: opens that session" : undefined} onMouseEnter={() => setSel(i)}
               className="mr-row" style={{ padding: "8px", border: 0, borderRadius: "var(--mr-radius)", background: i === sel ? "var(--mr-well)" : "transparent", color: "var(--mr-ink)", textAlign: "left", cursor: "pointer", font: "inherit" }}>
               <span className="mr-mono mr-dim" style={{ width: 64, flexShrink: 0 }}>{it.ref}</span>
               <span className="mr-grow mr-ellipsis">{it.title}</span>
-              <span style={{ color: it.hot ? "var(--mr-needs-ink)" : "var(--mr-ink-3)", fontWeight: it.hot ? 700 : 400 }}>{it.meta}</span>
+              <span data-mr="PrState" data-mr-source={it.session ?? it.value} style={{ color: it.hot ? "var(--mr-needs-ink)" : it.session ? "var(--mr-selected)" : "var(--mr-ink-3)", fontWeight: it.hot || it.session ? 700 : 400 }}>{it.meta}</span>
             </button>
           ))}
           {askRepo && (
@@ -258,6 +287,12 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
       </div>
     </div>
   );
+}
+
+// "Your open PRs · 1 being addressed · 2 to address": what the Address list holds, in this workspace.
+export function addressHeader(items: Item[]): string {
+  const live = items.filter((x) => x.session).length, hot = items.filter((x) => x.hot && !x.session).length;
+  return ["Your open PRs", live && `${live} being addressed`, hot && `${hot} to address`].filter(Boolean).join(" · ");
 }
 
 // Adds or edits one of your own kinds (MR-80): a name and the prompt it sends.

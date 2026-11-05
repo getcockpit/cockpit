@@ -1,18 +1,20 @@
 import { isBrief, isOpenQuestion, isStalled, type Doc } from "../state/docs";
 import type { Pr } from "../state/store";
 import type { AppState } from "../state/types";
+import { isAbout } from "./autoReview";
 import { pickTile } from "./pick";
 import { plural, sessionTitle } from "./title";
-import { fixReady } from "./queue";
+import { fixReady, needsQueue } from "./queue";
 
 // The suggested-next engine (decision 20): plain rules that propose the next useful move, each with
-// its reason, as a one-click action. At most three; dismissed ones stay hidden.
+// its reason, as a one-click action. At most three; dismissed ones stay hidden. PRs to review or
+// address are not suggested here (MR-192): the start picker lists them and auto-review takes them.
 
 export type Suggestion = {
   id: string; // stable, so a dismissal sticks
   why: string;
   what: string;
-  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "start"; mode: "review" | "address"; value: string; repo?: string } | { kind: "build_mine" } | { kind: "usage_review"; repo: string } | { kind: "docs_done"; ids: string[] };
+  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "build_mine" } | { kind: "usage_review"; repo: string } | { kind: "docs_done"; ids: string[] };
   label: string;
   rank: number; // lower first
 };
@@ -22,6 +24,28 @@ export const toAddress = (p: Pr) => p.reviewDecision === "CHANGES_REQUESTED" || 
 export function addressNote(p: Pr): string {
   const parts = [p.reviewDecision === "CHANGES_REQUESTED" && "changes requested", p.waiting && `${plural(p.waiting, "thread")} waiting on you`, p.isDraft && "draft"];
   return parts.filter(Boolean).join(" · ");
+}
+
+// Where one of my PRs stands in this workspace's Address sessions: one still open (live), or how
+// many comments from others came after the last one started. Other workspaces don't count.
+export type AddressState = { live: { id: string; working: boolean; waiting: boolean } | null; lastAt: number | null; fresh: number };
+export function addressState(p: Pr, state: AppState, workspace: string): AddressState {
+  const mine = state.order.map((id) => state.sessions[id]).filter((s) => s.workspace === workspace && !s.fromDeleted && s.kind === "address" && isAbout(s.title, p));
+  const open = mine.filter((s) => !s.archivedAt && s.status !== "ended" && s.status !== "error").pop();
+  const lastAt = mine.reduce<number | null>((a, s) => Math.max(a ?? 0, s.startedAt), null);
+  const fresh = lastAt === null ? 0 : (p.feedback ?? []).filter((t) => Date.parse(t) > lastAt).length;
+  // Waiting on you the way the Wall's needs-you queue sees it (an ask, a thread to decide), else working.
+  const live = open ? { id: open.id, working: open.status === "working" || open.status === "starting", waiting: needsQueue([open], []).length > 0 } : null;
+  return { live, lastAt, fresh };
+}
+
+// The note on an Address row: a live session first, then what's new since the last one, else what GitHub says.
+export function addressRow(p: Pr, a: AddressState): { note: string; hot: boolean; session?: string } {
+  if (a.live) return { note: a.live.waiting ? "addressing now · needs you" : a.live.working ? "addressing now" : "address open here", hot: a.live.waiting, session: a.live.id };
+  if (a.lastAt !== null) return a.fresh
+    ? { note: `${plural(a.fresh, "new comment")} since your last address`, hot: true }
+    : { note: "addressed here, nothing new", hot: false };
+  return { note: addressNote(p), hot: toAddress(p) };
 }
 
 // ISO week ("2026-W42"): the weekly usage review is offered once per week.
@@ -36,7 +60,7 @@ export const USAGE_REVIEW = "/mr-usage-review";
 
 // `appRepo` is set only on the owner's Mac (the checkout the app was built from): the review is about
 // your own use, so a shared install never sees it (MR-106).
-export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine: Pr[] }, dismissed: Set<string>, appRepo: string | null = null, now = Date.now()): Suggestion[] {
+export function suggest(state: AppState, docs: Doc[], dismissed: Set<string>, appRepo: string | null = null, now = Date.now()): Suggestion[] {
   const out: Suggestion[] = [];
   const sessions = state.order.map((id) => state.sessions[id]);
 
@@ -57,10 +81,6 @@ export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine:
   // Applied fixes only reach the app you're using after a rebuild (J14).
   const applied = sessions.filter((s) => s.fixApplied && s.fixApplied > (state.lastBuildAt ?? 0)).length;
   if (applied) out.push({ id: `rebuild:${applied}`, why: `${plural(applied, "fix")} applied to your app`, what: "Rebuild and relaunch to use it", action: { kind: "build_mine" }, label: "Rebuild & relaunch", rank: 1 });
-  const reviewing = new Set(sessions.filter((s) => s.kind === "review").map((s) => s.title));
-  for (const p of prs.review) if (![...reviewing].some((t) => t.includes(String(p.number)))) out.push({ id: `pr-review:${p.number}`, why: `PR #${p.number} waits for your review${p.author ? ` (@${p.author.login})` : ""}`, what: p.title, action: { kind: "start", mode: "review", value: p.url, repo: p.repository?.nameWithOwner }, label: "Start review", rank: 5 });
-  const addressing = sessions.filter((s) => s.kind === "address").map((s) => s.title);
-  for (const p of prs.mine) if (toAddress(p) && !addressing.some((t) => t.includes(String(p.number)))) out.push({ id: `pr-address:${p.number}:${p.waiting ?? 0}`, why: p.reviewDecision === "CHANGES_REQUESTED" ? `Changes requested on your PR #${p.number}` : `${plural(p.waiting ?? 0, "thread")} waiting on you in PR #${p.number}`, what: p.title, action: { kind: "start", mode: "address", value: p.url ?? String(p.number), repo: p.repository?.nameWithOwner }, label: "Address", rank: 2 });
 
   if (appRepo) {
     const week = isoWeek(now);
