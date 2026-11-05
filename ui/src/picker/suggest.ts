@@ -6,13 +6,14 @@ import { plural, sessionTitle } from "./title";
 import { fixReady } from "./queue";
 
 // The suggested-next engine (decision 20): plain rules that propose the next useful move, each with
-// its reason, as a one-click action. At most three; dismissed ones stay hidden.
+// its reason, as a one-click action. At most three; dismissed ones stay hidden. PRs to review or
+// address are not suggested here (MR-192): the start picker lists them and auto-review takes them.
 
 export type Suggestion = {
   id: string; // stable, so a dismissal sticks
   why: string;
   what: string;
-  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "start"; mode: "review" | "address"; value: string; repo?: string } | { kind: "build_mine" } | { kind: "usage_review"; repo: string } | { kind: "docs_done"; ids: string[] };
+  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "build_mine" } | { kind: "usage_review"; repo: string } | { kind: "docs_done"; ids: string[] };
   label: string;
   rank: number; // lower first
 };
@@ -36,7 +37,7 @@ export const USAGE_REVIEW = "/mr-usage-review";
 
 // `appRepo` is set only on the owner's Mac (the checkout the app was built from): the review is about
 // your own use, so a shared install never sees it (MR-106).
-export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine: Pr[] }, dismissed: Set<string>, appRepo: string | null = null, now = Date.now()): Suggestion[] {
+export function suggest(state: AppState, docs: Doc[], dismissed: Set<string>, appRepo: string | null = null, now = Date.now()): Suggestion[] {
   const out: Suggestion[] = [];
   const sessions = state.order.map((id) => state.sessions[id]);
 
@@ -57,10 +58,6 @@ export function suggest(state: AppState, docs: Doc[], prs: { review: Pr[]; mine:
   // Applied fixes only reach the app you're using after a rebuild (J14).
   const applied = sessions.filter((s) => s.fixApplied && s.fixApplied > (state.lastBuildAt ?? 0)).length;
   if (applied) out.push({ id: `rebuild:${applied}`, why: `${plural(applied, "fix")} applied to your app`, what: "Rebuild and relaunch to use it", action: { kind: "build_mine" }, label: "Rebuild & relaunch", rank: 1 });
-  const reviewing = new Set(sessions.filter((s) => s.kind === "review").map((s) => s.title));
-  for (const p of prs.review) if (![...reviewing].some((t) => t.includes(String(p.number)))) out.push({ id: `pr-review:${p.number}`, why: `PR #${p.number} waits for your review${p.author ? ` (@${p.author.login})` : ""}`, what: p.title, action: { kind: "start", mode: "review", value: p.url, repo: p.repository?.nameWithOwner }, label: "Start review", rank: 5 });
-  const addressing = sessions.filter((s) => s.kind === "address").map((s) => s.title);
-  for (const p of prs.mine) if (toAddress(p) && !addressing.some((t) => t.includes(String(p.number)))) out.push({ id: `pr-address:${p.number}:${p.waiting ?? 0}`, why: p.reviewDecision === "CHANGES_REQUESTED" ? `Changes requested on your PR #${p.number}` : `${plural(p.waiting ?? 0, "thread")} waiting on you in PR #${p.number}`, what: p.title, action: { kind: "start", mode: "address", value: p.url ?? String(p.number), repo: p.repository?.nameWithOwner }, label: "Address", rank: 2 });
 
   if (appRepo) {
     const week = isoWeek(now);
