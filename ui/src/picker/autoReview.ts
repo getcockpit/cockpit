@@ -38,7 +38,28 @@ export function reviewStatus(pr: Pr, sessions: SessionState[], workspace: string
   if (local !== null && commit !== null && (gh === null || local > gh)) {
     return commit > local ? { note: "new changes since your review", hot: true } : { note: "reviewed here, nothing new", hot: false };
   }
-  return { note: pr.reviewNote ?? "", hot: true };
+  return { note: pr.reviewNote ?? "", hot: pr.needsReview ?? true };
+}
+
+/** The Review list's order: PRs asking for my review that need it, other PRs that need it, the
+ *  rest, then every draft (labelled). A review here counts, so the backend's order is redone. */
+export function rankReview(prs: Pr[], sessions: SessionState[], workspace: string): { pr: Pr; note: string; hot: boolean; session?: string }[] {
+  const rows = prs.map((pr) => { const r = reviewStatus(pr, sessions, workspace); return { pr, ...r, note: pr.isDraft ? ["draft", r.note].filter(Boolean).join(" · ") : r.note, hot: r.hot && !pr.isDraft }; });
+  const tier = (x: (typeof rows)[number]) => (x.pr.isDraft ? 3 : !x.hot ? 2 : x.pr.requested === false ? 1 : 0);
+  return rows.map((x, i) => ({ x, i })).sort((a, b) => tier(a.x) - tier(b.x) || a.i - b.i).map(({ x }) => x);
+}
+
+/** Folders this workspace works in (pinned folder first, then its sessions', newest first), for its repos. */
+export function workspaceFolders(state: Pick<AppState, "sessions" | "order" | "workspaces">, workspace: string, cap = 8): string[] {
+  const out: string[] = [];
+  const pinned = state.workspaces.find((w) => w.id === workspace)?.folder;
+  if (pinned) out.push(pinned);
+  for (const id of [...state.order].reverse()) {
+    const s = state.sessions[id];
+    const f = s && !s.fromDeleted && s.workspace === workspace ? s.repo ?? s.cwd : null;
+    if (f && !out.includes(f)) out.push(f);
+  }
+  return out.slice(0, cap);
 }
 
 export const reviewKey = (url: string, headSha: string | null) => `${url}@${headSha ?? ""}`;

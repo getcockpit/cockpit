@@ -5,7 +5,7 @@ import { initialState, reduce, replay } from "./reduce";
 import type { AppState, Attachment, Cadence, MrEvent, PermissionMode, ScheduleCheck } from "./types";
 import type { McpAddConfig, McpScope } from "../components/mcpAdd";
 
-export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string; lastCommitAt?: string | null; myLastReviewAt?: string | null; feedback?: string[] }; // feedback: when others commented (address mode), oldest first
+export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string; lastCommitAt?: string | null; myLastReviewAt?: string | null; requested?: boolean; needsReview?: boolean; feedback?: string[] }; // feedback: when others commented (address mode), oldest first
 
 type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent } | { type: "instance"; id: string } | { type: "hydrate"; id: string; events: MrEvent[] };
 
@@ -135,6 +135,8 @@ export const api = {
     invoke<string>("session_start", { cwd: s.cwd, prompt: "Continue where you left off. Say briefly where things stand first.", kind: s.kind, resume: s.sdkSessionId, worktree: false, sessionId: s.id }),
   // Every repo by default (MR-48); `repo` ("owner/name") keeps one (MR-79).
   prs: (cwd: string, mode: "review" | "address", repo?: string) => invoke<Pr[]>("gh_prs", { cwd, mode, repo }),
+  // Every open PR in these repos that isn't mine, ranked for the Review list (gh.rs rank_workspace).
+  prsIn: (cwd: string, repos: string[]) => invoke<Pr[]>("gh_prs", { cwd, mode: "review_repos", repos }),
   ghRepo: (cwd: string) => invoke<string | null>("gh_repo", { cwd }),
   reviewState: (url: string) => invoke<unknown>("gh_review_state", { url }),
   // Repos auto-review also scans (MR-170): the core validates them and logs ui.auto_review_repos_set.

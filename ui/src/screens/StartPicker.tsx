@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Key } from "../components";
 import { api, type Pr } from "../state/store";
 import { addressRow, addressState } from "../picker/suggest";
-import { reviewStatus } from "../picker/autoReview";
+import { rankReview, workspaceFolders } from "../picker/autoReview";
 import type { AppState, Attachment, CommandRow, Preset, SessionKind } from "../state/types";
 import { useDraft, writeDraft } from "../state/drafts";
 
@@ -102,24 +102,42 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
     api.ghRepo(cwd).then((r) => alive && setRepo(r)).catch(() => alive && setRepo(null));
     return () => { alive = false; };
   }, [cwd]);
+  // The workspace's GitHub repos, from the folders it works in: the PR lists cover only these
+  // (every repo while it has none yet). undefined while the folders' origins are read.
+  const folders = useMemo(() => workspaceFolders(state, workspace), [state, workspace]);
+  const [wsRepos, setWsRepos] = useState<string[] | undefined>(undefined);
+  useEffect(() => {
+    if (!prMode) return;
+    let alive = true;
+    setWsRepos(undefined);
+    void Promise.all(folders.map((f) => api.ghRepo(f).catch(() => null)))
+      .then((rs) => alive && setWsRepos([...new Set(rs.filter((r): r is string => !!r))]));
+    return () => { alive = false; };
+  }, [prMode, folders.join("\n")]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setPrs(null); setSel(0); setError("");
-    if (!prMode || (only && repo === undefined)) return;
+    if (!prMode || (only && repo === undefined) || (!scope && wsRepos === undefined)) return;
     let alive = true;
-    api.prs(cwd, mode, scope).then((r) => alive && setPrs(r)).catch((e) => {
+    const repos = scope ? [scope] : wsRepos ?? [];
+    const inWs = (p: Pr) => !repos.length || repos.some((r) => r.toLowerCase() === (p.repository?.nameWithOwner ?? "").toLowerCase());
+    const load = mode === "review"
+      ? (repos.length ? api.prsIn(cwd, repos) : api.prs(cwd, "review"))
+      : api.prs(cwd, "address", scope).then((r) => r.filter(inWs));
+    load.then((r) => alive && setPrs(r)).catch((e) => {
       // The raw error goes in the log: the line shown is shortened, so it alone can't be traced.
       void api.log("ui.error", { where: "start_picker.prs", mode, cwd, scope: scope ?? null, error: String(e) }).catch(() => {});
       if (alive) { setPrs([]); setError(shortError(e)); }
     });
     return () => { alive = false; };
-  }, [mode, cwd, scope, only && repo === undefined]);
+  }, [mode, cwd, scope, only && repo === undefined, wsRepos?.join(" ")]);
 
   const items: Item[] = useMemo(() => {
     if (mode === "review" || mode === "address") {
       const sessions = state.order.map((id) => state.sessions[id]);
-      const rows: Item[] = (prs ?? []).map((p) => {
-        // Both know this workspace's sessions: one open now, or what's new since the last one.
-        const r = mode === "review" ? reviewStatus(p, sessions, workspace) : (({ note, hot, session }) => ({ note, hot, session }))(addressRow(p, addressState(p, state, workspace)));
+      // Both know this workspace's sessions: one open now, or what's new since the last one.
+      const ranked = mode === "review" ? rankReview(prs ?? [], sessions, workspace)
+        : (prs ?? []).map((p) => ({ pr: p, ...(({ note, hot, session }) => ({ note, hot, session }))(addressRow(p, addressState(p, state, workspace))) }));
+      const rows: Item[] = ranked.map(({ pr: p, ...r }) => {
         return {
           ref: `#${p.number}`, value: p.url, repo: p.repository?.nameWithOwner, title: `${p.title}${p.author ? ` · @${p.author.login}` : ""}`,
           meta: [p.repository?.nameWithOwner, r.note].filter(Boolean).join(" · "), hot: r.hot, session: r.session,
@@ -226,15 +244,16 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
           {draft ? <PresetEditor draft={draft} onChange={setDraft} onSave={() => void savePreset(draft)} onCancel={() => setDraft(null)} /> : <>
           <div className="mr-row" style={{ padding: "4px 8px 8px" }}>
           <span className="mr-dim mr-grow">
-            {mode === "review" ? (scope ? "Not reviewed by you, or changed since your review" : "Waiting for your review") : mode === "address" ? addressHeader(items) : "Reuse a recent prompt"}
-            {prMode && (scope ? ` · in ${scope}` : only && repo === null ? " · this folder isn't a GitHub repo, so every repo" : "")}
+            {mode === "review" ? (scope || wsRepos?.length ? "Asking for your review first, drafts last" : "Waiting for your review") : mode === "address" ? addressHeader(items) : "Reuse a recent prompt"}
+            {prMode && (scope ? ` · in ${scope}` : only && repo === null ? " · this folder isn't a GitHub repo, so this workspace's repos"
+              : wsRepos?.length ? ` · in ${wsRepos.length === 1 ? wsRepos[0] : `this workspace's ${wsRepos.length} repos`}` : wsRepos ? " · no GitHub repo in this workspace yet, so every repo" : "")}
             {prMode && prs === null && " · loading…"}
           </span>
           {prMode && (
             <button type="button" data-mr="RepoOnly" data-mr-source={repo ?? cwd} onClick={() => setOnly(!only)} aria-pressed={only}
-              title={only ? "Showing PRs from the folder's repo only. Click to show every repo" : "Show only PRs from one repo; pick it with the folder"}
+              title={only ? "Showing PRs from the folder's repo only. Click to show this workspace's repos" : "Show only PRs from one repo; pick it with the folder"}
               style={{ border: 0, font: "inherit", fontSize: 12, padding: "2px 10px", cursor: "pointer", whiteSpace: "nowrap", borderRadius: "var(--mr-radius)", background: only ? "var(--mr-selected)" : "var(--mr-well)", color: only ? "var(--mr-tile)" : "var(--mr-ink)" }}>
-              {only ? "This repo only" : "All repos"}
+              {only ? "This repo only" : "This workspace"}
             </button>
           )}
           {preset && <>
