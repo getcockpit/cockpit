@@ -5,7 +5,7 @@ import { initialState, reduce, replay } from "./reduce";
 import type { AppState, Attachment, Cadence, MrEvent, PermissionMode, ScheduleCheck } from "./types";
 import type { McpAddConfig, McpScope } from "../components/mcpAdd";
 
-export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string };
+export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string; lastCommitAt?: string | null; myLastReviewAt?: string | null };
 
 type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: MrEvent } | { type: "instance"; id: string } | { type: "hydrate"; id: string; events: MrEvent[] };
 
