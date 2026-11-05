@@ -20,10 +20,11 @@ fn gh(cwd: &str, args: &[&str]) -> Result<serde_json::Value, String> {
     serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())
 }
 
-// My open PRs with their review threads, in one call (search can't see threads); `scope` is
-// empty or ` repo:owner/name` (MR-79).
+// My open PRs with their review threads, reviews and comments, in one call (search can't see
+// threads); `scope` is empty or ` repo:owner/name` (MR-79).
 fn mine_query(scope: &str) -> String {
-    format!("query {{ viewer {{ login }} search(query: \"is:pr is:open author:@me archived:false{scope}\", type: ISSUE, first: 30) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft reviewDecision repository {{ nameWithOwner }} reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ nodes {{ author {{ login }} }} }} }} }} }} }} }} }}")
+    let who = "author { login __typename }";
+    format!("query {{ viewer {{ login }} search(query: \"is:pr is:open author:@me archived:false{scope}\", type: ISSUE, first: 30) {{ nodes {{ ... on PullRequest {{ number title url updatedAt isDraft reviewDecision repository {{ nameWithOwner }} reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 20) {{ nodes {{ createdAt {who} }} }} }} }} reviews(last: 30) {{ nodes {{ submittedAt state body {who} }} }} comments(last: 30) {{ nodes {{ createdAt {who} }} }} }} }} }} }}")
 }
 
 // Open PRs in one repo that aren't mine, with when I last reviewed each and its newest commit (MR-81),
@@ -116,6 +117,25 @@ fn safe_slug(slug: &str) -> Option<&str> {
     (ok(owner) && ok(name)).then_some(slug)
 }
 
+/// When someone else (not a bot) last said something on my PR: thread comments, reviews and PR
+/// comments, oldest first. A review counts only when it says something itself (its inline
+/// comments are counted as thread comments). The start picker counts the ones newer than your
+/// last address there.
+fn feedback(p: &serde_json::Value, me: &str) -> Vec<String> {
+    let theirs = |n: &serde_json::Value| n["author"]["login"].as_str().is_some_and(|l| l != me) && n["author"]["__typename"] != "Bot";
+    let threads = p["reviewThreads"]["nodes"].as_array().into_iter().flatten().flat_map(|t| t["comments"]["nodes"].as_array().cloned().unwrap_or_default());
+    let reviews = p["reviews"]["nodes"].as_array().cloned().unwrap_or_default().into_iter()
+        .filter(|r| r["state"] == "CHANGES_REQUESTED" || r["body"].as_str().is_some_and(|b| !b.trim().is_empty()))
+        .map(|mut r| { r["createdAt"] = r["submittedAt"].take(); r });
+    let comments = p["comments"]["nodes"].as_array().cloned().unwrap_or_default();
+    let mut at: Vec<String> = threads.chain(reviews).chain(comments)
+        .filter(|n| theirs(n))
+        .filter_map(|n| n["createdAt"].as_str().map(str::to_owned))
+        .collect();
+    at.sort();
+    at
+}
+
 /// What's worth addressing in my open PRs: `waiting` counts unresolved threads whose last word is
 /// someone else's (a reply of mine means the ball is with them). Changes requested first, then
 /// PRs with waiting threads, then the rest, newest first within each.
@@ -126,10 +146,12 @@ pub fn rank_mine(data: &serde_json::Value) -> serde_json::Value {
         .map(|mut p| {
             let threads = p["reviewThreads"]["nodes"].as_array().cloned().unwrap_or_default();
             let open: Vec<_> = threads.iter().filter(|t| t["isResolved"] == false).collect();
-            let waiting = open.iter().filter(|t| t["comments"]["nodes"][0]["author"]["login"].as_str() != Some(me)).count();
+            let last = |t: &&serde_json::Value| t["comments"]["nodes"].as_array().and_then(|c| c.last()).map(|c| c["author"]["login"].clone());
+            let waiting = open.iter().filter(|t| last(t).as_ref().and_then(|l| l.as_str()) != Some(me)).count();
             p["unresolved"] = open.len().into();
             p["waiting"] = waiting.into();
-            p.as_object_mut().map(|o| o.remove("reviewThreads"));
+            p["feedback"] = feedback(&p, me).into();
+            if let Some(o) = p.as_object_mut() { o.remove("reviewThreads"); o.remove("reviews"); o.remove("comments"); }
             p
         })
         .collect();
@@ -296,6 +318,23 @@ mod tests {
         assert_eq!((r[1]["waiting"].as_u64(), r[1]["unresolved"].as_u64()), (Some(1), Some(2)));
         assert_eq!(r[3]["waiting"].as_u64(), Some(0));
         assert!(r[0].get("reviewThreads").is_none());
+    }
+
+    #[test]
+    fn collects_when_others_last_said_something() {
+        let c = |at: &str, by: &str, kind: &str| json!({ "createdAt": at, "author": { "login": by, "__typename": kind } });
+        let data = json!({ "viewer": { "login": "me" }, "search": { "nodes": [{ "number": 1, "updatedAt": "2026-10-03",
+            "reviewThreads": { "nodes": [{ "isResolved": false, "comments": { "nodes": [c("2026-10-02T10:00:00Z", "dana", "User"), c("2026-10-02T11:00:00Z", "me", "User")] } }] },
+            "reviews": { "nodes": [
+                { "submittedAt": "2026-10-02T09:00:00Z", "state": "COMMENTED", "body": "", "author": { "login": "dana", "__typename": "User" } },
+                { "submittedAt": "2026-10-03T09:00:00Z", "state": "CHANGES_REQUESTED", "body": "", "author": { "login": "dana", "__typename": "User" } },
+            ] },
+            "comments": { "nodes": [c("2026-10-01T08:00:00Z", "ci", "Bot"), c("2026-10-01T09:00:00Z", "lee", "User")] },
+        }] } });
+        let r = rank_mine(&data);
+        assert_eq!(r[0]["feedback"], json!(["2026-10-01T09:00:00Z", "2026-10-02T10:00:00Z", "2026-10-03T09:00:00Z"]));
+        assert_eq!(r[0]["waiting"].as_u64(), Some(0), "my reply was the thread's last word");
+        assert!(r[0].get("reviews").is_none() && r[0].get("comments").is_none());
     }
 
     #[test]

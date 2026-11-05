@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addressNote, isoWeek, suggest } from "./suggest";
+import { addressNote, addressRow, addressState, isoWeek, suggest } from "./suggest";
 import { replay } from "../state/reduce";
 import type { MrEvent } from "../state/types";
 import type { Doc } from "../state/docs";
@@ -23,6 +23,28 @@ test("addressNote: what a PR of mine waits on", () => {
   const pr = { number: 7, title: "waits", url: "https://github.com/a/b/pull/7", updatedAt: "", unresolved: 2, waiting: 2 };
   expect(addressNote(pr)).toBe("2 threads waiting on you");
   expect(addressNote({ ...pr, waiting: 0, reviewDecision: "CHANGES_REQUESTED", isDraft: true })).toBe("changes requested · draft");
+});
+
+test("Address list: a live session, or comments since the last address, in this workspace only", () => {
+  const url = "https://github.com/a/b/pull/7";
+  const pr = { number: 7, title: "t", url, updatedAt: "", repository: { nameWithOwner: "a/b" }, waiting: 1, feedback: ["1970-01-01T00:00:00.001Z", "1970-01-01T00:00:05Z", "1970-01-01T00:00:09Z"] };
+  const at = (id: string, kind: string, payload: Record<string, unknown>, session: string, t: number): MrEvent => ({ ...ev(id, kind, payload, session), created_at: t });
+  const started = [
+    at("A1", "ui.session_requested", { prompt: `/pr-address ${url}`, cwd: "/w/b", kind: "address", workspace: "work" }, "s1", 2000),
+    at("A2", "ui.session_archived", {}, "s1", 3000),
+  ];
+  // Never addressed here: what GitHub says.
+  expect(addressState(pr, replay(started), "personal")).toEqual({ live: null, lastAt: null, fresh: 0 });
+  expect(addressRow(pr, addressState(pr, replay(started), "personal")).note).toBe("1 thread waiting on you");
+  // Addressed (and archived) in "work" at 2s: two comments came after.
+  const done = addressState(pr, replay(started), "work");
+  expect(done).toEqual({ live: null, lastAt: 2000, fresh: 2 });
+  expect(addressRow(pr, done)).toEqual({ note: "2 new comments since your last address", hot: true });
+  expect(addressRow(pr, { ...done, fresh: 0 })).toEqual({ note: "addressed here, nothing new", hot: false });
+  // A second one, typed as a number, still open: it's being addressed.
+  const live = replay([...started, at("A3", "ui.session_requested", { prompt: "/pr-address 7", cwd: "/w/b", kind: "address", workspace: "work" }, "s2", 9500)]);
+  expect(addressState(pr, live, "work").live).toEqual({ id: "s2", working: true, waiting: false }); // just started
+  expect(addressRow(pr, addressState(pr, live, "work"))).toEqual({ note: "addressing now", hot: false, session: "s2" });
 });
 
 test("weekly usage review: owner only, once per ISO week, gone once run or dismissed", () => {
