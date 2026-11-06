@@ -73,7 +73,10 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   const [mcpOpen, setMcpOpen] = useState(false);
   const [unknown, setUnknown] = useState<{ msg: string; files: Attachment[] } | null>(null); // a /command this session doesn't know: ask first
   const [reviewing, setReviewing] = useState<string | null>(null); // a file path: the review panel is open
-  const live = s.status !== "ended" && s.status !== "error";
+  // An ended session (marked done, then restored; or after a restart) still takes a message: the core
+  // resumes the same conversation with it. Only one without a Claude session, or from a deleted
+  // workspace, is read-only.
+  const live = (s.status !== "ended" && s.status !== "error") || (!!s.sdkSessionId && !s.fromDeleted);
   // Its docs with open questions: each says it needs you and opens; the questions are decided in the doc.
   const openDocs = docs.map((d) => ({ d, open: Object.values(d.blocks).filter(isOpenQuestion).length })).filter((x) => x.open > 0);
   // A new ask or question glides into view: it sits below the transcript's own end.
