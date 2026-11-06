@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer" || v == "attach" || v == "move" || v == "schedule" || v == "spawn")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer" || v == "attach" || v == "move" || v == "schedule" || v == "spawn")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -48,7 +48,12 @@ fn move_mode() -> bool {
 }
 
 fn resume_mode() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "resume")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "resume" || v == "sendended")
+}
+
+/// Resume through the message box (MR-197): the ended session is archived, restored, then sent a message.
+fn send_ended_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "sendended")
 }
 
 fn update_mode() -> bool {
@@ -377,6 +382,13 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
         Some("session_ended") if resume_mode() && RESULTS.load(Ordering::SeqCst) == 1 => {
             RESULTS.fetch_add(1, Ordering::SeqCst);
             let session = payload["session"].as_str().unwrap_or_default().to_owned();
+            if send_ended_mode() {
+                crate::eventlog::record(app, Some(&session), "ui.session_archived", &serde_json::json!({}), None);
+                crate::eventlog::record(app, Some(&session), "ui.session_unarchived", &serde_json::json!({}), None);
+                let r = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(), None);
+                if let Err(e) = r { eprintln!("[selftest] sending to the ended session failed: {e}"); std::process::exit(1); }
+                return;
+            }
             let log = app.state::<crate::eventlog::EventLog>();
             let events = log.list(Some(&session), None, 1000).unwrap_or_default();
             let sdk = events.iter().find(|e| e.kind == "sidecar.session_started").and_then(|e| e.payload["sdk_session_id"].as_str().map(str::to_owned));
