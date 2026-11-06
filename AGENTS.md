@@ -23,7 +23,7 @@ Cockpit is a desktop front-end for Claude Code (macOS first; Linux and Windows t
 python3 -I scripts/e2e/webkit-overview.py  # the Overview canvas in real WebKit (Safari): pinch, wheel, keys, drag; needs the harness, `safaridriver -p 4444` and Safari's "Allow remote automation"
 (cd ui && bunx vite --port 1530)    # UX demo harness: http://127.0.0.1:1530/?demo=fresh|empty|busy|archive (no Claude)
 ./scripts/selftest.sh                # end-to-end through the real app + sidecar + claude (uses a little usage)
-./scripts/selftest-{doc,resume,flow,address,terminal,selfbuild,workspace,view,plan,title,update,layer,skip,askfirst,attach,move,spawn}.sh
+./scripts/selftest-{doc,resume,sendended,flow,address,terminal,selfbuild,workspace,view,plan,title,update,layer,skip,askfirst,attach,move,spawn}.sh
 ```
 
 **Self-tests:**
