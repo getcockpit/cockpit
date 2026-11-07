@@ -4,6 +4,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-11-07
+
+### Fixed
+- **A restored session takes a message again:** a session you marked done and then restored (or one that ended) shows its message box. Sending picks up the same conversation where it left off.
+
 ## [0.1.23] - 2026-11-05
 
 ### Changed
