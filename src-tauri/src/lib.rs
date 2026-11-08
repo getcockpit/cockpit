@@ -1,6 +1,7 @@
 mod attachments;
 mod background;
 mod browser;
+mod browser_launch;
 mod brief;
 mod changes;
 mod cockpit_layer;
@@ -63,6 +64,7 @@ pub fn run() {
         .manage(terminal::Terminals::default())
         .manage(voice::Voice::default())
         .manage(runs::Runs::default())
+        .manage(browser_launch::Launched::default())
         .setup(|app| {
             // MR_DATA_DIR keeps tests and self-builds away from the real event log.
             let dir = match std::env::var("MR_DATA_DIR") {
@@ -211,7 +213,8 @@ pub fn run() {
             browser::browser_carry,
             browser::browser_focused,
             browser::browser_servers,
-            browser::browser_blocklist_set
+            browser::browser_blocklist_set,
+            browser_launch::browser_launch_open
         ])
         .on_window_event(|window, ev| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = ev {
@@ -222,7 +225,10 @@ pub fn run() {
         .expect("error while running tauri application")
         .run(|app, ev| {
             match ev {
-                tauri::RunEvent::Exit => instances::stop(app),
+                tauri::RunEvent::Exit => {
+                    instances::stop(app);
+                    browser_launch::stop(app);
+                }
                 // The Dock icon of a hidden window (kept running for schedules) brings it back.
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { .. } => background::show_main(app),
