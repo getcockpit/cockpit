@@ -835,7 +835,8 @@ fn request_extension(b: &Browser, tab: &str, action: &str, wait: std::time::Dura
 
 // ---- the app side: context, events, socket ---------------------------------------------------
 
-/// Sessions the popup offers: running ones, with titles and folders, from the log.
+/// Sessions a tab can link to: running ones first, then recent ones that aren't archived (after a
+/// restart nothing is running yet, and a confirmed batch resumes its session anyway).
 fn sessions(app: &AppHandle) -> Vec<SessionInfo> {
     let log = app.state::<crate::eventlog::EventLog>();
     let live = crate::sidecar::live_sessions(app);
@@ -845,15 +846,43 @@ fn sessions(app: &AppHandle) -> Vec<SessionInfo> {
             titles.insert(s, t.to_owned());
         }
     }
-    let mut out = vec![];
-    for e in log.list_kind("ui.session_requested").unwrap_or_default() {
-        let Some(id) = e.session_id else { continue };
-        if !live.contains(&id) || out.iter().any(|s: &SessionInfo| s.id == id) {
-            continue;
+    // The last archive/unarchive per session wins.
+    let mut archived: HashMap<String, bool> = HashMap::new();
+    let mut marks = log.list_kind("ui.session_archived").unwrap_or_default();
+    marks.extend(log.list_kind("ui.session_unarchived").unwrap_or_default());
+    marks.sort_by(|a, b| a.id.cmp(&b.id));
+    for e in marks {
+        if let Some(s) = e.session_id {
+            archived.insert(s, e.kind == "ui.session_archived");
         }
-        let p = &e.payload;
-        let title = titles.get(&id).cloned().unwrap_or_else(|| clip(p["prompt"].as_str().unwrap_or("a session"), 40));
-        out.push(SessionInfo { id, title, folder: p["worktree"].as_str().or(p["cwd"].as_str()).unwrap_or_default().to_owned() });
+    }
+    let requested = log.list_kind("ui.session_requested").unwrap_or_default();
+    let requested: Vec<(String, Value)> = requested.into_iter().filter_map(|e| Some((e.session_id?, e.payload))).collect();
+    pick_sessions(&requested, &titles, &archived, &live)
+}
+
+/// Running sessions first, then the 25 newest that aren't archived, each once.
+fn pick_sessions(requested: &[(String, Value)], titles: &HashMap<String, String>, archived: &HashMap<String, bool>, live: &std::collections::HashSet<String>) -> Vec<SessionInfo> {
+    let info = |id: &str, p: &Value| SessionInfo {
+        id: id.to_owned(),
+        title: titles.get(id).cloned().unwrap_or_else(|| clip(p["prompt"].as_str().unwrap_or("a session"), 40)),
+        folder: p["worktree"].as_str().or(p["cwd"].as_str()).unwrap_or_default().to_owned(),
+    };
+    let mut out: Vec<SessionInfo> = vec![];
+    for (id, p) in requested.iter().rev() {
+        if live.contains(id) && !out.iter().any(|s| &s.id == id) {
+            out.push(info(id, p));
+        }
+    }
+    let mut recent = 0;
+    for (id, p) in requested.iter().rev() {
+        if recent >= 25 {
+            break;
+        }
+        if !archived.get(id).copied().unwrap_or(false) && p["kind"].as_str().is_none_or(|k| k == "blank") && !out.iter().any(|s| &s.id == id) {
+            out.push(info(id, p));
+            recent += 1;
+        }
     }
     out
 }
@@ -1533,6 +1562,16 @@ mod tests {
         assert_eq!(perms, ["activeTab", "scripting", "nativeMessaging", "storage"], "least privilege");
         assert!(manifest.get("host_permissions").is_none());
         assert!(manifest["key"].as_str().is_some_and(|k| !k.is_empty()), "the key pins the extension ID");
+    }
+
+    #[test]
+    fn linkable_sessions_include_resumable_ones_but_not_archived() {
+        let req = |id: &str| (id.to_owned(), json!({ "prompt": format!("p {id}"), "cwd": "/w", "kind": "blank" }));
+        let requested = vec![req("old"), req("arch"), req("live"), req("idle")];
+        let archived = HashMap::from([("arch".to_owned(), true)]);
+        let live = std::collections::HashSet::from(["live".to_owned()]);
+        let got: Vec<String> = pick_sessions(&requested, &HashMap::new(), &archived, &live).into_iter().map(|s| s.id).collect();
+        assert_eq!(got, ["live", "idle", "old"]);
     }
 
     #[test]

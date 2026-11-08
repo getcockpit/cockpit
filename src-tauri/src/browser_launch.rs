@@ -441,13 +441,19 @@ pub fn open(app: &tauri::AppHandle, session: &str, url: &str) -> Result<String, 
         let _ = cdp.call(None, "Target.activateTarget", json!({ "targetId": l.tab.strip_prefix(PREFIX).unwrap_or_default() }));
         return Ok(l.tab.clone());
     }
+    let mut refused = None;
     let target = cdp.open(&url, |target| {
         let tab = format!("{PREFIX}{target}");
         let already = app.state::<crate::browser::Browser>().model.lock().unwrap().link(&tab).is_some();
         if !already {
-            crate::browser::request(app, &json!({ "type": "link", "tab": tab, "url": url, "title": "", "session": session }));
+            let r = crate::browser::request(app, &json!({ "type": "link", "tab": tab, "url": url, "title": "", "session": session }));
+            refused = r["error"].is_string().then(|| r["message"].as_str().unwrap_or("couldn't link the tab").to_owned());
         }
     })?;
+    // The page opened but isn't linked: say why instead of showing a page with no overlay.
+    if let Some(e) = refused {
+        return Err(e);
+    }
     Ok(format!("{PREFIX}{target}"))
 }
 
