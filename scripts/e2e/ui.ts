@@ -107,12 +107,14 @@ const ui = {
   async press(key: string) { pt("press", key); },
   // The Overview's find box (opened with "/") focuses a tick after it mounts, so early keystrokes can be
   // lost on a slow runner: fill it (which replaces the value) until it reports exactly one hit.
+  // The count is empty until there's a query, and PinchTab on Windows reads an empty element as a 404.
   async findOnMap(text: string) {
     await ui.css('[data-mr="OverviewFind"] input', 1);
+    const count = () => { try { return ui.text('[data-mr="OverviewFindCount"]').trim(); } catch { return ""; } };
     await until(`one hit for "${text}"`, () => {
-      if (ui.text('[data-mr="OverviewFindCount"]').trim() === "1 found") return;
+      if (count() === "1 found") return;
       pt("fill", 'css:[data-mr="OverviewFind"] input', text);
-      throw new Error(ui.text('[data-mr="OverviewFindCount"]').trim() || "no count");
+      throw new Error(count() || "no count");
     }, 8000);
   },
   // A shortcut, with "Mod" for the platform's command key (⌘ on a Mac, Ctrl in Linux CI).
