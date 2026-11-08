@@ -505,6 +505,7 @@ dependencies = [
  "chrono",
  "dirs 7.0.0",
  "keyring",
+ "libc",
  "mac-notification-sys",
  "portable-pty",
  "regex",
