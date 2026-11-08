@@ -259,7 +259,11 @@ pub fn run_check(cmd: &str, cwd: &Path, timeout: Duration) -> Result<(i32, Strin
         }
         if Instant::now() >= deadline {
             #[cfg(unix)]
-            let _ = crate::sys::cmd("kill").args(["-9", &format!("-{}", child.id())]).status();
+            // The whole group (process_group above), straight through libc: procps `kill -9 -<pgid>`
+            // on Ubuntu 22.04 signals every process of the user, which took down the CI runner.
+            unsafe {
+                libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+            }
             let _ = child.kill();
             let _ = child.wait();
             return Err(format!("timed out after {} s", timeout.as_secs()));
