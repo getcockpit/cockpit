@@ -11,10 +11,11 @@ import type { AppState, MrEvent } from "../state/types";
 import { Usage } from "./Usage";
 import { PERMISSION_MODES, usePermissionPick } from "../components/PermissionChoice";
 import { watchSlug } from "../state/prRepo";
+import { BrowserSettings } from "../components/BrowserPanel";
 
 // Settings (decision 25): theme, and the history of your own changes to the app — collected on a
 // local branch `mine` that's never pushed — with apply / revert / build & relaunch / roll back.
-// Five tabs (MR-89): Look · Sessions · Keys & models · Your changes · Usage.
+// Tabs (MR-89): Look · Sessions · Browser · Keys & models · Your changes · Usage.
 
 const THEMES = [
   { id: "control-room", name: "Control Room", what: "Industrial grey, amber when it needs you", swatch: ["#d3d6d9", "#e4e7ea", "#ffb300", "#15181b"] },
@@ -23,7 +24,7 @@ const THEMES = [
 ];
 
 // Tabs (MR-89): one page held too much. The last tab stays picked while the app runs.
-const TABS = [["look", "Look"], ["sessions", "Sessions"], ["keys", "Keys & models"], ["changes", "Your changes"], ["usage", "Usage"]] as const;
+const TABS = [["look", "Look"], ["sessions", "Sessions"], ["browser", "Browser"], ["keys", "Keys & models"], ["changes", "Your changes"], ["usage", "Usage"]] as const;
 type Tab = (typeof TABS)[number][0];
 let lastTab: Tab = "look";
 
@@ -164,6 +165,8 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
             <Key onClick={() => { if (cockpitKey.trim()) void act(() => api.cockpitSaveKey(cockpitKey).then(() => { setCockpitKey(""); setCockpitOn(true); }), "Saved to the Keychain."); }}>Save</Key>
           </div>
         </section>}
+
+        {tab === "browser" && <BrowserSettings />}
 
         {tab === "sessions" && <section data-mr="ReviewSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 className="mr-h">Reviews</h2>

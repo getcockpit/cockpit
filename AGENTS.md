@@ -19,6 +19,7 @@ Cockpit is a desktop front-end for Claude Code (macOS first; Linux and Windows t
 (cd src-tauri && cargo test)         # event log, docs, worktrees, flows, self-build supervisor, PTY…
 (cd src-tauri && cargo test docs::)  # one module
 
+./scripts/e2e-browser.sh             # browser extension end to end: Chrome for Testing + real `--browser-host` + stub core; trusted input on a hostile page
 ./scripts/e2e-ui.sh                  # UI end-to-end: every JTBD flow headless via PinchTab over the demo harness (no Claude); `J4` runs matching flows
 python3 -I scripts/e2e/webkit-overview.py  # the Overview canvas in real WebKit (Safari): pinch, wheel, keys, drag; needs the harness, `safaridriver -p 4444` and Safari's "Allow remote automation"
 (cd ui && bunx vite --port 1530)    # UX demo harness: http://127.0.0.1:1530/?demo=fresh|empty|busy|archive (no Claude)
@@ -64,6 +65,7 @@ React UI (ui/) ──Tauri IPC──▶ Rust core (src-tauri/) ──NDJSON stdi
 | `workspaces.rs` | Per-workspace `CLAUDE_CONFIG_DIR` with shared files symlinked |
 | `terminal.rs` | PTY takeover |
 | `voice.rs` | Runs the `mr-dictate` helper (`dictate/main.swift`) |
+| `browser.rs` | Browser annotations: link registry (one session per tab), pins and batches, redaction, the 0600 socket and the `--browser-host` native-messaging relay for the extension in `browser/extension`, `browser_*` tools |
 | `changes.rs` | Git changes, diffs, god-mode marks to `evals/marks.jsonl` |
 | `update.rs` | One-click Update: pending app commits on main, background build of the other dev slot, restart via `dev.sh` |
 | `selfbuild.rs` | Build, store, relaunch via supervisor with health check and fallback (god-mode fix builds, history) |

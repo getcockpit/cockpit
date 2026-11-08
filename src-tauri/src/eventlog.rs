@@ -252,6 +252,9 @@ pub fn record(
             if let Some(docs) = app.try_state::<crate::docs::Docs>() {
                 docs.apply(&ev);
             }
+            if crate::browser::KIND_PREFIXES.iter().any(|p| kind.starts_with(p)) && let Some(b) = app.try_state::<crate::browser::Browser>() {
+                b.apply(kind, payload);
+            }
             let _ = app.emit("mr-event", &ev);
             Some(ev)
         }
