@@ -18,6 +18,7 @@ Cockpit is a desktop front-end for Claude Code (macOS first; Linux and Windows t
 (cd sidecar && bunx tsc --noEmit -p .)
 (cd src-tauri && cargo test)         # event log, docs, worktrees, flows, self-build supervisor, PTY…
 (cd src-tauri && cargo test docs::)  # one module
+MR_BROWSER=<chrome> cargo test browser_launch -- --ignored   # the Cockpit browser over a real Chrome pipe (headless)
 
 ./scripts/e2e-browser.sh             # browser extension end to end: Chrome for Testing + real `--browser-host` + stub core; trusted input on a hostile page
 ./scripts/e2e-ui.sh                  # UI end-to-end: every JTBD flow headless via PinchTab over the demo harness (no Claude); `J4` runs matching flows
@@ -66,6 +67,7 @@ React UI (ui/) ──Tauri IPC──▶ Rust core (src-tauri/) ──NDJSON stdi
 | `terminal.rs` | PTY takeover |
 | `voice.rs` | Runs the `mr-dictate` helper (`dictate/main.swift`) |
 | `browser.rs` | Browser annotations: link registry (one session per tab), pins and batches, redaction, the 0600 socket and the `--browser-host` native-messaging relay for the extension in `browser/extension`, `browser_*` tools |
+| `browser_launch.rs` | The zero-setup Cockpit browser: Chrome on its own profile over `--remote-debugging-pipe` (method allowlist), the same overlay in an isolated world behind `browser/extension/launch.js`, crops via `Page.captureScreenshot` |
 | `changes.rs` | Git changes, diffs, god-mode marks to `evals/marks.jsonl` |
 | `update.rs` | One-click Update: pending app commits on main, background build of the other dev slot, restart via `dev.sh` |
 | `selfbuild.rs` | Build, store, relaunch via supervisor with health check and fallback (god-mode fix builds, history) |
@@ -105,6 +107,7 @@ React UI (ui/) ──Tauri IPC──▶ Rust core (src-tauri/) ──NDJSON stdi
   | `MR_AUTO_RESUME` | Set by the self-build supervisor |
   | `MR_FALLBACK` | Set by the self-build supervisor |
   | `MR_COCKPIT_API_KEY`, `MR_COCKPIT_BASE_URL` | The Cockpit layer's key and endpoint (the Keychain and api.anthropic.com otherwise) |
+  | `MR_BROWSER` | Which Chrome the Cockpit browser starts (else Chrome, Chromium, Brave, Edge) |
   | `MR_DEV_LOOP`, `MR_DEV_SLOT` | Set by `dev.sh`: Update is available, and which build slot is running |
 
 - **Scripts and PATH:** scripts and self-builds must work with a minimal GUI PATH. They add cargo, bun and mise paths themselves, and the UI build runs on bun's runtime (`bun --bun`).

@@ -320,7 +320,7 @@ fn glob(pattern: &str, host: &str) -> bool {
 }
 
 /// The same page: scheme, host and path, ignoring query and fragment.
-fn same_page(a: &str, b: &str) -> bool {
+pub fn same_page(a: &str, b: &str) -> bool {
     let cut = |u: &str| u.split(['?', '#']).next().unwrap_or_default().trim_end_matches('/').to_owned();
     cut(a) == cut(b)
 }
@@ -440,7 +440,7 @@ pub fn handle(model: &Model, ctx: &Ctx, msg: &Value) -> Outcome {
             let title = ctx.title(&session);
             Outcome {
                 reply: json!({ "linked": session, "title": title, "marker": marker(&title) }),
-                events: vec![(session.clone(), "browser.linked".into(), json!({ "session": session, "tab": tab, "url": s("url"), "title": s("title"), "mode": "extension", "auto": auto }))],
+                events: vec![(session.clone(), "browser.linked".into(), json!({ "session": session, "tab": tab, "url": s("url"), "title": s("title"), "mode": if tab.starts_with(crate::browser_launch::PREFIX) { "launch" } else { "extension" }, "auto": auto }))],
                 send: None,
             }
         }
@@ -703,6 +703,11 @@ pub fn b64(data: &[u8]) -> String {
     out
 }
 
+#[cfg(test)]
+pub fn b64_decode(s: &str) -> Option<Vec<u8>> {
+    unb64(s)
+}
+
 fn unb64(s: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(s.len() * 3 / 4);
     let (mut acc, mut bits) = (0u32, 0);
@@ -790,7 +795,12 @@ pub fn handle_tool(app: &AppHandle, session: &str, tool: &str, args: &Value) -> 
         Err(e) => return (vec![], e, true),
     };
     let action = if tool == RELOAD_TOOL { "reload" } else { "screenshot" };
-    match request_extension(&b, &tab, action, std::time::Duration::from_secs(20)) {
+    let answer = if tab.starts_with(crate::browser_launch::PREFIX) {
+        crate::browser_launch::agent_action(app, &tab, action)
+    } else {
+        request_extension(&b, &tab, action, std::time::Duration::from_secs(20))
+    };
+    match answer {
         Err(e) => (vec![], e, true),
         Ok(v) if action == "reload" => {
             let _ = v;
@@ -898,6 +908,9 @@ fn carry_out(app: &AppHandle, out: &Outcome) {
         if kind == "browser.unlinked" || kind == "browser.linked" {
             app.state::<Browser>().broadcast(&json!({ "type": "links", "tab": payload["tab"], "session": payload["session"], "linked": kind == "browser.linked" }));
         }
+        if kind == "browser.unlinked" {
+            crate::browser_launch::push(app, payload["tab"].as_str().unwrap_or_default(), &json!({ "type": "unlinked" }));
+        }
     }
     if let Some((session, text, crops)) = &out.send {
         let attachments: Vec<Value> = crops.iter().map(|p| json!({ "path": p.to_string_lossy(), "name": p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "mime": "image/png" })).collect();
@@ -911,6 +924,7 @@ fn carry_out(app: &AppHandle, out: &Outcome) {
     }
     for s in changed.into_iter().filter(|s| !s.is_empty()) {
         app.state::<Browser>().broadcast(&json!({ "type": "changed", "session": s }));
+        crate::browser_launch::push_all(app, &json!({ "type": "refresh" }));
     }
 }
 
@@ -941,6 +955,12 @@ pub fn start(app: &AppHandle) {
     expire_crops(&dir.join("browser").join("crops"), CROP_DAYS);
     if dir.join("browser").join("cockpit-browser-host").exists() {
         let _ = install(app); // keep the host's path and the extension files current
+    }
+    // The Cockpit browser didn't survive the restart: its links are stale.
+    let stale: Vec<Link> = app.state::<Browser>().model.lock().unwrap().links().into_iter().filter(|l| l.tab.starts_with(crate::browser_launch::PREFIX)).collect();
+    if !stale.is_empty() {
+        let events = stale.iter().map(|l| (l.session.clone(), "browser.unlinked".to_owned(), json!({ "session": l.session, "tab": l.tab, "reason": "browser_closed" }))).collect();
+        carry_out(app, &Outcome { events, ..Default::default() });
     }
     #[cfg(unix)]
     serve(app.clone(), socket_path(app));
@@ -1214,7 +1234,7 @@ pub fn browser_status(app: AppHandle) -> Value {
     let links: Vec<Value> = m.links().into_iter().map(|l| json!({ "tab": l.tab, "session": l.session, "session_title": title(&l.session), "url": l.url, "title": l.title, "mode": l.mode })).collect();
     let open: HashMap<String, usize> = links.iter().filter_map(|l| l["session"].as_str()).map(|s| (s.to_owned(), m.open_pins(s).len())).collect();
     json!({
-        "installed": installed, "connected": b.conns.lock().unwrap().len(), "ext_id": EXT_ID,
+        "installed": installed, "connected": b.conns.lock().unwrap().len(), "launched": crate::browser_launch::running(&app).is_some(), "ext_id": EXT_ID,
         "extension_dir": crate::selfbuild::data_dir(&app).join("browser").join("extension").to_string_lossy(),
         "links": links, "open": open, "blocklist": m.blocklist(),
     })

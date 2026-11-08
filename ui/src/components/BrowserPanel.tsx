@@ -14,7 +14,7 @@ export type BrowserLink = { tab: string; session: string; url: string; title: st
 type SessionBrowser = { links: BrowserLink[]; pins: number; carryable: number };
 type ReviewPin = { id: string; n: number; kind: string; selector: string; text: string; note: string; redactions: number; url: string; thumb: string | null; unlinked: boolean };
 type Review = { session: string; title: string; marker: string; count: number; tab_count: number; note: string; tabs: { tab: string; title: string; pages: { url: string; pins: ReviewPin[] }[] }[]; error?: string; message?: string };
-type Status = { installed: boolean; connected: number; ext_id: string; extension_dir: string; links: (BrowserLink & { session_title: string })[]; open: Record<string, number>; blocklist: string[] };
+type Status = { installed: boolean; connected: number; launched: boolean; ext_id: string; extension_dir: string; links: (BrowserLink & { session_title: string })[]; open: Record<string, number>; blocklist: string[] };
 
 /** Re-runs `load` on every browser.* event. */
 function useBrowserEvents(load: () => void) {
@@ -32,15 +32,22 @@ export function BrowserChips({ session }: { session: string }) {
   const [st, setSt] = useState<SessionBrowser | null>(null);
   const [review, setReview] = useState(false);
   const [servers, setServers] = useState<string[]>([]);
+  const [extension, setExtension] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [err, setErr] = useState("");
   const load = useCallback(() => { invoke<SessionBrowser>("browser_session", { session }).then(setSt, () => setSt(null)); }, [session]);
   useBrowserEvents(load);
   useEffect(() => {
     // ⌥⇧A in Chrome suggests the session you're looking at when no session serves the page.
     void invoke("browser_focused", { session }).catch(() => {});
     invoke<string[]>("browser_servers", { session }).then(setServers, () => {});
+    invoke<Status>("browser_status").then((x) => setExtension(x.connected > 0), () => {});
   }, [session]);
   if (!st) return null;
-  const open = (url: string) => void openUrl(url).catch(() => {});
+  // Your own Chrome when the extension is there (localhost tabs link themselves); else Cockpit's
+  // own Chrome window, which needs no setup and opens the page already linked.
+  const inCockpit = (url: string) => { setErr(""); invoke("browser_launch_open", { session, url }).then(() => setAsking(false), (e) => setErr(shortError(e))); };
+  const open = (url: string) => (extension ? void openUrl(url).catch(() => {}) : inCockpit(url));
   return (
     <>
       {st.links.map((l) => (
@@ -50,6 +57,13 @@ export function BrowserChips({ session }: { session: string }) {
         </span>
       ))}
       {!st.links.length && servers.slice(0, 1).map((u) => <Key key={u} onClick={() => open(u)}>Annotate {u.replace(/^https?:\/\//, "").replace(/\/$/, "")}</Key>)}
+      {asking
+        ? <form className="mr-row" style={{ gap: 4 }} data-mr="BrowserOpen" data-mr-source={session} onSubmit={(e) => { e.preventDefault(); const v = new FormData(e.currentTarget).get("url"); if (v) inCockpit(String(v)); }}>
+            <input name="url" autoFocus defaultValue={servers[0] ?? ""} placeholder="https://staging.example.com" aria-label="Page to annotate" style={{ width: 240 }} onKeyDown={(e) => { if (e.key === "Escape") setAsking(false); }} />
+            <Key submit tone="primary">Open</Key>
+          </form>
+        : <Key onClick={() => setAsking(true)}>Annotate a page…</Key>}
+      {err && <span style={{ color: "var(--mr-error)" }}>{err}</span>}
       {st.pins > 0 && <Key tone="primary" onClick={() => setReview(true)}>Review & send {plural(st.pins, "pin")}</Key>}
       {!st.pins && st.carryable > 0 && <Key onClick={() => void invoke("browser_carry", { session })}>Carry {st.carryable} open {st.carryable === 1 ? "pin" : "pins"}</Key>}
       {review && <ReviewSheet session={session} onClose={() => setReview(false)} />}
@@ -136,6 +150,10 @@ export function BrowserSettings() {
   return (
     <section data-mr="BrowserSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 className="mr-h">Browser <span className="mr-dim" style={{ fontWeight: 400 }}>pin problems on any page in Chrome; nothing is sent until you confirm</span></h2>
+      <span className="mr-dim" style={{ fontSize: 12 }}>
+        No setup needed: <b>Annotate a page…</b> in a session opens Cockpit's own Chrome window (its own profile; log in to sites there once). {st.launched ? "It's open now." : ""}
+        {" "}To annotate in your own Chrome profile instead, set up the extension below.
+      </span>
       <div className="mr-row" style={{ gap: 12, flexWrap: "wrap" }}>
         <Key tone={st.installed ? undefined : "primary"} onClick={() => void setup()}>{st.installed ? "Set up again" : "Set up browser"}</Key>
         <span className="mr-dim" style={{ fontSize: 12 }}>
