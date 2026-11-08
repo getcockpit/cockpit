@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Cockpit annotations",
+  "version": "0.1.0",
+  "description": "Pin problems on a page and send them to a Cockpit session, only after you review and confirm.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsVfWdyj/RlvcX2nw5pCDPJ/IREBQAjCXwQhQGDRXT+8ZWL+4N+xYmzSzCZ4QHOj63TLJFB1T+YmAC2ffF+HBV3gFS7XMPaeeWxnTrztrunnoZGAYW8dtsw4YQNDNaU+/hBW3Dc5a9hCg9tR4fqNLdbwMOG6vKZinjhfMBe2lpxdEL3ovOsSa7QnKYCTk0hM/BOlFZIu/6qobehYCLyKolg7qNAuc0XjB7ub+PL58IoaP3oXLeRc/8Uke/YmjLa8d4By6U1+f2kaCC58qErReHYtKpk/fDOBOaCkImpn0obl7S5ozBXn7bnBGJXFugC4UOJaIHB0hEUq56KHxHi1MuwIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "scripting", "nativeMessaging", "storage"],
+  "optional_host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "Link this tab to a Cockpit session (⌥⇧A)" },
+  "commands": {
+    "_execute_action": { "suggested_key": { "default": "Alt+Shift+A" }, "description": "Link this tab to a Cockpit session" }
+  }
+}

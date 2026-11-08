@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px/1.4 -apple-system, "Atkinson Hyperlegible Next", sans-serif; color: #15181b; background: #e4e7ea; margin: 0; width: 300px; }
+  main { padding: 12px; }
+  h1 { font-size: 13px; margin: 0 0 8px; }
+  .muted { color: #545b61; }
+  .err { color: #c62828; }
+  label.s { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: #d3d6d9; margin: 0 0 4px; cursor: pointer; border-radius: 2px; }
+  label.s:has(input:checked) { outline: 2px solid #0e6e78; }
+  .m { display: inline-block; min-width: 18px; text-align: center; background: #15181b; color: #fff; font-weight: 700; border-radius: 2px; }
+  button { font: inherit; border: 0; border-radius: 2px; padding: 6px 10px; background: #15181b; color: #fff; cursor: pointer; }
+  button.ghost { background: #c3c7cb; color: #15181b; }
+  .row { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  .hint { font-size: 11px; color: #545b61; margin-top: 6px; }
+</style>
+</head>
+<body>
+<main id="root" data-mr="browser-popup"><p class="muted">Asking Cockpit…</p></main>
+<script src="popup.js"></script>
+</body>
+</html>

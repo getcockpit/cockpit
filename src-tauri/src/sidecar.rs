@@ -555,6 +555,9 @@ pub fn start_with(
         if !spawned {
             specs.push(crate::spawn::tool_spec());
         }
+        if !layer {
+            specs.extend(crate::browser::tool_specs());
+        }
         serde_json::Value::Array(specs)
     });
     let mut env = serde_json::Map::new();
@@ -577,6 +580,11 @@ pub fn start_with(
     state.idle.lock().unwrap().remove(&session);
     sidecar_send(state, msg)?;
     Ok(session)
+}
+
+/// The ids of the sessions running now.
+pub fn live_sessions(app: &AppHandle) -> std::collections::HashSet<String> {
+    app.state::<Sidecar>().live.lock().unwrap().clone()
 }
 
 pub fn is_live(app: &AppHandle, session: &str) -> bool {
@@ -889,6 +897,18 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
     let session = payload["session"].as_str().unwrap_or_default().to_owned();
     let call_id = payload["call_id"].as_str().unwrap_or_default().to_owned();
     let tool = payload["tool"].as_str().unwrap_or_default();
+    if crate::browser::is_browser_tool(tool) {
+        // Off the reader loop: reload and screenshot wait for the browser.
+        let (app, args, tool) = (app.clone(), payload["args"].clone(), tool.to_owned());
+        tauri::async_runtime::spawn_blocking(move || {
+            let (events, text, is_error) = crate::browser::handle_tool(&app, &session, &tool, &args);
+            for (kind, p) in events {
+                crate::eventlog::record(&app, Some(&session), &kind, &p, Some("browser"));
+            }
+            let _ = tool_result(app.clone(), app.state::<Sidecar>(), session, call_id, text, Some(is_error), None);
+        });
+        return;
+    }
     if tool == crate::spawn::TOOL {
         // Off the reader loop: a worktree is a few git calls.
         let (app, args) = (app.clone(), payload["args"].clone());

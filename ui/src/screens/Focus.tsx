@@ -38,6 +38,7 @@ import { PromptBox, type PromptBoxHandle } from "../components/PromptBox";
 import { AttachmentRow } from "../components/Attachments";
 import { UserText } from "../components/UserText";
 import { McpPanel } from "../components/McpPanel";
+import { BrowserChips } from "../components/BrowserPanel";
 import { routeSlash } from "../picker/slash";
 import { lazy, Suspense } from "react";
 import { basename, slashed } from "../fspath";
@@ -175,6 +176,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}
           {isFix && s.fixApplied && <Key k="⌘⇧B" tone="primary" onClick={() => void api.mineWorktree().then(onBuild)}>Applied ✓ · Rebuild & relaunch</Key>}
           {applyError && <span style={{ color: "var(--mr-error)" }}>{applyError}</span>}
+          {!s.fromDeleted && !s.archivedAt && <BrowserChips session={s.id} />}
           <span className="mr-grow" />
           <ContextMeter s={s} compactWindow={compactWindow} running={running} />
           {!s.fromDeleted && !elsewhere && <MoveWorkspace s={s} workspaces={workspaces} running={running} />}

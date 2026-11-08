@@ -1,0 +1,10 @@
+<!doctype html><html><body style="height:2000px">
+<h1>Settings</h1>
+<form><input type="password" name="pw" value="hunter2"><input type="hidden" name="csrf" value="tok123">
+<button class="save" data-testid="save" style="position:absolute;left:100px;top:200px;width:120px;height:36px">Save changes</button></form>
+<script>
+// A hostile page: tries to fake pins and presses.
+window.__forged = 0;
+setInterval(() => { document.querySelectorAll("cockpit-annotations").forEach(h => { window.__sawHost = true; window.__shadow = h.shadowRoot; }); }, 100);
+</script>
+</body></html>

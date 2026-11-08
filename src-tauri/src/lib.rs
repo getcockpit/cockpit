@@ -1,5 +1,6 @@
 mod attachments;
 mod background;
+mod browser;
 mod brief;
 mod changes;
 mod cockpit_layer;
@@ -33,6 +34,11 @@ mod workspaces;
 mod worktree;
 
 use tauri::Manager;
+
+/// Chrome's native-messaging host for the browser extension: relays to the running app and exits.
+pub fn browser_host(args: &[String]) -> i32 {
+    browser::host_main(args)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -70,9 +76,14 @@ pub fn run() {
             for ev in log.list_prefixed(docs::KIND_PREFIXES)? {
                 docs.apply(&ev);
             }
+            let browser = browser::Browser::default();
+            for ev in log.list_prefixed(browser::KIND_PREFIXES)? {
+                browser.apply(&ev.kind, &ev.payload);
+            }
             app.manage(usage::Usage::open(&dir.join("events.sqlite"))?);
             app.manage(log);
             app.manage(docs);
+            app.manage(browser);
             // Before app.started: copies that died since are reported first (MR-99).
             instances::start(app.handle(), &dir);
             update::on_start(app.handle());
@@ -81,6 +92,7 @@ pub fn run() {
             // Recurring sessions (MR-167): the minute tick, then the tray and start-at-login.
             schedules::start(app.handle());
             background::start(app.handle());
+            browser::start(app.handle());
             if selftest::enabled() {
                 selftest::run(app.handle().clone());
             }
@@ -187,7 +199,19 @@ pub fn run() {
             schedules::schedules_next,
             schedules::schedule_preview,
             schedules::schedules_checks,
-            background::background_set
+            background::background_set,
+            browser::browser_setup,
+            browser::browser_status,
+            browser::browser_session,
+            browser::browser_unlink,
+            browser::browser_disconnect_all,
+            browser::browser_batch,
+            browser::browser_confirm,
+            browser::browser_pin_edit,
+            browser::browser_carry,
+            browser::browser_focused,
+            browser::browser_servers,
+            browser::browser_blocklist_set
         ])
         .on_window_event(|window, ev| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = ev {
