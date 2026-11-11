@@ -196,10 +196,15 @@ impl Model {
         self.pins.iter().find(|x| x.id == id)
     }
 
-    /// Pins of the last batch sent that still need work: replied open, or not replied yet.
+    /// Pins of the last batch sent that still need work: replied open, or not replied yet. Only
+    /// once the agent has replied to one of them: right after sending, nothing needs carrying.
     pub fn carryable(&self, session: &str) -> Vec<&Pin> {
         let last = self.sent.get(session).copied().unwrap_or(0);
-        self.pins.iter().filter(|x| x.session == session && last > 0 && x.batch == last && !matches!(x.status.as_deref(), Some("fixed" | "wontfix"))).collect()
+        let batch: Vec<&Pin> = self.pins.iter().filter(|x| x.session == session && last > 0 && x.batch == last).collect();
+        if !batch.iter().any(|x| x.status.is_some()) {
+            return vec![];
+        }
+        batch.into_iter().filter(|x| !matches!(x.status.as_deref(), Some("fixed" | "wontfix"))).collect()
     }
 
     pub fn blocklist(&self) -> Vec<String> {
@@ -1435,6 +1440,7 @@ mod tests {
         let ids: Vec<String> = (0..3).map(|i| run(&mut m, &ctx, json!({ "type": "pin", "tab": "c:1", "pin": { "note": format!("n{i}"), "url": "http://localhost:5173/" } })).reply["pin"].as_str().unwrap().to_owned()).collect();
         assert!(reply_tool(&m, "A", &json!({ "pin_id": ids[0], "status": "fixed" })).is_err(), "not sent yet");
         run(&mut m, &ctx, json!({ "type": "confirm", "tab": "c:1" }));
+        assert!(m.carryable("A").is_empty(), "nothing to carry until the agent replies");
         let (p, _) = reply_tool(&m, "A", &json!({ "pin_id": ids[0], "status": "fixed", "note": "disabled now" })).unwrap();
         m.apply("browser.pin_reply", &p);
         let (p, _) = reply_tool(&m, "A", &json!({ "pin_id": ids[1], "status": "open" })).unwrap();

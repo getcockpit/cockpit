@@ -123,6 +123,10 @@ const RAW: Record<string, string> = {
 };
 
 let drawnN = 1;
+// Browser annotations: tabs opened from "Annotate a page…" in Cockpit's own Chrome (none here).
+const browserLinks: { tab: string; session: string; url: string; title: string; mode: string }[] = [];
+let browserTabs = 0;
+
 function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
   if (FAIL && RAW[cmd]) throw new Error(RAW[cmd]);
   switch (cmd) {
@@ -428,6 +432,24 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "workspace_reorder": record(null, "ui.workspaces_reordered", { order: a.order }); return null;
     case "overview_tidy": record(null, "ui.overview_tidied", {}); return null;
     case "overview_move": record(null, "ui.overview_moved", { workspace: a.workspace, x: Math.round(Number(a.x)), y: Math.round(Number(a.y)) }); return null;
+    case "browser_status": return { installed: false, connected: 0, launched: browserTabs > 0, ext_id: "", extension_dir: "", links: browserLinks.map((l) => ({ ...l, session_title: "" })), open: {}, blocklist: [] };
+    case "browser_session": return { links: browserLinks.filter((l) => l.session === a.session), pins: 0, carryable: 0 };
+    case "browser_servers": return [];
+    case "browser_launch_open": {
+      const url = String(a.url).includes("://") ? String(a.url) : `${/^(localhost|127\.0\.0\.1)\b/.test(String(a.url)) ? "http" : "https"}://${a.url}`;
+      const had = browserLinks.find((l) => l.session === a.session && l.url === url);
+      if (had) return had.tab;
+      const tab = `cockpit:${++browserTabs}`;
+      browserLinks.push({ tab, session: String(a.session), url, title: url.replace(/^https?:\/\//, ""), mode: "launch" });
+      record(String(a.session), "browser.linked", { session: a.session, tab, url, mode: "launch" });
+      return tab;
+    }
+    case "browser_unlink": {
+      const i = browserLinks.findIndex((l) => l.tab === a.tab);
+      const [gone] = i >= 0 ? browserLinks.splice(i, 1) : [];
+      if (gone) record(gone.session, "browser.unlinked", { session: gone.session, tab: a.tab, reason: "you" });
+      return { ok: true };
+    }
     default: return null;
   }
 }

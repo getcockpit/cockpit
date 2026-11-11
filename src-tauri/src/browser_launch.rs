@@ -429,7 +429,7 @@ fn on_tab(app: &tauri::AppHandle, ev: &str, tab: &str, p: &Value) {
 /// that page is brought to the front instead.
 pub fn open(app: &tauri::AppHandle, session: &str, url: &str) -> Result<String, String> {
     use tauri::Manager;
-    let url = if url.contains("://") { url.to_owned() } else { format!("https://{url}") };
+    let url = with_scheme(url.trim());
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("Only http and https pages can be annotated".into());
     }
@@ -438,7 +438,9 @@ pub fn open(app: &tauri::AppHandle, session: &str, url: &str) -> Result<String, 
     let mine = app.state::<crate::browser::Browser>().model.lock().unwrap().links_of(session);
     let live = cdp.targets();
     if let Some(l) = mine.iter().find(|l| l.tab.strip_prefix(PREFIX).is_some_and(|t| live.iter().any(|x| x == t)) && crate::browser::same_page(&l.url, &url)) {
-        let _ = cdp.call(None, "Target.activateTarget", json!({ "targetId": l.tab.strip_prefix(PREFIX).unwrap_or_default() }));
+        let t = l.tab.strip_prefix(PREFIX).unwrap_or_default().to_owned();
+        let _ = cdp.call(None, "Target.activateTarget", json!({ "targetId": t }));
+        start_annotating(cdp, t);
         return Ok(l.tab.clone());
     }
     let mut refused = None;
@@ -454,7 +456,33 @@ pub fn open(app: &tauri::AppHandle, session: &str, url: &str) -> Result<String, 
     if let Some(e) = refused {
         return Err(e);
     }
+    start_annotating(cdp, target.clone());
     Ok(format!("{PREFIX}{target}"))
+}
+
+/// A typed address as a URL: `localhost:3000` is a dev server (http), anything else https.
+pub fn with_scheme(url: &str) -> String {
+    if url.contains("://") {
+        return url.to_owned();
+    }
+    let host = url.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = host.rsplit_once(':').filter(|(_, p)| p.chars().all(|c| c.is_ascii_digit())).map(|(h, _)| h).unwrap_or(host);
+    let local = matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "[::1]") || host.ends_with(".localhost");
+    format!("{}://{url}", if local { "http" } else { "https" })
+}
+
+/// You asked to annotate this page: the overlay starts in annotate mode, so the next click pins.
+/// Waits (off this thread) for the overlay to load.
+fn start_annotating(cdp: Arc<Cdp>, target: String) {
+    std::thread::spawn(move || {
+        for _ in 0..100 {
+            let r = cdp.eval_world(&target, "globalThis.__cockpitOverlay ? (__cockpitPush({ type: 'annotate' }), true) : false");
+            if r.is_ok_and(|v| v["result"]["value"] == true) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
 }
 
 /// Tells a launched tab's overlay something (refresh, unlinked); a no-op for extension tabs.
@@ -513,6 +541,15 @@ mod tests {
     }
 
     #[test]
+    fn typed_addresses_get_a_scheme() {
+        assert_eq!(with_scheme("localhost:3000"), "http://localhost:3000");
+        assert_eq!(with_scheme("127.0.0.1:5173/settings"), "http://127.0.0.1:5173/settings");
+        assert_eq!(with_scheme("app.localhost"), "http://app.localhost");
+        assert_eq!(with_scheme("staging.example.com/x"), "https://staging.example.com/x");
+        assert_eq!(with_scheme("http://example.com"), "http://example.com");
+    }
+
+    #[test]
     fn the_overlay_loads_behind_the_shim() {
         let s = overlay_source();
         let (shim, lib, ann) = (s.find("__cockpitReply").unwrap(), s.find("__cockpitLib = lib").unwrap(), s.find("__cockpitOverlay").unwrap());
@@ -567,5 +604,58 @@ mod tests {
         assert_eq!(r["result"]["value"], json!([1, true, 0]), "{r}");
         cdp.kill();
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The UX walk host (scripts/e2e/annotate-walk.sh): headless Chrome over the pipe, the real
+    /// core model behind it, a tab already linked the way "Annotate a page…" links it, and a
+    /// DevTools port for the driver's trusted input. Runs until `MR_WALK_DIR/done` appears.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn ux_walk_host() {
+        let (Some(browser), Ok(dir)) = (find_browser(), std::env::var("MR_WALK_DIR")) else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let model: Arc<Mutex<crate::browser::Model>> = Arc::default();
+        let sessions = vec![crate::browser::SessionInfo { id: "A".into(), title: "Settings redesign".into(), folder: "/tmp".into() }];
+        let data = dir.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let run = {
+            let (model, sessions, data, dir) = (model.clone(), sessions.clone(), data.clone(), dir.clone());
+            move |m: &Value| -> (Value, bool) {
+                let ports = HashMap::new();
+                let ctx = crate::browser::Ctx { sessions: &sessions, focused: Some("A"), ports: &ports, data_dir: &data };
+                let out = crate::browser::handle(&model.lock().unwrap(), &ctx, m);
+                for (_, kind, p) in &out.events {
+                    model.lock().unwrap().apply(kind, p);
+                }
+                if let Some((_, text, _)) = &out.send {
+                    std::fs::write(dir.join("sent.txt"), text).unwrap();
+                }
+                (out.reply, !out.events.is_empty())
+            }
+        };
+        let run = Arc::new(run);
+        let r2 = run.clone();
+        let on_call: OnCall = Arc::new(move |cdp, tab, msg| {
+            let changed = std::cell::Cell::new(false);
+            let reply = shim_call(cdp, tab, msg, |m| { let (r, c) = r2(m); changed.set(c); r });
+            if changed.get() {
+                // The app pushes refresh to every tab after a change.
+                for t in cdp.targets() {
+                    cdp.push(&t, &json!({ "type": "refresh" }));
+                }
+            }
+            reply
+        });
+        let cdp = launch(&browser, &dir.join("profile"), &["--headless=new", "--window-size=1280,860", "--remote-debugging-port=9337"], on_call, Arc::new(|_, _, _| {})).unwrap();
+        let url = std::env::var("MR_WALK_URL").unwrap_or_else(|_| "http://127.0.0.1:18766/app.html".into());
+        let target = cdp.open(&url, |t| { run(&json!({ "type": "link", "tab": format!("{PREFIX}{t}"), "url": url, "title": "Acme settings", "session": "A" })); }).unwrap();
+        start_annotating(cdp.clone(), target);
+        std::fs::write(dir.join("ready"), "").unwrap();
+        for _ in 0..1200 {
+            if dir.join("done").exists() { break; }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        cdp.kill();
     }
 }

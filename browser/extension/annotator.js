@@ -37,7 +37,7 @@
     .box { position: absolute; outline: 2px dashed ${C.ink3}; pointer-events: none; }
     .bubble { position: fixed; width: 260px; background: ${C.tile}; padding: 8px; pointer-events: auto; box-shadow: 0 0 0 1px ${C.band}; border-radius: 2px; }
     textarea { width: 100%; min-height: 54px; border: 0; border-radius: 2px; padding: 6px; background: #fff; resize: vertical; }
-    .sheet { position: fixed; inset: 5vh 10vw; background: ${C.tile}; pointer-events: auto; display: flex; flex-direction: column; box-shadow: 0 0 0 100vmax rgba(21,24,27,.35); border-radius: 2px; }
+    .sheet { position: fixed; top: 5vh; left: 10vw; right: 10vw; max-height: 90vh; background: ${C.tile}; pointer-events: auto; display: flex; flex-direction: column; box-shadow: 0 0 0 100vmax rgba(21,24,27,.35); border-radius: 2px; }
     .sheet .body { flex: 1; overflow: auto; padding: 12px; }
     .sheet h2 { font-size: 15px; margin: 0; padding: 12px; background: ${C.base}; }
     .tab { margin: 0 0 12px; } .tab > b { display: block; padding: 4px 0; }
@@ -70,6 +70,8 @@
   let annotating = false;
   let tray = el("div");
   let captureNote = "";
+  // The open review sheet's keys (Esc cancels, ⌘↵ confirms), while it's open.
+  let sheetKeys = null;
 
   async function refresh() {
     try {
@@ -87,14 +89,15 @@
       return row;
     }));
     const next = el("div", { className: "tray", "data-mr": "browser-tray" },
-      el("div", { className: "head" }, el("span", { className: "m", textContent: s.linked.marker }), el("span", { className: "grow", textContent: `${s.linked.title} · ${L.countLine(s.count.pins, s.count.tabs)}` }), btn("×", unlink)),
+      el("div", { className: "head" }, el("span", { className: "m", textContent: s.linked.marker }), el("span", { className: "grow", textContent: `${s.linked.title} · ${L.countLine(s.count.pins, s.count.tabs)}` }), Object.assign(btn("×", unlink), { title: `Unlink this tab from ${s.linked.title}` })),
       el("div", { className: "row" },
         btn(annotating ? "Annotating… (Esc)" : "Annotate (⌥A)", () => setAnnotating(!annotating), annotating ? "on" : ""),
-        btn("Review & send", review, "go"),
+        s.count.pins ? btn(`Review & send ${s.count.pins}`, review, "go") : null,
         s.carryable && !s.count.pins ? btn(`Carry ${s.carryable} open`, async () => { await ask({ type: "carry" }); refresh(); }) : null,
       ),
       s.open.length ? list : null,
       captureNote ? el("div", { className: "hint", textContent: captureNote }) : null,
+      annotating && !s.count.pins && !captureNote ? el("div", { className: "hint", textContent: "Click anything on the page, or drag a box. Esc lets you use the page." }) : null,
     );
     tray.replaceWith(next);
     tray = next;
@@ -111,6 +114,11 @@
       m.style.top = `${(r.py ?? r.y ?? 0) - 10}px`;
       m.style.position = "absolute";
       if (p.reply || p.note) m.addEventListener("click", (e) => { if (e.isTrusted) bubble(m.getBoundingClientRect(), el("div", {}, el("b", { textContent: `${p.n}. ${p.status || (p.sent ? "sent" : "open")}` }), el("div", { textContent: p.note }), p.reply ? el("div", { textContent: `Agent: ${p.reply}` }) : null, el("div", { className: "row" }, btn("Close", closeBubble)))); });
+      if (p.kind === "box" && !p.sent && r.w) {
+        const b = el("div", { className: "box" });
+        Object.assign(b.style, { left: `${r.px ?? r.x}px`, top: `${r.py ?? r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+        marks.append(b);
+      }
       marks.append(m);
     }
     // Page coordinates: markers scroll with the page.
@@ -142,11 +150,13 @@
     if (start) {
       const r = L.boxFrom(start, { x: e.clientX, y: e.clientY });
       if (r.w + r.h > 6) {
+        hl.style.display = "none";
         boxEl ||= layer.appendChild(el("div", { className: "hl" }));
         Object.assign(boxEl.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
       }
       return;
     }
+    if (bubbleEl) return;
     const t = under(e.clientX, e.clientY);
     if (!t) return;
     const r = t.getBoundingClientRect();
@@ -167,7 +177,7 @@
   });
 
   let bubbleEl = null;
-  function closeBubble() { bubbleEl?.remove(); bubbleEl = null; }
+  function closeBubble() { if (bubbleEl) hl.style.display = "none"; bubbleEl?.remove(); bubbleEl = null; }
   function bubble(at, content) {
     closeBubble();
     bubbleEl = el("div", { className: "bubble" }, content);
@@ -177,6 +187,8 @@
   }
 
   function note(pick) {
+    // The picked element or box stays outlined while you write.
+    Object.assign(hl.style, { left: `${pick.rect.x}px`, top: `${pick.rect.y}px`, width: `${pick.rect.w}px`, height: `${pick.rect.h}px`, display: "block" });
     const ta = el("textarea", { placeholder: "What's wrong here? (Enter to pin, Esc to cancel)" });
     const save = async () => {
       const text = ta.value.trim();
@@ -233,12 +245,13 @@
     const batchNote = el("textarea", { placeholder: "A note for the whole batch (optional)", value: b.note || "" });
     const status = el("div", { className: "row" });
     const body = el("div", { className: "body" });
-    const send = btn(`Confirm & send ${b.count} pin${b.count === 1 ? "" : "s"}`, confirm, "go");
+    const send = btn(`Confirm & send ${b.count} pin${b.count === 1 ? "" : "s"} (⌘↵)`, confirm, "go");
+    const close = () => { sheet.remove(); sheetKeys = null; };
     const sheet = el("div", { className: "sheet", "data-mr": "browser-review" },
       el("h2", {}, `Send ${b.count} pin${b.count === 1 ? "" : "s"} from ${b.tab_count} tab${b.tab_count === 1 ? "" : "s"} to `, el("span", { className: "m", textContent: b.marker }), ` ${b.title}`),
       body,
       el("div", { className: "row" }, batchNote),
-      el("div", { className: "row" }, send, btn("Cancel", () => sheet.remove())),
+      el("div", { className: "row" }, send, btn("Cancel (Esc)", close)),
       status,
     );
     const draw = () => {
@@ -253,18 +266,25 @@
           el("div", {}, btn("↑", () => { order = L.move(order, i, -1); draw(); }), btn("↓", () => { order = L.move(order, i, 1); draw(); }), btn("Remove", async () => { await ask({ type: "pin_remove", pin: id }); order = order.filter((x) => x !== id); draw(); refresh(); })),
         );
       }));
-      send.textContent = `Confirm & send ${order.length} pin${order.length === 1 ? "" : "s"}`;
+      send.textContent = `Confirm & send ${order.length} pin${order.length === 1 ? "" : "s"} (⌘↵)`;
+      send.disabled = !order.length;
     };
     async function confirm() {
       send.disabled = true;
       const r = await ask({ type: "confirm", session: b.session, note: batchNote.value, order });
       if (r.error) { send.disabled = false; return status.replaceChildren(el("span", { className: "err", textContent: r.message || r.error })); }
-      sheet.remove();
+      close();
       captureNote = `Sent ${r.sent} pin${r.sent === 1 ? "" : "s"} to ${r.title}.`;
       refresh();
     }
     draw();
     layer.append(sheet);
+    sheetKeys = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); close(); }
+      else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !send.disabled) { e.preventDefault(); confirm(); }
+      else return false;
+      return true;
+    };
   }
 
   async function unlink() {
@@ -283,6 +303,7 @@
 
   function onKey(e) {
     if (!e.isTrusted) return;
+    if (sheetKeys) { if (sheetKeys(e)) e.stopPropagation(); return; }
     if (L.isToggle(e)) { e.preventDefault(); e.stopPropagation(); setAnnotating(!annotating); }
     else if (e.key === "Escape" && annotating && !bubbleEl) setAnnotating(false);
   }
@@ -290,6 +311,8 @@
 
   function onMsg(msg) {
     if (msg.type === "refresh") refresh();
+    // Opened from "Annotate a page…" in Cockpit: ready to click, no extra step.
+    if (msg.type === "annotate" && !annotating) setAnnotating(true);
     if (msg.type === "unlinked") teardown();
     if (msg.type === "hide") host.style.visibility = "hidden";
     if (msg.type === "show") host.style.visibility = "";

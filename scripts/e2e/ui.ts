@@ -253,6 +253,21 @@ const flows: Flow[] = [
     await ui.tags("ChangeMap", 1);
     await ui.tags("ChangeNode", some);
   } },
+  { name: "J21 annotate a page from a session: type the address, Enter, the tab shows linked", run: async () => {
+    await ui.open("busy");
+    await ui.click("button", "Ready to review Refactor the settings schema");
+    await ui.click("button", "Annotate a page…");
+    await ui.click("button", "Cancel");
+    await ui.see("button", "Annotate a page…");
+    await ui.click("button", "Annotate a page…");
+    await ui.fill("Page to annotate", "localhost:3000");
+    await ui.press("Enter");
+    await ui.tags("BrowserChip", 1);
+    await ui.see("button", "localhost:3000");
+    await ui.tags("BrowserOpen", 0);
+    await ui.click("button", "Unlink tab");
+    await ui.tags("BrowserChip", 0);
+  } },
   { name: "J7 open the plan's doc map", run: async () => {
     await ui.open("busy");
     await ui.click("button", "↵ Open doc");

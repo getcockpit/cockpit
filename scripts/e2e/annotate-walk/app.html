@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Acme · Settings</title>
+<style>
+body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #f6f7f9; color: #222; }
+header { background: #1d2a44; color: #fff; padding: 14px 32px; display: flex; gap: 24px; align-items: center; }
+header b { font-size: 18px; } header a { color: #cfd8ea; text-decoration: none; }
+main { max-width: 720px; margin: 32px auto; background: #fff; padding: 28px 32px; border-radius: 8px; box-shadow: 0 1px 3px #0002; }
+h1 { margin: 0 0 18px; font-size: 24px; }
+label { display: block; margin: 14px 0 4px; font-weight: 600; }
+input, select { width: 100%; padding: 9px 10px; border: 1px solid #ccd; border-radius: 6px; font: inherit; box-sizing: border-box; }
+.row { display: flex; gap: 12px; margin-top: 24px; }
+button { padding: 10px 18px; border-radius: 6px; border: 0; font: inherit; cursor: pointer; }
+.primary { background: #3b6cf6; color: #fff; } .ghost { background: #eef; }
+.danger { margin-top: 40px; padding: 16px; border: 1px solid #f3c2c2; border-radius: 6px; background: #fff7f7; }
+footer { height: 900px; }
+</style></head>
+<body>
+<header><b>Acme</b><a href="#">Dashboard</a><a href="#">Projects</a><a href="#">Settings</a></header>
+<main>
+  <h1>Account settings</h1>
+  <label for="name">Display name</label><input id="name" value="Ada Lovelace">
+  <label for="email">Email</label><input id="email" value="ada@example.com">
+  <label for="pw">Password</label><input id="pw" type="password" value="hunter2">
+  <label for="tz">Time zone</label><select id="tz"><option>Europe/Kyiv</option><option>UTC</option></select>
+  <div class="row"><button class="primary" data-testid="save">Save changes</button><button class="ghost">Cancel</button></div>
+  <div class="danger"><b>Danger zone</b><p>Deleting your account removes every project.</p><button data-testid="delete" style="background:#d33;color:#fff">Delete account</button></div>
+</main>
+<footer></footer>
+</body></html>

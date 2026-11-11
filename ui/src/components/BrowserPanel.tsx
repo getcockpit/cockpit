@@ -48,21 +48,27 @@ export function BrowserChips({ session }: { session: string }) {
   // own Chrome window, which needs no setup and opens the page already linked.
   const inCockpit = (url: string) => { setErr(""); invoke("browser_launch_open", { session, url }).then(() => setAsking(false), (e) => setErr(shortError(e))); };
   const open = (url: string) => (extension ? void openUrl(url).catch(() => {}) : inCockpit(url));
+  // The dev server this session runs, when it isn't linked yet: one click opens it.
+  const server = st.links.length ? undefined : servers[0];
   return (
     <>
       {st.links.map((l) => (
-        <span key={l.tab} data-mr="BrowserChip" data-mr-source={l.tab} className="mr-row" style={{ gap: 4, padding: "2px 6px", background: "var(--mr-well)", borderRadius: 2, maxWidth: 220 }} title={l.url}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title || l.url}</span>
-          <button type="button" className="mr-dim" aria-label="Unlink tab" style={{ border: 0, background: "transparent", cursor: "pointer" }} onClick={() => void invoke("browser_unlink", { tab: l.tab })}>×</button>
+        <span key={l.tab} data-mr="BrowserChip" data-mr-source={l.tab} className="mr-row" style={{ gap: 4, padding: "2px 6px", background: "var(--mr-well)", borderRadius: 2, maxWidth: 220 }}>
+          {/* Back to the page: Cockpit's browser brings the tab to the front. */}
+          <button type="button" title={l.mode === "launch" ? `Show ${l.url}` : l.url} disabled={l.mode !== "launch"} onClick={() => inCockpit(l.url)}
+            style={{ border: 0, padding: 0, background: "transparent", font: "inherit", color: "inherit", cursor: l.mode === "launch" ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title || l.url}</button>
+          <button type="button" className="mr-dim" aria-label="Unlink tab" title="Unlink this tab" style={{ border: 0, background: "transparent", cursor: "pointer" }} onClick={() => void invoke("browser_unlink", { tab: l.tab })}>×</button>
         </span>
       ))}
-      {!st.links.length && servers.slice(0, 1).map((u) => <Key key={u} onClick={() => open(u)}>Annotate {u.replace(/^https?:\/\//, "").replace(/\/$/, "")}</Key>)}
+      {server && !asking && <Key onClick={() => open(server)}>Annotate {server.replace(/^https?:\/\//, "").replace(/\/$/, "")}</Key>}
       {asking
-        ? <form className="mr-row" style={{ gap: 4 }} data-mr="BrowserOpen" data-mr-source={session} onSubmit={(e) => { e.preventDefault(); const v = new FormData(e.currentTarget).get("url"); if (v) inCockpit(String(v)); }}>
-            <input name="url" autoFocus defaultValue={servers[0] ?? ""} placeholder="https://staging.example.com" aria-label="Page to annotate" style={{ width: 240 }} onKeyDown={(e) => { if (e.key === "Escape") setAsking(false); }} />
-            <Key submit tone="primary">Open</Key>
+        ? <form className="mr-row" style={{ gap: 4 }} data-mr="BrowserOpen" data-mr-source={session} onSubmit={(e) => { e.preventDefault(); const v = String(new FormData(e.currentTarget).get("url") ?? "").trim(); if (v) inCockpit(v); }}>
+            <input name="url" autoFocus defaultValue={servers[0] ?? ""} onFocus={(e) => e.currentTarget.select()} placeholder="localhost:3000 or staging.example.com" aria-label="Page to annotate" style={{ width: 240 }}
+              onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setAsking(false); setErr(""); } }} />
+            <Key submit tone="primary">Open ↵</Key>
+            <Key onClick={() => { setAsking(false); setErr(""); }}>Cancel</Key>
           </form>
-        : <Key onClick={() => setAsking(true)}>Annotate a page…</Key>}
+        : <Key onClick={() => setAsking(true)}>{server ? "Other page…" : "Annotate a page…"}</Key>}
       {err && <span style={{ color: "var(--mr-error)" }}>{err}</span>}
       {st.pins > 0 && <Key tone="primary" onClick={() => setReview(true)}>Review & send {plural(st.pins, "pin")}</Key>}
       {!st.pins && st.carryable > 0 && <Key onClick={() => void invoke("browser_carry", { session })}>Carry {st.carryable} open {st.carryable === 1 ? "pin" : "pins"}</Key>}
