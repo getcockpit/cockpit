@@ -11,7 +11,7 @@ type Action = { type: "replay"; events: MrEvent[] } | { type: "event"; event: Mr
 
 export function reducer(state: AppState, a: Action): AppState {
   if (a.type === "instance") return { ...state, instance: a.id };
-  if (a.type === "replay") return markPartial(replay(a.events, { ...initialState, instance: state.instance }));
+  if (a.type === "replay") return { ...markPartial(replay(a.events, { ...initialState, instance: state.instance })), loaded: true };
   if (a.type === "hydrate") return hydrated(state, a.id, a.events);
   return reduce(state, a.event);
 }
@@ -94,7 +94,8 @@ export function useAppState(): AppState {
     // Which copy this is comes first: the replay needs it to tell this copy's sessions from others'.
     invoke<string>("instance_id").catch(() => null).then((id) => {
       if (id && alive) dispatch({ type: "instance", id });
-      return loadLog();
+      // A failed read still ends the load screen: an empty app beats a spinner forever.
+      return loadLog().catch((e) => { console.error("event log read failed", e); return [] as MrEvent[]; });
     }).then((events) => {
       if (!alive) return;
       dispatch({ type: "replay", events });

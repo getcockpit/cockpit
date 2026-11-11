@@ -174,6 +174,7 @@ export type AppState = {
   models: ModelRow[];
   sidecar: { up: boolean; claude: string | null };
   lastEventId: string | null;
+  loaded: boolean; // the boot replay of the log has finished (the load screen waits for it)
   instance: string | null; // this copy's origin id; other copies (dev, /Applications) share the log (MR-99)
   dismissed: string[];
   workspaces: { id: string; name: string; configDir: string | null; folder: string | null }[]; // folder: pinned start folder (MR-65)

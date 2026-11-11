@@ -11,6 +11,7 @@ export const initialState: AppState = {
   models: [],
   sidecar: { up: false, claude: null },
   lastEventId: null,
+  loaded: false,
   instance: null,
   dismissed: [],
   workspaces: [{ id: "personal", name: "Personal", configDir: null, folder: null }],
