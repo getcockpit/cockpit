@@ -16,9 +16,12 @@ mkdirSync(`${D}/NativeMessagingHosts`);
 writeFileSync(`${D}/NativeMessagingHosts/dev.getcockpit.browser.json`, JSON.stringify({ name: "dev.getcockpit.browser", description: "Cockpit browser annotations", path: wrapper, type: "stdio", allowed_origins: ["chrome-extension://jikejkgnjdaenbejddeiniofbbnjmajh/"] }));
 const chrome = Bun.spawn([cft, "--headless=new", `--user-data-dir=${D}`, `--load-extension=${ext}`, `--disable-extensions-except=${ext}`, "--remote-debugging-port=9334", "--window-size=1200,900", "about:blank"], { stdout: "ignore", stderr: "ignore" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-await sleep(500);
-await sleep(2500);
-const targets = await (await fetch("http://127.0.0.1:9334/json/list")).json();
+// Poll for the extension's worker: a cold Chrome takes several seconds to start it.
+let targets: any[] = [];
+for (let i = 0; i < 60 && !targets.some((t) => t.type === "service_worker" && t.url.includes("jikejkgnjdaenbejddeiniofbbnjmajh")); i++) {
+  await sleep(500);
+  targets = await fetch("http://127.0.0.1:9334/json/list").then((r) => r.json(), () => []);
+}
 function cdp(url: string) {
   const ws = new WebSocket(url); let id = 0; const w = new Map();
   ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && w.has(m.id)) { w.get(m.id)(m); w.delete(m.id); } };
@@ -51,10 +54,6 @@ const click = async (x: number, y: number) => {
   await page("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
   await page("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
 };
-// A forged click on Review & send does nothing.
-await evalIn(page, `[...window.__root.querySelectorAll("button")].find(b => b.textContent.startsWith("Review")).click(); 1`);
-await sleep(200);
-check("forged click ignored (isTrusted)", (await evalIn(page, `window.__calls.filter(c => c.msg?.type === "batch").length`)) === 0);
 await key({ key: "å", code: "KeyA", modifiers: 1, windowsVirtualKeyCode: 65 });
 await sleep(200);
 await click(160, 218);
@@ -68,6 +67,10 @@ check("⌥A + click + note makes a pin", p.note === "should be disabled until so
 check("selector finds the element again", p.selector === '[data-testid="save"]');
 check("no password/hidden values leave the page", !!p.html && !/hunter2|tok123/.test(JSON.stringify(p)), p.html);
 check("crop asked of the worker, with the redaction list", Array.isArray(await evalIn(page, `window.__calls.find(c => c.type === "capture")?.redact`)));
+// A forged click on Review & send (shown once there's a pin) does nothing.
+await evalIn(page, `[...window.__root.querySelectorAll("button")].find(b => b.textContent.startsWith("Review")).click(); 1`);
+await sleep(200);
+check("forged click ignored (isTrusted)", (await evalIn(page, `window.__calls.filter(c => c.msg?.type === "batch").length`)) === 0);
 // Review & send, then Confirm & send, by trusted clicks.
 const at = async (label: string) => evalIn(page, `(() => { const b = [...window.__root.querySelectorAll("button")].find(b => b.textContent.startsWith(${JSON.stringify(label)})); const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
 await key({ key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
