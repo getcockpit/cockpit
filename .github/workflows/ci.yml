@@ -71,6 +71,7 @@ jobs:
       matrix:
         os: [macos-latest, ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60 # a dead apt mirror once held the Linux leg for 95 min
     defaults:
       run:
         shell: bash
@@ -84,8 +85,7 @@ jobs:
       - name: Linux system libraries
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          scripts/ci/apt-install.sh libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       # Git identity: tests make commits. No CRLF conversion: tests compare file contents byte for byte.
       - name: Git config for tests
         run: git config --global user.name ci && git config --global user.email ci@example.com && git config --global core.autocrlf false

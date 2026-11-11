@@ -64,19 +64,20 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     name: Linux (.deb and AppImage)
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
+      - uses: actions/checkout@v7 # for scripts/ci/apt-install.sh
       - name: Download
         run: gh release download $TAG -R ${{ github.repository }} -p '*_amd64.deb' -p 'Cockpit_*_amd64.AppImage' -D dl && ls -la dl
       - name: Install the .deb and start it
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ./dl/*_amd64.deb xvfb
+          scripts/ci/apt-install.sh ./dl/*_amd64.deb xvfb
           bin=$(dpkg -L cockpit | grep -iE '/bin/cockpit$' | head -1); echo "binary: $bin"; [ -n "$bin" ] || { dpkg -L cockpit | grep /bin/; exit 1; }
           set +e; timeout 15 xvfb-run -a "$bin"; code=$?; set -e
           [ "$code" = 124 ] && echo "Cockpit stayed up for 15 s" || { echo "Cockpit exited with $code"; exit 1; }
       - name: Start the AppImage
         run: |
-          sudo apt-get install -y libfuse2
+          scripts/ci/apt-install.sh libfuse2
           chmod +x dl/*.AppImage
           set +e; timeout 15 xvfb-run -a dl/*.AppImage; code=$?; set -e
           [ "$code" = 124 ] && echo "AppImage stayed up for 15 s" || { echo "AppImage exited with $code"; exit 1; }
