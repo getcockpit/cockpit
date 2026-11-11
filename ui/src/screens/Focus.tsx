@@ -1,4 +1,3 @@
-import { keyLabel } from "../platform";
 import { focusKey } from "../components/keys";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,7 +11,7 @@ import { CheckList, EditSnippet, StepSummary } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
 import { api, hydrate } from "../state/store";
 import type { AppState, Attachment, CommandRow, Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
-import { docApi, isOpenQuestion, type Doc } from "../state/docs";
+import { isOpenQuestion, type Doc } from "../state/docs";
 import { AskRow, DocNeedsRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
 import { pointer } from "../components/pointer";
@@ -50,7 +49,7 @@ let repoOnce: Promise<string> | null = null;
 const appRepo = () => (repoOnce ??= invoke<string>("app_repo_path").catch((e) => { repoOnce = null; throw e; }));
 
 // Focus view: one session, zoomed in. Decisions first, then plan + changes, then the transcript.
-export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, onRepeat, elsewhere = false }: { s: SessionState; onRepeat?: () => void; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
+export function Focus({ s, models, workspaces = [], compactWindow = null, docs, onOpenDoc, onBack, onBuild, onDone, onSignIn, elsewhere = false }: { s: SessionState; models: ModelRow[]; workspaces?: AppState["workspaces"]; compactWindow?: number | null; docs: Doc[]; onOpenDoc: (id: string) => void; onBack: () => void; onBuild: (worktree: string) => void; onDone: () => void; onSignIn?: (then: () => void) => void; elsewhere?: boolean }) {
   const [isApp, setIsApp] = useState(false);
   useEffect(() => {
     // Sessions working on this app's own repo can rebuild and relaunch it (decision 23).
@@ -97,13 +96,11 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   // A god-mode fix session (MR-47): its last step is applying the fix to your own app.
   const isFix = isApp && !!s.branch?.startsWith("mr/") && isAppChange(s);
   const [applyError, setApplyError] = useState("");
-  // Catch me up (MR-116): a brief of where this session stands opens in the Doc Map as it's written.
-  const catchUp = async () => { try { onOpenDoc((await docApi.brief(s.id)).doc_id); } catch (e) { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Catch me up failed: ${shortError(e)}` })); } };
   const applyFix = async () => { setApplyError(""); try { await api.fixApply(s.id); } catch (e) { setApplyError(shortError(e)); } };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const a = focusKey(e, { running, archived: !!s.archivedAt, fromDeleted: !!s.fromDeleted, replies: replies.length, resumable: !!s.sdkSessionId, dialog: !!document.querySelector('[role="dialog"]'), repeatable: !!onRepeat && !s.fromDeleted && s.kind === "blank" });
+      const a = focusKey(e, { running, archived: !!s.archivedAt, fromDeleted: !!s.fromDeleted, replies: replies.length, resumable: !!s.sdkSessionId, dialog: !!document.querySelector('[role="dialog"]')});
       if (!a) return;
       e.preventDefault();
       if (a.do === "blur") (e.target as HTMLElement).blur();
@@ -113,13 +110,11 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
       else if (a.do === "reply") void api.send(s.id, replies[a.index]);
       else if (a.do === "raw") setShowRaw((x) => !x);
       else if (a.do === "model") document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click();
-      else if (a.do === "catchUp") void catchUp();
       else if (a.do === "terminal") toggleTerminal();
-      else if (a.do === "repeat") onRepeat?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onBack, onRepeat, s.id, running, replies]);
+  }, [onBack, s.id, running, replies]);
 
 
   const openTerminal = (command?: string) => {
@@ -157,11 +152,7 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
         <div className="mr-row" style={{ gap: 14 }}>
           <button type="button" onClick={onBack} className="mr-key" style={{ minHeight: 30 }}><kbd>esc</kbd>Wall</button>
           <div style={{ display: "flex", flexDirection: "column", minWidth: 0, flex: 1 }}>
-            <span className="mr-row" style={{ gap: 8, minWidth: 0 }}><SessionName s={s} />{s.spawnedBy && <span className="mr-mono mr-ink2" data-mr="SpawnMark" data-mr-source={s.id} title={s.spawnedBy.title ? `Started by the session “${s.spawnedBy.title}”` : "Started by another session"} style={{ fontSize: 12 }}>↳</span>}{s.schedule && <span className="mr-mono" data-mr="RecurringMark" data-mr-source={s.id} title="Started by a recurring schedule" style={{ fontSize: 12, color: "var(--mr-selected)" }}>↻</span>}
-              {/* Recurring sessions (MR-167): run this prompt again on a schedule. Beside the title, not
-                  in the action row, which has no room left at common widths. */}
-              {onRepeat && !s.fromDeleted && s.kind === "blank" && <button type="button" onClick={onRepeat} className="mr-dim" data-mr="RepeatButton" data-mr-source={s.id} title={`${s.schedule ? "Edit the schedule that started this run" : "Run this prompt again on a schedule"} (${keyLabel("⌘⇧R")})`}
-                style={{ border: 0, padding: "2px 6px", background: "transparent", font: "inherit", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{s.schedule ? "Schedule…" : "↻ Repeat…"}</button>}</span>
+            <span className="mr-row" style={{ gap: 8, minWidth: 0 }}><SessionName s={s} />{s.spawnedBy && <span className="mr-mono mr-ink2" data-mr="SpawnMark" data-mr-source={s.id} title={s.spawnedBy.title ? `Started by the session “${s.spawnedBy.title}”` : "Started by another session"} style={{ fontSize: 12 }}>↳</span>}</span>
             <span className="mr-mono mr-dim mr-ellipsis" style={{ fontSize: 12 }} title={s.cwd}>{s.kind !== "blank" ? `${s.kind} · ` : ""}{where || s.cwd}</span>
           </div>
           <StateMark s={tile.state} />
@@ -170,7 +161,6 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
         {running && <LiveTrack s={s} />}
         {/* Wraps: Ctrl+Shift+… labels off macOS are wider than ⌘⇧… (MR-133). */}
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10, flexWrap: "wrap", rowGap: 8 }}>
-          {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
           {s.sdkSessionId && <Key k="⌘T" onClick={toggleTerminal}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}

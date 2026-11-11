@@ -11,16 +11,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "brief" || v == "brieflayer" || v == "attach" || v == "move" || v == "schedule" || v == "spawn")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "attach" || v == "move" || v == "spawn")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
 fn bench_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "bench")
-}
-
-fn schedule_mode() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "schedule")
 }
 
 fn workspace_mode() -> bool {
@@ -107,17 +103,6 @@ fn picked(app: &AppHandle, session: &str) -> bool {
     std::fs::read_dir(cwd).map(|d| d.flatten().any(|f| f.file_name().to_string_lossy().starts_with("selftest-"))).unwrap_or(false)
 }
 
-/// Catch me up (MR-116): a turn that claims more than it did, a brief of it, then Continue with a
-/// decision to apply and a correction.
-fn brief_mode() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brief")
-}
-
-/// Catch me up mid-turn (MR-116): the Cockpit layer writes the brief, not the busy session.
-fn brief_layer_mode() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "brieflayer")
-}
-static BRIEFED: AtomicBool = AtomicBool::new(false);
 static MOVE_QUEUED: AtomicBool = AtomicBool::new(false);
 
 /// The message box's attachments (MR-141), driven in the real UI: once the session is up, the UI
@@ -162,9 +147,6 @@ pub fn run(app: AppHandle) {
     if update_mode() {
         return run_update(app);
     }
-    if schedule_mode() {
-        return crate::schedules::selftest(app);
-    }
     tauri::async_runtime::spawn(async move {
         tokio_sleep(Duration::from_secs(2)).await;
         let dir = match std::env::var("MR_BENCH_CWD") {
@@ -172,7 +154,7 @@ pub fn run(app: AppHandle) {
             _ => std::env::temp_dir().join(format!("mr-selftest-{}", ulid::Ulid::new())),
         };
         let _ = std::fs::create_dir_all(&dir);
-        if resume_mode() || brief_mode() {
+        if resume_mode() {
             for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
                 let _ = crate::sys::cmd("git").arg("-C").arg(&dir).args(&args).status();
             }
@@ -212,10 +194,6 @@ pub fn run(app: AppHandle) {
             } else if view_mode() {
                 // No tool named: the visual guidance alone should make Claude compose a view (MR-61).
                 std::env::var("MR_VIEW_PROMPT").ok().filter(|p| !p.trim().is_empty()).unwrap_or_else(|| "This is a UI test; nothing here is real and you don't need to look at any files. Give me a status report for a pretend settings refactor: 3 of 5 steps done, 211 tests passing, 1 test failing in the migration, and one open risk (old desktop builds can't read the new format). Then on a final line reply with exactly: SELFTEST DONE".into())
-            } else if brief_layer_mode() {
-                "This is a UI test. Run the shell command `sleep 40` with the Bash tool, then reply with exactly: SELFTEST DONE".into()
-            } else if brief_mode() {
-                "This is a UI test. Create a file retry.txt in the current directory containing the word retry. Don't run any tests. Then reply with exactly: Done, retries are in and all tests pass.".into()
             } else if attach_mode() {
                 "This is a UI test. Reply with exactly: READY".into()
             } else if doc_mode() {
@@ -269,11 +247,6 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 payload["request_id"].as_str().unwrap_or_default().into(),
                 decision,
             );
-        }
-        Some("sdk") if payload["message"]["type"] == "result" && schedule_mode() => {
-            // The run's turn is over: its finished notification is logged first (on_turn_end).
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(800)).await; app.exit(0); });
         }
         Some("sdk") if payload["message"]["type"] == "result" && spawn_mode() && payload["message"]["result"].as_str().unwrap_or_default().contains("PARENT GOT IT") => {
             // The child's report came back to the parent (MR-178); the script checks the log.
@@ -399,69 +372,6 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 sdk, None, Some("blank".into()), Some(false), Some(session), None, None, None
             );
             if let Err(e) = res { eprintln!("[selftest] resume failed: {e}"); std::process::exit(1); }
-        }
-        Some("sdk") if brief_layer_mode() && payload["message"]["type"] == "assistant" && !BRIEFED.load(Ordering::SeqCst) => {
-            // Mid-turn: Catch me up must go to the Cockpit layer and leave the session alone.
-            BRIEFED.store(true, Ordering::SeqCst);
-            let session = payload["session"].as_str().unwrap_or_default().to_owned();
-            match crate::brief::brief_start(app.clone(), session) {
-                Ok(r) if r["via"] == "cockpit" => eprintln!("[selftest] brief requested mid-turn: {r}"),
-                r => { eprintln!("[selftest] mid-turn brief didn't go to the layer: {r:?}"); std::process::exit(1); }
-            }
-            let app = app.clone();
-            std::thread::spawn(move || {
-                for _ in 0..240 {
-                    std::thread::sleep(Duration::from_millis(500));
-                    let log = app.state::<crate::eventlog::EventLog>();
-                    let done = ["brief.written", "brief.failed"].iter().any(|k| !log.list_kind(k).unwrap_or_default().is_empty());
-                    if done {
-                        std::thread::sleep(Duration::from_millis(500));
-                        app.exit(0);
-                        return;
-                    }
-                }
-                eprintln!("[selftest] the layer never finished the brief");
-                app.exit(1);
-            });
-        }
-        Some("sdk") if payload["message"]["type"] == "result" && brief_mode() && RESULTS.load(Ordering::SeqCst) < 2 => {
-            let session = payload["session"].as_str().unwrap_or_default().to_owned();
-            if RESULTS.fetch_add(1, Ordering::SeqCst) == 0 {
-                // The turn is over: Catch me up, written by the session's own Claude.
-                match crate::brief::brief_start(app.clone(), session) {
-                    Ok(r) if r["via"] == "session" => eprintln!("[selftest] brief requested: {r}"),
-                    r => { eprintln!("[selftest] brief_start didn't go to the session: {r:?}"); std::process::exit(1); }
-                }
-                return;
-            }
-            // The brief is written: mark its first risk wrong with a note, the rest fine, then Continue.
-            let docs = app.state::<crate::docs::Docs>();
-            let Some(doc) = docs.list().into_iter().find(|d| d.kind == "brief" && d.session_id.as_deref() == Some(&session)) else {
-                eprintln!("[selftest] no brief doc");
-                std::process::exit(1);
-            };
-            let anchor = format!("doc:{}", doc.id);
-            let mut risks: Vec<_> = doc.blocks.values().filter(|b| b.section == "risk").collect();
-            risks.sort_by_key(|b| b.order);
-            for (i, b) in risks.iter().enumerate() {
-                crate::eventlog::record(app, Some(&session), "ui.doc_decision", &serde_json::json!({ "doc_id": doc.id, "block_id": b.id, "choice": if i == 0 { "Wrong" } else { "Fine" } }), Some(&anchor));
-            }
-            if let Some(b) = risks.first() {
-                crate::eventlog::record(app, Some(&session), "ui.doc_note", &serde_json::json!({ "doc_id": doc.id, "block_id": b.id, "text": "Right, run nothing; just say so honestly." }), Some(&anchor));
-            }
-            // And pick an option on its first question (the recommended one if marked): a decision to apply (I90).
-            let mut questions: Vec<_> = doc.blocks.values().filter(|b| b.section == "question").collect();
-            questions.sort_by_key(|b| b.order);
-            let pick = questions.first().and_then(|b| {
-                let opts = b.data["options"].as_array()?;
-                let o = opts.iter().find(|o| o["recommended"].as_bool() == Some(true)).or(opts.first())?;
-                Some((b.id.clone(), o["label"].as_str()?.to_owned()))
-            });
-            let Some((qid, label)) = pick else { eprintln!("[selftest] the brief has no question with options"); std::process::exit(1); };
-            crate::eventlog::record(app, Some(&session), "ui.doc_decision", &serde_json::json!({ "doc_id": doc.id, "block_id": qid, "choice": label }), Some(&anchor));
-            let msg = crate::brief::brief_continue(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone()).ok().flatten();
-            let Some(msg) = msg else { eprintln!("[selftest] Continue sent nothing despite a correction"); std::process::exit(1); };
-            let _ = crate::sidecar::session_send(app.clone(), app.state::<crate::sidecar::Sidecar>(), session, format!("{msg}\nThis is a UI test: don't change files. Reply with exactly: SELFTEST DONE"), None);
         }
         Some("sdk") if payload["message"]["type"] == "result" && doc_mode() && RESULTS.fetch_add(1, Ordering::SeqCst) == 0 => {
             // Round 2: act like the user on the doc map — decide, note, Regenerate.

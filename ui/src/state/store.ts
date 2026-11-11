@@ -2,7 +2,7 @@ import { useEffect, useReducer } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "./listen";
 import { initialState, reduce, replay } from "./reduce";
-import type { AppState, Attachment, Cadence, MrEvent, PermissionMode, ScheduleCheck } from "./types";
+import type { AppState, Attachment, MrEvent, PermissionMode } from "./types";
 import type { McpAddConfig, McpScope } from "../components/mcpAdd";
 
 export type Pr = { number: number; title: string; url: string; updatedAt: string; author?: { login: string }; repository?: { nameWithOwner: string }; reviewDecision?: string; isDraft?: boolean; unresolved?: number; waiting?: number; reviewNote?: string; lastCommitAt?: string | null; myLastReviewAt?: string | null; requested?: boolean; needsReview?: boolean; feedback?: string[] }; // feedback: when others commented (address mode), oldest first
@@ -182,14 +182,6 @@ export const api = {
   move: (session: string, workspace: string) => invoke<string>("session_move", { session, workspace }),
   moveCancel: (session: string) => invoke("session_move_cancel", { session }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
-  // Recurring sessions (MR-167): saved, run and deleted by the core, which logs each.
-  scheduleSet: (schedule: Record<string, unknown>) => invoke<string>("schedule_set", { schedule }),
-  scheduleDelete: (id: string) => invoke("schedule_delete", { id }),
-  scheduleRunNow: (id: string) => invoke<string>("schedule_run_now", { id }),
-  schedulesNext: () => invoke<Record<string, number>>("schedules_next"),
-  schedulePreview: (cadence: Cadence) => invoke<number[]>("schedule_preview", { cadence }),
-  schedulesChecks: () => invoke<Record<string, ScheduleCheck>>("schedules_checks"),
-  setBackground: (mode: string) => invoke("background_set", { mode }),
   log: (kind: string, payload: Record<string, unknown>, sessionId?: string, anchor?: string) => invoke("event_append", { sessionId, kind, payload, anchor }),
 };
 

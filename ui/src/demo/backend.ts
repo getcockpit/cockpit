@@ -4,10 +4,8 @@
 
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type { Cadence, McpServer, MrEvent } from "../state/types";
-import { cadenceExpr, nextRuns } from "../components/cron";
+import type { McpServer, MrEvent } from "../state/types";
 import type { Doc } from "../state/docs";
-import { ulidAt } from "../picker/stamp";
 import { watchSlug } from "../state/prRepo";
 import { REVIEW_SNIPPETS, SCENARIOS, type Scenario } from "./scenarios";
 
@@ -34,8 +32,6 @@ function applyDocEvent(ev: MrEvent) {
   const b = d.blocks[p.block_id];
   if (ev.kind === "ui.doc_decision" && b) {
     b.decision = p.choice;
-    // Like the core: a brief's risk marked fine isn't a correction (MR-116).
-    if (d.kind === "brief" && !(b.section === "risk" && p.choice === "Fine")) d.pending_changes = [...d.pending_changes, b.section === "risk" ? `Confirmed this looks wrong: "${b.takeaway}"` : `Decided "${b.takeaway}": ${p.choice}`];
   }
   if (ev.kind === "ui.doc_note") d.pending_notes = [...d.pending_notes, [p.block_id, p.text]];
   if (ev.kind === "ui.doc_edit" && b) { (b as Record<string, unknown>)[p.field] = p.value; d.pending_changes = [...new Set([...d.pending_changes, p.block_id])]; }
@@ -182,46 +178,6 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       // Like the real core: build the message only; the UI delivers it to the session.
       return `Feedback on working doc "${d.title}": ${n} note${n === 1 ? "" : "s"}${a.regenerate ? ", regenerate it" : ""}.`;
     }
-    // Catch me up (MR-116): a brief doc that fills in block by block, like the session writing it.
-    case "brief_start": {
-      const sid = String(a.session);
-      const did = `doc_brief${Date.now().toString(36)}`;
-      const blk = (bid: string, section: string, takeaway: string, key: string, body: string, order: number, view: unknown[], data: Doc["blocks"][string]["data"] = null) =>
-        ({ id: bid, section, status: "", takeaway, key, body, data, order, decision: null, updated: ulidAt(Date.now()), view: view as never });
-      // The brief matches the session it's for (MR-139): the finished settings refactor, else the login fix.
-      const settings = sid === "D";
-      docs = [...docs, { id: did, title: settings ? "Catch-up: Refactor the settings schema" : "Catch-up: Fix the login redirect loop", session_id: sid, version: 1, kind: "brief", blocks: {}, pending_notes: [], pending_changes: [] }];
-      record(sid, "doc.created", { doc_id: did, title: "Catch-up", kind: "brief" });
-      const steps: Doc["blocks"][string][] = settings ? [
-        blk("where", "goal", "Settings refactor: all 4 steps done, ready to review", "Asked: one typed schema for settings", "Original ask [D01]: replace ad-hoc settings reads with one typed schema. Plan: 4 of 4 done.", 1, [{ type: "progress", n: 4, total: 4, label: "Ready to review" }]),
-        blk("done", "log", "Typed schema with defaults; three readers migrated", "2 files changed: schema.ts (new), read.ts", "- `src/settings/schema.ts` new zod schema with defaults\n- `src/settings/read.ts` parses through it; v1 files upgraded on read\n- No commit yet", 2, [{ type: "takeaway", heading: "Done", items: [{ title: "Typed schema with defaults", state: "done" }, { title: "Readers migrated", state: "done" }, { title: "Tests", state: "todo" }] }]),
-        blk("next", "design", "Next: run the tests, then open a PR", "Nothing is running now", "The session finished its turn and is waiting for you.", 3, [{ type: "steps", items: [{ text: "Run bun test" }, { text: "Open a PR" }] }]),
-        blk("q_1", "question", "Keep reading v1 settings files for one release?", "Claude assumed: upgrade them on read, forever", "Never asked; read.ts upgrades every v1 file silently.", 4, [], { options: [{ label: "One release, then drop", description: "Smaller code later" }, { label: "Forever", description: "As Claude did" }] }),
-        blk("risk_1", "risk", "\"All 211 tests pass\", but no test ran", "Not verified: the log has no test command", "The recap says all 211 tests pass. No test command appears anywhere in this session.", 5, [{ type: "risks", items: [{ risk: "Unverified done", mitigation: "Run bun test before the PR", level: "high" }] }]),
-        blk("risk_2", "risk", "Old desktop builds can't read the new format", "Claude flagged it; nothing handles it", "Settings written by this build break older desktop builds that sync the same file.", 6, [{ type: "risks", items: [{ risk: "Older builds break on v2 files", mitigation: "Write v1 alongside for one release", level: "medium" }] }]),
-      ] : [
-        blk("where", "goal", "Fixing the login redirect loop: step 3 of 4, running the tests", "Asked: stop /login bouncing after OAuth", "Original ask [D01]: stop the redirect loop. Current step: Run the tests (plan).", 1, [{ type: "progress", n: 3, total: 4, label: "Run the tests" }]),
-        blk("done", "log", "Route guard moved before render; regression test added", "1 file changed: src/app/routes.ts", "- `src/app/routes.ts:10` guard now checks `req.session?.user`\n- No commit yet", 2, [{ type: "takeaway", heading: "Done", items: [{ title: "Guard runs before render", state: "done" }, { title: "Regression test", state: "done" }, { title: "Commit", state: "todo" }] }]),
-        blk("next", "design", "Next: run bun test, then commit", "Waiting on your OK to run the tests", "Claude asked to run `bun test` and is waiting on the permission.", 3, [{ type: "steps", items: [{ text: "Run bun test" }, { text: "Commit the fix" }] }]),
-        blk("q_1", "question", "Keep the duplicate session refresh in the header?", "Claude assumed: remove it", "Never asked; removed in the same edit.", 4, [], { options: [{ label: "Remove it", description: "As Claude did" }, { label: "Keep it", description: "Revert that part" }] }),
-        blk("risk_1", "risk", "\"All tests pass\" with no test run in the log", "Not verified: bun test never ran", "The recap claims 142 tests pass, but the only test command is still waiting on permission.", 5, [{ type: "risks", items: [{ risk: "Unverified done", mitigation: "Run bun test before committing", level: "high" }] }]),
-        blk("risk_2", "risk", "Header change goes beyond the ask", "Drift: the ask was the redirect loop only", "Removing the session refresh in the header wasn't asked for.", 6, [{ type: "risks", items: [{ risk: "Drift from the ask", mitigation: "Confirm or revert", level: "medium" }] }]),
-      ];
-      steps.forEach((b, i) => later(400 + i * 350, () => {
-        const d = docs.find((x) => x.id === did);
-        if (d) { d.blocks[b.id] = b; docs = [...docs]; }
-        void emit("mr-event", { id: id(), session_id: sid, kind: "doc.block_set", payload: { doc_id: did }, anchor: null, created_at: Date.now() });
-      }));
-      return { doc_id: did, via: "session" };
-    }
-    case "brief_continue": {
-      const d = docs.find((x) => x.id === a.docId);
-      if (!d) throw new Error("no such doc");
-      const n = d.pending_notes.length + d.pending_changes.length;
-      d.pending_notes = []; d.pending_changes = []; docs = [...docs];
-      record(d.session_id, "ui.brief_continued", { doc_id: d.id, silent: n === 0 });
-      return n ? `The user caught up on this session with the brief "${d.title}". Carry out their decisions, take their corrections, then resume from where you stopped.` : null;
-    }
     case "session_start": {
       const sid = (a.sessionId as string) ?? `s${Date.now().toString(36)}`;
       const cwd = String(a.cwd ?? "~/");
@@ -231,43 +187,6 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       runAgent(sid, String(a.prompt ?? ""));
       return sid;
     }
-    // Recurring sessions (MR-167): logged like the core; Run now starts a scripted session tagged ↻.
-    case "schedule_set": {
-      const d = (a.schedule as Record<string, unknown>) ?? {};
-      if (!String(d.name ?? "").trim() || !String(d.prompt ?? "").trim()) throw "give it a name and a prompt";
-      const id = (d.id as string) || `sch${Date.now().toString(36)}`;
-      record(null, "ui.schedule_set", { ...d, id, workspace: d.workspace ?? "personal", permission_mode: d.permission_mode ?? "auto", paused: d.paused ?? false });
-      return id;
-    }
-    case "schedule_delete": record(null, "ui.schedule_deleted", { id: a.id }); return null;
-    case "schedules_next": {
-      const out: Record<string, number> = {};
-      for (const e of events) if (e.kind === "ui.schedule_set") out[String(e.payload.id)] = Date.now() + 3_600_000;
-      for (const e of events) if (e.kind === "ui.schedule_deleted" || (e.kind === "ui.schedule_set" && e.payload.paused)) delete out[String(e.payload.id)];
-      return out;
-    }
-    // MR-169: the next runs come from the same expressions; a gated schedule looks checked a minute ago.
-    case "schedule_preview": {
-      const c = a.cadence as Cadence;
-      const next = nextRuns(cadenceExpr(c), Date.now());
-      if (!next.length) throw "that never runs";
-      return next;
-    }
-    case "schedules_checks": {
-      const out: Record<string, unknown> = {};
-      for (const e of events) if (e.kind === "ui.schedule_set") { if (e.payload.check) out[String(e.payload.id)] = { at: Date.now() - 60_000, outcome: "same", skipped: 7, error: null }; else delete out[String(e.payload.id)]; }
-      return out;
-    }
-    case "schedule_run_now": {
-      const set = [...events].reverse().find((e) => e.kind === "ui.schedule_set" && e.payload.id === a.id);
-      if (!set) throw "that schedule was deleted";
-      const sid = `s${Date.now().toString(36)}`;
-      record(sid, "ui.session_requested", { cwd: set.payload.cwd, prompt: set.payload.prompt, kind: "blank", resume: null, workspace: set.payload.workspace ?? "personal", schedule: a.id });
-      record(sid, "schedule.fired", { id: a.id, session: sid, reason: "manual" });
-      runAgent(sid, String(set.payload.prompt ?? ""));
-      return sid;
-    }
-    case "background_set": record(null, "ui.background_set", { mode: a.mode }); return null;
     case "session_send": {
       const sid = String(a.session), text = String(a.text);
       record(sid, "ui.message_sent", { text });
