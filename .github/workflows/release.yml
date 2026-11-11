@@ -53,6 +53,7 @@ jobs:
     name: Linux (.AppImage, .deb, .rpm)
     needs: release
     runs-on: ubuntu-22.04
+    timeout-minutes: 60 # a dead apt mirror once held it for hours
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -61,8 +62,7 @@ jobs:
         with:
           workspaces: src-tauri
       - run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+          scripts/ci/apt-install.sh libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
       - run: ./scripts/build-helpers.sh
       - run: bun install --frozen-lockfile
         working-directory: ui
