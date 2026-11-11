@@ -66,7 +66,7 @@ export function overviewKey(e: KeyEv & { defaultPrevented?: boolean }, at: { dia
 }
 
 export type FocusKey =
-  | { do: "back" | "blur" | "interrupt" | "done" | "raw" | "model" | "catchUp" | "terminal" | "repeat" }
+  | { do: "back" | "blur" | "interrupt" | "done" | "raw" | "model" | "terminal" | "repeat" }
   | { do: "reply"; index: number };
 
 /** A session's own shortcuts (Focus.tsx). Esc goes back even from a text field (the message box keeps
@@ -87,7 +87,6 @@ export function focusKey(e: KeyEv & { defaultPrevented: boolean }, at: { running
   if (k === "r" && mod && e.shiftKey) return at.repeatable ? { do: "repeat" } : null;
   if (k === "r" && mod) return { do: "raw" };
   if (k === "m" && mod && e.shiftKey) return at.fromDeleted ? null : { do: "model" };
-  if (k === "u" && mod && e.shiftKey) return at.fromDeleted ? null : { do: "catchUp" };
   if (k === "t" && mod) return at.resumable ? { do: "terminal" } : null;
   return null;
 }

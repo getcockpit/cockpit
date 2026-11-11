@@ -15,7 +15,7 @@ export type Block = {
 export const blockView = (b: Block): ViewBlock[] => (Array.isArray(b.view) ? b.view : []);
 export type Doc = {
   id: string; title: string; session_id: string | null; version: number;
-  kind?: string; // "brief": a catch-up brief (MR-116)
+  kind?: string; // "brief": a catch-up brief (MR-116, removed in MR-201; old ones still load)
   blocks: Record<string, Block>; pending_notes: [string, string][]; pending_changes: string[];
   build_sessions?: string[]; // sessions started from it with Build it, oldest first (MR-118)
   updated_at?: number; // when anything last happened to it, ms (MR-151)
@@ -114,29 +114,10 @@ export const docApi = {
   // The core records doc.shipped once every live build's branch is merged into main.
   checkShipped: (d: Doc, builds: SessionState[]) => invoke<boolean>("doc_check_shipped", { docId: d.id, builds: builds.map((s) => ({ session_id: s.id, repo: s.repo, branch: s.branch })) }),
   buildStarted: (d: Doc, sessionId: string) => invoke("doc_build_started", { docId: d.id, sessionId }),
-  // Catch me up (MR-116): the core creates the brief doc and has it written; Continue builds the corrections.
-  brief: (session: string) => invoke<{ doc_id: string; via: "session" | "cockpit" }>("brief_start", { session }),
-  briefContinue: (d: Doc) => invoke<string | null>("brief_continue", { docId: d.id }),
 };
 
+/** A catch-up brief: the feature is gone (MR-201), but old ones stay as plain docs with no lifecycle. */
 export const isBrief = (d: Doc) => d.kind === "brief";
-
-/** A pending change that is a decision on a question (the core writes them as `Decided "…": …`). */
-export const isDecision = (change: string) => change.startsWith("Decided ");
-
-const n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
-/** The brief's Continue button says what it will do: apply your decisions, send corrections, or nothing. */
-export const continueLabel = (decisions: number, corrections: number) =>
-  decisions > 0 ? `Apply ${n(decisions, "decision")}${corrections > 0 ? ` + ${n(corrections, "correction")}` : ""} and continue`
-  : corrections > 0 ? `Continue with ${n(corrections, "correction")}` : "Continue, nothing to correct";
-
-/** Continue on a brief: your corrections go into the same session (queued if it's mid-turn); with
- *  none, nothing is sent (decided: close silently). Returns whether anything was sent. */
-export async function continueBrief(d: Doc, session: SessionState | null | undefined): Promise<boolean> {
-  const msg = await docApi.briefContinue(d);
-  if (msg && d.session_id) await api.send(session?.id ?? d.session_id, msg);
-  return !!msg;
-}
 
 /** Build it: starts a session that implements the doc, in the plan session's folder, and links it
  *  to the doc so each can open the other (MR-118). Returns the session id. */
@@ -160,6 +141,6 @@ export async function sendDocFeedback(d: Doc, session: SessionState | null | und
 export async function decideQuestion(d: Doc, blockId: string, label: string, session: SessionState | null | undefined): Promise<void> {
   await docApi.decide(d, blockId, label);
   const stillOpen = Object.values(d.blocks).some((x) => isOpenQuestion(x) && x.id !== blockId);
-  // A brief waits for Continue instead: you may still be marking its risks.
+  // An old catch-up brief (MR-201) has no plan session to hand back to.
   if (!stillOpen && session && !isBrief(d)) await sendDocFeedback(d, session, false).catch(() => {});
 }

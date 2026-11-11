@@ -801,13 +801,6 @@ const flows: Flow[] = [
     await ui.css('[role="dialog"][aria-label="Model and effort"]', 0);
     await ui.tags("SessionName", 1);
   } },
-  { name: "Keys: ⌘⇧U catches me up on a session", run: async () => {
-    await ui.open("busy");
-    await ui.click("button", "Ready to review Refactor the settings schema");
-    await ui.tags("SessionName", 1);
-    await ui.key("Mod+Shift+u");
-    await ui.tags("DocBlock", some);
-  } },
   { name: "Keys: doc map Space walks, ←/→ step, O and Esc go back to the overview, Esc again leaves", run: async () => {
     await ui.open("busy");
     await ui.click("button", "↵ Open doc");
