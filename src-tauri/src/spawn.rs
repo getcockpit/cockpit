@@ -101,7 +101,7 @@ pub fn handle(app: &AppHandle, parent: &str, args: &Value) -> Result<(Vec<(Strin
         None => crate::workspaces::workspace_in(&evs),
     };
     let (kind, prompt, worktree) = kind_and_prompt(args["kind"].as_str(), prompt, args["worktree"].as_bool())?;
-    let started = crate::sidecar::Started { parent: Some(parent.to_owned()), ..Default::default() };
+    let started = crate::sidecar::Started { parent: Some(parent.to_owned()) };
     let child = crate::sidecar::start_with(app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd.clone(), prompt.clone(), None, None, Some(kind.clone()), worktree, None, Some(workspace.clone()), None, None, started)
         .map_err(|e| format!("Not started: {e}"))?;
     let child_evs = log.list(Some(&child), None, 50).unwrap_or_default();

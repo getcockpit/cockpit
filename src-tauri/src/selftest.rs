@@ -11,16 +11,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "attach" || v == "move" || v == "schedule" || v == "spawn")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "attach" || v == "move" || v == "spawn")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
 fn bench_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "bench")
-}
-
-fn schedule_mode() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "schedule")
 }
 
 fn workspace_mode() -> bool {
@@ -151,9 +147,6 @@ pub fn run(app: AppHandle) {
     if update_mode() {
         return run_update(app);
     }
-    if schedule_mode() {
-        return crate::schedules::selftest(app);
-    }
     tauri::async_runtime::spawn(async move {
         tokio_sleep(Duration::from_secs(2)).await;
         let dir = match std::env::var("MR_BENCH_CWD") {
@@ -254,11 +247,6 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
                 payload["request_id"].as_str().unwrap_or_default().into(),
                 decision,
             );
-        }
-        Some("sdk") if payload["message"]["type"] == "result" && schedule_mode() => {
-            // The run's turn is over: its finished notification is logged first (on_turn_end).
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move { tokio_sleep(Duration::from_millis(800)).await; app.exit(0); });
         }
         Some("sdk") if payload["message"]["type"] == "result" && spawn_mode() && payload["message"]["result"].as_str().unwrap_or_default().contains("PARENT GOT IT") => {
             // The child's report came back to the parent (MR-178); the script checks the log.
