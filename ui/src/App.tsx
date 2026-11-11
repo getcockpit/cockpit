@@ -36,6 +36,7 @@ import { installUsage, useViews } from "./state/usage";
 import { listenFileDrop } from "./state/fileDrop";
 import { listenSelftest } from "./state/selftestUi";
 import { DragGhost } from "./components/dragToWorkspace";
+import cockpitIcon from "./assets/cockpit-icon.png";
 
 export default function App() {
   const all = useAppState();
@@ -98,10 +99,10 @@ export default function App() {
   const [overview, setOverviewNow] = useState<boolean | null>(null);
   const [fitSignal, setFitSignal] = useState(0);
   useEffect(() => {
-    if (overview !== null || all.lastEventId === null) return;
+    if (overview !== null || !all.loaded) return;
     const skip = new URLSearchParams(location.search).get("landing") === "wall";
     setOverviewNow(!skip && all.workspaces.length > 1);
-  }, [all.lastEventId]);
+  }, [all.loaded]);
   const [docId, setDocIdNow] = useState<string | null>(null);
   // Screen changes morph (MR-67): opening something goes deeper, closing it comes back.
   // Leaving a view: what was on screen isn't news on the Overview later. The Wall shows the whole
@@ -261,6 +262,8 @@ export default function App() {
       <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>
       {godmode}{voice}<Presence show={!!intro}>{intro}</Presence>{permPrompt}
     </>;
+  // Until the log has replayed, only Personal is known: a load screen instead of tabs that pop in.
+  if (!all.loaded) return <LoadScreen />;
   if (overview) return shell(<ErrorBoundary key="overview" name="overview"><div className="mr-zoom-in" style={{ height: "100%" }}><Overview state={all} docs={allDocs} fitSignal={fitSignal} onBack={() => switchTo(workspace)} onOpenWorkspace={switchTo} onOpenSession={(ws, id) => openIn(ws, id, null)} onOpenDoc={(ws, id) => openIn(ws, null, id)} /></div></ErrorBoundary>, overlays);
   const doc = docId ? docs.find((d) => d.id === docId) : null;
   if (doc) return shell(<ErrorBoundary key={`doc:${doc.id}`} name="working doc">{<DocMap doc={doc} state={state} onBack={() => setDocId(null)} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />}</ErrorBoundary>, overlays);
@@ -268,4 +271,17 @@ export default function App() {
   if (focused) return shell(<ErrorBoundary key={`focus:${focused.id}`} name="session">{<div className="mr-zoom-in" style={{ height: "100%" }}><Focus s={focused} elsewhere={elsewhere(state, focused)} models={state.models} workspaces={state.workspaces} compactWindow={state.compactWindow} onDone={() => { void api.archive(focused); setFocus(null); }} docs={docsOf(docs, focused.id)} onOpenDoc={setDocId} onBuild={(wt) => setBuilds(wt)} onBack={() => setFocus(null)} onSignIn={(then) => { afterSignIn.current = then; setSignIn(focused.workspace); }} onRepeat={() => setRecurring({ draft: focused.schedule ? null : draftFrom(focused) })} /></div>}</ErrorBoundary>, overlays);
   if (wallView === "timeline") return shell(<ErrorBoundary key="timeline" name="timeline"><Timeline state={state} docs={docs} onOpen={setFocus} onOpenDoc={setDocId} onWall={() => setWallView("wall")} /></ErrorBoundary>, overlays);
   return shell(<ErrorBoundary key="wall" name="wall"><Wall state={state} all={all} onRecurring={() => setRecurring({ draft: null })} onSettings={() => setSettings(true)} onTimeline={() => setWallView("timeline")} workspace={workspace} docs={docs} onBuild={(wt) => setBuilds(wt)} archived={archived.length} onArchive={() => setArchive(true)} onOpen={setFocus} onSignIn={(s) => { setFocus(s.id); afterSignIn.current = () => void api.retrySignedIn(s.id, s.signedOut?.retry ?? ""); setSignIn(s.workspace); }} onOpenDoc={setDocId} onStart={(init) => { if (init) { setPickerMode(init.mode); setPickerText(init.text); } setPicker(true); }} /></ErrorBoundary>, overlays);
+}
+
+// The boot load screen: The boot load screen: fades in only if the replay takes a moment, so a fast start doesn't flash.
+// The app icon pops in and floats with a glow, over the wordmark and three lamps that light in turn.
+function LoadScreen() {
+  return (
+    <div data-mr="LoadScreen" data-mr-source="boot" role="status" aria-label="Loading workspaces" className="mr-load">
+      <img className="mr-load-mark" src={cockpitIcon} width={128} height={128} alt="" />
+      <div className="mr-load-word" aria-hidden="true">{[..."Cockpit"].map((ch, i) => <span key={i} style={{ animationDelay: `${0.25 + i * 0.05}s` }}>{ch}</span>)}</div>
+      <div className="mr-load-lamps" aria-hidden="true"><i /><i /><i /></div>
+      <span className="mr-dim mr-load-label">Loading workspaces</span>
+    </div>
+  );
 }
