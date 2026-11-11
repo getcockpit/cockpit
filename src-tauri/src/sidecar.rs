@@ -656,16 +656,6 @@ pub async fn session_retry_signed_in(app: AppHandle, session: String, text: Stri
     session_send(app.clone(), app.state::<Sidecar>(), session, text, None)
 }
 
-/// Whether a session can take a turn of Cockpit's asking right now (the catch-up brief): live and
-/// between turns, or ended but resumable here. Mid-turn sessions can't.
-pub fn can_take_turn(app: &AppHandle, session: &str) -> bool {
-    let state = app.state::<Sidecar>();
-    if state.live.lock().unwrap().contains(session) {
-        return state.idle.lock().unwrap().contains(session);
-    }
-    crate::instances::owned_elsewhere(app, session).is_none() && resume_info(app, session).is_some()
-}
-
 /// Where and how a session ran, from the log: (cwd, kind, workspace, Claude session id).
 fn resume_info(app: &AppHandle, session: &str) -> Option<(String, String, String, String)> {
     let evs = app.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).ok()?;

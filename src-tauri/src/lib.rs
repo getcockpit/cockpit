@@ -2,7 +2,6 @@ mod attachments;
 mod background;
 mod browser;
 mod browser_launch;
-mod brief;
 mod changes;
 mod cockpit_layer;
 mod docs;
@@ -186,8 +185,6 @@ pub fn run() {
             workspaces::workspace_sign_in,
             workspaces::workspace_auth_status,
             docs::doc_feedback,
-            brief::brief_start,
-            brief::brief_continue,
             docs::doc_archive,
             docs::doc_build_started,
             docs::doc_check_shipped,

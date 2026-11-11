@@ -12,7 +12,7 @@ import { CheckList, EditSnippet, StepSummary } from "../components/LogCards";
 import { shortError } from "../components/ErrorLine";
 import { api, hydrate } from "../state/store";
 import type { AppState, Attachment, CommandRow, Diagram, ModelRow, SessionState, Todo, TranscriptItem } from "../state/types";
-import { docApi, isOpenQuestion, type Doc } from "../state/docs";
+import { isOpenQuestion, type Doc } from "../state/docs";
 import { AskRow, DocNeedsRow } from "./AskRow";
 import { AddressView, ReviewView } from "./Flows";
 import { pointer } from "../components/pointer";
@@ -97,8 +97,6 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
   // A god-mode fix session (MR-47): its last step is applying the fix to your own app.
   const isFix = isApp && !!s.branch?.startsWith("mr/") && isAppChange(s);
   const [applyError, setApplyError] = useState("");
-  // Catch me up (MR-116): a brief of where this session stands opens in the Doc Map as it's written.
-  const catchUp = async () => { try { onOpenDoc((await docApi.brief(s.id)).doc_id); } catch (e) { window.dispatchEvent(new CustomEvent("mr:toast", { detail: `Catch me up failed: ${shortError(e)}` })); } };
   const applyFix = async () => { setApplyError(""); try { await api.fixApply(s.id); } catch (e) { setApplyError(shortError(e)); } };
 
   useEffect(() => {
@@ -113,7 +111,6 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
       else if (a.do === "reply") void api.send(s.id, replies[a.index]);
       else if (a.do === "raw") setShowRaw((x) => !x);
       else if (a.do === "model") document.querySelector<HTMLButtonElement>('[data-mr="ModelPicker"] > button')?.click();
-      else if (a.do === "catchUp") void catchUp();
       else if (a.do === "terminal") toggleTerminal();
       else if (a.do === "repeat") onRepeat?.();
     };
@@ -170,7 +167,6 @@ export function Focus({ s, models, workspaces = [], compactWindow = null, docs, 
         {running && <LiveTrack s={s} />}
         {/* Wraps: Ctrl+Shift+… labels off macOS are wider than ⌘⇧… (MR-133). */}
         <div className="mr-row" style={{ gap: 8, paddingBottom: 10, flexWrap: "wrap", rowGap: 8 }}>
-          {!s.fromDeleted && <Key k="⌘⇧U" onClick={() => void catchUp()}>Catch me up</Key>}
           <Key k="⌘R" onClick={() => setShowRaw((x) => !x)}>{showRaw ? "Visual" : "Raw transcript"}</Key>
           {s.sdkSessionId && <Key k="⌘T" onClick={toggleTerminal}>{term ? "Back to visual" : "Open in terminal"}</Key>}
           {isFix && finished && !s.fixApplied && <Key tone="primary" onClick={() => void applyFix()}>Apply to my app</Key>}

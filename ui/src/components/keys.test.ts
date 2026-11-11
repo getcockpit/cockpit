@@ -128,7 +128,7 @@ describe("session (Focus) shortcuts", () => {
       expect(focusKey(ev("d", { ...mod, shiftKey: true }), { ...idle, archived: true })).toBeNull();
       expect(focusKey(ev("r", mod), idle)).toEqual({ do: "raw" });
       expect(focusKey(ev("m", { ...mod, shiftKey: true }), idle)).toEqual({ do: "model" });
-      expect(focusKey(ev("u", { ...mod, shiftKey: true }), idle)).toEqual({ do: "catchUp" });
+      expect(focusKey(ev("u", { ...mod, shiftKey: true }), idle)).toBeNull();
       expect(focusKey(ev("r", { ...mod, shiftKey: true }), { ...idle, repeatable: true })).toEqual({ do: "repeat" });
       expect(focusKey(ev("r", { ...mod, shiftKey: true }), idle)).toBeNull();
       expect(focusKey(ev("r", mod), { ...idle, repeatable: true })).toEqual({ do: "raw" });

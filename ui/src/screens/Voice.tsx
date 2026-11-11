@@ -48,7 +48,7 @@ export function voiceKey(mode: VoiceMode, pressedAt: number, k: VoiceKey): Voice
   return { mode: "stopping", act: "stop", swallow: true };
 }
 
-export function VoiceController({ resolve, send, onFallback, onCatchUp }: { resolve: Resolve; send: (session: string, text: string) => void; onFallback: (text: string) => void; onCatchUp?: (session: string | null) => void }) {
+export function VoiceController({ resolve, send, onFallback }: { resolve: Resolve; send: (session: string, text: string) => void; onFallback: (text: string) => void }) {
   const [mode, setModeState] = useState<VoiceMode>("idle");
   const [text, setText] = useState("");
   const [error, setError] = useState("");
@@ -61,8 +61,8 @@ export function VoiceController({ resolve, send, onFallback, onCatchUp }: { reso
   // The parent passes fresh callbacks on every render. Read them through a ref so the listeners
   // below subscribe once: re-subscribing the async Tauri listener on each render left gaps in which
   // the final text arrived with nobody listening, and nothing was pasted (MR-146).
-  const props = useRef({ resolve, send, onFallback, onCatchUp });
-  props.current = { resolve, send, onFallback, onCatchUp };
+  const props = useRef({ resolve, send, onFallback });
+  props.current = { resolve, send, onFallback };
 
   useEffect(() => {
     const move = (e: MouseEvent) => { mouse.current = { x: e.clientX, y: e.clientY }; };
@@ -104,9 +104,7 @@ export function VoiceController({ resolve, send, onFallback, onCatchUp }: { reso
         const said = (v.text ?? "").trim();
         if (!said || ctx.current.cancelled) return;
         const { input, point } = ctx.current;
-        const { resolve, send, onFallback, onCatchUp } = props.current;
-        // "Catch me up" is a command, not a message (MR-116): a brief of the session pointed at, else the open one.
-        if (onCatchUp && /^(please )?catch me up\W*$/i.test(said)) { onCatchUp(point ? resolve(point)?.session ?? null : null); return; }
+        const { resolve, send, onFallback } = props.current;
         if (input) {
           // Type into the field the user was in, keeping React's state in sync.
           const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set;
