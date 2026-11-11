@@ -4,6 +4,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-11-11
+
+### Added
+- **Annotate a web page for a session:** "Annotate a page…" opens Chrome on its own Cockpit profile, already linked to the session, with no setup or extension needed. Click an element or draw a box, type a note and press Enter; each pin gets a screenshot crop, with secret fields blacked out. Review & send hands the pins to the session. After a restart, pages can link to recent sessions as well as running ones.
+- **A load screen at startup:** the app icon is shown until every workspace has loaded, so the workspace tabs no longer appear one by one. A fast start skips it.
+
+### Changed
+- **The model picker asks Claude Code for its models each time it opens,** so models added by a `claude` update show up without restarting Cockpit.
+
 ## [0.1.24] - 2026-11-07
 
 ### Fixed
