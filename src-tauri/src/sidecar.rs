@@ -125,7 +125,6 @@ pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                         // The Cockpit layer draws the cards once a turn ends (decision 34).
                         if payload["type"] == "sdk" && payload["message"]["type"] == "result" {
                             if let Some(id) = session.as_deref() {
-                                crate::schedules::on_turn_end(&handle, id, &payload["message"]);
                                 crate::spawn::on_turn_end(&handle, id, &payload["message"]);
                                 relay_doc_changes(&handle, id);
                                 if handle.state::<Sidecar>().closing.lock().unwrap().remove(id) {
@@ -304,11 +303,6 @@ fn session_mode(app: &AppHandle, session: &str) -> String {
     own.unwrap_or_else(|| permission_mode(app).to_owned())
 }
 
-/// Whether a new session would be refused for the cap right now.
-pub fn at_cap(app: &AppHandle) -> bool {
-    busy(&app.state::<Sidecar>()) >= session_cap(app)
-}
-
 /// Sets how sessions ask for permission. Logged first, then switched on every running session so
 /// it applies at once; new and resumed sessions start in it.
 #[tauri::command]
@@ -408,33 +402,11 @@ pub fn session_start(
     start_with(app, state, cwd, prompt, resume, tools, kind, worktree, session_id, workspace, preset, attachments, Started::default())
 }
 
-/// Appended for a recurring run (MR-167): nobody is watching when it starts.
-pub const UNATTENDED: &str = "This session was started by a schedule (a recurring session); nobody is watching it right now. Do the whole task end to end without stopping to ask: pick sensible defaults and say which you picked. Only ask when you truly can't continue. End with a short report of the result.";
-
-/// The system-prompt append, plus `UNATTENDED` for a recurring run.
-pub fn unattended(append: Option<String>, scheduled: bool) -> Option<String> {
-    if !scheduled {
-        return append;
-    }
-    Some(append.map_or_else(|| UNATTENDED.to_owned(), |a| format!("{a}\n\n{UNATTENDED}")))
-}
-
-/// What only Cockpit itself starts sessions with: a recurring run's schedule and its own mode (MR-167).
+/// What only Cockpit itself starts sessions with.
 #[derive(Default)]
 pub struct Started {
-    pub schedule: Option<String>,
-    pub permission_mode: Option<String>,
-    /// Nobody is watching: append `UNATTENDED`. A prompt-mode run is; a review a schedule starts
-    /// (MR-171) isn't, since it must stop for you before anything goes to GitHub.
-    pub unattended: bool,
     /// Spawned by this session's `session_spawn` call (MR-176).
     pub parent: Option<String>,
-}
-
-/// The system-prompt append a session starts with: the visual guidance, its flow's steps, and
-/// `UNATTENDED` only when `started` says nobody is watching.
-pub fn system_append(kind: &str, layer: bool, started: &Started) -> Option<String> {
-    unattended(append_prompt(kind, layer), started.unattended)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -488,13 +460,6 @@ pub fn start_with(
     if let Some(id) = preset {
         payload["preset"] = id.into();
     }
-    // A recurring run (MR-167): its tile is tagged ↻ and its history lists it.
-    if let Some(id) = &started.schedule {
-        payload["schedule"] = id.clone().into();
-    }
-    if let Some(m) = &started.permission_mode {
-        payload["permission_mode"] = m.clone().into();
-    }
     // A spawned session (MR-176): its tile names the parent, and it can't spawn more.
     if let Some(p) = &started.parent {
         payload["parent"] = p.clone().into();
@@ -526,13 +491,7 @@ pub fn start_with(
     if let Some(r) = resume {
         msg["resume"] = r.into();
     }
-    let mode = match started.permission_mode.clone().filter(|m| PERMISSION_MODES.contains(&m.as_str())) {
-        Some(m) => {
-            state.modes.lock().unwrap().insert(session.clone(), m.clone());
-            m
-        }
-        None => session_mode(&app, &session),
-    };
+    let mode = session_mode(&app, &session);
     msg["permission_mode"] = sdk_mode(&mode).into();
     let (model, effort) = model_choice(&app, &session);
     if let Some(m) = model {
@@ -573,7 +532,7 @@ pub fn start_with(
     // Every session gets the visual-app guidance (MR-56); blank ones the plan nudge (MR-98);
     // Review/Address add their flow steps.
     // A recurring run starts with nobody watching: it shouldn't stop to ask what it can decide.
-    if let Some(a) = system_append(&kind, layer, &started) {
+    if let Some(a) = append_prompt(&kind, layer) {
         msg["append_system_prompt"] = a.into();
     }
     state.live.lock().unwrap().insert(session.clone());
@@ -942,7 +901,7 @@ fn answer_tool_call(app: &AppHandle, payload: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_prompt, system_append, Started, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, unattended, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, UNATTENDED, VISUAL_GUIDANCE};
+    use super::{append_prompt, auto_allows, check_mcp_add, fold_compact_window, fold_model_choice, fold_permission_mode, fold_session_cap, sdk_mode, turn_signal, COMPACT_WINDOW, PLAN_NUDGE, SESSION_CAP, VISUAL_GUIDANCE};
 
     #[test]
     fn mcp_add_checks_name_scope_and_transport() {
@@ -969,31 +928,6 @@ mod tests {
         let review = append_prompt("review", false).unwrap();
         assert!(review.starts_with(VISUAL_GUIDANCE) && !review.contains(PLAN_NUDGE));
         assert!(!append_prompt("review", true).unwrap().contains(VISUAL_GUIDANCE));
-    }
-
-    #[test]
-    fn recurring_runs_are_told_nobody_is_watching() {
-        assert_eq!(unattended(None, false), None);
-        assert_eq!(unattended(Some("x".into()), false).as_deref(), Some("x"));
-        assert_eq!(unattended(None, true).as_deref(), Some(UNATTENDED));
-        let both = unattended(append_prompt("blank", false), true).unwrap();
-        assert!(both.starts_with(VISUAL_GUIDANCE) && both.ends_with(UNATTENDED));
-    }
-
-    #[test]
-    fn a_scheduled_review_is_not_unattended_and_still_waits_for_publish() {
-        // MR-171: a review a schedule starts carries its schedule but nobody-is-watching stays off,
-        // so the review flow's "only publish after the user says 'publish'" is the last word.
-        let review = Started { schedule: Some("sch".into()), unattended: false, ..Default::default() };
-        for layer in [false, true] {
-            let a = system_append("review", layer, &review).unwrap();
-            assert!(!a.contains(UNATTENDED), "layer {layer}");
-            assert!(a.contains("only publish to GitHub after the user says 'publish'"), "layer {layer}");
-            assert!(a.contains("call review_publish_ready"), "layer {layer}");
-        }
-        let run = Started { schedule: Some("sch".into()), unattended: true, ..Default::default() };
-        assert!(system_append("blank", false, &run).unwrap().ends_with(UNATTENDED));
-        assert!(!system_append("review", false, &Started::default()).unwrap().contains(UNATTENDED));
     }
 
     #[test]

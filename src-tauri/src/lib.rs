@@ -1,5 +1,4 @@
 mod attachments;
-mod background;
 mod browser;
 mod browser_launch;
 mod changes;
@@ -19,7 +18,6 @@ mod notify;
 mod personal;
 mod release_update;
 mod runs;
-mod schedules;
 mod selfbuild;
 mod selftest;
 mod sidecar;
@@ -58,7 +56,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_autostart::Builder::new().args(["--hidden"]).build())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(sidecar::Sidecar::default())
         .manage(terminal::Terminals::default())
         .manage(voice::Voice::default())
@@ -90,9 +88,8 @@ pub fn run() {
             update::on_start(app.handle());
             release_update::on_start(app.handle());
             sidecar::start(app.handle())?;
-            // Recurring sessions (MR-167): the minute tick, then the tray and start-at-login.
-            schedules::start(app.handle());
-            background::start(app.handle());
+            // Recurring sessions and their start-at-login are gone (MR-200): unregister a leftover one.
+            autostart_off(app.handle());
             browser::start(app.handle());
             if selftest::enabled() {
                 selftest::run(app.handle().clone());
@@ -192,13 +189,6 @@ pub fn run() {
             usage::usage_track,
             usage::usage_report,
             instances::instance_id,
-            schedules::schedule_set,
-            schedules::schedule_delete,
-            schedules::schedule_run_now,
-            schedules::schedules_next,
-            schedules::schedule_preview,
-            schedules::schedules_checks,
-            background::background_set,
             browser::browser_setup,
             browser::browser_status,
             browser::browser_session,
@@ -213,23 +203,12 @@ pub fn run() {
             browser::browser_blocklist_set,
             browser_launch::browser_launch_open
         ])
-        .on_window_event(|window, ev| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = ev {
-                background::on_close(window.app_handle(), window, api);
-            }
-        })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, ev| {
-            match ev {
-                tauri::RunEvent::Exit => {
-                    instances::stop(app);
-                    browser_launch::stop(app);
-                }
-                // The Dock icon of a hidden window (kept running for schedules) brings it back.
-                #[cfg(target_os = "macos")]
-                tauri::RunEvent::Reopen { .. } => background::show_main(app),
-                _ => {}
+            if let tauri::RunEvent::Exit = ev {
+                instances::stop(app);
+                browser_launch::stop(app);
             }
         });
 }
@@ -287,5 +266,22 @@ mod path_tests {
     #[test]
     fn works_without_a_login_shell() {
         assert!(full_path("/usr/bin:/bin", None).split(':').any(|d| d == "/opt/homebrew/bin"));
+    }
+}
+
+/// Recurring sessions (MR-167) registered Cockpit to start at login while a schedule was active.
+/// They're removed (MR-200), so an installed app turns a leftover registration off. Dev loops,
+/// self-tests and self-builds never registered one, and must not touch the installed app's.
+fn autostart_off(app: &tauri::AppHandle) {
+    let installed = ["MR_SELFTEST", "MR_DEV_LOOP", "MR_DATA_DIR", "MR_BUILD_ID"].iter().all(|v| std::env::var(v).map_or(true, |x| x.is_empty())) && !cfg!(debug_assertions);
+    if !installed {
+        return;
+    }
+    use tauri_plugin_autostart::ManagerExt;
+    let auto = app.autolaunch();
+    if auto.is_enabled().unwrap_or(false)
+        && let Err(e) = auto.disable()
+    {
+        eprintln!("[autostart] couldn't turn off start at login: {e}");
     }
 }
