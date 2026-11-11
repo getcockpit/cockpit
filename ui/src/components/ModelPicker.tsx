@@ -5,6 +5,8 @@ import { api } from "../state/store";
 import { currentRow, modelLabel } from "../picker/model";
 import type { ModelRow, SessionState } from "../state/types";
 
+let lastRefresh = 0;
+
 const EFFORT_HINT: Record<string, string> = { low: "fastest, least thinking", medium: "balanced", high: "thinks harder", xhigh: "very hard problems", max: "no limit; this session only" };
 
 // Which model a session runs and at what effort, and one click to change either (MR-73).
@@ -18,7 +20,9 @@ export function ModelPicker({ s, models }: { s: SessionState; models: ModelRow[]
 
   useEffect(() => {
     if (!open) return;
-    if (!models.length) void api.modelsRefresh().catch(() => {});
+    // Re-ask Claude Code on open (at most once a minute): an update to `claude` brings new models
+    // while the app keeps running. The cached rows show meanwhile; a failed ask keeps them.
+    if (!models.length || Date.now() - lastRefresh > 60_000) { lastRefresh = Date.now(); void api.modelsRefresh().catch(() => {}); }
     const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
     // Esc closes it wherever focus is: ⌘⇧M opens it without moving focus inside (MR-152).
     const esc = (e: KeyboardEvent) => { if (keyOf(e) === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); } };
