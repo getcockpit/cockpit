@@ -4,6 +4,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-11-13
+
+### Removed
+- **Recurring sessions and the background tray:** scheduled sessions and the tray that listed them are gone.
+- **The "Catch me up" brief** is gone from the Wall.
+
 ## [0.1.25] - 2026-11-11
 
 ### Added
