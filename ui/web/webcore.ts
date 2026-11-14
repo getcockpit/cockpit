@@ -1,9 +1,12 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import init, { WebPeer, type WebLink } from "../../../crates/remote-web/pkg/remote_web.js";
-import type { MrEvent } from "../state/types";
+import init, { WebPeer, type WebLink } from "../../crates/remote-web/pkg/remote_web.js";
+import type { MrEvent } from "../src/state/types";
 
-// Cockpit Remote's web core (decision 46): the installable web app's stand-in for the native
+// Cockpit Remote's web core (decision 46). Lives outside src/ with its own entry (ui/web), so the
+// desktop and native builds never need the wasm package, which only scripts/build-remote-web.sh
+// builds.
+// the installable web app's stand-in for the native
 // app's Rust core (mobile/src-tauri). It answers the same calls (`events_list`, `remote_pair`,
 // `remote_command`, …) and emits the same events (`mr-event`, `mr-remote`), so MobileApp, the
 // store and the desktop reducer run unchanged. Underneath is the wasm link (crates/remote-web):
