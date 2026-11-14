@@ -117,7 +117,7 @@ pub fn term_open(app: AppHandle, session: String, sdk_session_id: String, cwd: S
     argv.extend(command);
     open_command_with(&app, &session, argv, &cwd, env, cols, rows, Box::new(move |app: &AppHandle| {
         crate::eventlog::record(app, Some(&sid), "ui.terminal_closed", &serde_json::json!({}), None);
-        let _ = crate::sidecar::session_start(
+        let _ = crate::sidecar::start_now(
             app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd2,
             "I'm back from the terminal. Say in one line what changed there, then continue.".into(),
             Some(sdk), None, None, Some(false), Some(sid), Some(workspace), None, None

@@ -168,7 +168,7 @@ pub fn run(app: AppHandle) {
         }
         let ws = if workspace_mode() { Some(crate::workspaces::workspace_create(app.clone(), "Selftest".into()).expect("workspace")) } else { None };
         let state = app.state::<crate::sidecar::Sidecar>();
-        let res = crate::sidecar::session_start(
+        let res = crate::sidecar::start_now(
             app.clone(),
             state,
             dir.display().to_string(),
@@ -366,7 +366,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let events = log.list(Some(&session), None, 1000).unwrap_or_default();
             let sdk = events.iter().find(|e| e.kind == "sidecar.session_started").and_then(|e| e.payload["sdk_session_id"].as_str().map(str::to_owned));
             let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
-            let res = crate::sidecar::session_start(
+            let res = crate::sidecar::start_now(
                 app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd,
                 "What secret word did I ask you to remember? Reply with just the word, then on a new line: SELFTEST DONE".into(),
                 sdk, None, Some("blank".into()), Some(false), Some(session), None, None, None
@@ -398,7 +398,7 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
             let events = app.state::<crate::eventlog::EventLog>().list(Some(&plan), None, 1000).unwrap_or_default();
             let cwd = events.iter().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).unwrap_or_default();
             let prompt = format!("Implement the plan in working doc \"{}\" (doc_id {}). First read it with the mr doc_read tool and follow its decisions. This is a UI test: don't write code. After reading it, add a log block with doc_set_block (section log, block_id build_log, takeaway 'Build read the plan') that names the decided colour, then reply with exactly: SELFTEST DONE", doc.title, doc.id);
-            let build = crate::sidecar::session_start(app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd, prompt, None, None, Some("blank".into()), Some(false), None, None, None, None);
+            let build = crate::sidecar::start_now(app.clone(), app.state::<crate::sidecar::Sidecar>(), cwd, prompt, None, None, Some("blank".into()), Some(false), None, None, None, None);
             let Ok(build) = build else { eprintln!("[selftest] build session failed: {build:?}"); std::process::exit(1); };
             if let Err(e) = crate::docs::doc_build_started(app.clone(), app.state::<crate::docs::Docs>(), doc.id.clone(), build.clone()) {
                 eprintln!("[selftest] doc_build_started: {e}");

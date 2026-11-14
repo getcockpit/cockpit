@@ -343,7 +343,7 @@ fn resume_interrupted(app: &AppHandle) {
     let log = app.state::<crate::eventlog::EventLog>();
     let Ok(events) = log.list_turns() else { return };
     for (sid, sdk, cwd, kind) in interrupted(&events) {
-        let _ = crate::sidecar::session_start(
+        let _ = crate::sidecar::start_now(
             app.clone(),
             app.state::<crate::sidecar::Sidecar>(),
             cwd,
