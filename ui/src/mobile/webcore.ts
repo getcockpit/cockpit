@@ -23,7 +23,7 @@ const KEY = "mr.remote.secret";
 const PAIRED = "mr.remote.paired";
 const CREDENTIAL = "mr.remote.passkey";
 
-const status = { connected: false, live: false, error: null as string | null, known: { workspaces: [], repos: [] } as Known, pushKey: null as string | null, nonce: "" };
+const status = { connected: false, live: false, error: null as string | null, known: { workspaces: [], repos: [] } as Known, pushKey: null as string | null, nonce: "", app: null as { version: string; root: string; sw?: string } | null, installed: null as string | null, loaderChanged: false };
 const events: MrEvent[] = [];
 const ids = new Set<string>();
 const acks = new Map<string, Waiter<unknown>>();
@@ -71,6 +71,8 @@ function onFrame(gen: number, f: Frame) {
       status.known = f.known as Known;
       status.pushKey = (f.push_key as string) ?? null;
       status.nonce = String(f.nonce ?? "");
+      status.app = (f.app as { version: string; root: string; sw?: string } | null) ?? null;
+      void checkVersion();
       changed();
       break;
     case "events":
@@ -201,6 +203,53 @@ async function prove(json: string): Promise<string> {
   return JSON.stringify({ json, credential_id: b64(a.rawId), authenticator_data: b64(r.authenticatorData), client_data_json: b64(r.clientDataJSON), signature: b64(r.signature) });
 }
 
+// ---- Pinned updates (decision 47) -----------------------------------------------------------
+// The service worker (/remote/sw.js) serves only the version it installed and checked. Your
+// Mac's Cockpit vouches for one version; when it differs, the app offers to update to exactly
+// that root hash, and the service worker checks every file before swapping it in.
+function askWorker<T>(msg: object, want: string, ms = 120_000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const sw = navigator.serviceWorker?.controller;
+    if (!sw) return reject(new Error("the app isn't installed yet: reopen it"));
+    const t = setTimeout(() => { navigator.serviceWorker.removeEventListener("message", on); reject(new Error("timed out")); }, ms);
+    const on = (e: MessageEvent) => {
+      if (!e.data || !String(e.data.type).startsWith(want)) return;
+      clearTimeout(t);
+      navigator.serviceWorker.removeEventListener("message", on);
+      resolve(e.data as T);
+    };
+    navigator.serviceWorker.addEventListener("message", on);
+    sw.postMessage(msg);
+  });
+}
+
+async function checkVersion() {
+  // The loader is the one file a browser re-fetches by itself: compare it with what the Mac's
+  // release shipped.
+  if (status.app?.sw) {
+    try {
+      const body = await (await fetch("./sw.js", { cache: "no-store" })).arrayBuffer();
+      const got = [...new Uint8Array(await crypto.subtle.digest("SHA-256", body))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      status.loaderChanged = got !== status.app.sw;
+    } catch { /* offline: nothing to compare */ }
+  }
+  try {
+    const r = await askWorker<{ pinned: { version: string; root: string } | null }>({ type: "pinned" }, "pinned", 5_000);
+    status.installed = r.pinned?.version ?? null;
+  } catch { status.installed = null; }
+  changed();
+}
+
+const updateAvailable = () => !!status.app && !!status.installed && status.app.version !== status.installed;
+
+async function update(): Promise<string> {
+  if (!status.app) throw new Error("your Mac didn't name a version");
+  const r = await askWorker<{ type: string; error?: string }>({ type: "update", ...status.app }, "update");
+  if (r.type !== "updated") throw new Error(`the update didn't check out (${r.error}); keeping this version`);
+  setTimeout(() => location.reload(), 300);
+  return "Updated: restarting…";
+}
+
 async function sendCommand(command: { kind: string; args: Record<string, unknown> }): Promise<unknown> {
   if (!link || !status.live) throw new Error("not connected to your Mac");
   const json = JSON.stringify(command);
@@ -253,7 +302,7 @@ async function handle(cmd: string, a: Record<string, unknown>): Promise<unknown>
     case "events_session": return sessionRows(String(a.sessionId));
     case "remote_state": {
       const p = paired();
-      return { paired: p ? { name: p.mac } : null, connected: status.connected, live: status.live, error: status.error, known: status.known, push: !!status.pushKey, web: true, standalone: standalone() };
+      return { paired: p ? { name: p.mac } : null, connected: status.connected, live: status.live, error: status.error, known: status.known, push: !!status.pushKey, web: true, standalone: standalone(), version: status.installed, update: updateAvailable() ? status.app?.version : null, loaderChanged: status.loaderChanged };
     }
     case "remote_pair": {
       const p = await getPeer();
@@ -270,6 +319,7 @@ async function handle(cmd: string, a: Record<string, unknown>): Promise<unknown>
     }
     case "remote_command": return sendCommand(a.command as { kind: string; args: Record<string, unknown> });
     case "remote_push_enable": return enablePush();
+    case "remote_update": return update();
     case "remote_fetch": return null;
     case "remote_forget": {
       generation++;

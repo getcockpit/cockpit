@@ -100,7 +100,7 @@ impl WebPeer {
         let addr: EndpointAddr = for_webkit(serde_json::from_str(&addr_json).map_err(js_err)?);
         // The web app keeps no history and goes through a relay: it asks for "now", not the log.
         let mut link = self.peer.link_with(addr, &cursor, true).await.map_err(js_err)?;
-        let welcome = serde_json::json!({ "t": "welcome", "mac": link.mac, "known": link.known, "push_key": link.push_key, "nonce": link.nonce });
+        let welcome = serde_json::json!({ "t": "welcome", "mac": link.mac, "known": link.known, "push_key": link.push_key, "nonce": link.nonce, "app": link.app });
         let _ = on_frame.call1(&JsValue::NULL, &JsValue::from_str(&welcome.to_string()));
         let (tx, mut rx) = mpsc::unbounded_channel::<Out>();
         n0_future::task::spawn(async move {

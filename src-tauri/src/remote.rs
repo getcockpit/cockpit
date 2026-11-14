@@ -433,7 +433,7 @@ impl Link {
         // stops a replay on this one.
         let nonce = data_encoding::HEXLOWER.encode(&proto::new_secret());
         let mut spent = std::collections::HashSet::new();
-        write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known, push_key, nonce: Some(nonce.clone()) }).await?;
+        write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known, push_key, nonce: Some(nonce.clone()), app: web_app() }).await?;
         // Light: "now" in one query, then the same rules row by row (a busy log appends many rows
         // a second; re-running the query for each would cost the Mac ~0.7 s a time).
         let mut light = if light {
@@ -542,7 +542,14 @@ struct Store {
 
 const KEYCHAIN_SERVICE: &str = "cockpit-remote";
 /// The phone's web app (decision 46): the same static page for every Cockpit owner.
-const WEB_APP: &str = "https://getcockpit.github.io/remote/spike/";
+const WEB_APP: &str = "https://getcockpit.github.io/remote/";
+
+/// The web app version this build vouches for (decision 47), from site/remote/current.json at
+/// build time; None in a build without it.
+fn web_app() -> Option<proto::AppPin> {
+    let (version, root, sw) = (env!("MR_REMOTE_APP_VERSION"), env!("MR_REMOTE_APP_ROOT"), env!("MR_REMOTE_APP_SW"));
+    (!version.is_empty() && !root.is_empty()).then(|| proto::AppPin { version: version.into(), root: root.into(), sw: Some(sw.to_owned()).filter(|s| !s.is_empty()) })
+}
 const KEYCHAIN_ACCOUNT: &str = "identity";
 
 /// Tauri state: the store on disk and, while Remote is on, the running endpoint.

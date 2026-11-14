@@ -114,7 +114,9 @@ pub enum Frame {
     Hello { v: u32, cursor: String, #[serde(default, skip_serializing_if = "std::ops::Not::not")] light: bool },
     /// `push_key`: the Mac's VAPID public key, for the phone's Web Push subscription (decision 46).
     /// `nonce`: fresh per link; passkey proofs sign it, so a proof can't be replayed on another link.
-    Welcome { v: u32, mac: String, known: Known, #[serde(default, skip_serializing_if = "Option::is_none")] push_key: Option<String>, #[serde(default, skip_serializing_if = "Option::is_none")] nonce: Option<String> },
+    /// `app`: the web app version this Mac's Cockpit vouches for (decision 47); the phone updates
+    /// only to it.
+    Welcome { v: u32, mac: String, known: Known, #[serde(default, skip_serializing_if = "Option::is_none")] push_key: Option<String>, #[serde(default, skip_serializing_if = "Option::is_none")] nonce: Option<String>, #[serde(default, skip_serializing_if = "Option::is_none")] app: Option<AppPin> },
     /// A batch of events (ULID order), each the stored event. Plain `Value`: serde can't read a
     /// `RawValue` inside an internally tagged enum.
     Events { events: Vec<Value> },
@@ -142,6 +144,16 @@ impl Frame {
 /// The web app's origin and WebAuthn relying party (decision 46).
 pub const ORIGIN: &str = "https://getcockpit.github.io";
 pub const RP_ID: &str = "getcockpit.github.io";
+
+/// One version of the phone web app: its directory name and the root hash over its files.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AppPin {
+    pub version: String,
+    pub root: String,
+    /// SHA-256 of the loader (/remote/sw.js) this release shipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sw: Option<String>,
+}
 
 /// A phone's passkey: its WebAuthn credential id and P-256 public key (SPKI DER), base64url.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

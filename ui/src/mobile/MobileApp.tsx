@@ -16,7 +16,27 @@ import * as cmd from "./commands";
 
 type Known = { workspaces: { id: string; name: string }[]; repos: { id: string; name: string }[] };
 // web / standalone / push: only the web app's core sets them (decision 46).
-type RemoteState = { paired: { name: string } | null; connected: boolean; live: boolean; error: string | null; known: Known; web?: boolean; standalone?: boolean; push?: boolean };
+type RemoteState = { paired: { name: string } | null; connected: boolean; live: boolean; error: string | null; known: Known; web?: boolean; standalone?: boolean; push?: boolean; version?: string | null; update?: string | null; loaderChanged?: boolean };
+
+// Decision 47: the app changes only to the version your Mac's Cockpit vouches for, on your OK.
+function UpdateBanner({ remote }: { remote: RemoteState }) {
+  const [msg, setMsg] = useState("");
+  if (remote.loaderChanged) {
+    return (
+      <div data-mr="MobileLoaderChanged" className="mm-note" style={{ borderLeft: "4px solid var(--mr-error)" }}>
+        <b>The app's loader on the site changed without a matching Cockpit release on your Mac.</b> If you didn't just update Cockpit, don't approve anything from this phone, and check the Mac.
+      </div>
+    );
+  }
+  if (!remote.update) return null;
+  return (
+    <div data-mr="MobileUpdate" className="mm-note">
+      <b>Update from your Mac.</b> Your Mac's Cockpit vouches for app version {remote.update} (this is {remote.version}). It's checked file by file before it runs.{" "}
+      <button type="button" className="mr-key" onClick={() => void invoke<string>("remote_update").then(setMsg, (e) => setMsg(shortError(e)))}>Update</button>
+      {msg && <span className="mm-dim"> {msg}</span>}
+    </div>
+  );
+}
 
 // The web app only notifies, and keeps its pairing, when opened from the Home Screen.
 function InstallHint({ remote }: { remote: RemoteState }) {
@@ -122,6 +142,7 @@ function Paired({ remote }: { remote: RemoteState }) {
         {!session && <button type="button" className="mr-key" aria-label="Menu" onClick={() => { setStarting(false); setMenu(!menu); }}>⋯</button>}
       </header>
       {!session && <InstallHint remote={remote} />}
+      {!session && <UpdateBanner remote={remote} />}
       {menu && !session && <Menu remote={remote} onClose={() => setMenu(false)} />}
       {starting && !session && <Start known={remote.known} live={remote.connected} onClose={() => setStarting(false)} onStarted={(id) => { setStarting(false); setOpen(id); }} />}
       {!remote.connected && remote.error && <p className="mm-note">{remote.error}. Showing what this phone last saw; it retries by itself.</p>}
@@ -135,7 +156,7 @@ function Paired({ remote }: { remote: RemoteState }) {
                   <span className="mm-lamp" data-state={tile.state} />
                   <span className="mm-grow mm-col">
                     <b className="mm-clip">{sessionTitle(s)}</b>
-                    <span className="mm-dim mm-clip">{LABEL[tile.state]}{s.transcript.length ? (tile.doing ? ` · ${tile.doing}` : tile.step ? ` · ${tile.step}` : "") : ""}</span>
+                    <span className="mm-dim mm-clip">{LABEL[tile.state]}{tile.doing && (tile.doing !== "Starting…" || tile.state === "starting") ? ` · ${tile.doing}` : ""}</span>
                   </span>
                 </button>
               ))}
@@ -155,7 +176,7 @@ function Menu({ remote, onClose }: { remote: RemoteState; onClose: () => void })
   };
   return (
     <div data-mr="MobileMenu" className="mm-sheet mm-pad">
-      <span className="mm-dim">Paired with {remote.paired?.name}. Everything travels end to end encrypted, straight between this phone and the Mac.</span>
+      <span className="mm-dim">Paired with {remote.paired?.name}. Everything travels end to end encrypted, straight between this phone and the Mac.{remote.version ? ` App version ${remote.version}, checked against your Mac's Cockpit.` : ""}</span>
       {remote.web && <button type="button" className="mr-key mm-wide" data-tone="primary" data-mr="MobileNotify" onClick={() => void invoke<string>("remote_push_enable").then(setMsg, (e) => setMsg(shortError(e)))}>Turn on notifications</button>}
       <button type="button" className="mr-key mm-wide" onClick={() => void forget()}>Forget this Mac</button>
       {msg && <p className="mm-error">{msg}</p>}

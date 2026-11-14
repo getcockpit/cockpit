@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- Cockpit Remote's first-visit page (decision 47). Once its service worker has installed and
+     checked a version of the app, the app itself answers this address and this page never shows
+     again. -->
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Cockpit">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Cockpit Remote</title>
+<style>body{margin:0;padding:calc(24px + env(safe-area-inset-top)) 20px;font:16px/1.5 -apple-system,system-ui,sans-serif;background:#d3d6d9;color:#15181b}.dim{color:#5b6168}.err{color:#c62828}</style>
+</head><body>
+<h2>Cockpit Remote</h2>
+<p id="s" class="dim">Installing and checking the app…</p>
+<script>
+(async () => {
+  const s = document.getElementById("s");
+  try {
+    if (!("serviceWorker" in navigator)) throw new Error("this browser can't install web apps");
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "install-failed") { s.className = "err"; s.textContent = "The app didn't check out, so it wasn't installed: " + e.data.error; }
+    });
+    const reg = await navigator.serviceWorker.register("sw.js");
+    await navigator.serviceWorker.ready;
+    // Keep the code from the pairing link (after #) across the reload.
+    location.reload();
+  } catch (e) { s.className = "err"; s.textContent = "Couldn't install Cockpit Remote: " + (e.message || e); }
+})();
+</script>
+</body></html>

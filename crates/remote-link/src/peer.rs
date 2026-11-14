@@ -89,7 +89,7 @@ impl Peer {
         });
         let first = n0_future::time::timeout(Duration::from_secs(20), frames.recv()).await.map_err(|_| "the Mac didn't answer".to_string())?;
         match first {
-            Some(Frame::Welcome { mac, known, push_key, nonce, .. }) => Ok(Link { conn, send, frames, mac, known, push_key, nonce: nonce.unwrap_or_default(), cursor: cursor.into(), next_id: 0 }),
+            Some(Frame::Welcome { mac, known, push_key, nonce, app, .. }) => Ok(Link { conn, send, frames, mac, known, push_key, nonce: nonce.unwrap_or_default(), app, cursor: cursor.into(), next_id: 0 }),
             Some(Frame::Error { error }) => Err(error),
             _ => Err(close_reason(&conn).unwrap_or_else(|| "refused by the Mac (not paired?)".into())),
         }
@@ -110,6 +110,8 @@ pub struct Link {
     pub push_key: Option<String>,
     /// This link's nonce: passkey proofs sign it (`proto::challenge`).
     pub nonce: String,
+    /// The web app version the Mac vouches for (decision 47).
+    pub app: Option<proto::AppPin>,
     /// The newest event id received: hand it to the next `link` to resume without gaps.
     pub cursor: String,
     next_id: u64,
