@@ -12,6 +12,7 @@ import type { MrEvent } from "../state/types";
 // - Keeps no history: each open asks the Mac for "now" (light), then follows live rows.
 // - A session's transcript is fetched when it's opened (`events_session`).
 // - Reconnects with backoff, resuming after the newest row it has.
+// - Face ID: a passkey made at pairing signs every allow, answer and start; the Mac checks it.
 
 type Known = { workspaces: { id: string; name: string }[]; repos: { id: string; name: string }[] };
 type Paired = { mac: string; addr: unknown };
@@ -20,8 +21,9 @@ type Waiter<T> = { resolve: (v: T) => void; reject: (e: unknown) => void };
 
 const KEY = "mr.remote.secret";
 const PAIRED = "mr.remote.paired";
+const CREDENTIAL = "mr.remote.passkey";
 
-const status = { connected: false, live: false, error: null as string | null, known: { workspaces: [], repos: [] } as Known, pushKey: null as string | null };
+const status = { connected: false, live: false, error: null as string | null, known: { workspaces: [], repos: [] } as Known, pushKey: null as string | null, nonce: "" };
 const events: MrEvent[] = [];
 const ids = new Set<string>();
 const acks = new Map<string, Waiter<unknown>>();
@@ -68,6 +70,7 @@ function onFrame(gen: number, f: Frame) {
     case "welcome":
       status.known = f.known as Known;
       status.pushKey = (f.push_key as string) ?? null;
+      status.nonce = String(f.nonce ?? "");
       changed();
       break;
     case "events":
@@ -151,11 +154,62 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-async function sendCommand(command: unknown): Promise<unknown> {
+// ---- Face ID (passkeys, decision 46) -------------------------------------------------------
+// The web app's origin is the passkey's relying party. A local dev copy (localhost, 127.0.0.1)
+// may pair without one; on the real site a passkey is required.
+const b64 = (b: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(b instanceof Uint8Array ? b : new Uint8Array(b)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const devHost = () => ["localhost", "127.0.0.1"].includes(location.hostname);
+
+async function makePasskey(mac: string): Promise<string> {
+  if (!window.PublicKeyCredential) {
+    if (devHost()) return "";
+    throw new Error("This browser can't make a passkey, which Cockpit Remote needs for Face ID.");
+  }
+  try {
+    const cred = (await navigator.credentials.create({
+      publicKey: {
+        rp: { id: location.hostname, name: "Cockpit Remote" },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: `Cockpit on ${mac}`, displayName: `Cockpit on ${mac}` },
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        authenticatorSelection: { userVerification: "required", residentKey: "preferred" },
+        attestation: "none",
+        timeout: 120_000,
+      },
+    })) as PublicKeyCredential | null;
+    const spki = (cred?.response as AuthenticatorAttestationResponse | undefined)?.getPublicKey?.();
+    if (!cred || !spki) throw new Error("no public key");
+    localStorage.setItem(CREDENTIAL, b64(cred.rawId));
+    return JSON.stringify({ credential_id: b64(cred.rawId), public_key: b64(spki) });
+  } catch (e) {
+    if (devHost()) return "";
+    throw new Error(`Face ID setup didn't finish (${e instanceof Error ? e.message : e}). Pair again to retry.`);
+  }
+}
+
+const NEEDS_FACE_ID = (c: { kind: string; args: Record<string, unknown> }) =>
+  (c.kind === "permission_response" && (c.args.decision as { behavior?: string })?.behavior === "allow") || c.kind === "answer_question" || c.kind === "start_session";
+
+async function prove(json: string): Promise<string> {
+  const id = localStorage.getItem(CREDENTIAL);
+  if (!id) return "";
+  const challenge = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${status.nonce}\n${json}`)));
+  const raw = Uint8Array.from(atob(id.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (id.length % 4)) % 4)), (c) => c.charCodeAt(0));
+  const a = (await navigator.credentials.get({ publicKey: { challenge, rpId: location.hostname, allowCredentials: [{ type: "public-key", id: raw }], userVerification: "required", timeout: 60_000 } })) as PublicKeyCredential | null;
+  if (!a) throw new Error("Face ID didn't confirm it; nothing was sent");
+  const r = a.response as AuthenticatorAssertionResponse;
+  return JSON.stringify({ json, credential_id: b64(a.rawId), authenticator_data: b64(r.authenticatorData), client_data_json: b64(r.clientDataJSON), signature: b64(r.signature) });
+}
+
+async function sendCommand(command: { kind: string; args: Record<string, unknown> }): Promise<unknown> {
   if (!link || !status.live) throw new Error("not connected to your Mac");
+  const json = JSON.stringify(command);
+  // Face ID before it leaves the phone; the Mac checks the signature too.
+  const proof = NEEDS_FACE_ID(command) ? await prove(json) : "";
+  if (!link) throw new Error("the link to your Mac dropped; try again");
   const id = String(++nextAck);
   const done = new Promise((resolve, reject) => acks.set(id, { resolve, reject }));
-  link.command(JSON.stringify(command));
+  link.command(json, proof);
   return Promise.race([done, new Promise((_, reject) => setTimeout(() => reject(new Error("your Mac didn't answer in 30 s")), 30_000))]);
 }
 
@@ -203,7 +257,9 @@ async function handle(cmd: string, a: Record<string, unknown>): Promise<unknown>
     }
     case "remote_pair": {
       const p = await getPeer();
-      const out = JSON.parse(await p.pair(String(a.text), String(a.name ?? "iPhone"), (code: string) => void emit("mr-remote-code", code))) as Paired;
+      // Face ID first, while the tap that started pairing still counts as a user gesture.
+      const passkey = await makePasskey("your Mac");
+      const out = JSON.parse(await p.pair(String(a.text), String(a.name ?? "iPhone"), passkey, (code: string) => void emit("mr-remote-code", code))) as Paired;
       localStorage.setItem(PAIRED, JSON.stringify(out));
       events.length = 0;
       ids.clear();
@@ -212,7 +268,7 @@ async function handle(cmd: string, a: Record<string, unknown>): Promise<unknown>
       void connect();
       return out.mac;
     }
-    case "remote_command": return sendCommand(a.command);
+    case "remote_command": return sendCommand(a.command as { kind: string; args: Record<string, unknown> });
     case "remote_push_enable": return enablePush();
     case "remote_fetch": return null;
     case "remote_forget": {
@@ -221,6 +277,7 @@ async function handle(cmd: string, a: Record<string, unknown>): Promise<unknown>
       link = null;
       localStorage.removeItem(PAIRED);
       localStorage.removeItem(KEY);
+      localStorage.removeItem(CREDENTIAL);
       peer = null;
       events.length = 0;
       ids.clear();

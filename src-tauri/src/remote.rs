@@ -100,6 +100,10 @@ pub struct Phone {
     pub key: String,
     pub name: String,
     pub paired_at: i64,
+    /// The web app's Face ID key, bound at pairing (decision 46). With one, what runs Claude
+    /// needs its proof; without (native app, CLI), the phone gates it itself.
+    #[serde(default)]
+    pub passkey: Option<proto::Passkey>,
 }
 
 struct Pending {
@@ -126,6 +130,9 @@ pub struct Shared {
     last_seen: AtomicI64,
     /// This Mac's VAPID public key, sent in the welcome so the phone can subscribe (decision 46).
     push_key: Mutex<Option<String>>,
+    /// Origins a passkey proof may come from: the web app's, plus `MR_REMOTE_DEV_ORIGIN` (a local
+    /// build of it, for development).
+    origins: Vec<String>,
     /// Called with the new phone (or None) whenever pairing changes, to persist it.
     save: SavePhone,
 }
@@ -144,6 +151,7 @@ impl Shared {
             starts: Mutex::new(StartLimit::default()),
             last_seen: AtomicI64::new(0),
             push_key: Mutex::new(None),
+            origins: std::iter::once(proto::ORIGIN.to_string()).chain(std::env::var("MR_REMOTE_DEV_ORIGIN").ok().filter(|o| !o.is_empty())).collect(),
             save,
         })
     }
@@ -233,6 +241,24 @@ impl Shared {
         as_phone(|| self.host.run(r))
     }
 
+    /// Face ID on what runs Claude (decision 46): when the phone paired with a passkey, allow,
+    /// answer and start need a proof signed on this link's nonce over exactly this command.
+    fn check_presence(&self, command: &Command, proof: Option<&proto::Proof>, nonce: &str, spent: &mut std::collections::HashSet<String>) -> Result<(), String> {
+        let Some(key) = self.phone().and_then(|p| p.passkey) else { return Ok(()) };
+        if !command.needs_presence() {
+            return Ok(());
+        }
+        let proof = proof.ok_or("this needs Face ID on your phone")?;
+        let signed = proto::verify_proof(&key, proof, nonce, &self.origins, proto::RP_ID)?;
+        if &signed != command {
+            return Err("the Face ID proof is for a different command".into());
+        }
+        if !spent.insert(proto::challenge(nonce, &proof.json)) {
+            return Err("this Face ID proof was already used".into());
+        }
+        Ok(())
+    }
+
     fn is_pinned(&self, key: &PublicKey) -> bool {
         self.phone.lock().unwrap().as_ref().is_some_and(|p| p.key == key.to_string())
     }
@@ -270,7 +296,7 @@ impl ProtocolHandler for Pairing {
         let mut recv = BufReader::new(recv);
         let phone_key = *conn.remote_id().as_bytes();
         let secret = offer.secret_bytes().map_err(accept_err)?;
-        let Ok(Some(Frame::Pair { proof, name })) = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut recv)).await.unwrap_or(Ok(None)) else {
+        let Ok(Some(Frame::Pair { proof, name, passkey })) = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut recv)).await.unwrap_or(Ok(None)) else {
             conn.close(2u32.into(), b"expected pair");
             return Ok(());
         };
@@ -283,7 +309,7 @@ impl ProtocolHandler for Pairing {
         let code = proto::short_code(&secret, &shared.mac_key, &phone_key);
         let (tx, rx) = oneshot::channel();
         let name: String = name.chars().take(60).collect();
-        let phone = Phone { key: conn.remote_id().to_string(), name, paired_at: proto::now_ms() };
+        let phone = Phone { key: conn.remote_id().to_string(), name, paired_at: proto::now_ms(), passkey };
         *shared.pending.lock().unwrap() = Some(Pending { phone: phone.clone(), code: code.clone(), answer: Some(tx) });
         shared.host.changed();
         write_frame(&mut send, &Frame::Confirm { code }).await.map_err(accept_err)?;
@@ -403,7 +429,11 @@ impl Link {
         let s2 = shared.clone();
         let known = tokio::task::spawn_blocking(move || s2.host.known()).await.map_err(|e| e.to_string())?;
         let push_key = shared.push_key.lock().unwrap().clone();
-        write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known, push_key }).await?;
+        // Passkey proofs sign this link's nonce, so none can be replayed on another link; `spent`
+        // stops a replay on this one.
+        let nonce = data_encoding::HEXLOWER.encode(&proto::new_secret());
+        let mut spent = std::collections::HashSet::new();
+        write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known, push_key, nonce: Some(nonce.clone()) }).await?;
         // Light: "now" in one query, then the same rules row by row (a busy log appends many rows
         // a second; re-running the query for each would cost the Mac ~0.7 s a time).
         let mut light = if light {
@@ -431,9 +461,12 @@ impl Link {
                     let reply = match frame {
                         None => return Ok(()),
                         Some(Err(e)) => Frame::Error { error: e },
-                        Some(Ok(Frame::Command { id, command })) => {
+                        Some(Ok(Frame::Command { id, command, proof })) => {
                             let s = shared.clone();
-                            let out = tokio::task::spawn_blocking(move || s.execute(command)).await.map_err(|e| e.to_string())?;
+                            let out = match shared.check_presence(&command, proof.as_ref(), &nonce, &mut spent) {
+                                Err(e) => Err(e),
+                                Ok(()) => tokio::task::spawn_blocking(move || s.execute(command)).await.map_err(|e| e.to_string())?,
+                            };
                             match out {
                                 Ok(result) => Frame::Ack { id, ok: true, result: Some(result), error: None },
                                 Err(e) => Frame::Ack { id, ok: false, result: None, error: Some(e) },
@@ -1101,6 +1134,74 @@ mod tests {
         assert!(stranger.pair(&o, "evil", |_| {}).await.is_err());
         assert_eq!(shared.phone().unwrap().name, "Test iPhone", "the pinned phone is unchanged");
         router.shutdown().await.unwrap();
+    }
+
+    /// A WebAuthn assertion as Safari makes one, from a test passkey.
+    fn webauthn(sk: &p256::ecdsa::SigningKey, json: &str, nonce: &str) -> proto::Proof {
+        use p256::ecdsa::signature::Signer;
+        use sha2::{Digest, Sha256};
+        let e = |b: &[u8]| data_encoding::BASE64URL_NOPAD.encode(b);
+        let cd = serde_json::json!({ "type": "webauthn.get", "challenge": proto::challenge(nonce, json), "origin": proto::ORIGIN }).to_string();
+        let mut ad = Sha256::digest(proto::RP_ID.as_bytes()).to_vec();
+        ad.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+        let mut signed = ad.clone();
+        signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+        let sig: p256::ecdsa::Signature = sk.sign(&signed);
+        proto::Proof { json: json.into(), credential_id: "Y3JlZA".into(), authenticator_data: e(&ad), client_data_json: e(cd.as_bytes()), signature: e(sig.to_der().as_bytes()) }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_web_phone_needs_face_id_for_what_runs_claude() {
+        use p256::pkcs8::EncodePublicKey;
+        let (fake, shared, router) = mac().await;
+        fake.push("ui.session_requested", Some("s1"));
+        let sk = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        let passkey = proto::Passkey { credential_id: "Y3JlZA".into(), public_key: data_encoding::BASE64URL_NOPAD.encode(sk.verifying_key().to_public_key_der().unwrap().as_bytes()) };
+        let offer = shared.offer(router.endpoint().addr());
+        let s = shared.clone();
+        tokio::spawn(async move {
+            while s.pending().is_none() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            s.answer(true).unwrap();
+        });
+        let phone = Peer::bind(SecretKey::generate(), true).await.unwrap();
+        phone.pair_with_passkey(&offer, "Web iPhone", Some(passkey.clone()), |_| {}).await.unwrap();
+        assert_eq!(shared.phone().unwrap().passkey, Some(passkey), "bound at pairing");
+
+        let mut link = phone.link(router.endpoint().addr(), "").await.unwrap();
+        link.until_live().await.unwrap();
+        let start = Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "go".into() };
+        let json = serde_json::to_string(&start).unwrap();
+        // No proof: refused.
+        let r = link.command(start.clone()).await.unwrap();
+        assert!(r.unwrap_err().contains("Face ID"));
+        // A proof on another link's nonce: refused.
+        let id = link.send_command_proved(start.clone(), Some(webauthn(&sk, &json, "other-link"))).await.unwrap();
+        assert!(wait_ack(&mut link, &id).await.unwrap_err().contains("something else"));
+        // A proof over a different command: refused.
+        let other = serde_json::to_string(&Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "rm".into() }).unwrap();
+        let id = link.send_command_proved(start.clone(), Some(webauthn(&sk, &other, &link.nonce.clone()))).await.unwrap();
+        assert!(wait_ack(&mut link, &id).await.is_err());
+        // The real thing: runs once.
+        let good = webauthn(&sk, &json, &link.nonce.clone());
+        let id = link.send_command_proved(start.clone(), Some(good.clone())).await.unwrap();
+        wait_ack(&mut link, &id).await.unwrap();
+        let id = link.send_command_proved(start.clone(), Some(good)).await.unwrap();
+        assert!(wait_ack(&mut link, &id).await.unwrap_err().contains("already used"));
+        // Deny and replies need no Face ID.
+        let deny = Command::PermissionResponse { session: "s1".into(), request_id: "r".into(), decision: serde_json::json!({ "behavior": "deny", "message": "no" }) };
+        assert!(link.command(deny).await.unwrap().is_ok());
+        assert_eq!(fake.ran.lock().unwrap().iter().filter(|r| matches!(r, Resolved::Start { .. })).count(), 1);
+        router.shutdown().await.unwrap();
+    }
+
+    async fn wait_ack(link: &mut remote_link::Link, id: &str) -> Result<(), String> {
+        loop {
+            if let Frame::Ack { id: got, ok, error, .. } = link.next().await.unwrap() && got == id {
+                return if ok { Ok(()) } else { Err(error.unwrap_or_default()) };
+            }
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -12,7 +12,7 @@ type Status = {
   enabled: boolean;
   running: boolean;
   mac_id: string | null;
-  phone: { key: string; name: string; paired_at: number } | null;
+  phone: { key: string; name: string; paired_at: number; passkey?: unknown } | null;
   pending: { code: string; name: string } | null;
   connected: boolean;
   last_seen: number | null;
@@ -70,6 +70,7 @@ export function RemoteSettings() {
             <span style={{ fontSize: 13 }}>
               Paired with <b>{st.phone.name}</b> ({st.phone.key.slice(0, 10)}…) since {new Date(st.phone.paired_at).toLocaleDateString()}.{" "}
               <span className="mr-dim">{st.connected ? "Connected now." : st.last_seen ? `Last here ${ago(st.last_seen)}.` : "Not connected yet."}</span>
+              {st.phone.passkey ? <span className="mr-dim"> Face ID guards every allow, answer and start (checked here).</span> : null}
             </span>
           ) : <span className="mr-dim" style={{ fontSize: 13 }}>No phone paired.</span>}
           <span className="mr-grow" />

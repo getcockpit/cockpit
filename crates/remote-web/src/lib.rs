@@ -77,12 +77,15 @@ impl WebPeer {
 
     /// Pairs from the Mac's pairing text. `on_code(code)` gets the 6-digit code; resolves with
     /// `{mac, addr}` (the Mac's name and address JSON to keep).
-    pub async fn pair(&self, text: String, name: String, on_code: js_sys::Function) -> Result<JsValue, JsValue> {
+    /// `passkey_json`: `{credential_id, public_key}` (base64url) of this phone's Face ID passkey,
+    /// bound into the pairing; empty for none.
+    pub async fn pair(&self, text: String, name: String, passkey_json: String, on_code: js_sys::Function) -> Result<JsValue, JsValue> {
+        let passkey = if passkey_json.is_empty() { None } else { Some(serde_json::from_str(&passkey_json).map_err(js_err)?) };
         let mut offer = Offer::from_text(&text).map_err(js_err)?;
         offer.mac = for_webkit(offer.mac);
         let mac = self
             .peer
-            .pair(&offer, &name, |code| {
+            .pair_with_passkey(&offer, &name, passkey, |code| {
                 let _ = on_code.call1(&JsValue::NULL, &JsValue::from_str(code));
             })
             .await
@@ -97,7 +100,7 @@ impl WebPeer {
         let addr: EndpointAddr = for_webkit(serde_json::from_str(&addr_json).map_err(js_err)?);
         // The web app keeps no history and goes through a relay: it asks for "now", not the log.
         let mut link = self.peer.link_with(addr, &cursor, true).await.map_err(js_err)?;
-        let welcome = serde_json::json!({ "t": "welcome", "mac": link.mac, "known": link.known, "push_key": link.push_key });
+        let welcome = serde_json::json!({ "t": "welcome", "mac": link.mac, "known": link.known, "push_key": link.push_key, "nonce": link.nonce });
         let _ = on_frame.call1(&JsValue::NULL, &JsValue::from_str(&welcome.to_string()));
         let (tx, mut rx) = mpsc::unbounded_channel::<Out>();
         n0_future::task::spawn(async move {
@@ -108,7 +111,7 @@ impl WebPeer {
                         Err(e) => break e,
                     },
                     c = rx.recv() => match c {
-                        Some(Out::Command(c)) => if let Err(e) = link.send_command(c).await { break e },
+                        Some(Out::Command(c, p)) => if let Err(e) = link.send_command_proved(c, p).await { break e },
                         Some(Out::Frame(f)) => if let Err(e) = link.send(&f).await { break e },
                         None => { link.close(); break "closed".into() }
                     },
@@ -121,7 +124,7 @@ impl WebPeer {
 }
 
 enum Out {
-    Command(Command),
+    Command(Command, Option<remote_link::proto::Proof>),
     Frame(Frame),
 }
 
@@ -134,11 +137,13 @@ pub struct WebLink {
 
 #[wasm_bindgen]
 impl WebLink {
-    /// Sends one allowlisted command (`{kind, args}` JSON).
-    pub fn command(&self, json: String) -> Result<(), JsValue> {
+    /// Sends one allowlisted command (`{kind, args}` JSON), with `proof_json` (a `proto::Proof`
+    /// whose `json` is exactly this command) when it needs Face ID; empty for none.
+    pub fn command(&self, json: String, proof_json: String) -> Result<(), JsValue> {
         let c: Command = serde_json::from_str(&json).map_err(|e| js_err(format!("not a Cockpit Remote command: {e}")))?;
         c.check().map_err(js_err)?;
-        self.out(Out::Command(c))
+        let proof = if proof_json.is_empty() { None } else { Some(serde_json::from_str(&proof_json).map_err(js_err)?) };
+        self.out(Out::Command(c, proof))
     }
 
     /// Asks for one session's recent rows; they come back as `{"t":"session_rows","id":…}`.
