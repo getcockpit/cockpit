@@ -44,6 +44,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Cockpit Remote (phone <-> Mac, no server of ours): QUIC dialed by public key, hole punching, E2E relay fallback.
 iroh = "=1.4.1"
 remote-link = { path = "../crates/remote-link" }
+remote-push = { path = "../crates/remote-push" }
 tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "time", "io-util"] }
 hmac = "0.12"
 sha2 = "0.10"

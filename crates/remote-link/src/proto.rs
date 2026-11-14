@@ -105,7 +105,8 @@ pub enum Frame {
     Paired { mac: String },
     // Link (ALPN_LINK)
     Hello { v: u32, cursor: String },
-    Welcome { v: u32, mac: String, known: Known },
+    /// `push_key`: the Mac's VAPID public key, for the phone's Web Push subscription (decision 46).
+    Welcome { v: u32, mac: String, known: Known, #[serde(default, skip_serializing_if = "Option::is_none")] push_key: Option<String> },
     /// A batch of events (ULID order), each the stored event. Plain `Value`: serde can't read a
     /// `RawValue` inside an internally tagged enum.
     Events { events: Vec<Value> },
@@ -138,6 +139,8 @@ pub enum Command {
     StopSession { session: String },
     /// Ids from `Known`, never paths: the Mac maps them back itself.
     StartSession { workspace_id: String, repo_id: String, prompt: String },
+    /// The phone's Web Push subscription (`PushSubscription.toJSON()`), so the Mac can notify it.
+    RegisterPush { subscription: Value },
 }
 
 impl Command {
@@ -148,7 +151,7 @@ impl Command {
             | Command::PermissionResponse { session, .. }
             | Command::Interrupt { session }
             | Command::StopSession { session } => Some(session),
-            Command::StartSession { .. } => None,
+            Command::StartSession { .. } | Command::RegisterPush { .. } => None,
         }
     }
 
@@ -162,6 +165,12 @@ impl Command {
                 _ => Err("decision.behavior must be allow or deny".into()),
             },
             Command::AnswerQuestion { answers, .. } if answers.is_empty() => Err("no answers".into()),
+            Command::RegisterPush { subscription } => {
+                let ok = subscription["endpoint"].as_str().is_some_and(|e| e.starts_with("https://"))
+                    && subscription["keys"]["p256dh"].is_string()
+                    && subscription["keys"]["auth"].is_string();
+                if ok { Ok(()) } else { Err("a push subscription needs an https endpoint and its keys".into()) }
+            }
             _ => Ok(()),
         }
     }
@@ -338,6 +347,8 @@ mod tests {
         for bad in ["run_shell", "read_file", "terminal", "self_build"] {
             assert!(serde_json::from_value::<Frame>(json!({ "t": "command", "id": "1", "kind": bad, "args": { "cmd": "rm -rf /" } })).is_err(), "{bad}");
         }
+        let plain_http = Command::RegisterPush { subscription: json!({ "endpoint": "http://evil.example/", "keys": { "p256dh": "B", "auth": "a" } }) };
+        assert!(plain_http.check().is_err(), "pushes only go to https push services");
         let weird = Command::PermissionResponse { session: "s".into(), request_id: "r".into(), decision: json!({ "behavior": "always" }) };
         assert!(weird.check().is_err());
         assert!(Command::SendPrompt { session: "s".into(), text: "  ".into() }.check().is_err());
@@ -355,6 +366,7 @@ mod tests {
             json!({ "kind": "interrupt", "args": { "session": "s" } }),
             json!({ "kind": "stop_session", "args": { "session": "s" } }),
             json!({ "kind": "start_session", "args": { "workspace_id": "personal", "repo_id": "a1b2", "prompt": "fix it" } }),
+            json!({ "kind": "register_push", "args": { "subscription": { "endpoint": "https://web.push.apple.com/x", "keys": { "p256dh": "B", "auth": "a" } } } }),
         ] {
             let c: Command = serde_json::from_value(v.clone()).unwrap_or_else(|e| panic!("{v}: {e}"));
             c.check().unwrap();

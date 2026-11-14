@@ -75,6 +75,7 @@ pub enum Resolved {
     Interrupt { session: String },
     Stop { session: String },
     Start { cwd: String, workspace: String, prompt: String },
+    RegisterPush { subscription: Value },
 }
 
 pub trait Host: Send + Sync + 'static {
@@ -118,6 +119,8 @@ pub struct Shared {
     conns: Mutex<Vec<Connection>>,
     starts: Mutex<StartLimit>,
     last_seen: AtomicI64,
+    /// This Mac's VAPID public key, sent in the welcome so the phone can subscribe (decision 46).
+    push_key: Mutex<Option<String>>,
     /// Called with the new phone (or None) whenever pairing changes, to persist it.
     save: SavePhone,
 }
@@ -135,8 +138,13 @@ impl Shared {
             conns: Mutex::new(Vec::new()),
             starts: Mutex::new(StartLimit::default()),
             last_seen: AtomicI64::new(0),
+            push_key: Mutex::new(None),
             save,
         })
+    }
+
+    pub fn set_push_key(&self, key: Option<String>) {
+        *self.push_key.lock().unwrap() = key;
     }
 
     /// A new row is in the log.
@@ -211,6 +219,7 @@ impl Shared {
                 self.starts.lock().unwrap().take(proto::now_ms())?;
                 Resolved::Start { cwd: repo.path.clone(), workspace: workspace_id, prompt }
             }
+            Command::RegisterPush { subscription } => Resolved::RegisterPush { subscription },
         })
     }
 
@@ -375,7 +384,8 @@ impl Link {
         let mut tick = shared.tick.subscribe();
         let s2 = shared.clone();
         let known = tokio::task::spawn_blocking(move || s2.host.known()).await.map_err(|e| e.to_string())?;
-        write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known }).await?;
+        let push_key = shared.push_key.lock().unwrap().clone();
+        write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known, push_key }).await?;
         let mut cursor = self.catch_up(&mut send, cursor).await?;
         write_frame(&mut send, &Frame::Live { cursor: cursor.clone() }).await?;
         loop {
@@ -449,6 +459,9 @@ pub async fn listen(shared: Arc<Shared>, key: SecretKey, local: bool) -> Result<
 struct Store {
     enabled: bool,
     phone: Option<Phone>,
+    /// The paired phone's Web Push subscription (decision 46); dropped on unpair or when it's gone.
+    #[serde(default)]
+    push: Option<remote_push::Subscription>,
 }
 
 const KEYCHAIN_SERVICE: &str = "cockpit-remote";
@@ -568,6 +581,17 @@ impl Host for AppHost {
             Resolved::Start { cwd, workspace, prompt } => {
                 sc::start_now(app.clone(), state(), cwd, prompt, None, None, Some("blank".into()), None, None, Some(workspace), None, None).map(|id| serde_json::json!({ "session": id }))
             }
+            Resolved::RegisterPush { subscription } => {
+                let sub: remote_push::Subscription = serde_json::from_value(subscription).map_err(|e| format!("bad push subscription: {e}"))?;
+                let remote = app.state::<Remote>();
+                let mut store = remote.load();
+                store.push = Some(sub.clone());
+                save_store(&remote.store_path(), &store);
+                let host = sub.endpoint.split('/').nth(2).unwrap_or_default().to_owned();
+                crate::eventlog::record(&app, None, "ui.remote_push_registered", &serde_json::json!({ "push_service": host }), None);
+                let status = push_now(&app, &serde_json::json!({ "title": "Cockpit Remote", "body": "Notifications from this Mac are on." }))?;
+                Ok(serde_json::json!({ "status": status }))
+            }
         }
     }
 
@@ -575,6 +599,96 @@ impl Host for AppHost {
         use tauri::Emitter;
         let _ = self.0.emit("mr-remote", ());
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Web Push (decision 46): this Mac's own VAPID key, the phone's subscription, no server of ours
+
+const PUSH_ACCOUNT: &str = "push-vapid";
+/// The VAPID `sub` claim: who runs the sender. Push services only use it to reach the sender.
+const PUSH_CONTACT: &str = "https://getcockpit.github.io";
+
+/// This Mac's VAPID key: the Keychain for the installed app; a 0600 file under `MR_DATA_DIR`.
+fn vapid(dir: &std::path::Path) -> Result<remote_push::Vapid, String> {
+    let scratch = std::env::var("MR_DATA_DIR").is_ok_and(|d| !d.is_empty());
+    let file = dir.join("remote-push.key");
+    let existing = if scratch { std::fs::read_to_string(&file).ok() } else { crate::sys::keychain_find(KEYCHAIN_SERVICE, PUSH_ACCOUNT) };
+    if let Some(v) = existing.and_then(|k| remote_push::Vapid::from_private(&k).ok()) {
+        return Ok(v);
+    }
+    let v = remote_push::Vapid::generate();
+    if scratch {
+        std::fs::write(&file, v.private()).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600));
+        }
+    } else {
+        crate::sys::keychain_set(KEYCHAIN_SERVICE, PUSH_ACCOUNT, &v.private())?;
+    }
+    Ok(v)
+}
+
+/// Sends one push to the paired phone, blocking. 404/410 means the subscription is gone: it's
+/// dropped and the phone subscribes again next time it's open.
+fn push_now(app: &tauri::AppHandle, payload: &Value) -> Result<u16, String> {
+    use tauri::Manager;
+    let remote = app.state::<Remote>();
+    let mut store = remote.load();
+    let sub = store.push.clone().ok_or("no phone has turned on notifications")?;
+    let status = vapid(&remote.dir)?.send(&sub, payload.to_string().as_bytes(), PUSH_CONTACT)?;
+    if status == 404 || status == 410 {
+        store.push = None;
+        save_store(&remote.store_path(), &store);
+    }
+    Ok(status)
+}
+
+/// What a needs-you row says on the lock screen: the session's title and the ask. The payload is
+/// encrypted to the phone, so Apple's push service never sees it.
+pub fn needs_you(kind: &str, payload: &Value, title: &str) -> Option<Value> {
+    if kind != "sidecar.permission_request" || payload["auto_allowed"] == true {
+        return None;
+    }
+    let tool = payload["tool"].as_str().unwrap_or("a tool");
+    let input = &payload["input"];
+    let body = if tool == "AskUserQuestion" {
+        format!("Claude asks: {}", input["questions"][0]["question"].as_str().unwrap_or("a question"))
+    } else {
+        let what = input["command"].as_str().or(input["file_path"].as_str()).or(input["url"].as_str()).unwrap_or("");
+        format!("Allow {tool}? {}", what.chars().take(140).collect::<String>()).trim().to_owned()
+    };
+    Some(serde_json::json!({ "title": title.chars().take(60).collect::<String>(), "body": body, "session": payload["session"], "tag": payload["session"] }))
+}
+
+/// Called from `eventlog::record` for every new row: pushes the needs-you ones to the phone, off
+/// the calling thread.
+pub fn on_event(app: &tauri::AppHandle, ev: &crate::eventlog::Event) {
+    use tauri::Manager;
+    if ev.kind != "sidecar.permission_request" {
+        return;
+    }
+    let Some(remote) = app.try_state::<Remote>() else { return };
+    if remote.shared().is_none() || remote.load().push.is_none() {
+        return;
+    }
+    let (app, ev) = (app.clone(), ev.clone());
+    std::thread::spawn(move || {
+        let log = app.state::<crate::eventlog::EventLog>();
+        let title = ev
+            .session_id
+            .as_deref()
+            .and_then(|s| log.list(Some(s), None, 1).ok())
+            .and_then(|rows| rows.into_iter().next())
+            .and_then(|r| r.payload["prompt"].as_str().map(str::to_owned))
+            .unwrap_or_else(|| "Cockpit".into());
+        if let Some(p) = needs_you(&ev.kind, &ev.payload, &title)
+            && let Err(e) = push_now(&app, &p)
+        {
+            eprintln!("[remote] push failed: {e}");
+        }
+    });
 }
 
 /// Called from `eventlog::record` for every new row.
@@ -601,6 +715,10 @@ fn start_endpoint(app: &tauri::AppHandle, remote: &Remote, rotate: bool) -> Resu
         save_store(&path, &s);
     });
     let shared = Shared::new(Box::new(AppHost(app.clone())), *key.public().as_bytes(), mac_name(), store.phone, save);
+    match vapid(&remote.dir) {
+        Ok(v) => shared.set_push_key(Some(v.public())),
+        Err(e) => eprintln!("[remote] no push key: {e}"),
+    }
     let router = wait(listen(shared.clone(), key, std::env::var("MR_REMOTE_LOCAL").is_ok()))?;
     *remote.running.lock().unwrap() = Some((shared, router));
     Ok(())
@@ -703,6 +821,7 @@ pub fn remote_unpair(app: tauri::AppHandle, remote: tauri::State<'_, Remote>) ->
     }
     let mut store = remote.load();
     store.phone = None;
+    store.push = None;
     save_store(&remote.store_path(), &store);
     let was_running = remote.shared().is_some();
     stop_endpoint(&remote);
@@ -888,6 +1007,20 @@ mod tests {
         assert_eq!(link.until_live().await.unwrap().len(), 1);
         eprintln!("linked by key alone in {:?}", t.elapsed());
         router.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn needs_you_pushes_say_what_and_where() {
+        let ask = serde_json::json!({ "session": "s1", "tool": "Bash", "input": { "command": "rm -rf build" } });
+        let p = needs_you("sidecar.permission_request", &ask, "Clean the build").unwrap();
+        assert_eq!(p["title"], "Clean the build");
+        assert_eq!(p["body"], "Allow Bash? rm -rf build");
+        assert_eq!(p["tag"], "s1");
+        let q = serde_json::json!({ "session": "s1", "tool": "AskUserQuestion", "input": { "questions": [{ "question": "Which DB?" }] } });
+        assert_eq!(needs_you("sidecar.permission_request", &q, "t").unwrap()["body"], "Claude asks: Which DB?");
+        let auto = serde_json::json!({ "session": "s1", "tool": "Read", "auto_allowed": true });
+        assert!(needs_you("sidecar.permission_request", &auto, "t").is_none(), "Never ask: nothing to tap");
+        assert!(needs_you("sidecar.sdk", &ask, "t").is_none());
     }
 
     #[test]
