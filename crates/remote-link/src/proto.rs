@@ -104,7 +104,10 @@ pub enum Frame {
     Confirm { code: String },
     Paired { mac: String },
     // Link (ALPN_LINK)
-    Hello { v: u32, cursor: String },
+    /// `light`: the phone wants "now", not the history: the rows of sessions that aren't archived
+    /// (starts, asks, answers, messages, titles, turn ends) and the workspaces. On a 2 GB log that's
+    /// ~0.2 MB instead of ~930 MB, which matters over a relay (browsers can't connect directly).
+    Hello { v: u32, cursor: String, #[serde(default, skip_serializing_if = "std::ops::Not::not")] light: bool },
     /// `push_key`: the Mac's VAPID public key, for the phone's Web Push subscription (decision 46).
     Welcome { v: u32, mac: String, known: Known, #[serde(default, skip_serializing_if = "Option::is_none")] push_key: Option<String> },
     /// A batch of events (ULID order), each the stored event. Plain `Value`: serde can't read a

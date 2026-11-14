@@ -3,7 +3,7 @@
 // encrypted, `remote_web` = crates/remote-web), and turns on Web Push with your Mac's own key.
 // Nothing about you or your Mac is ever sent to this site.
 // ?v=N: a new wasm must not come from Safari's cache (bump with each published build).
-import init, { WebPeer } from "./pkg/remote_web.js?v=2";
+import init, { WebPeer } from "./pkg/remote_web.js?v=4";
 
 const $ = (id) => document.getElementById(id);
 const show = (id, on = true) => { $(id).hidden = !on; };
@@ -46,11 +46,14 @@ async function connect(peer, paired) {
   $("mac").textContent = paired.mac;
   $("link").textContent = "connecting…";
   const t = performance.now();
+  let bytes = 0, first = 0;
   link = await peer.link(JSON.stringify(paired.addr), "", (json) => {
+    bytes += json.length;
     const f = JSON.parse(json);
+    if (f.t === "events" && !first) first = performance.now() - t;
     if (f.t === "welcome") { pushKey = f.push_key; }
     else if (f.t === "events") { for (const e of f.events) onEvent(e); render(); }
-    else if (f.t === "live") { $("link").textContent = "live"; $("link").className = "ok"; log(`caught up in ${Math.round(performance.now() - t)} ms`); render(); }
+    else if (f.t === "live") { $("link").textContent = "live"; $("link").className = "ok"; log(`caught up in ${Math.round(performance.now() - t)} ms: ${events} events, ${(bytes / 1e6).toFixed(1)} MB, first rows after ${Math.round(first)} ms`); render(); }
     else if (f.t === "ack") { $("notifyState").textContent = f.ok ? `Your Mac sent a test push (${f.result?.status ?? "?"}).` : `Your Mac said: ${f.error}`; }
     else if (f.t === "closed") { $("link").textContent = "offline"; $("link").className = "err"; log("link closed:", f.error); setTimeout(() => location.reload(), 5000); }
   });
@@ -72,7 +75,7 @@ async function turnOnNotifications() {
 try {
   if ("serviceWorker" in navigator) await navigator.serviceWorker.register("sw.js");
   show("install", !standalone);
-  await init({ module_or_path: new URL("./pkg/remote_web_bg.wasm?v=2", import.meta.url) });
+  await init({ module_or_path: new URL("./pkg/remote_web_bg.wasm?v=4", import.meta.url) });
   const peer = await WebPeer.create(localStorage.getItem("mr.remote.secret") ?? "");
   localStorage.setItem("mr.remote.secret", peer.secret());
   const paired = JSON.parse(localStorage.getItem("mr.remote.paired") ?? "null");

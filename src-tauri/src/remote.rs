@@ -81,6 +81,9 @@ pub enum Resolved {
 pub trait Host: Send + Sync + 'static {
     /// Rows after `after` (exclusive), ULID order, at most `limit`.
     fn events_after(&self, after: &str, limit: usize) -> Vec<Stored>;
+    /// The light first sync (`Frame::Hello { light }`): "now" up to the log's newest row, and that
+    /// row's id as the cursor to follow from.
+    fn now_rows(&self) -> (Vec<Stored>, String);
     fn event(&self, id: &str) -> Option<Stored>;
     fn known(&self) -> Known;
     fn session_exists(&self, id: &str) -> bool;
@@ -320,7 +323,9 @@ const BATCH_BYTES: usize = 512 * 1024;
 
 impl Link {
     /// Sends every row after `cursor` and returns the new cursor. Reads happen off the runtime.
-    async fn catch_up(&self, send: &mut SendStream, mut cursor: String) -> Result<String, String> {
+    /// Sends every row after `cursor` and returns the new cursor. Reads happen off the runtime.
+    /// `light`: only what `keep_light` keeps, slimmed; it tracks which sessions are live.
+    async fn catch_up(&self, send: &mut SendStream, mut cursor: String, mut light: Option<&mut Light>) -> Result<String, String> {
         loop {
             let shared = self.0.clone();
             let after = cursor.clone();
@@ -328,6 +333,19 @@ impl Link {
             let Some(last) = rows.last() else { return Ok(cursor) };
             cursor = last.id.clone();
             let full = rows.len() == 500;
+            let rows: Vec<Stored> = match light.as_deref_mut() {
+                Some(l) => rows.into_iter().filter(|r| l.keep(r)).map(slim).collect(),
+                None => rows,
+            };
+            self.send_rows(send, rows).await?;
+            if !full {
+                return Ok(cursor);
+            }
+        }
+    }
+
+    async fn send_rows(&self, send: &mut SendStream, rows: Vec<Stored>) -> Result<(), String> {
+        {
             let mut batch: Vec<Value> = Vec::new();
             let mut size = 0;
             for r in rows {
@@ -344,10 +362,8 @@ impl Link {
             if !batch.is_empty() {
                 write_frame(send, &Frame::Events { events: batch }).await?;
             }
-            if !full {
-                return Ok(cursor);
-            }
         }
+        Ok(())
     }
 
     async fn serve(&self, conn: Connection) -> Result<(), String> {
@@ -372,8 +388,8 @@ impl Link {
                 }
             }
         });
-        let cursor = match tokio::time::timeout(Duration::from_secs(30), frames.recv()).await {
-            Ok(Some(Ok(Frame::Hello { v, cursor }))) if v == proto::VERSION => cursor,
+        let (cursor, light) = match tokio::time::timeout(Duration::from_secs(30), frames.recv()).await {
+            Ok(Some(Ok(Frame::Hello { v, cursor, light }))) if v == proto::VERSION => (cursor, light),
             Ok(Some(Ok(Frame::Hello { v, .. }))) => {
                 write_frame(&mut send, &Frame::Error { error: format!("protocol v{v} not supported; this Mac speaks v{}", proto::VERSION) }).await?;
                 return Ok(());
@@ -386,13 +402,26 @@ impl Link {
         let known = tokio::task::spawn_blocking(move || s2.host.known()).await.map_err(|e| e.to_string())?;
         let push_key = shared.push_key.lock().unwrap().clone();
         write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known, push_key }).await?;
-        let mut cursor = self.catch_up(&mut send, cursor).await?;
+        // Light: "now" in one query, then the same rules row by row (a busy log appends many rows
+        // a second; re-running the query for each would cost the Mac ~0.7 s a time).
+        let mut light = if light {
+            let s2 = shared.clone();
+            let (rows, upto) = tokio::task::spawn_blocking(move || s2.host.now_rows()).await.map_err(|e| e.to_string())?;
+            let state = Light::from_rows(&rows);
+            self.send_rows(&mut send, rows.into_iter().map(slim).collect()).await?;
+            Some((state, upto))
+        } else {
+            None
+        };
+        let cursor = match &light { Some((_, upto)) if upto.as_str() > cursor.as_str() => upto.clone(), _ => cursor };
+        let mut light = light.take().map(|(s, _)| s);
+        let mut cursor = self.catch_up(&mut send, cursor, light.as_mut()).await?;
         write_frame(&mut send, &Frame::Live { cursor: cursor.clone() }).await?;
         loop {
             tokio::select! {
                 changed = tick.changed() => {
                     if changed.is_err() { return Ok(()) }
-                    cursor = self.catch_up(&mut send, cursor).await?;
+                    cursor = self.catch_up(&mut send, cursor, light.as_mut()).await?;
                 }
                 frame = frames.recv() => {
                     shared.last_seen.store(proto::now_ms(), Ordering::Relaxed);
@@ -539,11 +568,66 @@ fn mac_name() -> String {
 
 struct AppHost(tauri::AppHandle);
 
+/// The light stream's rules for rows after the first sync (the same as `EventLog::now_rows`):
+/// workspace rows, and for sessions that aren't archived their starts, asks, answers, messages,
+/// titles and turn ends. Archiving drops a session; starting or unarchiving adds it.
+#[derive(Default)]
+pub struct Light {
+    live: std::collections::HashSet<String>,
+}
+
+impl Light {
+    fn from_rows(rows: &[Stored]) -> Self {
+        Self { live: rows.iter().filter(|r| r.kind == "ui.session_requested").filter_map(|r| r.session_id.clone()).collect() }
+    }
+
+    pub fn keep(&mut self, r: &Stored) -> bool {
+        let Some(s) = r.session_id.as_deref() else { return r.kind.starts_with("ui.workspace_") };
+        match r.kind.as_str() {
+            "ui.session_requested" | "ui.session_unarchived" => {
+                self.live.insert(s.to_owned());
+                return true;
+            }
+            "ui.session_archived" => return self.live.remove(s),
+            _ => {}
+        }
+        self.live.contains(s)
+            && (r.kind.starts_with("ui.session_")
+                || matches!(r.kind.as_str(), "sidecar.session_started" | "sidecar.session_ended" | "sidecar.permission_request" | "ui.permission_answered" | "ui.message_sent" | "session.titled")
+                || (r.kind == "sidecar.sdk" && r.json.contains("\"type\":\"result\"") && serde_json::from_str::<Value>(&r.json).is_ok_and(|v| v["payload"]["message"]["type"] == "result")))
+    }
+}
+
+/// Light stream: a turn end keeps what lamps and the phone show (type, error, a short result
+/// line, timing) and drops the usage and cost detail, about 3.5 KB a row on a busy log.
+fn slim(mut r: Stored) -> Stored {
+    if r.kind != "sidecar.sdk" {
+        return r;
+    }
+    let Ok(mut v) = serde_json::from_str::<Value>(&r.json) else { return r };
+    let m = &v["payload"]["message"];
+    if m["type"] != "result" {
+        return r;
+    }
+    let text: String = m["result"].as_str().unwrap_or_default().chars().take(400).collect();
+    let keep = serde_json::json!({ "type": "result", "subtype": m["subtype"], "is_error": m["is_error"], "result": text, "duration_ms": m["duration_ms"], "session_id": m["session_id"] });
+    v["payload"]["message"] = keep;
+    r.json = v.to_string();
+    r
+}
+
 fn stored(w: crate::eventlog::WireEvent) -> Option<Stored> {
     Some(Stored { id: w.id.clone(), kind: w.kind.clone(), session_id: w.session_id.clone(), created_at: w.created_at, json: serde_json::to_string(&w).ok()? })
 }
 
 impl Host for AppHost {
+    fn now_rows(&self) -> (Vec<Stored>, String) {
+        use tauri::Manager;
+        let log = self.0.state::<crate::eventlog::EventLog>();
+        let upto = log.last_id().ok().flatten().unwrap_or_default();
+        (log.now_rows(&upto).unwrap_or_default().into_iter().filter_map(stored).collect(), upto)
+    }
+
     fn events_after(&self, after: &str, limit: usize) -> Vec<Stored> {
         use tauri::Manager;
         let log = self.0.state::<crate::eventlog::EventLog>();
@@ -862,6 +946,12 @@ mod tests {
     }
 
     impl Host for Arc<Fake> {
+        fn now_rows(&self) -> (Vec<Stored>, String) {
+            let rows = self.rows.lock().unwrap().clone();
+            let upto = rows.last().map(|r| r.id.clone()).unwrap_or_default();
+            let mut l = Light::default();
+            (rows.into_iter().filter(|r| l.keep(r)).collect(), upto)
+        }
         fn events_after(&self, after: &str, limit: usize) -> Vec<Stored> {
             self.rows.lock().unwrap().iter().filter(|r| r.id.as_str() > after).take(limit).cloned().collect()
         }
@@ -1012,6 +1102,34 @@ mod tests {
         assert_eq!(link.until_live().await.unwrap().len(), 1);
         eprintln!("linked by key alone in {:?}", t.elapsed());
         router.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn light_follows_sessions_as_they_start_and_get_archived() {
+        let row = |sid: Option<&str>, kind: &str, payload: serde_json::Value| Stored { id: "1".into(), kind: kind.into(), session_id: sid.map(Into::into), created_at: 0, json: serde_json::json!({ "kind": kind, "payload": payload }).to_string() };
+        let mut l = Light::default();
+        assert!(l.keep(&row(None, "ui.workspace_created", serde_json::json!({}))));
+        assert!(!l.keep(&row(None, "sidecar.limits", serde_json::json!({}))));
+        assert!(!l.keep(&row(Some("s"), "sidecar.permission_request", serde_json::json!({}))), "unknown session");
+        assert!(l.keep(&row(Some("s"), "ui.session_requested", serde_json::json!({}))));
+        assert!(l.keep(&row(Some("s"), "sidecar.permission_request", serde_json::json!({}))));
+        assert!(!l.keep(&row(Some("s"), "sidecar.sdk", serde_json::json!({ "message": { "type": "assistant" } }))));
+        assert!(l.keep(&row(Some("s"), "sidecar.sdk", serde_json::json!({ "message": { "type": "result" } }))));
+        assert!(l.keep(&row(Some("s"), "ui.session_archived", serde_json::json!({}))), "the phone learns it's archived");
+        assert!(!l.keep(&row(Some("s"), "ui.message_sent", serde_json::json!({}))));
+    }
+
+    #[test]
+    fn light_turn_ends_drop_the_usage_detail() {
+        let row = |json: serde_json::Value| Stored { id: "1".into(), kind: "sidecar.sdk".into(), session_id: Some("s".into()), created_at: 0, json: json.to_string() };
+        let big = row(serde_json::json!({ "id": "1", "kind": "sidecar.sdk", "payload": { "session": "s", "message": { "type": "result", "is_error": false, "result": "done", "usage": { "x": "y".repeat(3000) }, "modelUsage": {} } } }));
+        let v: serde_json::Value = serde_json::from_str(&slim(big).json).unwrap();
+        assert_eq!(v["payload"]["message"]["result"], "done");
+        assert_eq!(v["payload"]["message"]["is_error"], false);
+        assert!(v["payload"]["message"].get("usage").is_none());
+        assert_eq!(v["payload"]["session"], "s", "the rest of the row is untouched");
+        let other = row(serde_json::json!({ "payload": { "message": { "type": "assistant", "usage": {} } } }));
+        assert_eq!(slim(other.clone()).json, other.json);
     }
 
     #[test]
