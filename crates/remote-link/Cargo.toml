@@ -1,0 +1,17 @@
+[package]
+name = "remote-link"
+version = "0.1.0"
+edition = "2024"
+description = "Cockpit Remote: the Mac <-> phone wire protocol and phone-side peer over iroh"
+publish = false
+
+[dependencies]
+# Pinned: both ends must speak the same iroh.
+iroh = "=1.4.1"
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "time", "io-util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hmac = "0.12"
+sha2 = "0.10"
+getrandom = "0.3"
+data-encoding = "2"

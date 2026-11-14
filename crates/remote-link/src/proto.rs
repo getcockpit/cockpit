@@ -1,6 +1,6 @@
 //! Cockpit Remote's wire protocol (doc "Cockpit Remote: phone ↔ laptop, no server"): what the Mac
 //! and the paired phone say to each other over iroh. Pure code, no app state, so the Mac
-//! (`remote.rs`), the phone-side peer (`remote_peer.rs`, later the Tauri iOS app) and the tests
+//! (`src-tauri/src/remote.rs`), the phone (`peer.rs`, the iOS app in `mobile/`) and the tests
 //! share one definition.
 //!
 //! - Two ALPNs: `PAIR` (one-time, bound to the QR secret) and `LINK` (pinned phone only).
@@ -27,6 +27,8 @@ pub const SKIP_KINDS: &[&str] = &["sidecar.commands"];
 pub const OFFER_TTL_MS: i64 = 120_000;
 /// Remote session starts allowed per hour (the security block: a stolen phone can't fan out).
 pub const STARTS_PER_HOUR: usize = 5;
+/// The workspace every Mac has (`src-tauri/src/workspaces.rs`).
+pub const PERSONAL: &str = "personal";
 const QR_PREFIX: &str = "cockpit-remote:1:";
 
 type HmacSha256 = Hmac<Sha256>;
@@ -201,7 +203,7 @@ pub fn repo_id(path: &str) -> String {
 /// Folds `Known` from the log: workspaces created and not deleted (plus Personal), and every folder
 /// a session started in (its repo when it got a worktree) or a workspace pinned, newest first.
 pub fn known_from<'a>(events: impl IntoIterator<Item = (&'a str, &'a Value)>) -> Known {
-    let mut workspaces: Vec<KnownWorkspace> = vec![KnownWorkspace { id: crate::workspaces::PERSONAL.into(), name: "Personal".into() }];
+    let mut workspaces: Vec<KnownWorkspace> = vec![KnownWorkspace { id: PERSONAL.into(), name: "Personal".into() }];
     let mut repos: Vec<String> = Vec::new();
     let mut add_repo = |p: &str| {
         if p.is_empty() {
@@ -275,6 +277,24 @@ impl StartLimit {
         self.0.push_back(now_ms);
         Ok(())
     }
+}
+
+/// Reads one frame (None at the end of the stream). Lines over `MAX_LINE` are an error.
+pub async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(r: &mut R) -> Result<Option<Frame>, String> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+    let mut buf = Vec::new();
+    let n = (&mut *r).take(MAX_LINE as u64 + 1).read_until(b'\n', &mut buf).await.map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Ok(None);
+    }
+    if buf.len() > MAX_LINE {
+        return Err("frame too big".into());
+    }
+    serde_json::from_slice(&buf).map(Some).map_err(|e| format!("bad frame: {e}"))
+}
+
+pub async fn write_frame(s: &mut iroh::endpoint::SendStream, f: &Frame) -> Result<(), String> {
+    s.write_all(f.line().as_bytes()).await.map_err(|e| e.to_string())
 }
 
 pub fn now_ms() -> i64 {

@@ -24,10 +24,10 @@ use iroh::protocol::{AcceptError, ProtocolHandler, Router};
 use iroh::{Endpoint, PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::BufReader;
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::remote_proto::{self as proto, Command, Frame, Known, Offer, StartLimit};
+use remote_link::proto::{self, read_frame, write_frame, Command, Frame, Known, Offer, StartLimit};
 
 // ---------------------------------------------------------------------------------------------
 // origin: "remote" on every ui.* row a phone command writes
@@ -226,23 +226,6 @@ impl Shared {
 
 // ---------------------------------------------------------------------------------------------
 // Frames over a QUIC stream
-
-/// Reads one frame (None at the end of the stream). Lines over `MAX_LINE` are an error.
-pub async fn read_frame<R: AsyncBufRead + Unpin>(r: &mut R) -> Result<Option<Frame>, String> {
-    let mut buf = Vec::new();
-    let n = (&mut *r).take(proto::MAX_LINE as u64 + 1).read_until(b'\n', &mut buf).await.map_err(|e| e.to_string())?;
-    if n == 0 {
-        return Ok(None);
-    }
-    if buf.len() > proto::MAX_LINE {
-        return Err("frame too big".into());
-    }
-    serde_json::from_slice(&buf).map(Some).map_err(|e| format!("bad frame: {e}"))
-}
-
-pub async fn write_frame(s: &mut SendStream, f: &Frame) -> Result<(), String> {
-    s.write_all(f.line().as_bytes()).await.map_err(|e| e.to_string())
-}
 
 fn accept_err(e: impl std::fmt::Display) -> AcceptError {
     AcceptError::from_err(std::io::Error::other(e.to_string()))
@@ -735,8 +718,8 @@ pub fn remote_unpair(app: tauri::AppHandle, remote: tauri::State<'_, Remote>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::remote_peer::Peer;
-    use crate::remote_proto::{KnownRepo, KnownWorkspace};
+    use remote_link::proto::{KnownRepo, KnownWorkspace};
+    use remote_link::Peer;
 
     /// A fake app: an in-memory log and a record of what ran.
     struct Fake {

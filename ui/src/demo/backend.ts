@@ -318,6 +318,12 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "release_choose": record(null, "ui.release_choice", { choice: a.choice }); return a.choice === "plan" ? { cwd: "/Users/me/code/cockpit-worktrees/mine", prompt: "Plan the release merge" } : null;
     case "release_check": case "release_seen": return null;
     case "layer2_status": return { configured: false };
+    // The iPhone app (src/mobile): paired to a demo Mac, or ?remote=unpaired for the pairing screen.
+    case "remote_state": return new URLSearchParams(location.search).get("remote") === "unpaired"
+      ? { paired: null, connected: false, live: false, error: null, known: { workspaces: [], repos: [] } }
+      : { paired: { name: "Demo Mac" }, connected: true, live: true, error: null, known: { workspaces: [{ id: "personal", name: "Personal" }], repos: [{ id: "r1", name: "cockpit" }] } };
+    case "remote_pair": return "Demo Mac";
+    case "remote_command": return null;
     case "remote_status": return { enabled: false, running: false, mac_id: null, phone: null, pending: null, connected: false, last_seen: null };
     case "layer2_classify": {
       const label = /\?\s*$/.test(String(a.text).trim()) ? "question" : "other";
