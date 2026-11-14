@@ -69,7 +69,7 @@ impl Peer {
         let (mut send, recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
         write_frame(&mut send, &Frame::Hello { v: proto::VERSION, cursor: cursor.into() }).await?;
         let (tx, mut frames) = mpsc::channel(64);
-        tokio::spawn(async move {
+        n0_future::task::spawn(async move {
             let mut recv = BufReader::new(recv);
             while let Ok(Some(f)) = read_frame(&mut recv).await {
                 if tx.send(f).await.is_err() {
@@ -77,7 +77,7 @@ impl Peer {
                 }
             }
         });
-        let first = tokio::time::timeout(Duration::from_secs(20), frames.recv()).await.map_err(|_| "the Mac didn't answer".to_string())?;
+        let first = n0_future::time::timeout(Duration::from_secs(20), frames.recv()).await.map_err(|_| "the Mac didn't answer".to_string())?;
         match first {
             Some(Frame::Welcome { mac, known, .. }) => Ok(Link { conn, send, frames, mac, known, cursor: cursor.into(), next_id: 0 }),
             Some(Frame::Error { error }) => Err(error),
