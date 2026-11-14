@@ -48,7 +48,7 @@ use self::windows as platform;
 /// The interface flag bit indicating that an interface is up.
 ///
 /// Matches the POSIX `IFF_UP` value. On platforms that do not expose BSD-style
-/// interface flags it is derived from the platform's docs of "up".
+/// interface flags it is derived from the platform's idea of "up".
 const IFF_UP: u32 = 0x1;
 
 /// State flags for a single IPv6 address.
@@ -188,7 +188,7 @@ pub struct Interface {
     /// BSD-style interface flags.
     ///
     /// On platforms without real interface flags this carries only [`IFF_UP`],
-    /// derived from the platform's docs of "up".
+    /// derived from the platform's idea of "up".
     flags: u32,
     /// The interface's hardware (MAC) address, if it has one.
     mac_addr: Option<[u8; 6]>,
