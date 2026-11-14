@@ -70,7 +70,7 @@ impl WebPeer {
     pub async fn link(&self, addr_json: String, cursor: String, on_frame: js_sys::Function) -> Result<WebLink, JsValue> {
         let addr: EndpointAddr = serde_json::from_str(&addr_json).map_err(js_err)?;
         let mut link = self.peer.link(addr, &cursor).await.map_err(js_err)?;
-        let welcome = serde_json::json!({ "t": "welcome", "mac": link.mac, "known": link.known });
+        let welcome = serde_json::json!({ "t": "welcome", "mac": link.mac, "known": link.known, "push_key": link.push_key });
         let _ = on_frame.call1(&JsValue::NULL, &JsValue::from_str(&welcome.to_string()));
         let (tx, mut rx) = mpsc::unbounded_channel::<Command>();
         n0_future::task::spawn(async move {

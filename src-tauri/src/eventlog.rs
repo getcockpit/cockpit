@@ -278,6 +278,7 @@ pub fn record(
             }
             let _ = app.emit("mr-event", &ev);
             crate::remote::bump(app);
+            crate::remote::on_event(app, &ev);
             Some(ev)
         }
         Err(e) => {

@@ -79,7 +79,7 @@ impl Peer {
         });
         let first = n0_future::time::timeout(Duration::from_secs(20), frames.recv()).await.map_err(|_| "the Mac didn't answer".to_string())?;
         match first {
-            Some(Frame::Welcome { mac, known, .. }) => Ok(Link { conn, send, frames, mac, known, cursor: cursor.into(), next_id: 0 }),
+            Some(Frame::Welcome { mac, known, push_key, .. }) => Ok(Link { conn, send, frames, mac, known, push_key, cursor: cursor.into(), next_id: 0 }),
             Some(Frame::Error { error }) => Err(error),
             _ => Err(close_reason(&conn).unwrap_or_else(|| "refused by the Mac (not paired?)".into())),
         }
@@ -96,6 +96,8 @@ pub struct Link {
     frames: mpsc::Receiver<Frame>,
     pub mac: String,
     pub known: Known,
+    /// The Mac's VAPID public key (base64url), when it sends Web Push.
+    pub push_key: Option<String>,
     /// The newest event id received: hand it to the next `link` to resume without gaps.
     pub cursor: String,
     next_id: u64,
