@@ -800,3 +800,17 @@ describe("session cost", () => {
     expect(s.transcript.flatMap((t) => (t.kind === "result" ? [t.costUsd] : []))).toEqual([1.0, 0.5, 0.75, 0.5, 0.25]);
   });
 });
+
+// Cockpit Remote: a message the paired phone sent is marked in the transcript, and the phone's
+// stand-in for an event too big to stream (`remote.truncated`) changes nothing on the desktop.
+test("messages from the phone say so", () => {
+  const ev = (id: string, kind: string, payload: Record<string, unknown>): MrEvent => ({ id, session_id: "p", kind, payload, anchor: null, created_at: 1 });
+  const st = replay([
+    ev("P1", "ui.session_requested", { prompt: "go", cwd: "/w" }),
+    ev("P2", "ui.message_sent", { text: "from the desk" }),
+    ev("P3", "ui.message_sent", { text: "from the train", origin: "remote" }),
+    ev("P4", "remote.truncated", { kind: "sidecar.sdk", bytes: 90000 }),
+  ]);
+  const users = st.sessions.p.transcript.filter((t) => t.kind === "user");
+  expect(users.map((t) => (t.kind === "user" ? t.via : null))).toEqual([undefined, "phone"]);
+});

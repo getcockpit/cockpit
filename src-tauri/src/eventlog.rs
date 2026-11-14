@@ -86,10 +86,13 @@ impl EventLog {
         payload: &serde_json::Value,
         anchor: Option<&str>,
     ) -> rusqlite::Result<Event> {
+        // The id is made under the connection lock, so rows commit in id order: a reader that
+        // follows the log after a cursor (Cockpit Remote) never sees a smaller id land later.
+        let conn = self.conn.lock().unwrap();
         let id = self.ids.lock().unwrap().generate().unwrap_or_else(|_| ulid::Ulid::new());
         let created_at = id.timestamp_ms() as i64;
         let id = id.to_string();
-        self.conn.lock().unwrap().execute(
+        conn.execute(
             "INSERT INTO events (id, session_id, kind, payload, anchor, created_at, origin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, session_id, kind, payload.to_string(), anchor, created_at, self.origin],
         )?;
@@ -200,6 +203,13 @@ impl EventLog {
         rows.collect()
     }
 
+    /// One row by id (Cockpit Remote fetches events too big to stream).
+    pub fn get_wire(&self, id: &str) -> rusqlite::Result<Option<WireEvent>> {
+        use rusqlite::OptionalExtension as _;
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events WHERE id = ?1", params![id], wire_row).optional()
+    }
+
     #[cfg(test)]
     pub fn last_id(&self) -> rusqlite::Result<Option<String>> {
         self.conn
@@ -255,6 +265,9 @@ pub fn record(
 ) -> Option<Event> {
     use tauri::{Emitter, Manager};
     let log = app.try_state::<EventLog>()?;
+    // A phone command (Cockpit Remote) marks the ui.* rows it causes with origin: "remote".
+    let tagged = crate::remote::tag(kind, payload);
+    let payload = tagged.as_ref().unwrap_or(payload);
     match log.append(session_id, kind, payload, anchor) {
         Ok(ev) => {
             if let Some(docs) = app.try_state::<crate::docs::Docs>() {
@@ -264,6 +277,7 @@ pub fn record(
                 b.apply(kind, payload);
             }
             let _ = app.emit("mr-event", &ev);
+            crate::remote::bump(app);
             Some(ev)
         }
         Err(e) => {

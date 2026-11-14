@@ -318,6 +318,7 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
     case "release_choose": record(null, "ui.release_choice", { choice: a.choice }); return a.choice === "plan" ? { cwd: "/Users/me/code/cockpit-worktrees/mine", prompt: "Plan the release merge" } : null;
     case "release_check": case "release_seen": return null;
     case "layer2_status": return { configured: false };
+    case "remote_status": return { enabled: false, running: false, mac_id: null, phone: null, pending: null, connected: false, last_seen: null };
     case "layer2_classify": {
       const label = /\?\s*$/.test(String(a.text).trim()) ? "question" : "other";
       const payload = { item_id: a.itemId, label, p: 1, layer: "code", dist: null, ms: 0, tokens: 0, error: null };

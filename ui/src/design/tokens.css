@@ -20,6 +20,7 @@
   --mr-font: "Atkinson Hyperlegible Next", -apple-system, sans-serif;
   --mr-mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
   --mr-radius: 2px;
+  --mr-qr-bg: #ffffff; /* QR codes need a pure white field to scan, in every theme */
   --mr-gap: 4px;
   --mr-fast: 100ms;
   --mr-med: 180ms;
