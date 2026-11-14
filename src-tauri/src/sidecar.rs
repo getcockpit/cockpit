@@ -385,7 +385,31 @@ const ELSEWHERE: &str = "this session is open in another copy of Cockpit: contin
 /// Blank sessions in a git repo get their own worktree unless `worktree` is false (decision 7).
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn session_start(
+pub async fn session_start(
+    app: AppHandle,
+    cwd: String,
+    prompt: String,
+    resume: Option<String>,
+    tools: Option<serde_json::Value>,
+    kind: Option<String>,
+    worktree: Option<bool>,
+    session_id: Option<String>,
+    workspace: Option<String>,
+    preset: Option<String>,
+    attachments: Option<Vec<serde_json::Value>>,
+) -> Result<String, String> {
+    // Off the main thread: a git worktree and log reads here froze the whole window (MR-204).
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<Sidecar>();
+        start_now(app.clone(), state, cwd, prompt, resume, tools, kind, worktree, session_id, workspace, preset, attachments)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// `session_start` for Cockpit's own callers, already off the main thread.
+#[allow(clippy::too_many_arguments)]
+pub fn start_now(
     app: AppHandle,
     state: State<'_, Sidecar>,
     cwd: String,
@@ -593,7 +617,7 @@ pub fn session_send(app: AppHandle, state: State<'_, Sidecar>, session: String, 
     // Not running any more (app restarted, or it ended): resume the same conversation with this
     // message instead of failing with "unknown session" (MR-52).
     let (cwd, kind, workspace, sdk) = resume_info(&app, &session).ok_or("this session can't be resumed; start a new one")?;
-    session_start(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace), None, attachments).map(|_| ())
+    start_now(app, state, cwd, text, Some(sdk), None, Some(kind), Some(false), Some(session), Some(workspace), None, attachments).map(|_| ())
 }
 
 /// After signing back in (MR-153): Claude Code may hold on to the expired login, so a live session is

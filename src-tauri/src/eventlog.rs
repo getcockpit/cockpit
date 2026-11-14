@@ -145,12 +145,12 @@ impl EventLog {
 
     pub fn list(&self, session_id: Option<&str>, after: Option<&str>, limit: i64) -> rusqlite::Result<Vec<Event>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare(&format!(
             "SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
-             WHERE (?1 IS NULL OR session_id = ?1) AND (?2 IS NULL OR id > ?2)
-             ORDER BY id LIMIT ?3",
-        )?;
-        let rows = stmt.query_map(params![session_id, after, limit], row)?;
+             WHERE {} ORDER BY id LIMIT ?3",
+            scope(session_id)
+        ))?;
+        let rows = stmt.query_map(params![session_id, after.unwrap_or(""), limit], row)?;
         rows.collect()
     }
 
@@ -160,16 +160,17 @@ impl EventLog {
     /// UI loads them when such a session is opened.
     pub fn list_wire(&self, session_id: Option<&str>, after: Option<&str>, limit: i64, skip_archived: bool) -> rusqlite::Result<Vec<WireEvent>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare(&format!(
             "SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
-             WHERE (?1 IS NULL OR session_id = ?1) AND (?2 IS NULL OR id > ?2)
+             WHERE {}
                AND (?4 = 0 OR session_id IS NULL OR kind NOT IN ('sidecar.sdk', 'sidecar.commands')
                     OR session_id NOT IN (SELECT session_id FROM events e
                       WHERE kind = 'ui.session_archived' AND id = (SELECT max(id) FROM events x
                         WHERE x.session_id = e.session_id AND x.kind IN ('ui.session_archived', 'ui.session_unarchived', 'ui.session_requested', 'sidecar.session_started'))))
              ORDER BY id LIMIT ?3",
-        )?;
-        let rows = stmt.query_map(params![session_id, after, limit, skip_archived as i64], wire_row)?;
+            scope(session_id)
+        ))?;
+        let rows = stmt.query_map(params![session_id, after.unwrap_or(""), limit, skip_archived as i64], wire_row)?;
         rows.collect()
     }
 
@@ -207,6 +208,13 @@ impl EventLog {
             .query_row("SELECT id FROM events ORDER BY id DESC LIMIT 1", [], |r| r.get(0))
             .optional()
     }
+}
+
+/// The WHERE clause for "one session or all, after an id" (`?1` session, `?2` after, "" for none).
+/// One text per case: `?1 IS NULL OR session_id = ?1` made SQLite skip the session index and scan
+/// the whole log, over a second per call on a 2 GB log, on the main thread at every Start (MR-204).
+fn scope(session_id: Option<&str>) -> &'static str {
+    if session_id.is_some() { "session_id = ?1 AND id > ?2" } else { "?1 IS NULL AND id > ?2" }
 }
 
 fn wire_row(r: &rusqlite::Row) -> rusqlite::Result<WireEvent> {
@@ -303,6 +311,27 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // MR-204: one session's rows come from the session index, never a scan of the whole log.
+    #[test]
+    fn session_reads_use_the_index() {
+        let log = EventLog::in_memory().unwrap();
+        let a = log.append(Some("s1"), "k", &json!({}), None).unwrap();
+        let _ = log.append(Some("s2"), "k", &json!({}), None).unwrap();
+        let b = log.append(Some("s1"), "k", &json!({}), None).unwrap();
+        assert_eq!(log.list(Some("s1"), Some(&a.id), 10).unwrap(), vec![b.clone()]);
+        assert_eq!(log.list(None, Some(&a.id), 10).unwrap().len(), 2);
+        assert_eq!(log.list_wire(Some("s1"), None, 10, true).unwrap().len(), 2);
+        let conn = log.conn.lock().unwrap();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN SELECT id FROM events WHERE {} ORDER BY id", scope(Some("s1"))))
+            .unwrap()
+            .query_map(params!["s1", ""], |r| r.get::<_, String>(3))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert!(plan.iter().any(|p| p.contains("events_session")), "{plan:?}");
+    }
+
     #[test]
     fn appends_and_replays_in_order() {
         let log = EventLog::in_memory().unwrap();
@@ -395,4 +424,3 @@ mod tests {
         assert_eq!(again[0].payload, json!({"a": 1}));
     }
 }
-
