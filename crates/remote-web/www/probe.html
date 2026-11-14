@@ -1,0 +1,13 @@
+<!doctype html>
+<!-- Diagnostic: dials a Mac's link (address JSON in the hash) with a throwaway key over the relay.
+     A reachable Mac refuses it at once ("not paired"); a timeout means the relay path is broken. -->
+<html><body data-state="loading"><pre id="log"></pre><script type="module">
+import init, { WebPeer } from "../pkg/remote_web.js";
+const log = (...a) => { document.getElementById("log").textContent += a.join(" ") + "\n"; };
+await init();
+const peer = await WebPeer.create("");
+const t = performance.now();
+try { await peer.link(decodeURIComponent(location.hash.slice(1)), "", () => {}); log("LINKED?!"); }
+catch (e) { log("result after", Math.round(performance.now() - t), "ms:", e); }
+document.body.dataset.state = "done";
+</script></body></html>

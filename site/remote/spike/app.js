@@ -2,7 +2,8 @@
 // with *your* Mac from that Mac's pairing text, talks to it over iroh (relay, end-to-end
 // encrypted, `remote_web` = crates/remote-web), and turns on Web Push with your Mac's own key.
 // Nothing about you or your Mac is ever sent to this site.
-import init, { WebPeer } from "./pkg/remote_web.js";
+// ?v=N: a new wasm must not come from Safari's cache (bump with each published build).
+import init, { WebPeer } from "./pkg/remote_web.js?v=2";
 
 const $ = (id) => document.getElementById(id);
 const show = (id, on = true) => { $(id).hidden = !on; };
@@ -71,16 +72,24 @@ async function turnOnNotifications() {
 try {
   if ("serviceWorker" in navigator) await navigator.serviceWorker.register("sw.js");
   show("install", !standalone);
-  await init();
+  await init({ module_or_path: new URL("./pkg/remote_web_bg.wasm?v=2", import.meta.url) });
   const peer = await WebPeer.create(localStorage.getItem("mr.remote.secret") ?? "");
   localStorage.setItem("mr.remote.secret", peer.secret());
   const paired = JSON.parse(localStorage.getItem("mr.remote.paired") ?? "null");
   $("notify").onclick = () => turnOnNotifications().catch((e) => { $("notifyState").textContent = String(e); });
   $("forget").onclick = () => { localStorage.clear(); location.reload(); };
+  // A code in the link (the Mac's QR): the part after # never reaches the site.
+  const fromLink = decodeURIComponent(location.hash.slice(1));
+  if (fromLink) history.replaceState(null, "", location.pathname);
+  const linkCode = fromLink.startsWith("cockpit-remote:") ? fromLink : "";
   if (paired) await connect(peer, paired);
-  else {
+  else if (linkCode && !standalone) {
+    show("handoff");
+    $("copy").onclick = async () => { await navigator.clipboard.writeText(linkCode); $("copy").textContent = "Copied: now open Cockpit from your Home Screen"; };
+  } else {
     show("pair");
     $("paste").onclick = async () => { try { $("text").value = await navigator.clipboard.readText(); } catch (e) { log("paste:", e); } };
+    if (linkCode) $("text").value = linkCode;
     $("go").onclick = async () => {
       $("go").disabled = true;
       try {
@@ -91,5 +100,6 @@ try {
         await connect(peer, p);
       } catch (e) { log("pair:", e); $("go").disabled = false; }
     };
+    if (linkCode) $("go").click();
   }
 } catch (e) { log("error:", e); }

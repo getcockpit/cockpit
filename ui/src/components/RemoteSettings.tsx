@@ -82,10 +82,10 @@ export function RemoteSettings() {
         <div data-mr="RemotePairQr" className="mr-row" style={{ gap: 16, alignItems: "flex-start" }}>
           <div style={{ background: "var(--mr-qr-bg)", padding: 4, lineHeight: 0 }} dangerouslySetInnerHTML={{ __html: qr.svg }} />
           <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
-            <span>Scan this with Cockpit on your iPhone. It works once, for {secsLeft} s more.</span>
+            <span>Scan this with your iPhone's camera. It opens Cockpit Remote; the code works once, for {secsLeft} s more.</span>
             <span className="mr-dim" style={{ fontSize: 12 }}>Both screens then show the same 6-digit code; confirm it here. Keep this code private: it's the key to pairing.</span>
             <div className="mr-row" style={{ gap: 8 }}>
-              <Key onClick={() => void navigator.clipboard.writeText(qr.text).then(() => setMsg("Copied the pairing text (for the command-line peer)."))}>Copy as text</Key>
+              <Key onClick={() => void navigator.clipboard.writeText(qr.text).then(() => setMsg("Copied. On an iPhone signed in to the same Apple Account, tap Paste from Mac in Cockpit Remote."))}>Copy as text</Key>
               <Key onClick={() => setQr(null)}>Cancel</Key>
             </div>
           </div>

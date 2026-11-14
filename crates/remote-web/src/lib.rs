@@ -11,6 +11,31 @@ use remote_link::Peer;
 use tokio::sync::mpsc;
 use wasm_bindgen::prelude::*;
 
+/// iroh writes relay hosts fully qualified (`euc1-1.relay.n0.iroh.link.`). Chrome connects to that,
+/// WebKit (every iPhone browser) times out on it, so the browser dials the same host without the
+/// final dot.
+fn for_webkit(addr: EndpointAddr) -> EndpointAddr {
+    let mut v = serde_json::to_value(&addr).unwrap_or_default();
+    if let Some(list) = v["addrs"].as_array_mut() {
+        for a in list {
+            if let Some(url) = a["Relay"].as_str() {
+                a["Relay"] = strip_root_dot(url).into();
+            }
+        }
+    }
+    serde_json::from_value(v).unwrap_or(addr)
+}
+
+fn strip_root_dot(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else { return url.to_owned() };
+    let (host, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, String::new()));
+    let host = match host.rsplit_once(':') {
+        Some((h, port)) if port.chars().all(|c| c.is_ascii_digit()) => format!("{}:{port}", h.trim_end_matches('.')),
+        _ => host.trim_end_matches('.').to_owned(),
+    };
+    format!("{scheme}://{host}{path}")
+}
+
 fn js_err(e: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
@@ -53,7 +78,8 @@ impl WebPeer {
     /// Pairs from the Mac's pairing text. `on_code(code)` gets the 6-digit code; resolves with
     /// `{mac, addr}` (the Mac's name and address JSON to keep).
     pub async fn pair(&self, text: String, name: String, on_code: js_sys::Function) -> Result<JsValue, JsValue> {
-        let offer = Offer::from_text(&text).map_err(js_err)?;
+        let mut offer = Offer::from_text(&text).map_err(js_err)?;
+        offer.mac = for_webkit(offer.mac);
         let mac = self
             .peer
             .pair(&offer, &name, |code| {
@@ -68,7 +94,7 @@ impl WebPeer {
     /// Opens the pinned link to `addr_json` after `cursor`. Every frame from the Mac goes to
     /// `on_frame(json)`; when the link ends, `on_frame` gets `{"t":"closed","error":…}`.
     pub async fn link(&self, addr_json: String, cursor: String, on_frame: js_sys::Function) -> Result<WebLink, JsValue> {
-        let addr: EndpointAddr = serde_json::from_str(&addr_json).map_err(js_err)?;
+        let addr: EndpointAddr = for_webkit(serde_json::from_str(&addr_json).map_err(js_err)?);
         let mut link = self.peer.link(addr, &cursor).await.map_err(js_err)?;
         let welcome = serde_json::json!({ "t": "welcome", "mac": link.mac, "known": link.known, "push_key": link.push_key });
         let _ = on_frame.call1(&JsValue::NULL, &JsValue::from_str(&welcome.to_string()));
@@ -110,5 +136,18 @@ impl WebLink {
 
     pub fn close(&mut self) {
         self.tx = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_root_dot;
+
+    #[test]
+    fn relay_hosts_lose_only_the_root_dot() {
+        assert_eq!(strip_root_dot("https://euc1-1.relay.n0.iroh.link./"), "https://euc1-1.relay.n0.iroh.link/");
+        assert_eq!(strip_root_dot("https://relay.example.com.:8443/x"), "https://relay.example.com:8443/x");
+        assert_eq!(strip_root_dot("https://relay.example.com/"), "https://relay.example.com/");
+        assert_eq!(strip_root_dot("not a url"), "not a url");
     }
 }

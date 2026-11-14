@@ -465,6 +465,8 @@ struct Store {
 }
 
 const KEYCHAIN_SERVICE: &str = "cockpit-remote";
+/// The phone's web app (decision 46): the same static page for every Cockpit owner.
+const WEB_APP: &str = "https://getcockpit.github.io/remote/spike/";
 const KEYCHAIN_ACCOUNT: &str = "identity";
 
 /// Tauri state: the store on disk and, while Remote is on, the running endpoint.
@@ -793,13 +795,16 @@ pub fn remote_pair_start(remote: tauri::State<'_, Remote>) -> Result<Value, Stri
     });
     let offer = shared.offer(ep.addr());
     let text = offer.to_text();
-    let svg = qrcode::QrCode::new(text.as_bytes())
+    // The QR is a link to the web app with the code after the #, so the iPhone camera opens it;
+    // the part after # never reaches the site.
+    let link = format!("{WEB_APP}#{text}");
+    let svg = qrcode::QrCode::new(link.as_bytes())
         .map_err(|e| e.to_string())?
         .render::<qrcode::render::svg::Color>()
         .min_dimensions(220, 220)
         .quiet_zone(true)
         .build();
-    Ok(serde_json::json!({ "text": text, "svg": svg, "expires_at": offer.expires_at }))
+    Ok(serde_json::json!({ "text": text, "link": link, "svg": svg, "expires_at": offer.expires_at }))
 }
 
 #[tauri::command(async)]
