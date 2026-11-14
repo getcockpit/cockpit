@@ -1,0 +1,484 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		232694B7F5DD8F51DC75F2E5 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 51B0CCD903B502E896973EE8 /* SystemConfiguration.framework */; };
+		57154CC5B0A215068C28DBBE /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 55FF5D49228E66ADED563BF8 /* UIKit.framework */; };
+		6542B2AA218FFF31B719C8E1 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = F7B530DE445821485CD8F784 /* assets */; };
+		679515D282B726EA84741330 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 41E15F0B558FFECE688D2CF0 /* WebKit.framework */; };
+		69CCCB7D4E96ECD17A668D7B /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 721005DF36B5B2DA9551C7B6 /* MetalKit.framework */; };
+		73BF6593D501789D5284FF58 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = CE000E83D76D39C3F21F3ABE /* libapp.a */; };
+		8077EF7D9ADB39DEE6E7CE05 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4670D275FE587699BAB80284 /* QuartzCore.framework */; };
+		826DD0CA85A22B9D53E9B340 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 05F9DD73BC91BEEB213B7F02 /* main.mm */; };
+		9003E8C55F5EA27E9998EF11 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 74FB2C1C913BF92B424B61DB /* LaunchScreen.storyboard */; };
+		AC3F597F86546339C0A9922C /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B7DE82A1331EF1AECC32F250 /* Metal.framework */; };
+		B844C9E28340782CE7813C12 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8039514C492A74763946A9B1 /* CoreGraphics.framework */; };
+		BC3FD7779EF3C2E06ABB1A54 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A17DF4F3A628ADC5A1EBBD3F /* Security.framework */; };
+		D6325CFFB277D466DE254BC8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3A93595A0F73EA30C899DEA3 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		05F9DD73BC91BEEB213B7F02 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		21BAA245EB87E2351B87C619 /* cockpit-remote_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "cockpit-remote_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		236CC3FD9E1FCCC737315816 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		2D8F374267504F6834373106 /* key.rs */ = {isa = PBXFileReference; path = key.rs; sourceTree = "<group>"; };
+		3A93595A0F73EA30C899DEA3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		41E15F0B558FFECE688D2CF0 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		4670D275FE587699BAB80284 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		51B0CCD903B502E896973EE8 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
+		55FF5D49228E66ADED563BF8 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		6763986445B42227CFBE1AB1 /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
+		71439A58E3F37BFE75C5714C /* cockpit-remote_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "cockpit-remote_iOS.entitlements"; sourceTree = "<group>"; };
+		721005DF36B5B2DA9551C7B6 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		74FB2C1C913BF92B424B61DB /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		8039514C492A74763946A9B1 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		952564EC7526DD18C341D771 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		9FAEA4EEB2B9375B32CA0F92 /* link.rs */ = {isa = PBXFileReference; path = link.rs; sourceTree = "<group>"; };
+		A17DF4F3A628ADC5A1EBBD3F /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		AE34F6F108FCA2394B9B0398 /* cache.rs */ = {isa = PBXFileReference; path = cache.rs; sourceTree = "<group>"; };
+		B7DE82A1331EF1AECC32F250 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		BF8112A046CFAAAC10AB1558 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		CE000E83D76D39C3F21F3ABE /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		F7B530DE445821485CD8F784 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F8AF24747CDCE309CAE9CD55 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				73BF6593D501789D5284FF58 /* libapp.a in Frameworks */,
+				B844C9E28340782CE7813C12 /* CoreGraphics.framework in Frameworks */,
+				232694B7F5DD8F51DC75F2E5 /* SystemConfiguration.framework in Frameworks */,
+				AC3F597F86546339C0A9922C /* Metal.framework in Frameworks */,
+				69CCCB7D4E96ECD17A668D7B /* MetalKit.framework in Frameworks */,
+				8077EF7D9ADB39DEE6E7CE05 /* QuartzCore.framework in Frameworks */,
+				BC3FD7779EF3C2E06ABB1A54 /* Security.framework in Frameworks */,
+				57154CC5B0A215068C28DBBE /* UIKit.framework in Frameworks */,
+				679515D282B726EA84741330 /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		27EA778764E5BA544699F62E /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				D1AA6F1EA9096271C8D5F06F /* cockpit-remote */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		2F04CD12000BE79A524D3C43 = {
+			isa = PBXGroup;
+			children = (
+				F7B530DE445821485CD8F784 /* assets */,
+				3A93595A0F73EA30C899DEA3 /* Assets.xcassets */,
+				74FB2C1C913BF92B424B61DB /* LaunchScreen.storyboard */,
+				4A02AC898B1318DE56BFCA94 /* cockpit-remote_iOS */,
+				77F68AC93C2FBEE84BE8BB0D /* Externals */,
+				27EA778764E5BA544699F62E /* Sources */,
+				B8DAC8CF433E83CB17F4EE01 /* src */,
+				5806E33AE33CF59C74CA66FD /* Frameworks */,
+				C70DEE9BC10BEA0DFA589F7D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4A02AC898B1318DE56BFCA94 /* cockpit-remote_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				71439A58E3F37BFE75C5714C /* cockpit-remote_iOS.entitlements */,
+				236CC3FD9E1FCCC737315816 /* Info.plist */,
+			);
+			path = "cockpit-remote_iOS";
+			sourceTree = "<group>";
+		};
+		5806E33AE33CF59C74CA66FD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8039514C492A74763946A9B1 /* CoreGraphics.framework */,
+				CE000E83D76D39C3F21F3ABE /* libapp.a */,
+				B7DE82A1331EF1AECC32F250 /* Metal.framework */,
+				721005DF36B5B2DA9551C7B6 /* MetalKit.framework */,
+				4670D275FE587699BAB80284 /* QuartzCore.framework */,
+				A17DF4F3A628ADC5A1EBBD3F /* Security.framework */,
+				51B0CCD903B502E896973EE8 /* SystemConfiguration.framework */,
+				55FF5D49228E66ADED563BF8 /* UIKit.framework */,
+				41E15F0B558FFECE688D2CF0 /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		77F68AC93C2FBEE84BE8BB0D /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+		9433D046CEEE350E23C9C901 /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				952564EC7526DD18C341D771 /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		B8DAC8CF433E83CB17F4EE01 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				AE34F6F108FCA2394B9B0398 /* cache.rs */,
+				2D8F374267504F6834373106 /* key.rs */,
+				6763986445B42227CFBE1AB1 /* lib.rs */,
+				9FAEA4EEB2B9375B32CA0F92 /* link.rs */,
+				BF8112A046CFAAAC10AB1558 /* main.rs */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+		C70DEE9BC10BEA0DFA589F7D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				21BAA245EB87E2351B87C619 /* cockpit-remote_iOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D1AA6F1EA9096271C8D5F06F /* cockpit-remote */ = {
+			isa = PBXGroup;
+			children = (
+				05F9DD73BC91BEEB213B7F02 /* main.mm */,
+				9433D046CEEE350E23C9C901 /* bindings */,
+			);
+			path = "cockpit-remote";
+			sourceTree = "<group>";
+		};
+		"TEMP_63A05FAF-F3CD-48FB-A47F-D5232312CCAA" /* x86_64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = x86_64;
+			sourceTree = "<group>";
+		};
+		"TEMP_A2501C0F-8E5F-46AE-BF41-61CB92A9CA2F" /* arm64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = arm64;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		41642BC30C40769F37C0971C /* cockpit-remote_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 098FA3352A67C155CD10D876 /* Build configuration list for PBXNativeTarget "cockpit-remote_iOS" */;
+			buildPhases = (
+				742F568C2D32A328383014C6 /* Build Rust Code */,
+				CA2DDBEF2014846CA5709122 /* Sources */,
+				EE896CF43465282FFD035DEC /* Resources */,
+				F8AF24747CDCE309CAE9CD55 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "cockpit-remote_iOS";
+			packageProductDependencies = (
+			);
+			productName = "cockpit-remote_iOS";
+			productReference = 21BAA245EB87E2351B87C619 /* cockpit-remote_iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E61C7DE29543C5470CF61407 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = DF2FB74B2214F4A285D86081 /* Build configuration list for PBXProject "cockpit-remote" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 2F04CD12000BE79A524D3C43;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C70DEE9BC10BEA0DFA589F7D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				41642BC30C40769F37C0971C /* cockpit-remote_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		EE896CF43465282FFD035DEC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D6325CFFB277D466DE254BC8 /* Assets.xcassets in Resources */,
+				9003E8C55F5EA27E9998EF11 /* LaunchScreen.storyboard in Resources */,
+				6542B2AA218FFF31B719C8E1 /* assets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		742F568C2D32A328383014C6 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cargo tauri ios xcode-script -v --platform \"${PLATFORM_DISPLAY_NAME:?}\" --sdk-root \"${SDKROOT:?}\" --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration \"${CONFIGURATION:?}\" ${FORCE_COLOR} ${ARCHS:?}\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		CA2DDBEF2014846CA5709122 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				826DD0CA85A22B9D53E9B340 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0B68D08B063BBE2CE083091C /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = release;
+		};
+		1E99751065413A790A49F2AE /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "cockpit-remote_iOS/cockpit-remote_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "cockpit-remote_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.getcockpit.remote;
+				PRODUCT_NAME = "Cockpit Remote";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = debug;
+		};
+		54B1916A18CDF2575D37286C /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "cockpit-remote_iOS/cockpit-remote_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "cockpit-remote_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = dev.getcockpit.remote;
+				PRODUCT_NAME = "Cockpit Remote";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = release;
+		};
+		F60BEB62731AAD01D5E1EFF2 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		098FA3352A67C155CD10D876 /* Build configuration list for PBXNativeTarget "cockpit-remote_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1E99751065413A790A49F2AE /* debug */,
+				54B1916A18CDF2575D37286C /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		DF2FB74B2214F4A285D86081 /* Build configuration list for PBXProject "cockpit-remote" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F60BEB62731AAD01D5E1EFF2 /* debug */,
+				0B68D08B063BBE2CE083091C /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E61C7DE29543C5470CF61407 /* Project object */;
+}

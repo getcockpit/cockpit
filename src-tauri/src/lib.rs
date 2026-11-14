@@ -19,7 +19,6 @@ mod personal;
 mod release_update;
 mod remote;
 mod remote_peer;
-mod remote_proto;
 mod runs;
 mod selfbuild;
 mod selftest;

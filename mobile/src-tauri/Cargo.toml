@@ -1,0 +1,40 @@
+[package]
+name = "cockpit-remote"
+version = "0.1.0"
+description = "Cockpit Remote: the iPhone app for a paired Cockpit Mac"
+edition = "2024"
+publish = false
+
+[lib]
+name = "cockpit_remote_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "time"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+data-encoding = "2"
+iroh = "=1.4.1"
+remote-link = { path = "../../crates/remote-link" }
+
+# The phone's link key lives in the iOS Keychain, this device only.
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+security-framework = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+
+# iroh 1.4.1 deps that use macOS-only libc items on iOS (vendor/README.md).
+[patch.crates-io]
+netdev = { path = "../vendor/netdev" }
+netwatch = { path = "../vendor/netwatch" }
