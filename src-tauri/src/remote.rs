@@ -879,10 +879,60 @@ fn stop_endpoint(remote: &Remote) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Keep awake while sessions run (decision 45): with Remote on, a Mac that dozes off mid-turn
+// leaves the phone with nothing. So while any session is mid-turn (that includes one waiting on
+// your Allow), Cockpit holds an idle-sleep assertion; when all are idle, the Mac may sleep.
+// A closed lid on battery still sleeps (macOS clamshell rule), which the Settings note says.
+
+/// Whether to hold the assertion now.
+pub fn want_awake(remote_on: bool, working: usize) -> bool {
+    remote_on && working > 0
+}
+
+static AWAKE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn keep_awake(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use tauri::Manager;
+        let mut held: Option<std::process::Child> = None;
+        loop {
+            let on = app.try_state::<Remote>().is_some_and(|r| r.shared().is_some());
+            let working = app.try_state::<crate::sidecar::Sidecar>().map(|s| crate::sidecar::busy(&s)).unwrap_or(0);
+            let want = want_awake(on, working);
+            match (want, held.is_some()) {
+                (true, false) => held = assert_awake(),
+                (false, true) => {
+                    if let Some(mut c) = held.take() {
+                        let _ = c.kill();
+                        let _ = c.wait();
+                    }
+                }
+                _ => {}
+            }
+            AWAKE.store(held.is_some(), Ordering::Relaxed);
+            // Two in-memory lookups: cheap enough to catch even a short turn.
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
+
+/// `caffeinate -i -w <this pid>`: no idle sleep, and it ends by itself if Cockpit dies.
+#[cfg(target_os = "macos")]
+fn assert_awake() -> Option<std::process::Child> {
+    std::process::Command::new("/usr/bin/caffeinate").args(["-i", "-w", &std::process::id().to_string()]).spawn().ok()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn assert_awake() -> Option<std::process::Child> {
+    None
+}
+
 /// At app start: manage the state and bring the link up if Remote was left on.
 pub fn start(app: &tauri::AppHandle, dir: &std::path::Path) {
     use tauri::Manager;
     app.manage(Remote { dir: dir.to_path_buf(), running: Mutex::new(None) });
+    keep_awake(app.clone());
     let remote = app.state::<Remote>();
     if remote.load().enabled
         && let Err(e) = start_endpoint(app, &remote, false)
@@ -904,6 +954,7 @@ pub fn remote_status(remote: tauri::State<'_, Remote>) -> Value {
         "pending": shared.as_ref().and_then(|s| s.pending()).map(|(code, name)| serde_json::json!({ "code": code, "name": name })),
         "connected": shared.as_ref().is_some_and(|s| s.connected()),
         "last_seen": shared.as_ref().map(|s| s.last_seen()).filter(|t| *t > 0),
+        "awake": AWAKE.load(Ordering::Relaxed),
     })
 }
 
@@ -1288,6 +1339,13 @@ mod tests {
         let auto = serde_json::json!({ "session": "s1", "tool": "Read", "auto_allowed": true });
         assert!(needs_you("sidecar.permission_request", &auto, "t").is_none(), "Never ask: nothing to tap");
         assert!(needs_you("sidecar.sdk", &ask, "t").is_none());
+    }
+
+    #[test]
+    fn awake_only_while_remote_is_on_and_a_session_works() {
+        assert!(want_awake(true, 1));
+        assert!(!want_awake(true, 0), "idle: the Mac may sleep");
+        assert!(!want_awake(false, 3), "Remote off: Cockpit doesn't hold the Mac");
     }
 
     #[test]
