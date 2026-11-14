@@ -6,11 +6,13 @@ import { pickTile } from "../picker/pick";
 import { sessionTitle } from "../picker/title";
 import { LABEL } from "../components";
 import { shortError } from "../components/ErrorLine";
-import type { SessionState, TranscriptItem } from "../state/types";
+import type { PendingAsk, SessionState, TranscriptItem } from "../state/types";
+import * as cmd from "./commands";
 
-// Cockpit Remote on the iPhone (doc "Cockpit Remote", phase 2: read-only). The Mac is the brain:
-// the mobile core (mobile/src-tauri) mirrors its event log, and the desktop's own store and reducer
-// replay it here. Screens: Pair (first run), Wall (needs-you first), Focus (one session, read).
+// Cockpit Remote on the iPhone (doc "Cockpit Remote", phases 2 and 4). The Mac is the brain: the
+// mobile core (mobile/src-tauri) mirrors its event log, and the desktop's own store and reducer
+// replay it here. Screens: Pair (first run), Wall (needs-you first, Start), Focus (one session:
+// allow/deny, answers, reply, interrupt). Nothing changes here until the Mac's own rows come back.
 
 type Known = { workspaces: { id: string; name: string }[]; repos: { id: string; name: string }[] };
 type RemoteState = { paired: { name: string } | null; connected: boolean; live: boolean; error: string | null; known: Known };
@@ -73,6 +75,7 @@ function Paired({ remote }: { remote: RemoteState }) {
   const state = useAppState();
   const [open, setOpen] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  const [starting, setStarting] = useState(false);
   const rows = useMemo(() => Object.values(state.sessions)
     .filter((s) => !s.archivedAt)
     .map((s) => ({ s, tile: pickTile(s) }))
@@ -89,11 +92,13 @@ function Paired({ remote }: { remote: RemoteState }) {
         <span data-mr="MobileLink" data-mr-source={lamp} className="mm-link" data-on={lamp}>
           {remote.connected ? (remote.live ? "Live" : "Catching up…") : remote.error ? "Mac unreachable" : "Connecting…"}
         </span>
-        {!session && <button type="button" className="mr-key" aria-label="Menu" onClick={() => setMenu(!menu)}>⋯</button>}
+        {!session && <button type="button" className="mr-key" data-mr="MobileStartOpen" onClick={() => { setMenu(false); setStarting(!starting); }}>＋</button>}
+        {!session && <button type="button" className="mr-key" aria-label="Menu" onClick={() => { setStarting(false); setMenu(!menu); }}>⋯</button>}
       </header>
       {menu && !session && <Menu remote={remote} onClose={() => setMenu(false)} />}
+      {starting && !session && <Start known={remote.known} live={remote.connected} onClose={() => setStarting(false)} onStarted={(id) => { setStarting(false); setOpen(id); }} />}
       {!remote.connected && remote.error && <p className="mm-note">{remote.error}. Showing what this phone last saw; it retries by itself.</p>}
-      {session ? <Focus s={session} /> : (
+      {session ? <Focus s={session} live={remote.connected} /> : (
         <main data-mr="MobileWall" className="mm-list">
           {!state.loaded ? <p className="mm-dim mm-pad">Loading…</p> : rows.length === 0 ? <p className="mm-dim mm-pad">No sessions on the Mac yet.</p> : (
             <>
@@ -130,26 +135,133 @@ function Menu({ remote, onClose }: { remote: RemoteState; onClose: () => void })
   );
 }
 
-function Focus({ s }: { s: SessionState }) {
+// Sends one command and keeps its state: busy while the Mac hasn't acked, the error if it refused
+// (or Face ID didn't confirm). The result shows up as the Mac's own rows, never optimistically.
+function useSend() {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const run = async (key: string, c: cmd.Command) => {
+    setBusy(key); setErr("");
+    try { return await cmd.send<{ session?: string } | null>(c); }
+    catch (e) { setErr(shortError(e)); return undefined; }
+    finally { setBusy(null); }
+  };
+  return { busy, err, run };
+}
+
+function Focus({ s, live }: { s: SessionState; live: boolean }) {
   const tile = pickTile(s);
+  const { busy, err, run } = useSend();
   useEffect(() => { window.scrollTo(0, document.body.scrollHeight); }, [s.id]);
+  const working = ["working", "starting", "almost"].includes(tile.state);
   return (
-    <main data-mr="MobileFocus" data-mr-source={s.id} className="mm-col">
+    <main data-mr="MobileFocus" data-mr-source={s.id} className="mm-col mm-focus">
       <div className="mm-pad mm-col" style={{ gap: 4 }}>
         <b>{sessionTitle(s)}</b>
-        <span className="mm-dim"><span className="mm-lamp" data-state={tile.state} /> {LABEL[tile.state]}{tile.progressLabel ? ` · ${tile.progressLabel}` : ""}</span>
+        <span className="mm-row-flat">
+          <span className="mm-dim mm-grow"><span className="mm-lamp" data-state={tile.state} /> {LABEL[tile.state]}{tile.progressLabel ? ` · ${tile.progressLabel}` : ""}</span>
+          {working && <button type="button" className="mr-key" data-mr="MobileInterrupt" disabled={!live || !!busy} onClick={() => void run("interrupt", cmd.interrupt(s.id))}>{busy === "interrupt" ? "Stopping…" : "Interrupt"}</button>}
+        </span>
       </div>
-      {s.pending.map((a) => (
-        <div key={a.requestId} data-mr="MobileAsk" data-mr-source={a.requestId} className="mm-ask">
-          <b>{a.kind === "question" ? "Claude asks" : `Allow ${a.tool}?`}</b>
-          <span className="mm-clip3">{a.kind === "question" ? a.questions.map((q) => q.question).join(" · ") : summarize(a.input)}</span>
-          <span className="mm-dim">Answer on the Mac for now; answering from the phone comes with Face ID.</span>
-        </div>
-      ))}
+      {s.pending.map((a) => <Ask key={a.requestId} s={s} a={a} live={live} />)}
       <ol className="mm-transcript">
         {s.transcript.map((t) => <Item key={t.id} t={t} />)}
       </ol>
+      {err && <p className="mm-error mm-pad">{err}</p>}
+      <Composer s={s} live={live} />
     </main>
+  );
+}
+
+function Ask({ s, a, live }: { s: SessionState; a: PendingAsk; live: boolean }) {
+  const { busy, err, run } = useSend();
+  const [picks, setPicks] = useState<Record<string, string[]>>({});
+  const pick = (q: string, label: string, multi?: boolean) =>
+    setPicks((p) => ({ ...p, [q]: multi ? ((p[q] ?? []).includes(label) ? (p[q] ?? []).filter((x) => x !== label) : [...(p[q] ?? []), label]) : [label] }));
+  const off = !live || !!busy;
+  return (
+    <div data-mr="MobileAsk" data-mr-source={a.requestId} className="mm-ask">
+      {a.kind === "permission" ? (
+        <>
+          <b>Allow {a.tool}?</b>
+          <span className="mm-clip3">{summarize(a.input) || a.tool}</span>
+          {a.reason && <span className="mm-dim">{a.reason}</span>}
+          <span className="mm-row-flat">
+            <button type="button" className="mr-key mm-grow" data-tone="needs" data-mr="MobileAllow" disabled={off} onClick={() => void run("allow", cmd.allow(s.id, a))}>{busy === "allow" ? "Confirming…" : "Allow · Face ID"}</button>
+            <button type="button" className="mr-key mm-grow" data-mr="MobileDeny" disabled={off} onClick={() => void run("deny", cmd.deny(s.id, a))}>{busy === "deny" ? "Denying…" : "Deny"}</button>
+          </span>
+        </>
+      ) : (
+        <>
+          <b>Claude asks</b>
+          {a.questions.map((q) => (
+            <div key={q.question} className="mm-col" style={{ gap: 6 }}>
+              <span>{q.question}{q.multiSelect ? <span className="mm-dim"> · pick any</span> : null}</span>
+              {q.options.map((o) => (
+                <button key={o.label} type="button" className="mm-option" data-mr="MobileOption" aria-pressed={(picks[q.question] ?? []).includes(o.label)} disabled={off} onClick={() => pick(q.question, o.label, q.multiSelect)}>
+                  <b>{o.label}</b>{o.description && <span className="mm-dim">{o.description}</span>}
+                </button>
+              ))}
+            </div>
+          ))}
+          <span className="mm-row-flat">
+            <button type="button" className="mr-key mm-grow" data-tone="needs" data-mr="MobileAnswer" disabled={off || !cmd.answered(a, picks)} onClick={() => void run("answer", cmd.answer(s.id, a, picks))}>{busy === "answer" ? "Confirming…" : "Send answer · Face ID"}</button>
+            <button type="button" className="mr-key" disabled={off} onClick={() => void run("deny", cmd.deny(s.id, a, "None of these fit. Ask me again on the Mac."))}>None fit</button>
+          </span>
+        </>
+      )}
+      {err && <span className="mm-error">{err}</span>}
+    </div>
+  );
+}
+
+function Composer({ s, live }: { s: SessionState; live: boolean }) {
+  const [text, setText] = useState("");
+  const { busy, err, run } = useSend();
+  const submit = async () => {
+    if (!text.trim()) return;
+    if ((await run("reply", cmd.reply(s.id, text))) !== undefined) setText("");
+  };
+  return (
+    <form data-mr="MobileComposer" className="mm-composer" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+      <textarea className="mm-input mm-grow" rows={2} placeholder={live ? "Reply to Claude…" : "Waiting for the Mac…"} value={text} onChange={(e) => setText(e.target.value)} />
+      <button type="submit" className="mr-key" data-tone="primary" disabled={!live || !text.trim() || !!busy}>{busy ? "…" : "Send"}</button>
+      {err && <span className="mm-error mm-full">{err}</span>}
+    </form>
+  );
+}
+
+// Start a session from the phone: a workspace and a repo the Mac already knows (ids only; the Mac
+// maps them to its paths), plus the first prompt. Face ID first; 5 an hour (the Mac counts).
+function Start({ known, live, onClose, onStarted }: { known: Known; live: boolean; onClose: () => void; onStarted: (id: string) => void }) {
+  const [ws, setWs] = useState(known.workspaces[0]?.id ?? "");
+  const [repo, setRepo] = useState(known.repos[0]?.id ?? "");
+  const [prompt, setPrompt] = useState("");
+  const { busy, err, run } = useSend();
+  const go = async () => {
+    const r = await run("start", cmd.start(ws, repo, prompt));
+    if (r !== undefined) { if (r?.session) onStarted(r.session); else onClose(); }
+  };
+  if (!known.repos.length) return <div data-mr="MobileStart" className="mm-sheet mm-pad"><span className="mm-dim">No repos yet: start a session on the Mac once, and its repo shows up here.</span></div>;
+  return (
+    <div data-mr="MobileStart" className="mm-sheet mm-pad">
+      <b>New session on the Mac</b>
+      <label className="mm-col" style={{ gap: 4 }}><span className="mm-dim">Repo</span>
+        <select className="mm-input" value={repo} onChange={(e) => setRepo(e.target.value)}>{known.repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+      </label>
+      {known.workspaces.length > 1 && (
+        <label className="mm-col" style={{ gap: 4 }}><span className="mm-dim">Workspace</span>
+          <select className="mm-input" value={ws} onChange={(e) => setWs(e.target.value)}>{known.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
+        </label>
+      )}
+      <textarea className="mm-input" rows={3} placeholder="What should Claude do?" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+      <span className="mm-row-flat">
+        <button type="button" className="mr-key mm-grow" data-tone="primary" data-mr="MobileStartGo" disabled={!live || !prompt.trim() || !repo || !!busy} onClick={() => void go()}>{busy ? "Starting…" : "Start · Face ID"}</button>
+        <button type="button" className="mr-key" onClick={onClose}>Cancel</button>
+      </span>
+      <span className="mm-dim">It gets its own worktree, like a Start on the Mac, and asks you before running anything.</span>
+      {err && <span className="mm-error">{err}</span>}
+    </div>
   );
 }
 

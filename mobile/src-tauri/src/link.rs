@@ -171,7 +171,18 @@ async fn run(app: &AppHandle, link: &mut remote_link::Link, kick: &mut watch::Re
                 }
                 Ok(Frame::Events { events }) => store(app, events),
                 Ok(Frame::Event { event }) => store(app, vec![event]),
-                Ok(Frame::Live { .. }) => set_status(app, |s| s.live = true),
+                Ok(Frame::Live { .. }) => {
+                    set_status(app, |s| s.live = true);
+                    // Debug builds only (scripts/sim-remote.sh): MR_REMOTE_SMOKE=stop sends one
+                    // ungated command, Stop on the newest session, to prove phone → Mac.
+                    #[cfg(debug_assertions)]
+                    if std::env::var("MR_REMOTE_SMOKE").is_ok_and(|v| v == "stop") && let Some(session) = app.state::<Remote>().cache.newest_session() {
+                        match link.send_command(Command::StopSession { session }).await {
+                            Ok(id) => { let (tx, _rx) = oneshot::channel(); pending.insert(id, tx); }
+                            Err(e) => eprintln!("[remote] smoke: {e}"),
+                        }
+                    }
+                }
                 Ok(Frame::Ack { id, ok, result, error }) => {
                     if let Some(reply) = pending.remove(&id) {
                         let _ = reply.send(if ok { Ok(result.unwrap_or(Value::Null)) } else { Err(error.unwrap_or_default()) });

@@ -84,6 +84,12 @@ impl Cache {
         rows.map(|r| r.map(raw)).collect()
     }
 
+    /// The session of the newest row that has one.
+    #[cfg(debug_assertions)]
+    pub fn newest_session(&self) -> Option<String> {
+        self.conn.lock().unwrap().query_row("SELECT session_id FROM events WHERE session_id IS NOT NULL ORDER BY id DESC LIMIT 1", [], |r| r.get(0)).ok()
+    }
+
     pub fn wipe(&self) -> rusqlite::Result<()> {
         self.conn.lock().unwrap().execute_batch("DELETE FROM events; VACUUM;")
     }

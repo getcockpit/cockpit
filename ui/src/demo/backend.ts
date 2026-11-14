@@ -323,7 +323,17 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       ? { paired: null, connected: false, live: false, error: null, known: { workspaces: [], repos: [] } }
       : { paired: { name: "Demo Mac" }, connected: true, live: true, error: null, known: { workspaces: [{ id: "personal", name: "Personal" }], repos: [{ id: "r1", name: "cockpit" }] } };
     case "remote_pair": return "Demo Mac";
-    case "remote_command": return null;
+    // The phone's commands, run like the desktop's own so a walk sees the Mac's rows come back.
+    case "remote_command": {
+      const c = a.command as { kind: string; args: Record<string, unknown> };
+      const x = c.args;
+      if (c.kind === "send_prompt") return handle("session_send", { session: x.session, text: x.text });
+      if (c.kind === "permission_response") return handle("permission_respond", { session: x.session, requestId: x.request_id, decision: x.decision });
+      if (c.kind === "answer_question") return handle("permission_respond", { session: x.session, requestId: x.request_id, decision: { behavior: "allow", updatedInput: { ...(x.input as object), answers: x.answers } } });
+      if (c.kind === "interrupt") return handle("session_interrupt", { session: x.session });
+      if (c.kind === "start_session") return { session: handle("session_start", { cwd: "~/cockpit", prompt: x.prompt, kind: "blank" }) };
+      return null;
+    }
     case "remote_status": return { enabled: false, running: false, mac_id: null, phone: null, pending: null, connected: false, last_seen: null };
     case "layer2_classify": {
       const label = /\?\s*$/.test(String(a.text).trim()) ? "question" : "other";

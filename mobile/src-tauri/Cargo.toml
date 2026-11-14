@@ -22,6 +22,10 @@ data-encoding = "2"
 iroh = "=1.4.1"
 remote-link = { path = "../../crates/remote-link" }
 
+# A fresh Face ID before approvals, answers and session starts leave the phone.
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-biometric = "2"
+
 # The phone's link key lives in the iOS Keychain, this device only.
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
 security-framework = "3"
