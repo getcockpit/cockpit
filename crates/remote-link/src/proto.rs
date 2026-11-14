@@ -23,6 +23,8 @@ pub const MAX_LINE: usize = 1 << 20;
 pub const MAX_EVENT_BYTES: usize = 64 * 1024;
 /// Kinds the phone never renders: the slash-command lists are big and desktop-only.
 pub const SKIP_KINDS: &[&str] = &["sidecar.commands"];
+/// Rows `FetchSession` returns: enough for the visible transcript, small enough for the relay.
+pub const SESSION_ROWS: usize = 300;
 /// How long a pairing QR is good for.
 pub const OFFER_TTL_MS: i64 = 120_000;
 /// Remote session starts allowed per hour (the security block: a stolen phone can't fan out).
@@ -117,6 +119,10 @@ pub enum Frame {
     Live { cursor: String },
     Event { event: Value },
     Fetch { id: String },
+    /// One session's recent rows (its transcript), for a phone that synced light.
+    FetchSession { id: String, session: String },
+    /// The answer to `FetchSession`: the session's last `SESSION_ROWS` rows, oldest first.
+    SessionRows { id: String, session: String, events: Vec<Value> },
     Command { id: String, #[serde(flatten)] command: Command },
     Ack { id: String, ok: bool, #[serde(skip_serializing_if = "Option::is_none")] result: Option<Value>, #[serde(skip_serializing_if = "Option::is_none")] error: Option<String> },
     Error { error: String },

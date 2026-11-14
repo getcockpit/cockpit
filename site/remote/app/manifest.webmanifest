@@ -1,0 +1,13 @@
+{
+  "name": "Cockpit Remote",
+  "short_name": "Cockpit",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#d3d6d9",
+  "theme_color": "#c3c7cb",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

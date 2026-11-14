@@ -85,6 +85,8 @@ pub trait Host: Send + Sync + 'static {
     /// row's id as the cursor to follow from.
     fn now_rows(&self) -> (Vec<Stored>, String);
     fn event(&self, id: &str) -> Option<Stored>;
+    /// One session's last `limit` rows, oldest first.
+    fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored>;
     fn known(&self) -> Known;
     fn session_exists(&self, id: &str) -> bool;
     /// Runs a resolved command exactly as the desktop would. Called off the async runtime.
@@ -408,7 +410,8 @@ impl Link {
             let s2 = shared.clone();
             let (rows, upto) = tokio::task::spawn_blocking(move || s2.host.now_rows()).await.map_err(|e| e.to_string())?;
             let state = Light::from_rows(&rows);
-            self.send_rows(&mut send, rows.into_iter().map(slim).collect()).await?;
+            // A reconnect already has what came before its cursor.
+            self.send_rows(&mut send, rows.into_iter().filter(|r| r.id > cursor).map(slim).collect()).await?;
             Some((state, upto))
         } else {
             None
@@ -435,6 +438,17 @@ impl Link {
                                 Ok(result) => Frame::Ack { id, ok: true, result: Some(result), error: None },
                                 Err(e) => Frame::Ack { id, ok: false, result: None, error: Some(e) },
                             }
+                        }
+                        Some(Ok(Frame::FetchSession { id, session })) => {
+                            let s = shared.clone();
+                            let sid = session.clone();
+                            let rows = tokio::task::spawn_blocking(move || s.host.session_rows(&sid, proto::SESSION_ROWS)).await.map_err(|e| e.to_string())?;
+                            let events = rows
+                                .into_iter()
+                                .filter_map(|r| proto::for_phone(&r.id, &r.kind, r.session_id.as_deref(), r.created_at, &r.json))
+                                .filter_map(|j| serde_json::from_str(&j).ok())
+                                .collect();
+                            Frame::SessionRows { id, session, events }
                         }
                         Some(Ok(Frame::Fetch { id })) => {
                             let s = shared.clone();
@@ -633,6 +647,13 @@ impl Host for AppHost {
         let log = self.0.state::<crate::eventlog::EventLog>();
         // Like the desktop's first load: archived sessions come without their transcripts.
         log.list_wire(None, Some(after), limit as i64, true).unwrap_or_default().into_iter().filter_map(stored).collect()
+    }
+
+    fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored> {
+        use tauri::Manager;
+        let rows: Vec<Stored> = self.0.state::<crate::eventlog::EventLog>().session_wire(session).unwrap_or_default().into_iter().filter(|w| w.session_id.as_deref() == Some(session)).filter_map(stored).collect();
+        let skip = rows.len().saturating_sub(limit);
+        rows.into_iter().skip(skip).collect()
     }
 
     fn event(&self, id: &str) -> Option<Stored> {
@@ -958,6 +979,10 @@ mod tests {
         fn event(&self, id: &str) -> Option<Stored> {
             self.rows.lock().unwrap().iter().find(|r| r.id == id).cloned()
         }
+        fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored> {
+            let rows: Vec<Stored> = self.rows.lock().unwrap().iter().filter(|r| r.session_id.as_deref() == Some(session)).cloned().collect();
+            rows[rows.len().saturating_sub(limit)..].to_vec()
+        }
         fn known(&self) -> Known {
             Known { workspaces: vec![KnownWorkspace { id: "personal".into(), name: "Personal".into() }], repos: vec![KnownRepo { id: "r1".into(), name: "app".into(), path: "/u/app".into() }] }
         }
@@ -1021,7 +1046,18 @@ mod tests {
         // Live rows arrive as they're written.
         let c = fake.push("sidecar.sdk", Some("s1"));
         shared.bump();
-        assert_eq!(link.next_ids().await.unwrap(), vec![c]);
+        assert_eq!(link.next_ids().await.unwrap(), vec![c.clone()]);
+
+        // A phone that synced light asks for one session's transcript.
+        link.send(&Frame::FetchSession { id: "f1".into(), session: "s1".into() }).await.unwrap();
+        loop {
+            if let Frame::SessionRows { id, session, events } = link.next().await.unwrap() {
+                assert_eq!((id.as_str(), session.as_str()), ("f1", "s1"));
+                let ids: Vec<&str> = events.iter().filter_map(|e| e["id"].as_str()).collect();
+                assert_eq!(ids, vec![a.as_str(), b.as_str(), c.as_str()], "its rows, oldest first, desktop-only kinds left out");
+                break;
+            }
+        }
 
         // Allowlisted commands run; unknown sessions and repos are refused.
         let ack = link.command(Command::SendPrompt { session: "s1".into(), text: "hi".into() }).await.unwrap();

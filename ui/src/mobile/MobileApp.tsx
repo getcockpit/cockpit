@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "../state/listen";
-import { useAppState } from "../state/store";
+import { hydrate, useAppState } from "../state/store";
 import { pickTile } from "../picker/pick";
 import { sessionTitle } from "../picker/title";
 import { LABEL } from "../components";
@@ -15,7 +15,25 @@ import * as cmd from "./commands";
 // allow/deny, answers, reply, interrupt). Nothing changes here until the Mac's own rows come back.
 
 type Known = { workspaces: { id: string; name: string }[]; repos: { id: string; name: string }[] };
-type RemoteState = { paired: { name: string } | null; connected: boolean; live: boolean; error: string | null; known: Known };
+// web / standalone / push: only the web app's core sets them (decision 46).
+type RemoteState = { paired: { name: string } | null; connected: boolean; live: boolean; error: string | null; known: Known; web?: boolean; standalone?: boolean; push?: boolean };
+
+// The web app only notifies, and keeps its pairing, when opened from the Home Screen.
+function InstallHint({ remote }: { remote: RemoteState }) {
+  if (!remote.web || remote.standalone) return null;
+  return (
+    <div data-mr="MobileInstall" className="mm-note">
+      <b>Add Cockpit to your Home Screen.</b> Tap Share → Add to Home Screen, keep "Open as Web App" on, then open it from there. iPhone only sends notifications to Home Screen apps.
+    </div>
+  );
+}
+
+// A code that came in the link (the Mac's QR): after the #, so it never reaches the site.
+const linkCode = (() => {
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (h.startsWith("cockpit-remote:")) history.replaceState(null, "", location.pathname + location.search);
+  return h.startsWith("cockpit-remote:") ? h : "";
+})();
 
 function useRemote() {
   const [st, setSt] = useState<RemoteState | null>(null);
@@ -31,12 +49,12 @@ function useRemote() {
 export function MobileApp() {
   const [remote, reload] = useRemote();
   if (!remote) return null;
-  if (!remote.paired) return <Pair onDone={reload} linkError={remote.error} />;
+  if (!remote.paired) return <Pair remote={remote} onDone={reload} linkError={remote.error} />;
   return <Paired remote={remote} />;
 }
 
-function Pair({ onDone, linkError }: { onDone: () => void; linkError: string | null }) {
-  const [text, setText] = useState("");
+function Pair({ remote, onDone, linkError }: { remote: RemoteState; onDone: () => void; linkError: string | null }) {
+  const [text, setText] = useState(linkCode);
   const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -52,8 +70,10 @@ function Pair({ onDone, linkError }: { onDone: () => void; linkError: string | n
   };
   return (
     <main data-mr="MobilePair" className="mm-screen mm-pad">
+      <InstallHint remote={remote} />
       <h1 className="mm-title">Pair with your Mac</h1>
-      <p className="mm-dim">On the Mac: Cockpit → Settings → Remote → Pair a phone. Then paste the pairing text here (Copy as text on the Mac). Pairing happens once, in person; only this phone and that Mac can ever talk.</p>
+      <p className="mm-dim">On the Mac: Cockpit → Settings → Remote → Pair a phone. Scan its code with the camera, or tap Copy as text there and Paste here. Pairing happens once, in person; only this phone and that Mac can ever talk.</p>
+      {remote.web && <button type="button" className="mr-key mm-wide" data-mr="MobilePaste" onClick={() => void navigator.clipboard.readText().then(setText).catch(() => {})}>Paste from Mac</button>}
       <textarea data-mr="MobilePairText" className="mm-input" rows={4} placeholder="cockpit-remote:1:…" value={text} onChange={(e) => setText(e.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
       <button type="button" className="mr-key mm-wide" data-tone="primary" disabled={busy || !text.trim().startsWith("cockpit-remote:")} onClick={() => void pair()}>{busy ? (code ? "Confirm on the Mac…" : "Reaching the Mac…") : "Pair"}</button>
       {code && (
@@ -73,7 +93,13 @@ const lastAt = (s: SessionState) => s.transcript.at(-1)?.at ?? 0;
 
 function Paired({ remote }: { remote: RemoteState }) {
   const state = useAppState();
-  const [open, setOpen] = useState<string | null>(null);
+  // A notification tap opens its session: ?session= on launch, or a message from the service worker.
+  const [open, setOpen] = useState<string | null>(() => new URLSearchParams(location.search).get("session"));
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => { if (e.data?.open) setOpen(String(e.data.open)); };
+    navigator.serviceWorker?.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
+  }, []);
   const [menu, setMenu] = useState(false);
   const [starting, setStarting] = useState(false);
   const rows = useMemo(() => Object.values(state.sessions)
@@ -95,6 +121,7 @@ function Paired({ remote }: { remote: RemoteState }) {
         {!session && <button type="button" className="mr-key" data-mr="MobileStartOpen" onClick={() => { setMenu(false); setStarting(!starting); }}>＋</button>}
         {!session && <button type="button" className="mr-key" aria-label="Menu" onClick={() => { setStarting(false); setMenu(!menu); }}>⋯</button>}
       </header>
+      {!session && <InstallHint remote={remote} />}
       {menu && !session && <Menu remote={remote} onClose={() => setMenu(false)} />}
       {starting && !session && <Start known={remote.known} live={remote.connected} onClose={() => setStarting(false)} onStarted={(id) => { setStarting(false); setOpen(id); }} />}
       {!remote.connected && remote.error && <p className="mm-note">{remote.error}. Showing what this phone last saw; it retries by itself.</p>}
@@ -108,7 +135,7 @@ function Paired({ remote }: { remote: RemoteState }) {
                   <span className="mm-lamp" data-state={tile.state} />
                   <span className="mm-grow mm-col">
                     <b className="mm-clip">{sessionTitle(s)}</b>
-                    <span className="mm-dim mm-clip">{LABEL[tile.state]}{tile.doing ? ` · ${tile.doing}` : tile.step ? ` · ${tile.step}` : ""}</span>
+                    <span className="mm-dim mm-clip">{LABEL[tile.state]}{s.transcript.length ? (tile.doing ? ` · ${tile.doing}` : tile.step ? ` · ${tile.step}` : "") : ""}</span>
                   </span>
                 </button>
               ))}
@@ -129,6 +156,7 @@ function Menu({ remote, onClose }: { remote: RemoteState; onClose: () => void })
   return (
     <div data-mr="MobileMenu" className="mm-sheet mm-pad">
       <span className="mm-dim">Paired with {remote.paired?.name}. Everything travels end to end encrypted, straight between this phone and the Mac.</span>
+      {remote.web && <button type="button" className="mr-key mm-wide" data-tone="primary" data-mr="MobileNotify" onClick={() => void invoke<string>("remote_push_enable").then(setMsg, (e) => setMsg(shortError(e)))}>Turn on notifications</button>}
       <button type="button" className="mr-key mm-wide" onClick={() => void forget()}>Forget this Mac</button>
       {msg && <p className="mm-error">{msg}</p>}
     </div>
@@ -152,7 +180,8 @@ function useSend() {
 function Focus({ s, live }: { s: SessionState; live: boolean }) {
   const tile = pickTile(s);
   const { busy, err, run } = useSend();
-  useEffect(() => { window.scrollTo(0, document.body.scrollHeight); }, [s.id]);
+  // The light sync carries no transcripts: fetch this session's when it opens.
+  useEffect(() => { hydrate(s.id); window.scrollTo(0, document.body.scrollHeight); }, [s.id]);
   const working = ["working", "starting", "almost"].includes(tile.state);
   return (
     <main data-mr="MobileFocus" data-mr-source={s.id} className="mm-col mm-focus">

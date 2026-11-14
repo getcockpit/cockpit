@@ -154,6 +154,11 @@ impl Link {
         Ok(id)
     }
 
+    /// Sends any frame (requests like `FetchSession`; their answers come back through `next`).
+    pub async fn send(&mut self, f: &Frame) -> Result<(), String> {
+        write_frame(&mut self.send, f).await
+    }
+
     /// Asks for one event in full (the Mac streamed it as `remote.truncated`).
     pub async fn fetch(&mut self, id: &str) -> Result<(), String> {
         write_frame(&mut self.send, &Frame::Fetch { id: id.into() }).await

@@ -6,7 +6,7 @@
 //! to a callback, commands go out) and `version()`.
 
 use iroh::{EndpointAddr, SecretKey};
-use remote_link::proto::{Command, Offer};
+use remote_link::proto::{Command, Frame, Offer};
 use remote_link::Peer;
 use tokio::sync::mpsc;
 use wasm_bindgen::prelude::*;
@@ -99,7 +99,7 @@ impl WebPeer {
         let mut link = self.peer.link_with(addr, &cursor, true).await.map_err(js_err)?;
         let welcome = serde_json::json!({ "t": "welcome", "mac": link.mac, "known": link.known, "push_key": link.push_key });
         let _ = on_frame.call1(&JsValue::NULL, &JsValue::from_str(&welcome.to_string()));
-        let (tx, mut rx) = mpsc::unbounded_channel::<Command>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<Out>();
         n0_future::task::spawn(async move {
             let why = loop {
                 tokio::select! {
@@ -108,7 +108,8 @@ impl WebPeer {
                         Err(e) => break e,
                     },
                     c = rx.recv() => match c {
-                        Some(c) => if let Err(e) = link.send_command(c).await { break e },
+                        Some(Out::Command(c)) => if let Err(e) = link.send_command(c).await { break e },
+                        Some(Out::Frame(f)) => if let Err(e) = link.send(&f).await { break e },
                         None => { link.close(); break "closed".into() }
                     },
                 }
@@ -119,11 +120,16 @@ impl WebPeer {
     }
 }
 
+enum Out {
+    Command(Command),
+    Frame(Frame),
+}
+
 /// One live link. Commands go out in order; their acks come back as `{"t":"ack","id":…}` frames
 /// (ids count from 1 per link).
 #[wasm_bindgen]
 pub struct WebLink {
-    tx: Option<mpsc::UnboundedSender<Command>>,
+    tx: Option<mpsc::UnboundedSender<Out>>,
 }
 
 #[wasm_bindgen]
@@ -132,7 +138,16 @@ impl WebLink {
     pub fn command(&self, json: String) -> Result<(), JsValue> {
         let c: Command = serde_json::from_str(&json).map_err(|e| js_err(format!("not a Cockpit Remote command: {e}")))?;
         c.check().map_err(js_err)?;
-        self.tx.as_ref().ok_or("link closed")?.send(c).map_err(|_| js_err("link closed"))
+        self.out(Out::Command(c))
+    }
+
+    /// Asks for one session's recent rows; they come back as `{"t":"session_rows","id":…}`.
+    pub fn fetch_session(&self, id: String, session: String) -> Result<(), JsValue> {
+        self.out(Out::Frame(Frame::FetchSession { id, session }))
+    }
+
+    fn out(&self, o: Out) -> Result<(), JsValue> {
+        self.tx.as_ref().ok_or("link closed")?.send(o).map_err(|_| js_err("link closed"))
     }
 
     pub fn close(&mut self) {
