@@ -8,10 +8,19 @@ publish = false
 [dependencies]
 # Pinned: both ends must speak the same iroh.
 iroh = "=1.4.1"
-tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "time", "io-util"] }
+# Only what also builds in the browser (wasm32): tasks and timers come from n0-future.
+tokio = { version = "1", features = ["sync", "io-util"] }
+n0-future = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hmac = "0.12"
 sha2 = "0.10"
-getrandom = "0.3"
+getrandom = "0.4"
 data-encoding = "2"
+
+# The web app (D46): the browser's crypto for randomness.
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

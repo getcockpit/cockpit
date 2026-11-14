@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- Spike page (decision 46): subscribes to Web Push with the Mac's VAPID public key from the hash,
+     shows the subscription JSON, and shows any push that arrives. -->
+<html><head><meta charset="utf-8"><title>push spike</title></head><body data-state="loading"><pre id="log"></pre>
+<script type="module">
+const log = (...a) => { document.getElementById("log").textContent += a.join(" ") + "\n"; };
+const set = (k, v) => { document.body.dataset[k] = String(v); };
+const b64 = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+try {
+  navigator.serviceWorker.addEventListener("message", (e) => { log("PUSH", e.data.push); set("push", e.data.push); });
+  const reg = await navigator.serviceWorker.register("sw.js");
+  await navigator.serviceWorker.ready;
+  log("permission before:", Notification.permission);
+  const perm = await Notification.requestPermission();
+  log("permission:", perm);
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(location.hash.slice(1)) });
+  const j = JSON.stringify(sub.toJSON());
+  log("SUB", j); set("sub", j); set("state", "subscribed");
+} catch (e) { log("ERROR", e.name, e.message); set("state", "error"); }
+</script></body></html>

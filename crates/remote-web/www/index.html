@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Spike page for decision 46: pairs this browser tab with a Mac Cockpit over an iroh relay,
+     streams its log, and sends one Stop. Pairing text comes in the URL hash. Results go in #log
+     and in data-* attributes on <body> so a headless run can check them. -->
+<html><head><meta charset="utf-8"><title>Cockpit Remote web spike</title></head>
+<body data-state="loading"><pre id="log"></pre>
+<script type="module">
+import init, { WebPeer, version } from "../pkg/remote_web.js";
+const log = (...a) => { document.getElementById("log").textContent += a.join(" ") + "\n"; };
+const set = (k, v) => { document.body.dataset[k] = String(v); };
+try {
+  await init();
+  set("state", "binding");
+  const t0 = performance.now();
+  const peer = await WebPeer.create(localStorage.getItem("mr.remote.secret") ?? "");
+  localStorage.setItem("mr.remote.secret", peer.secret());
+  log("protocol v" + version(), "bound in", Math.round(performance.now() - t0), "ms");
+  let paired = JSON.parse(localStorage.getItem("mr.remote.paired") ?? "null");
+  const text = decodeURIComponent(location.hash.slice(1));
+  if (!paired && text) {
+    set("state", "pairing");
+    const t1 = performance.now();
+    paired = JSON.parse(await peer.pair(text, "Browser spike", (code) => { log("code", code); set("code", code); }));
+    localStorage.setItem("mr.remote.paired", JSON.stringify(paired));
+    log("paired with", paired.mac, "in", Math.round(performance.now() - t1), "ms");
+  }
+  set("state", "linking");
+  let events = 0, newest = null, sent = false;
+  const t2 = performance.now();
+  const link = await peer.link(JSON.stringify(paired.addr), "", (json) => {
+    const f = JSON.parse(json);
+    if (f.t === "events") { events += f.events.length; for (const e of f.events) if (e.session_id) newest = e.session_id; set("events", events); }
+    else if (f.t === "live") {
+      log("caught up:", events, "events in", Math.round(performance.now() - t2), "ms");
+      set("state", "live");
+      if (!sent && newest) { sent = true; link.command(JSON.stringify({ kind: "stop_session", args: { session: newest } })); log("sent stop for", newest); }
+    } else if (f.t === "ack") { log("ack", JSON.stringify(f)); set("ack", f.ok); }
+    else log(f.t, json.slice(0, 160));
+  });
+} catch (e) { log("ERROR", e); set("state", "error"); set("error", e); }
+</script></body></html>
