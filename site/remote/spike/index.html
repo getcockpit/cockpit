@@ -36,6 +36,11 @@
     <b>Add this to your Home Screen first</b>
     <span class="dim">Tap Share, then "Add to Home Screen", then open Cockpit from your Home Screen. iPhone only sends notifications to apps opened from there.</span>
   </div>
+  <div id="handoff" class="card" hidden>
+    <b>Pairing code from your Mac</b>
+    <span class="dim">Notifications only work in the Home Screen app, so pair there: 1) Share → Add to Home Screen (once). 2) Tap Copy below. 3) Open Cockpit from your Home Screen and tap Paste from Mac. The code works for 2 minutes.</span>
+    <button id="copy" class="primary">Copy pairing code</button>
+  </div>
   <div id="pair" class="card" hidden>
     <b>Pair with your Mac</b>
     <span class="dim">On the Mac: Cockpit → Settings → Remote → Pair a phone → Copy as text. Then paste it here (Universal Clipboard).</span>
@@ -53,6 +58,6 @@
   </div>
   <pre id="log"></pre>
 </main>
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=2"></script>
 </body>
 </html>
