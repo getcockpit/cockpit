@@ -9,10 +9,13 @@ cd "$(dirname "$0")"
 llvm="$(brew --prefix llvm 2>/dev/null || echo /opt/homebrew/opt/llvm)/bin"
 [ -x "$llvm/clang" ] || { echo "needs Homebrew llvm (brew install llvm)"; exit 1; }
 export CC_wasm32_unknown_unknown="$llvm/clang" AR_wasm32_unknown_unknown="$llvm/llvm-ar"
+# The wasm is published (site/remote/): keep this machine's paths out of its panic messages.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$(cd ../.. && pwd)=/cockpit --remap-path-prefix=$HOME=/home"
 if [ "${1:-}" = "check" ]; then exec cargo clippy --target wasm32-unknown-unknown; fi
 cargo build --release --target wasm32-unknown-unknown
 wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/remote_web.wasm
 ls -la pkg/remote_web_bg.wasm
+if grep -aq "$HOME" pkg/remote_web_bg.wasm; then echo "ABORT: a local path is still in the wasm" >&2; exit 1; fi
 # The preview web app on the site (decision 46): getcockpit.github.io/remote/spike/
 if [ "${1:-}" = "site" ]; then
   mkdir -p ../../site/remote/spike/pkg
