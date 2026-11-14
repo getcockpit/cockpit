@@ -85,6 +85,8 @@ pub trait Host: Send + Sync + 'static {
     /// row's id as the cursor to follow from.
     fn now_rows(&self) -> (Vec<Stored>, String);
     fn event(&self, id: &str) -> Option<Stored>;
+    /// One session's last `limit` rows, oldest first.
+    fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored>;
     fn known(&self) -> Known;
     fn session_exists(&self, id: &str) -> bool;
     /// Runs a resolved command exactly as the desktop would. Called off the async runtime.
@@ -98,6 +100,10 @@ pub struct Phone {
     pub key: String,
     pub name: String,
     pub paired_at: i64,
+    /// The web app's Face ID key, bound at pairing (decision 46). With one, what runs Claude
+    /// needs its proof; without (native app, CLI), the phone gates it itself.
+    #[serde(default)]
+    pub passkey: Option<proto::Passkey>,
 }
 
 struct Pending {
@@ -124,6 +130,9 @@ pub struct Shared {
     last_seen: AtomicI64,
     /// This Mac's VAPID public key, sent in the welcome so the phone can subscribe (decision 46).
     push_key: Mutex<Option<String>>,
+    /// Origins a passkey proof may come from: the web app's, plus `MR_REMOTE_DEV_ORIGIN` (a local
+    /// build of it, for development).
+    origins: Vec<String>,
     /// Called with the new phone (or None) whenever pairing changes, to persist it.
     save: SavePhone,
 }
@@ -142,6 +151,7 @@ impl Shared {
             starts: Mutex::new(StartLimit::default()),
             last_seen: AtomicI64::new(0),
             push_key: Mutex::new(None),
+            origins: std::iter::once(proto::ORIGIN.to_string()).chain(std::env::var("MR_REMOTE_DEV_ORIGIN").ok().filter(|o| !o.is_empty())).collect(),
             save,
         })
     }
@@ -231,6 +241,24 @@ impl Shared {
         as_phone(|| self.host.run(r))
     }
 
+    /// Face ID on what runs Claude (decision 46): when the phone paired with a passkey, allow,
+    /// answer and start need a proof signed on this link's nonce over exactly this command.
+    fn check_presence(&self, command: &Command, proof: Option<&proto::Proof>, nonce: &str, spent: &mut std::collections::HashSet<String>) -> Result<(), String> {
+        let Some(key) = self.phone().and_then(|p| p.passkey) else { return Ok(()) };
+        if !command.needs_presence() {
+            return Ok(());
+        }
+        let proof = proof.ok_or("this needs Face ID on your phone")?;
+        let signed = proto::verify_proof(&key, proof, nonce, &self.origins, proto::RP_ID)?;
+        if &signed != command {
+            return Err("the Face ID proof is for a different command".into());
+        }
+        if !spent.insert(proto::challenge(nonce, &proof.json)) {
+            return Err("this Face ID proof was already used".into());
+        }
+        Ok(())
+    }
+
     fn is_pinned(&self, key: &PublicKey) -> bool {
         self.phone.lock().unwrap().as_ref().is_some_and(|p| p.key == key.to_string())
     }
@@ -268,7 +296,7 @@ impl ProtocolHandler for Pairing {
         let mut recv = BufReader::new(recv);
         let phone_key = *conn.remote_id().as_bytes();
         let secret = offer.secret_bytes().map_err(accept_err)?;
-        let Ok(Some(Frame::Pair { proof, name })) = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut recv)).await.unwrap_or(Ok(None)) else {
+        let Ok(Some(Frame::Pair { proof, name, passkey })) = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut recv)).await.unwrap_or(Ok(None)) else {
             conn.close(2u32.into(), b"expected pair");
             return Ok(());
         };
@@ -281,7 +309,7 @@ impl ProtocolHandler for Pairing {
         let code = proto::short_code(&secret, &shared.mac_key, &phone_key);
         let (tx, rx) = oneshot::channel();
         let name: String = name.chars().take(60).collect();
-        let phone = Phone { key: conn.remote_id().to_string(), name, paired_at: proto::now_ms() };
+        let phone = Phone { key: conn.remote_id().to_string(), name, paired_at: proto::now_ms(), passkey };
         *shared.pending.lock().unwrap() = Some(Pending { phone: phone.clone(), code: code.clone(), answer: Some(tx) });
         shared.host.changed();
         write_frame(&mut send, &Frame::Confirm { code }).await.map_err(accept_err)?;
@@ -401,14 +429,19 @@ impl Link {
         let s2 = shared.clone();
         let known = tokio::task::spawn_blocking(move || s2.host.known()).await.map_err(|e| e.to_string())?;
         let push_key = shared.push_key.lock().unwrap().clone();
-        write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known, push_key }).await?;
+        // Passkey proofs sign this link's nonce, so none can be replayed on another link; `spent`
+        // stops a replay on this one.
+        let nonce = data_encoding::HEXLOWER.encode(&proto::new_secret());
+        let mut spent = std::collections::HashSet::new();
+        write_frame(&mut send, &Frame::Welcome { v: proto::VERSION, mac: shared.name.clone(), known, push_key, nonce: Some(nonce.clone()), app: web_app() }).await?;
         // Light: "now" in one query, then the same rules row by row (a busy log appends many rows
         // a second; re-running the query for each would cost the Mac ~0.7 s a time).
         let mut light = if light {
             let s2 = shared.clone();
             let (rows, upto) = tokio::task::spawn_blocking(move || s2.host.now_rows()).await.map_err(|e| e.to_string())?;
             let state = Light::from_rows(&rows);
-            self.send_rows(&mut send, rows.into_iter().map(slim).collect()).await?;
+            // A reconnect already has what came before its cursor.
+            self.send_rows(&mut send, rows.into_iter().filter(|r| r.id > cursor).map(slim).collect()).await?;
             Some((state, upto))
         } else {
             None
@@ -428,13 +461,27 @@ impl Link {
                     let reply = match frame {
                         None => return Ok(()),
                         Some(Err(e)) => Frame::Error { error: e },
-                        Some(Ok(Frame::Command { id, command })) => {
+                        Some(Ok(Frame::Command { id, command, proof })) => {
                             let s = shared.clone();
-                            let out = tokio::task::spawn_blocking(move || s.execute(command)).await.map_err(|e| e.to_string())?;
+                            let out = match shared.check_presence(&command, proof.as_ref(), &nonce, &mut spent) {
+                                Err(e) => Err(e),
+                                Ok(()) => tokio::task::spawn_blocking(move || s.execute(command)).await.map_err(|e| e.to_string())?,
+                            };
                             match out {
                                 Ok(result) => Frame::Ack { id, ok: true, result: Some(result), error: None },
                                 Err(e) => Frame::Ack { id, ok: false, result: None, error: Some(e) },
                             }
+                        }
+                        Some(Ok(Frame::FetchSession { id, session })) => {
+                            let s = shared.clone();
+                            let sid = session.clone();
+                            let rows = tokio::task::spawn_blocking(move || s.host.session_rows(&sid, proto::SESSION_ROWS)).await.map_err(|e| e.to_string())?;
+                            let events = rows
+                                .into_iter()
+                                .filter_map(|r| proto::for_phone(&r.id, &r.kind, r.session_id.as_deref(), r.created_at, &r.json))
+                                .filter_map(|j| serde_json::from_str(&j).ok())
+                                .collect();
+                            Frame::SessionRows { id, session, events }
                         }
                         Some(Ok(Frame::Fetch { id })) => {
                             let s = shared.clone();
@@ -495,7 +542,14 @@ struct Store {
 
 const KEYCHAIN_SERVICE: &str = "cockpit-remote";
 /// The phone's web app (decision 46): the same static page for every Cockpit owner.
-const WEB_APP: &str = "https://getcockpit.github.io/remote/spike/";
+const WEB_APP: &str = "https://getcockpit.github.io/remote/";
+
+/// The web app version this build vouches for (decision 47), from site/remote/current.json at
+/// build time; None in a build without it.
+fn web_app() -> Option<proto::AppPin> {
+    let (version, root, sw) = (env!("MR_REMOTE_APP_VERSION"), env!("MR_REMOTE_APP_ROOT"), env!("MR_REMOTE_APP_SW"));
+    (!version.is_empty() && !root.is_empty()).then(|| proto::AppPin { version: version.into(), root: root.into(), sw: Some(sw.to_owned()).filter(|s| !s.is_empty()) })
+}
 const KEYCHAIN_ACCOUNT: &str = "identity";
 
 /// Tauri state: the store on disk and, while Remote is on, the running endpoint.
@@ -633,6 +687,13 @@ impl Host for AppHost {
         let log = self.0.state::<crate::eventlog::EventLog>();
         // Like the desktop's first load: archived sessions come without their transcripts.
         log.list_wire(None, Some(after), limit as i64, true).unwrap_or_default().into_iter().filter_map(stored).collect()
+    }
+
+    fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored> {
+        use tauri::Manager;
+        let rows: Vec<Stored> = self.0.state::<crate::eventlog::EventLog>().session_wire(session).unwrap_or_default().into_iter().filter(|w| w.session_id.as_deref() == Some(session)).filter_map(stored).collect();
+        let skip = rows.len().saturating_sub(limit);
+        rows.into_iter().skip(skip).collect()
     }
 
     fn event(&self, id: &str) -> Option<Stored> {
@@ -818,10 +879,60 @@ fn stop_endpoint(remote: &Remote) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Keep awake while sessions run (decision 45): with Remote on, a Mac that dozes off mid-turn
+// leaves the phone with nothing. So while any session is mid-turn (that includes one waiting on
+// your Allow), Cockpit holds an idle-sleep assertion; when all are idle, the Mac may sleep.
+// A closed lid on battery still sleeps (macOS clamshell rule), which the Settings note says.
+
+/// Whether to hold the assertion now.
+pub fn want_awake(remote_on: bool, working: usize) -> bool {
+    remote_on && working > 0
+}
+
+static AWAKE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn keep_awake(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use tauri::Manager;
+        let mut held: Option<std::process::Child> = None;
+        loop {
+            let on = app.try_state::<Remote>().is_some_and(|r| r.shared().is_some());
+            let working = app.try_state::<crate::sidecar::Sidecar>().map(|s| crate::sidecar::busy(&s)).unwrap_or(0);
+            let want = want_awake(on, working);
+            match (want, held.is_some()) {
+                (true, false) => held = assert_awake(),
+                (false, true) => {
+                    if let Some(mut c) = held.take() {
+                        let _ = c.kill();
+                        let _ = c.wait();
+                    }
+                }
+                _ => {}
+            }
+            AWAKE.store(held.is_some(), Ordering::Relaxed);
+            // Two in-memory lookups: cheap enough to catch even a short turn.
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
+
+/// `caffeinate -i -w <this pid>`: no idle sleep, and it ends by itself if Cockpit dies.
+#[cfg(target_os = "macos")]
+fn assert_awake() -> Option<std::process::Child> {
+    std::process::Command::new("/usr/bin/caffeinate").args(["-i", "-w", &std::process::id().to_string()]).spawn().ok()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn assert_awake() -> Option<std::process::Child> {
+    None
+}
+
 /// At app start: manage the state and bring the link up if Remote was left on.
 pub fn start(app: &tauri::AppHandle, dir: &std::path::Path) {
     use tauri::Manager;
     app.manage(Remote { dir: dir.to_path_buf(), running: Mutex::new(None) });
+    keep_awake(app.clone());
     let remote = app.state::<Remote>();
     if remote.load().enabled
         && let Err(e) = start_endpoint(app, &remote, false)
@@ -843,6 +954,7 @@ pub fn remote_status(remote: tauri::State<'_, Remote>) -> Value {
         "pending": shared.as_ref().and_then(|s| s.pending()).map(|(code, name)| serde_json::json!({ "code": code, "name": name })),
         "connected": shared.as_ref().is_some_and(|s| s.connected()),
         "last_seen": shared.as_ref().map(|s| s.last_seen()).filter(|t| *t > 0),
+        "awake": AWAKE.load(Ordering::Relaxed),
     })
 }
 
@@ -958,6 +1070,10 @@ mod tests {
         fn event(&self, id: &str) -> Option<Stored> {
             self.rows.lock().unwrap().iter().find(|r| r.id == id).cloned()
         }
+        fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored> {
+            let rows: Vec<Stored> = self.rows.lock().unwrap().iter().filter(|r| r.session_id.as_deref() == Some(session)).cloned().collect();
+            rows[rows.len().saturating_sub(limit)..].to_vec()
+        }
         fn known(&self) -> Known {
             Known { workspaces: vec![KnownWorkspace { id: "personal".into(), name: "Personal".into() }], repos: vec![KnownRepo { id: "r1".into(), name: "app".into(), path: "/u/app".into() }] }
         }
@@ -1021,7 +1137,18 @@ mod tests {
         // Live rows arrive as they're written.
         let c = fake.push("sidecar.sdk", Some("s1"));
         shared.bump();
-        assert_eq!(link.next_ids().await.unwrap(), vec![c]);
+        assert_eq!(link.next_ids().await.unwrap(), vec![c.clone()]);
+
+        // A phone that synced light asks for one session's transcript.
+        link.send(&Frame::FetchSession { id: "f1".into(), session: "s1".into() }).await.unwrap();
+        loop {
+            if let Frame::SessionRows { id, session, events } = link.next().await.unwrap() {
+                assert_eq!((id.as_str(), session.as_str()), ("f1", "s1"));
+                let ids: Vec<&str> = events.iter().filter_map(|e| e["id"].as_str()).collect();
+                assert_eq!(ids, vec![a.as_str(), b.as_str(), c.as_str()], "its rows, oldest first, desktop-only kinds left out");
+                break;
+            }
+        }
 
         // Allowlisted commands run; unknown sessions and repos are refused.
         let ack = link.command(Command::SendPrompt { session: "s1".into(), text: "hi".into() }).await.unwrap();
@@ -1065,6 +1192,74 @@ mod tests {
         assert!(stranger.pair(&o, "evil", |_| {}).await.is_err());
         assert_eq!(shared.phone().unwrap().name, "Test iPhone", "the pinned phone is unchanged");
         router.shutdown().await.unwrap();
+    }
+
+    /// A WebAuthn assertion as Safari makes one, from a test passkey.
+    fn webauthn(sk: &p256::ecdsa::SigningKey, json: &str, nonce: &str) -> proto::Proof {
+        use p256::ecdsa::signature::Signer;
+        use sha2::{Digest, Sha256};
+        let e = |b: &[u8]| data_encoding::BASE64URL_NOPAD.encode(b);
+        let cd = serde_json::json!({ "type": "webauthn.get", "challenge": proto::challenge(nonce, json), "origin": proto::ORIGIN }).to_string();
+        let mut ad = Sha256::digest(proto::RP_ID.as_bytes()).to_vec();
+        ad.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+        let mut signed = ad.clone();
+        signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+        let sig: p256::ecdsa::Signature = sk.sign(&signed);
+        proto::Proof { json: json.into(), credential_id: "Y3JlZA".into(), authenticator_data: e(&ad), client_data_json: e(cd.as_bytes()), signature: e(sig.to_der().as_bytes()) }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_web_phone_needs_face_id_for_what_runs_claude() {
+        use p256::pkcs8::EncodePublicKey;
+        let (fake, shared, router) = mac().await;
+        fake.push("ui.session_requested", Some("s1"));
+        let sk = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        let passkey = proto::Passkey { credential_id: "Y3JlZA".into(), public_key: data_encoding::BASE64URL_NOPAD.encode(sk.verifying_key().to_public_key_der().unwrap().as_bytes()) };
+        let offer = shared.offer(router.endpoint().addr());
+        let s = shared.clone();
+        tokio::spawn(async move {
+            while s.pending().is_none() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            s.answer(true).unwrap();
+        });
+        let phone = Peer::bind(SecretKey::generate(), true).await.unwrap();
+        phone.pair_with_passkey(&offer, "Web iPhone", Some(passkey.clone()), |_| {}).await.unwrap();
+        assert_eq!(shared.phone().unwrap().passkey, Some(passkey), "bound at pairing");
+
+        let mut link = phone.link(router.endpoint().addr(), "").await.unwrap();
+        link.until_live().await.unwrap();
+        let start = Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "go".into() };
+        let json = serde_json::to_string(&start).unwrap();
+        // No proof: refused.
+        let r = link.command(start.clone()).await.unwrap();
+        assert!(r.unwrap_err().contains("Face ID"));
+        // A proof on another link's nonce: refused.
+        let id = link.send_command_proved(start.clone(), Some(webauthn(&sk, &json, "other-link"))).await.unwrap();
+        assert!(wait_ack(&mut link, &id).await.unwrap_err().contains("something else"));
+        // A proof over a different command: refused.
+        let other = serde_json::to_string(&Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "rm".into() }).unwrap();
+        let id = link.send_command_proved(start.clone(), Some(webauthn(&sk, &other, &link.nonce.clone()))).await.unwrap();
+        assert!(wait_ack(&mut link, &id).await.is_err());
+        // The real thing: runs once.
+        let good = webauthn(&sk, &json, &link.nonce.clone());
+        let id = link.send_command_proved(start.clone(), Some(good.clone())).await.unwrap();
+        wait_ack(&mut link, &id).await.unwrap();
+        let id = link.send_command_proved(start.clone(), Some(good)).await.unwrap();
+        assert!(wait_ack(&mut link, &id).await.unwrap_err().contains("already used"));
+        // Deny and replies need no Face ID.
+        let deny = Command::PermissionResponse { session: "s1".into(), request_id: "r".into(), decision: serde_json::json!({ "behavior": "deny", "message": "no" }) };
+        assert!(link.command(deny).await.unwrap().is_ok());
+        assert_eq!(fake.ran.lock().unwrap().iter().filter(|r| matches!(r, Resolved::Start { .. })).count(), 1);
+        router.shutdown().await.unwrap();
+    }
+
+    async fn wait_ack(link: &mut remote_link::Link, id: &str) -> Result<(), String> {
+        loop {
+            if let Frame::Ack { id: got, ok, error, .. } = link.next().await.unwrap() && got == id {
+                return if ok { Ok(()) } else { Err(error.unwrap_or_default()) };
+            }
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1144,6 +1339,13 @@ mod tests {
         let auto = serde_json::json!({ "session": "s1", "tool": "Read", "auto_allowed": true });
         assert!(needs_you("sidecar.permission_request", &auto, "t").is_none(), "Never ask: nothing to tap");
         assert!(needs_you("sidecar.sdk", &ask, "t").is_none());
+    }
+
+    #[test]
+    fn awake_only_while_remote_is_on_and_a_session_works() {
+        assert!(want_awake(true, 1));
+        assert!(!want_awake(true, 0), "idle: the Mac may sleep");
+        assert!(!want_awake(false, 3), "Remote off: Cockpit doesn't hold the Mac");
     }
 
     #[test]

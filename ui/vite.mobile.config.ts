@@ -6,7 +6,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   root: "mobile",
+  // Relative: the web app is served from a subfolder of the site (getcockpit.github.io/remote/…).
+  base: "./",
   build: { outDir: "../dist-mobile", emptyOutDir: true },
   clearScreen: false,
-  server: { port: 1422, strictPort: true, host: "0.0.0.0", fs: { allow: [".."] } },
+  server: { port: 1422, strictPort: true, host: "0.0.0.0", fs: { allow: ["../.."] } },
 });

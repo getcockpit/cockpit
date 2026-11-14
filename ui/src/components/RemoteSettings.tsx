@@ -12,10 +12,11 @@ type Status = {
   enabled: boolean;
   running: boolean;
   mac_id: string | null;
-  phone: { key: string; name: string; paired_at: number } | null;
+  phone: { key: string; name: string; paired_at: number; passkey?: unknown } | null;
   pending: { code: string; name: string } | null;
   connected: boolean;
   last_seen: number | null;
+  awake?: boolean;
 };
 type Qr = { text: string; svg: string; expires_at: number };
 
@@ -50,7 +51,7 @@ export function RemoteSettings() {
         <Key tone={st.enabled ? undefined : "primary"} onClick={() => void act(() => invoke("remote_set_enabled", { on: !st.enabled }))}>{st.enabled ? "Turn Remote off" : "Turn Remote on"}</Key>
         <span className="mr-dim" style={{ fontSize: 12 }}>
           {st.enabled
-            ? st.running ? "On. Only the paired phone can connect; off cuts it at once." : "On, but the link didn't start. Turn it off and on again."
+            ? st.running ? `On. Only the paired phone can connect; off cuts it at once. ${st.awake ? "Keeping this Mac awake while sessions work." : "The Mac may sleep while nothing works."} A closed lid on battery still sleeps.` : "On, but the link didn't start. Turn it off and on again."
             : "Off: no link, nothing reachable. The phone app pairs once, in person, by QR."}
         </span>
       </div>
@@ -70,6 +71,7 @@ export function RemoteSettings() {
             <span style={{ fontSize: 13 }}>
               Paired with <b>{st.phone.name}</b> ({st.phone.key.slice(0, 10)}…) since {new Date(st.phone.paired_at).toLocaleDateString()}.{" "}
               <span className="mr-dim">{st.connected ? "Connected now." : st.last_seen ? `Last here ${ago(st.last_seen)}.` : "Not connected yet."}</span>
+              {st.phone.passkey ? <span className="mr-dim"> Face ID guards every allow, answer and start (checked here).</span> : null}
             </span>
           ) : <span className="mr-dim" style={{ fontSize: 13 }}>No phone paired.</span>}
           <span className="mr-grow" />

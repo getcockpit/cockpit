@@ -31,6 +31,11 @@ impl Peer {
     /// Pairs with the Mac in `offer`. `on_code` gets the 6-digit code to compare with the Mac's
     /// screen; returns the Mac's name once you confirmed there.
     pub async fn pair(&self, offer: &Offer, name: &str, on_code: impl FnOnce(&str)) -> Result<String, String> {
+        self.pair_with_passkey(offer, name, None, on_code).await
+    }
+
+    /// `pair`, binding the web app's passkey into the pairing you confirm on the Mac.
+    pub async fn pair_with_passkey(&self, offer: &Offer, name: &str, passkey: Option<proto::Passkey>, on_code: impl FnOnce(&str)) -> Result<String, String> {
         if offer.expires_at <= proto::now_ms() {
             return Err("this pairing code expired; show a new one on the Mac".into());
         }
@@ -40,7 +45,7 @@ impl Peer {
         let (mut send, recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
         let mut recv = BufReader::new(recv);
         let proof = proto::pair_proof(&secret, &mac_key, self.ep.id().as_bytes());
-        write_frame(&mut send, &Frame::Pair { proof, name: name.into() }).await?;
+        write_frame(&mut send, &Frame::Pair { proof, name: name.into(), passkey }).await?;
         let expect = proto::short_code(&secret, &mac_key, self.ep.id().as_bytes());
         let mut on_code = Some(on_code);
         let out = loop {
@@ -84,7 +89,7 @@ impl Peer {
         });
         let first = n0_future::time::timeout(Duration::from_secs(20), frames.recv()).await.map_err(|_| "the Mac didn't answer".to_string())?;
         match first {
-            Some(Frame::Welcome { mac, known, push_key, .. }) => Ok(Link { conn, send, frames, mac, known, push_key, cursor: cursor.into(), next_id: 0 }),
+            Some(Frame::Welcome { mac, known, push_key, nonce, app, .. }) => Ok(Link { conn, send, frames, mac, known, push_key, nonce: nonce.unwrap_or_default(), app, cursor: cursor.into(), next_id: 0 }),
             Some(Frame::Error { error }) => Err(error),
             _ => Err(close_reason(&conn).unwrap_or_else(|| "refused by the Mac (not paired?)".into())),
         }
@@ -103,6 +108,10 @@ pub struct Link {
     pub known: Known,
     /// The Mac's VAPID public key (base64url), when it sends Web Push.
     pub push_key: Option<String>,
+    /// This link's nonce: passkey proofs sign it (`proto::challenge`).
+    pub nonce: String,
+    /// The web app version the Mac vouches for (decision 47).
+    pub app: Option<proto::AppPin>,
     /// The newest event id received: hand it to the next `link` to resume without gaps.
     pub cursor: String,
     next_id: u64,
@@ -148,10 +157,20 @@ impl Link {
     /// Sends a command without waiting: its `Ack` comes back through `next` with the returned id.
     /// For callers that keep reading the link themselves (the iOS app's link task).
     pub async fn send_command(&mut self, command: Command) -> Result<String, String> {
+        self.send_command_proved(command, None).await
+    }
+
+    /// `send_command` with a passkey proof over it (`proto::Proof`, signed on this link's nonce).
+    pub async fn send_command_proved(&mut self, command: Command, proof: Option<proto::Proof>) -> Result<String, String> {
         self.next_id += 1;
         let id = self.next_id.to_string();
-        write_frame(&mut self.send, &Frame::Command { id: id.clone(), command }).await?;
+        write_frame(&mut self.send, &Frame::Command { id: id.clone(), command, proof }).await?;
         Ok(id)
+    }
+
+    /// Sends any frame (requests like `FetchSession`; their answers come back through `next`).
+    pub async fn send(&mut self, f: &Frame) -> Result<(), String> {
+        write_frame(&mut self.send, f).await
     }
 
     /// Asks for one event in full (the Mac streamed it as `remote.truncated`).
@@ -169,7 +188,7 @@ impl Link {
     pub async fn command(&mut self, command: Command) -> Result<Result<Value, String>, String> {
         self.next_id += 1;
         let id = self.next_id.to_string();
-        write_frame(&mut self.send, &Frame::Command { id: id.clone(), command }).await?;
+        write_frame(&mut self.send, &Frame::Command { id: id.clone(), command, proof: None }).await?;
         loop {
             match self.next().await? {
                 Frame::Ack { id: got, ok, result, error } if got == id => {

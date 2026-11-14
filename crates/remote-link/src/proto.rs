@@ -23,6 +23,8 @@ pub const MAX_LINE: usize = 1 << 20;
 pub const MAX_EVENT_BYTES: usize = 64 * 1024;
 /// Kinds the phone never renders: the slash-command lists are big and desktop-only.
 pub const SKIP_KINDS: &[&str] = &["sidecar.commands"];
+/// Rows `FetchSession` returns: enough for the visible transcript, small enough for the relay.
+pub const SESSION_ROWS: usize = 300;
 /// How long a pairing QR is good for.
 pub const OFFER_TTL_MS: i64 = 120_000;
 /// Remote session starts allowed per hour (the security block: a stolen phone can't fan out).
@@ -100,7 +102,9 @@ pub fn short_code(secret: &[u8], mac_key: &[u8; 32], phone_key: &[u8; 32]) -> St
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum Frame {
     // Pairing (ALPN_PAIR)
-    Pair { proof: String, name: String },
+    /// `passkey`: the web app's Face ID key, bound at pairing (you confirm the code on the Mac), so
+    /// code loaded later can't swap it. Once a phone has one, what runs Claude needs its proof.
+    Pair { proof: String, name: String, #[serde(default, skip_serializing_if = "Option::is_none")] passkey: Option<Passkey> },
     Confirm { code: String },
     Paired { mac: String },
     // Link (ALPN_LINK)
@@ -109,7 +113,10 @@ pub enum Frame {
     /// ~0.2 MB instead of ~930 MB, which matters over a relay (browsers can't connect directly).
     Hello { v: u32, cursor: String, #[serde(default, skip_serializing_if = "std::ops::Not::not")] light: bool },
     /// `push_key`: the Mac's VAPID public key, for the phone's Web Push subscription (decision 46).
-    Welcome { v: u32, mac: String, known: Known, #[serde(default, skip_serializing_if = "Option::is_none")] push_key: Option<String> },
+    /// `nonce`: fresh per link; passkey proofs sign it, so a proof can't be replayed on another link.
+    /// `app`: the web app version this Mac's Cockpit vouches for (decision 47); the phone updates
+    /// only to it.
+    Welcome { v: u32, mac: String, known: Known, #[serde(default, skip_serializing_if = "Option::is_none")] push_key: Option<String>, #[serde(default, skip_serializing_if = "Option::is_none")] nonce: Option<String>, #[serde(default, skip_serializing_if = "Option::is_none")] app: Option<AppPin> },
     /// A batch of events (ULID order), each the stored event. Plain `Value`: serde can't read a
     /// `RawValue` inside an internally tagged enum.
     Events { events: Vec<Value> },
@@ -117,7 +124,11 @@ pub enum Frame {
     Live { cursor: String },
     Event { event: Value },
     Fetch { id: String },
-    Command { id: String, #[serde(flatten)] command: Command },
+    /// One session's recent rows (its transcript), for a phone that synced light.
+    FetchSession { id: String, session: String },
+    /// The answer to `FetchSession`: the session's last `SESSION_ROWS` rows, oldest first.
+    SessionRows { id: String, session: String, events: Vec<Value> },
+    Command { id: String, #[serde(flatten)] command: Command, #[serde(default, skip_serializing_if = "Option::is_none")] proof: Option<Proof> },
     Ack { id: String, ok: bool, #[serde(skip_serializing_if = "Option::is_none")] result: Option<Value>, #[serde(skip_serializing_if = "Option::is_none")] error: Option<String> },
     Error { error: String },
 }
@@ -128,6 +139,87 @@ impl Frame {
         s.push('\n');
         s
     }
+}
+
+/// The web app's origin and WebAuthn relying party (decision 46).
+pub const ORIGIN: &str = "https://getcockpit.github.io";
+pub const RP_ID: &str = "getcockpit.github.io";
+
+/// One version of the phone web app: its directory name and the root hash over its files.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AppPin {
+    pub version: String,
+    pub root: String,
+    /// SHA-256 of the loader (/remote/sw.js) this release shipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sw: Option<String>,
+}
+
+/// A phone's passkey: its WebAuthn credential id and P-256 public key (SPKI DER), base64url.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Passkey {
+    pub credential_id: String,
+    pub public_key: String,
+}
+
+/// A WebAuthn assertion over one command: `json` is the exact command text the phone signed, and
+/// the challenge is `challenge(nonce, json)`. All fields base64url except `json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Proof {
+    pub json: String,
+    pub credential_id: String,
+    pub authenticator_data: String,
+    pub client_data_json: String,
+    pub signature: String,
+}
+
+fn b64url(s: &str) -> Result<Vec<u8>, String> {
+    data_encoding::BASE64URL_NOPAD.decode(s.trim_end_matches('=').as_bytes()).map_err(|_| "bad base64".to_string())
+}
+
+/// What a passkey signs for one command on one link: base64url(sha256(nonce "\n" json)).
+pub fn challenge(nonce: &str, json: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(nonce.as_bytes());
+    h.update(b"\n");
+    h.update(json.as_bytes());
+    data_encoding::BASE64URL_NOPAD.encode(&h.finalize())
+}
+
+/// Checks a passkey proof the way a WebAuthn server does, and returns the command it covers:
+/// the credential is the pinned one; clientData is a `webauthn.get` for this challenge from an
+/// allowed origin; authenticatorData is for this relying party with user presence AND
+/// verification (Face ID or passcode); the ES256 signature covers both.
+pub fn verify_proof(key: &Passkey, proof: &Proof, nonce: &str, origins: &[String], rp_id: &str) -> Result<Command, String> {
+    use p256::ecdsa::signature::Verifier;
+    use p256::pkcs8::DecodePublicKey;
+    if proof.credential_id.trim_end_matches('=') != key.credential_id.trim_end_matches('=') {
+        return Err("signed with another passkey".into());
+    }
+    let cd_raw = b64url(&proof.client_data_json)?;
+    let cd: Value = serde_json::from_slice(&cd_raw).map_err(|_| "bad client data")?;
+    if cd["type"] != "webauthn.get" {
+        return Err("not a passkey sign-in".into());
+    }
+    if cd["challenge"].as_str().map(|c| c.trim_end_matches('=')) != Some(challenge(nonce, &proof.json).as_str()) {
+        return Err("the proof is for something else".into());
+    }
+    if !origins.iter().any(|o| cd["origin"] == o.as_str()) {
+        return Err(format!("signed on {} , not Cockpit Remote", cd["origin"]));
+    }
+    let ad = b64url(&proof.authenticator_data)?;
+    if ad.len() < 37 || ad[..32] != Sha256::digest(rp_id.as_bytes())[..] {
+        return Err("signed for another site".into());
+    }
+    if ad[32] & 0x01 == 0 || ad[32] & 0x04 == 0 {
+        return Err("Face ID (or the passcode) wasn't used".into());
+    }
+    let vk = p256::ecdsa::VerifyingKey::from_public_key_der(&b64url(&key.public_key)?).map_err(|_| "bad passkey")?;
+    let sig = p256::ecdsa::Signature::from_der(&b64url(&proof.signature)?).map_err(|_| "bad signature")?;
+    let mut signed = ad.clone();
+    signed.extend_from_slice(&Sha256::digest(&cd_raw));
+    vk.verify(&signed, &sig).map_err(|_| "the signature doesn't match".to_string())?;
+    serde_json::from_str(&proof.json).map_err(|e| format!("bad signed command: {e}"))
 }
 
 /// Everything the phone may ask the Mac to do (decision: "Plus start sessions"). Closed set.
@@ -155,6 +247,16 @@ impl Command {
             | Command::Interrupt { session }
             | Command::StopSession { session } => Some(session),
             Command::StartSession { .. } | Command::RegisterPush { .. } => None,
+        }
+    }
+
+    /// Runs Claude on the Mac, so it needs a fresh Face ID: allow, an answer, a session start.
+    /// Denying, replying, interrupting and stopping don't (opening the app already did).
+    pub fn needs_presence(&self) -> bool {
+        match self {
+            Command::PermissionResponse { decision, .. } => decision["behavior"] == "allow",
+            Command::AnswerQuestion { .. } | Command::StartSession { .. } => true,
+            _ => false,
         }
     }
 
@@ -317,6 +419,47 @@ pub fn now_ms() -> i64 {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A WebAuthn assertion as Safari makes one, from a test key.
+    fn assert_with(sk: &p256::ecdsa::SigningKey, json: &str, nonce: &str, origin: &str, rp: &str, flags: u8) -> Proof {
+        use p256::ecdsa::signature::Signer;
+        let e = |b: &[u8]| data_encoding::BASE64URL_NOPAD.encode(b);
+        let cd = json!({ "type": "webauthn.get", "challenge": challenge(nonce, json), "origin": origin, "crossOrigin": false }).to_string();
+        let mut ad = Sha256::digest(rp.as_bytes()).to_vec();
+        ad.push(flags);
+        ad.extend_from_slice(&[0, 0, 0, 0]);
+        let mut signed = ad.clone();
+        signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+        let sig: p256::ecdsa::Signature = sk.sign(&signed);
+        Proof { json: json.into(), credential_id: "Y3JlZA".into(), authenticator_data: e(&ad), client_data_json: e(cd.as_bytes()), signature: e(sig.to_der().as_bytes()) }
+    }
+
+    fn passkey(sk: &p256::ecdsa::SigningKey) -> Passkey {
+        use p256::pkcs8::EncodePublicKey;
+        Passkey { credential_id: "Y3JlZA".into(), public_key: data_encoding::BASE64URL_NOPAD.encode(sk.verifying_key().to_public_key_der().unwrap().as_bytes()) }
+    }
+
+    #[test]
+    fn passkey_proofs_cover_this_command_on_this_link_with_face_id() {
+        let sk = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        let key = passkey(&sk);
+        let origins = vec![ORIGIN.to_string()];
+        let json = r#"{"kind":"start_session","args":{"workspace_id":"personal","repo_id":"r1","prompt":"go"}}"#;
+        let ok = assert_with(&sk, json, "n1", ORIGIN, RP_ID, 0x05);
+        let c = verify_proof(&key, &ok, "n1", &origins, RP_ID).unwrap();
+        assert!(matches!(c, Command::StartSession { .. }) && c.needs_presence());
+        assert!(verify_proof(&key, &ok, "n2", &origins, RP_ID).is_err(), "another link's nonce");
+        let mut swapped = ok.clone();
+        swapped.json = json.replace("go", "rm -rf /");
+        assert!(verify_proof(&key, &swapped, "n1", &origins, RP_ID).is_err(), "a different command");
+        assert!(verify_proof(&key, &assert_with(&sk, json, "n1", "https://evil.example", RP_ID, 0x05), "n1", &origins, RP_ID).is_err(), "another origin");
+        assert!(verify_proof(&key, &assert_with(&sk, json, "n1", ORIGIN, "evil.example", 0x05), "n1", &origins, RP_ID).is_err(), "another relying party");
+        assert!(verify_proof(&key, &assert_with(&sk, json, "n1", ORIGIN, RP_ID, 0x01), "n1", &origins, RP_ID).is_err(), "no Face ID (UV) flag");
+        let other = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        assert!(verify_proof(&key, &assert_with(&other, json, "n1", ORIGIN, RP_ID, 0x05), "n1", &origins, RP_ID).is_err(), "another key");
+        let deny = Command::PermissionResponse { session: "s".into(), request_id: "r".into(), decision: json!({ "behavior": "deny" }) };
+        assert!(!deny.needs_presence());
+    }
 
     #[test]
     fn proof_binds_secret_and_both_keys() {

@@ -17,6 +17,8 @@ hmac = "0.12"
 sha2 = "0.10"
 getrandom = "0.4"
 data-encoding = "2"
+# Passkey proofs (WebAuthn ES256): the Mac checks Face ID on what runs Claude.
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 
 # The web app (D46): the browser's crypto for randomness.
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
@@ -24,3 +26,4 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
