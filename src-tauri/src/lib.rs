@@ -17,6 +17,9 @@ mod migrate;
 mod notify;
 mod personal;
 mod release_update;
+mod remote;
+mod remote_peer;
+mod remote_proto;
 mod runs;
 mod selfbuild;
 mod selftest;
@@ -36,6 +39,11 @@ use tauri::Manager;
 /// Chrome's native-messaging host for the browser extension: relays to the running app and exits.
 pub fn browser_host(args: &[String]) -> i32 {
     browser::host_main(args)
+}
+
+/// Cockpit Remote's phone-side peer from a terminal (`Cockpit --remote-peer <state.json> …`).
+pub fn remote_peer(args: &[String]) -> i32 {
+    remote_peer::main(args)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -91,6 +99,7 @@ pub fn run() {
             // Recurring sessions and their start-at-login are gone (MR-200): unregister a leftover one.
             autostart_off(app.handle());
             browser::start(app.handle());
+            remote::start(app.handle(), &dir);
             if selftest::enabled() {
                 selftest::run(app.handle().clone());
             }
@@ -115,6 +124,11 @@ pub fn run() {
             eventlog::event_append,
             eventlog::events_list,
             eventlog::events_session,
+            remote::remote_status,
+            remote::remote_set_enabled,
+            remote::remote_pair_start,
+            remote::remote_pair_answer,
+            remote::remote_unpair,
             gh::gh_prs,
             gh::gh_repo,
             gh::gh_review_state,

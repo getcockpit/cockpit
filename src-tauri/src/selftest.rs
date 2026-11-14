@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "attach" || v == "move" || v == "spawn")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "attach" || v == "move" || v == "spawn" || v == "remote")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -140,7 +140,54 @@ fn doc_mode() -> bool {
     std::env::var("MR_SELFTEST").is_ok_and(|v| v == "doc")
 }
 
+fn remote_mode() -> bool {
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "remote")
+}
+
+/// Cockpit Remote (scripts/selftest-remote.sh): turns Remote on, makes a known repo, writes a
+/// pairing QR's text to `remote-offer.txt` and confirms the code like a click on "Same code: pair".
+/// The script plays the phone with `Cockpit --remote-peer` and stops the app when it's done.
+fn run_remote(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio_sleep(Duration::from_secs(2)).await;
+        let dir = std::env::temp_dir().join(format!("mr-selftest-remote-{}", ulid::Ulid::new()));
+        let _ = std::fs::create_dir_all(&dir);
+        for args in [vec!["init", "-q", "-b", "main"], vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"]] {
+            let _ = crate::sys::cmd("git").arg("-C").arg(&dir).args(&args).status();
+        }
+        crate::eventlog::record(&app, None, "ui.workspace_folder_set", &serde_json::json!({ "id": crate::workspaces::PERSONAL, "folder": dir.display().to_string() }), None);
+        let remote = app.state::<crate::remote::Remote>();
+        if let Err(e) = crate::remote::remote_set_enabled(app.clone(), remote.clone(), true) {
+            eprintln!("[selftest] remote on: {e}");
+            std::process::exit(1);
+        }
+        let offer = match crate::remote::remote_pair_start(remote.clone()) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("[selftest] pair start: {e}");
+                std::process::exit(1);
+            }
+        };
+        let data = crate::selfbuild::data_dir(&app);
+        let _ = std::fs::write(data.join("remote-offer.txt"), offer["text"].as_str().unwrap_or(""));
+        for _ in 0..600 {
+            tokio_sleep(Duration::from_millis(100)).await;
+            let st = crate::remote::remote_status(app.state::<crate::remote::Remote>());
+            if !st["pending"].is_null() {
+                let ok = crate::remote::remote_pair_answer(app.clone(), app.state::<crate::remote::Remote>(), true);
+                eprintln!("[selftest] confirmed code {}: {ok:?}", st["pending"]["code"]);
+                return;
+            }
+        }
+        eprintln!("[selftest] no phone tried to pair");
+        std::process::exit(1);
+    });
+}
+
 pub fn run(app: AppHandle) {
+    if remote_mode() {
+        return run_remote(app);
+    }
     if selfbuild_mode() {
         return run_selfbuild(app);
     }
@@ -415,6 +462,8 @@ pub fn on_message(app: &AppHandle, payload: &serde_json::Value) {
         }
         // Any other turn: keep running until the child's report reaches the parent.
         Some("sdk") if payload["message"]["type"] == "result" && spawn_mode() => {}
+        // Cockpit Remote: the script plays the phone for several turns and stops the app itself.
+        Some("sdk") if payload["message"]["type"] == "result" && remote_mode() => {}
         Some("sdk") if payload["message"]["type"] == "result" => {
             let ok = payload["message"]["is_error"] == false;
             eprintln!("[selftest] result ok={ok}: {}", payload["message"]["result"]);

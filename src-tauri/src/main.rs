@@ -7,5 +7,8 @@ fn main() {
     if args.get(1).is_some_and(|a| a == "--browser-host") {
         std::process::exit(cockpit_lib::browser_host(&args));
     }
+    if args.get(1).is_some_and(|a| a == "--remote-peer") {
+        std::process::exit(cockpit_lib::remote_peer(&args));
+    }
     cockpit_lib::run()
 }

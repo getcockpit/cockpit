@@ -41,6 +41,14 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls", "system-proxy"] }  # no "zip": updates ship as raw .exe/.AppImage, and zip 4.x has open advisories
 tauri-plugin-autostart = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Cockpit Remote (phone <-> Mac, no server of ours): QUIC dialed by public key, hole punching, E2E relay fallback.
+iroh = "1.4"
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "time", "io-util"] }
+hmac = "0.12"
+sha2 = "0.10"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+getrandom = "0.3"
+data-encoding = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
