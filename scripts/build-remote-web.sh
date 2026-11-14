@@ -14,7 +14,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 site="$root/site/remote"
 "$root/crates/remote-web/build.sh" >/dev/null
 tmp="$(mktemp -d)"
-(cd "$root/ui" && VITE_MR_WEB=1 bunx vite build --config vite.mobile.config.ts --outDir "$tmp/app" --emptyOutDir >/dev/null)
+(cd "$root/ui" && bunx tsc -p tsconfig.web.json && bunx vite build --config vite.web.config.ts --outDir "$tmp/app" --emptyOutDir >/dev/null)
 if grep -rlaq "$HOME" "$tmp/app"; then echo "ABORT: a local path is in the web app" >&2; exit 1; fi
 if ls "$tmp/app/assets" | grep -q '^backend-'; then echo "ABORT: the demo core (real-session fixtures) is in the web app" >&2; exit 1; fi
 python3 -I - "$tmp/app" "$site" "$root/ui/mobile" <<'PY'
