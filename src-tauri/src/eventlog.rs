@@ -6,7 +6,6 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection};
-#[cfg(test)]
 use rusqlite::OptionalExtension;
 use serde::Serialize;
 
@@ -203,6 +202,28 @@ impl EventLog {
         rows.collect()
     }
 
+    /// Cockpit Remote's "now" for a phone without a cache: up to `upto`, the rows of sessions that
+    /// aren't archived (their starts, asks, answers, messages, titles and turn ends, of any age) and
+    /// the workspace rows. Rows after `upto` follow through `remote::keep_light`, which applies the
+    /// same rules one row at a time.
+    pub fn now_rows(&self, upto: &str) -> rusqlite::Result<Vec<WireEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "WITH live AS (SELECT DISTINCT session_id FROM events WHERE kind = 'ui.session_requested' AND session_id NOT IN
+               (SELECT session_id FROM events e WHERE kind = 'ui.session_archived' AND id = (SELECT max(id) FROM events x
+                  WHERE x.session_id = e.session_id AND x.kind IN ('ui.session_archived', 'ui.session_unarchived', 'ui.session_requested', 'sidecar.session_started'))))
+             SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events
+             WHERE id <= ?1 AND (
+               (session_id IS NULL AND kind >= 'ui.workspace_' AND kind < 'ui.workspace`')
+               OR (session_id IN live AND (kind >= 'ui.session_' AND kind < 'ui.session`'
+                   OR kind IN ('sidecar.session_started', 'sidecar.session_ended', 'sidecar.permission_request', 'ui.permission_answered', 'ui.message_sent', 'session.titled')
+                   OR (kind = 'sidecar.sdk' AND json_extract(payload, '$.message.type') = 'result'))))
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![upto], wire_row)?;
+        rows.collect()
+    }
+
     /// One row by id (Cockpit Remote fetches events too big to stream).
     pub fn get_wire(&self, id: &str) -> rusqlite::Result<Option<WireEvent>> {
         use rusqlite::OptionalExtension as _;
@@ -210,7 +231,6 @@ impl EventLog {
         conn.query_row("SELECT id, session_id, kind, payload, anchor, created_at, origin FROM events WHERE id = ?1", params![id], wire_row).optional()
     }
 
-    #[cfg(test)]
     pub fn last_id(&self) -> rusqlite::Result<Option<String>> {
         self.conn
             .lock()
@@ -325,6 +345,25 @@ pub fn events_session(log: tauri::State<'_, EventLog>, session_id: String) -> Re
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // Cockpit Remote: a phone without a cache gets "now": live sessions' starts, asks and turn
+    // ends of any age, never their transcript detail, and nothing of archived sessions.
+    #[test]
+    fn now_rows_are_live_sessions_without_transcripts() {
+        let log = EventLog::in_memory().unwrap();
+        let ws = log.append(None, "ui.workspace_created", &json!({ "id": "w" }), None).unwrap();
+        let start = log.append(Some("s1"), "ui.session_requested", &json!({ "prompt": "old" }), None).unwrap();
+        let sdk = log.append(Some("s1"), "sidecar.sdk", &json!({ "message": { "type": "assistant" } }), None).unwrap();
+        let result = log.append(Some("s1"), "sidecar.sdk", &json!({ "message": { "type": "result" } }), None).unwrap();
+        let ask = log.append(Some("s1"), "sidecar.permission_request", &json!({ "request_id": "r" }), None).unwrap();
+        let gone = log.append(Some("s2"), "ui.session_requested", &json!({ "prompt": "archived" }), None).unwrap();
+        log.append(Some("s2"), "ui.session_archived", &json!({}), None).unwrap();
+        let upto = log.last_id().unwrap().unwrap();
+        let later = log.append(Some("s1"), "ui.message_sent", &json!({ "text": "after" }), None).unwrap();
+        let ids: Vec<String> = log.now_rows(&upto).unwrap().into_iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![ws.id, start.id, result.id, ask.id], "no transcript detail, nothing archived, nothing after upto");
+        assert!(!ids.contains(&sdk.id) && !ids.contains(&gone.id) && !ids.contains(&later.id));
+    }
 
     // MR-204: one session's rows come from the session index, never a scan of the whole log.
     #[test]

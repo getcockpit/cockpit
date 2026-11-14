@@ -65,9 +65,14 @@ impl Peer {
 
     /// Opens the pinned link and says hello with `cursor` ("" for everything).
     pub async fn link(&self, mac: EndpointAddr, cursor: &str) -> Result<Link, String> {
+        self.link_with(mac, cursor, false).await
+    }
+
+    /// `light`: ask for "now" instead of the history (see `Frame::Hello`), for phones without a cache.
+    pub async fn link_with(&self, mac: EndpointAddr, cursor: &str, light: bool) -> Result<Link, String> {
         let conn = self.ep.connect(mac, proto::ALPN_LINK).await.map_err(|e| e.to_string())?;
         let (mut send, recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-        write_frame(&mut send, &Frame::Hello { v: proto::VERSION, cursor: cursor.into() }).await?;
+        write_frame(&mut send, &Frame::Hello { v: proto::VERSION, cursor: cursor.into(), light }).await?;
         let (tx, mut frames) = mpsc::channel(64);
         n0_future::task::spawn(async move {
             let mut recv = BufReader::new(recv);
