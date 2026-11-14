@@ -6,8 +6,10 @@
 //! - `key.rs`: the phone's link key, in the iOS Keychain (this device only, Face ID or passcode).
 //! - `cache.rs`: the event cache (SQLite, iOS Data Protection), wiped on Forget.
 //! - `link.rs`: one task owns the link to the Mac: reconnects, fills the cache, sends commands.
+//! - `gate.rs`: a fresh Face ID before approvals, answers and session starts leave the phone.
 
 mod cache;
+mod gate;
 mod key;
 mod link;
 
@@ -43,7 +45,11 @@ async fn remote_pair(app: tauri::AppHandle, text: String, name: String) -> Resul
 /// One allowlisted command (`{kind, args}`, see `remote_link::proto::Command`); resolves with the Mac's ack.
 #[tauri::command]
 async fn remote_command(app: tauri::AppHandle, command: Value) -> Result<Value, String> {
-    let command = serde_json::from_value(command).map_err(|e| format!("not a Cockpit Remote command: {e}"))?;
+    let command: remote_link::proto::Command = serde_json::from_value(command).map_err(|e| format!("not a Cockpit Remote command: {e}"))?;
+    command.check()?;
+    if let Some(why) = gate::reason(&command) {
+        gate::check(&app, why).await?;
+    }
     link::command(&app, command).await
 }
 
@@ -60,7 +66,10 @@ async fn remote_forget(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "ios")]
+    let builder = builder.plugin(tauri_plugin_biometric::init());
+    builder
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;

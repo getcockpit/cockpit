@@ -345,6 +345,22 @@ mod tests {
         assert_eq!(d, json!({ "behavior": "allow", "updatedInput": { "questions": [], "answers": { "Which?": "A" } } }));
     }
 
+    /// The exact shapes the phone's UI sends (ui/src/mobile/commands.ts and its test).
+    #[test]
+    fn the_phone_ui_shapes_parse() {
+        for v in [
+            json!({ "kind": "send_prompt", "args": { "session": "s", "text": "go on" } }),
+            json!({ "kind": "permission_response", "args": { "session": "s", "request_id": "r1", "decision": { "behavior": "allow", "updatedInput": { "command": "ls" } } } }),
+            json!({ "kind": "answer_question", "args": { "session": "s", "request_id": "r2", "input": { "questions": [] }, "answers": { "Which DB?": "Postgres" } } }),
+            json!({ "kind": "interrupt", "args": { "session": "s" } }),
+            json!({ "kind": "stop_session", "args": { "session": "s" } }),
+            json!({ "kind": "start_session", "args": { "workspace_id": "personal", "repo_id": "a1b2", "prompt": "fix it" } }),
+        ] {
+            let c: Command = serde_json::from_value(v.clone()).unwrap_or_else(|e| panic!("{v}: {e}"));
+            c.check().unwrap();
+        }
+    }
+
     #[test]
     fn known_repos_come_from_the_log_and_never_leak_paths() {
         let evs = [

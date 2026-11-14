@@ -2,7 +2,8 @@
 # Cockpit Remote on the iPhone simulator (doc "Cockpit Remote", phase 2), no Claude usage: builds
 # the iOS app, starts a Mac Cockpit with Remote on (MR_SELFTEST=remote, which shows a pairing code
 # and confirms it), launches the app paired by MR_REMOTE_PAIR, and checks that the phone caught up
-# on the Mac's log. Leaves screenshots in $out. Needs Xcode with the iOS platform installed.
+# on the Mac's log and that a command from the phone (Stop, via MR_REMOTE_SMOKE) lands on the Mac.
+# Leaves screenshots in $out. Needs Xcode with the iOS platform installed.
 #   SEED=<data dir>   start the Mac from a copy of this data dir (e.g. a selftest-remote run) for real sessions
 set -euo pipefail
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
@@ -30,7 +31,7 @@ xcrun simctl boot "$dev" 2>/dev/null || true
 xcrun simctl bootstatus "$dev" -b >/dev/null
 xcrun simctl uninstall "$dev" dev.getcockpit.remote 2>/dev/null || true
 xcrun simctl install "$dev" "$app"
-SIMCTL_CHILD_MR_REMOTE_PAIR="$(cat "$data/remote-offer.txt")" xcrun simctl launch "$dev" dev.getcockpit.remote >/dev/null
+SIMCTL_CHILD_MR_REMOTE_SMOKE=stop SIMCTL_CHILD_MR_REMOTE_PAIR="$(cat "$data/remote-offer.txt")" xcrun simctl launch "$dev" dev.getcockpit.remote >/dev/null
 paired() { sqlite3 "$db" "SELECT COUNT(*) FROM events WHERE kind='ui.remote_paired'"; }
 for _ in $(seq 1 60); do [ "$(paired)" -gt "$base" ] && break; sleep 1; done
 [ "$(paired)" -gt "$base" ] || { cat "$out/mac.log" | tail -5; echo "FAILED: the simulator never paired"; exit 1; }
@@ -44,4 +45,8 @@ echo "mac rows: $mac_rows · phone rows: $phone_rows"
 # The phone only stops short by rows written after it caught up (the pairing's own row, the app's).
 missing=$(sqlite3 "$db" "ATTACH '$cache' AS p; SELECT COUNT(*) FROM main.events m WHERE m.kind <> 'sidecar.commands' AND m.id <= (SELECT max(id) FROM p.events) AND m.id NOT IN (SELECT id FROM p.events);")
 [ "$missing" = "0" ] || { echo "FAILED: $missing rows missing on the phone below its cursor"; exit 1; }
+# Phone → Mac: the debug hook sent Stop on the newest session once caught up (MR_REMOTE_SMOKE).
+for _ in $(seq 1 20); do [ "$(sqlite3 "$db" "SELECT COUNT(*) FROM events WHERE kind='ui.session_stop_requested' AND json_extract(payload,'$.origin')='remote'")" != "0" ] && break; sleep 1; done
+[ "$(sqlite3 "$db" "SELECT COUNT(*) FROM events WHERE kind='ui.session_stop_requested' AND json_extract(payload,'$.origin')='remote'")" != "0" ] || { echo "FAILED: the phone's command never reached the Mac"; exit 1; }
+echo "phone → Mac: stop logged with origin=remote"
 echo "SIM REMOTE PASSED (screenshots in $out)"
