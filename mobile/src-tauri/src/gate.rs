@@ -49,7 +49,7 @@ mod tests {
         assert!(reason(&allow).is_some());
         assert!(reason(&deny).is_none());
         assert!(reason(&Command::AnswerQuestion { session: "s".into(), request_id: "r".into(), input: json!({}), answers: [("q".to_string(), "a".to_string())].into() }).is_some());
-        assert!(reason(&Command::StartSession { workspace_id: "w".into(), repo_id: "r".into(), prompt: "p".into() }).is_some());
+        assert!(reason(&Command::StartSession { workspace_id: "w".into(), repo_id: "r".into(), prompt: "p".into(), kind: None }).is_some());
         assert!(reason(&Command::SendPrompt { session: "s".into(), text: "hi".into() }).is_none());
         assert!(reason(&Command::StopSession { session: "s".into() }).is_none());
         assert!(reason(&Command::Interrupt { session: "s".into() }).is_none());

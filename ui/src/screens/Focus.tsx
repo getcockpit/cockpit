@@ -284,7 +284,8 @@ function Composer({ s, running, onSubmit }: { s: SessionState; running: boolean;
 const HIDDEN_TOOLS = new Set(["TodoWrite", "mcp__mr__plan_set", "mcp__mr__render_view"]);
 
 // The structured transcript (decision 13): readable rows, not terminal text. ⌘R shows raw JSON.
-function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; commands: CommandRow[]; plan: SessionState["todos"]; running: boolean; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
+// onDiagram: optional; without it (the phone: the diagram model is the Mac's) no Diagram button.
+export function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, onDiscover, onReply, live }: { items: TranscriptItem[]; commands: CommandRow[]; plan: SessionState["todos"]; running: boolean; raw: boolean; diagrams: Record<string, Diagram | null>; onDiagram?: (t: { id: string; text: string }) => void; onDiscover: (what: string) => void; onReply: (text: string) => void; live: boolean }) {
   // Only the latest reply offers quick replies; older ones are history.
   const lastTextId = [...items].reverse().find((t) => t.kind === "text" || t.kind === "view")?.id;
   const end = useRef<HTMLDivElement>(null);
@@ -313,8 +314,8 @@ function Transcript({ items, commands, plan, running, raw, diagrams, onDiagram, 
   const row = (t: Exclude<Row, StepRow>, nested: boolean): React.ReactNode => t.kind === "text" ? (
         <div key={t.id} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
           {diagrams[t.id] && <FlowDiagram d={diagrams[t.id]!} />}
-          <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} actions={t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
-            <Key onClick={() => { setDrawing((d) => new Set(d).add(t.id)); onDiagram(t); }} disabled={drawing.has(t.id) && !(t.id in diagrams)}>
+          <TurnText text={t.text} onReply={onReply} live={live && t.id === lastTextId} actions={onDiagram && t.text.length >= 200 && !diagrams[t.id] && !parseReport(t.text) && (
+            <Key onClick={() => { setDrawing((d) => new Set(d).add(t.id)); onDiagram?.(t); }} disabled={drawing.has(t.id) && !(t.id in diagrams)}>
               {drawing.has(t.id) && !(t.id in diagrams) ? "Drawing…" : t.id in diagrams ? "No flow to draw · retry" : "Diagram"}
             </Key>
           )} />

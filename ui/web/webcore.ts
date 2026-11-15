@@ -31,6 +31,9 @@ const events: MrEvent[] = [];
 const ids = new Set<string>();
 const acks = new Map<string, Waiter<unknown>>();
 const sessionReqs = new Map<string, Waiter<MrEvent[]>>();
+const docReqs = new Map<string, Waiter<unknown[]>>();
+const changeReqs = new Map<string, Waiter<{ files?: unknown; diff?: string }>>();
+let docsCache: unknown[] = [];
 let peer: Promise<WebPeer> | null = null;
 let link: WebLink | null = null;
 let nextAck = 0;
@@ -91,6 +94,18 @@ function onFrame(gen: number, f: Frame) {
       const w = acks.get(String(f.id));
       acks.delete(String(f.id));
       if (f.ok) w?.resolve(f.result ?? null); else w?.reject(String(f.error ?? "the Mac refused"));
+      break;
+    }
+    case "changes": {
+      const w = changeReqs.get(String(f.id));
+      changeReqs.delete(String(f.id));
+      if (f.error) w?.reject(String(f.error)); else w?.resolve({ files: f.files, diff: f.diff as string | undefined });
+      break;
+    }
+    case "docs": {
+      const w = docReqs.get(String(f.id));
+      docReqs.delete(String(f.id));
+      w?.resolve(f.docs as unknown[]);
       break;
     }
     case "session_rows": {
@@ -265,6 +280,41 @@ async function sendCommand(command: { kind: string; args: Record<string, unknown
   return Promise.race([done, new Promise((_, reject) => setTimeout(() => reject(new Error("your Mac didn't answer in 30 s")), 30_000))]);
 }
 
+// Working docs live on the Mac (folded there); the desktop's useDocs asks for them on every doc
+// row, so keep the last answer for when the link is down.
+async function docsList(): Promise<unknown[]> {
+  if (!link) return docsCache;
+  const id = `d${++nextReq}`;
+  const done = new Promise<unknown[]>((resolve, reject) => docReqs.set(id, { resolve, reject }));
+  link.fetch_docs(id);
+  docsCache = await Promise.race([done, new Promise<unknown[]>((_, reject) => setTimeout(() => reject(new Error("timed out")), 30_000))]);
+  return docsCache;
+}
+
+// The desktop's change screens ask by folder; the phone names the session instead (the Mac maps it
+// back to that session's own folder), found from the session's start row here.
+function sessionFor(cwd: string): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.kind === "ui.session_requested" && (e.payload as { cwd?: string })?.cwd === cwd) return e.session_id;
+  }
+  return null;
+}
+
+async function changes(cwd: string, path: string): Promise<{ files?: unknown; diff?: string }> {
+  const session = sessionFor(cwd);
+  if (!session) throw new Error("no session for these changes");
+  if (!link) throw new Error("not connected to your Mac");
+  const id = `c${++nextReq}`;
+  const done = new Promise<{ files?: unknown; diff?: string }>((resolve, reject) => changeReqs.set(id, { resolve, reject }));
+  link.fetch_changes(id, session, path);
+  return Promise.race([done, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out")), 30_000))]);
+}
+
+// The desktop's screens record the user's actions with event_append; the Mac accepts these from a
+// phone (remote_link::proto::LOG_UI_KINDS). Others are desktop-only bookkeeping: skipped quietly.
+const LOG_UI_KINDS = new Set(["ui.review_noted", "ui.review_unnoted", "ui.address_chosen", "ui.doc_note", "ui.doc_decision", "ui.doc_edit", "ui.diff_note", "ui.diff_notes_sent", "ui.changes_approved", "ui.session_renamed", "ui.session_archived", "ui.session_unarchived"]);
+
 async function sessionRows(session: string): Promise<MrEvent[]> {
   if (!link) throw new Error("not connected");
   const id = `s${++nextReq}`;
@@ -321,6 +371,20 @@ async function handle(cmd: string, a: Record<string, unknown>): Promise<unknown>
       return out.mac;
     }
     case "remote_command": return sendCommand(a.command as { kind: string; args: Record<string, unknown> });
+    // The desktop's own components (Flows, PlanPanel, CatalogView, AskRow, docs) call these.
+    case "session_send": return sendCommand({ kind: "send_prompt", args: { session: String(a.session), text: String(a.text ?? "") } });
+    case "permission_respond": return sendCommand({ kind: "permission_response", args: { session: String(a.session), request_id: String(a.requestId), decision: a.decision as Record<string, unknown> } });
+    case "session_interrupt": return sendCommand({ kind: "interrupt", args: { session: String(a.session) } });
+    case "session_stop": return sendCommand({ kind: "stop_session", args: { session: String(a.session) } });
+    case "event_append": {
+      const kind = String(a.kind);
+      if (!LOG_UI_KINDS.has(kind)) return null;
+      return sendCommand({ kind: "log_ui", args: { session: (a.sessionId as string) ?? null, kind, payload: (a.payload as Record<string, unknown>) ?? {}, anchor: (a.anchor as string) ?? null } });
+    }
+    case "docs_list": return docsList();
+    case "session_changes": return (await changes(String(a.cwd), "")).files ?? [];
+    case "session_diff": return (await changes(String(a.cwd), String(a.path))).diff ?? "";
+    case "remote_doc_send": return sendCommand({ kind: "doc_send", args: { doc_id: String(a.docId), regenerate: !!a.regenerate } });
     case "remote_push_enable": return enablePush();
     case "remote_update": return update();
     case "remote_fetch": return null;
