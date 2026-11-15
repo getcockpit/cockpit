@@ -69,3 +69,13 @@ select.mm-input { font-family: var(--mr-font); }
    into a sliver; text gets at least ~14 characters before it moves to its own line. */
 .mm-desk .mr-row { flex-wrap: wrap; }
 .mm-desk .mr-row > .mr-grow, .mm-desk .mr-row > span:not([class]) { flex: 1 1 180px; min-width: 0; }
+/* Timestamps: on a phone the time is a small line above its block, not a left gutter (the
+   desktop's --mr-stamp-w column ate a centimetre of every row). Repeats stay hidden (no hover). */
+.mm-desk { --mr-stamp-w: 0px; }
+.mm-desk .mr-stamped { display: flex; flex-direction: column; align-items: stretch; margin-left: 0 !important; }
+.mm-desk .mr-stamped[data-indent] { padding-left: 12px; }
+.mm-desk .mr-stamped > .mr-stamp { text-align: left; padding: 6px 14px 2px; }
+.mm-desk .mr-stamp[data-dup] { display: none; }
+.mm-desk .mr-day { padding-left: 14px; margin-left: 0 !important; }
+/* iOS zooms into any field under 16 px on focus: every field is 16 px. */
+input, textarea, select, .mm-input { font-size: 16px !important; }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "../state/listen";
 import { hydrate, useAppState } from "../state/store";
@@ -252,10 +252,18 @@ function Focus({ s, live, docs, onOpenDoc, onClosed }: { s: SessionState; live: 
   const [changes, setChanges] = useState(false);
   // The light sync carries no transcripts: fetch this session's when it opens.
   useEffect(() => { hydrate(s.id); window.scrollTo(0, document.body.scrollHeight); }, [s.id]);
-  // The transcript arrives after opening: land at its end then, where the asks are (as the
-  // desktop's Focus does); a new question scrolls into view.
-  const loaded = s.transcript.length > 0;
-  useEffect(() => { if (loaded) window.scrollTo(0, document.body.scrollHeight); }, [s.id, loaded]);
+  // Follow the conversation: while you're at (or near) the end, every new message, step or plan
+  // change keeps you there; scroll up to read and it stops following until you're back down.
+  const stuck = useRef(true);
+  useEffect(() => {
+    const on = () => { stuck.current = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 160; };
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
+  useEffect(() => { stuck.current = true; }, [s.id]);
+  const last = s.transcript.at(-1);
+  const progress = `${s.transcript.length}:${last?.id}:${last && "text" in last ? last.text.length : 0}:${s.todos.map((t) => t.status[0]).join("")}:${s.pending.length}`;
+  useLayoutEffect(() => { if (stuck.current) window.scrollTo(0, document.documentElement.scrollHeight); }, [progress]);
   const asks = s.pending.map((a) => a.requestId).join(",");
   useEffect(() => { if (asks) document.querySelector("[data-mr=MobileAsk]")?.scrollIntoView({ block: "center" }); }, [asks]);
   const working = ["working", "starting", "almost"].includes(tile.state);
