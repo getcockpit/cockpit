@@ -252,6 +252,12 @@ function Focus({ s, live, docs, onOpenDoc, onClosed }: { s: SessionState; live: 
   const [changes, setChanges] = useState(false);
   // The light sync carries no transcripts: fetch this session's when it opens.
   useEffect(() => { hydrate(s.id); window.scrollTo(0, document.body.scrollHeight); }, [s.id]);
+  // The transcript arrives after opening: land at its end then, where the asks are (as the
+  // desktop's Focus does); a new question scrolls into view.
+  const loaded = s.transcript.length > 0;
+  useEffect(() => { if (loaded) window.scrollTo(0, document.body.scrollHeight); }, [s.id, loaded]);
+  const asks = s.pending.map((a) => a.requestId).join(",");
+  useEffect(() => { if (asks) document.querySelector("[data-mr=MobileAsk]")?.scrollIntoView({ block: "center" }); }, [asks]);
   const working = ["working", "starting", "almost"].includes(tile.state);
   const reply = (text: string) => void api.send(s.id, text).catch(() => {});
   const mine = docsOf(docs, s.id);
@@ -276,12 +282,13 @@ function Focus({ s, live, docs, onOpenDoc, onClosed }: { s: SessionState; live: 
           </button>
         );
       })}
-      {s.pending.map((a) => <Ask key={a.requestId} s={s} a={a} live={live} />)}
       <div className="mm-desk">
         {changes ? <ReviewChanges s={s} start={Object.keys(s.files)[0] ?? ""} onClose={() => setChanges(false)} /> : s.review ? <ReviewView s={s} /> : s.address ? <AddressView s={s} /> : (
           <Transcript items={s.transcript} commands={s.commands} plan={s.todos} running={working} raw={false} diagrams={s.diagrams} onDiscover={(what) => reply(`Tell me more about ${what}. Don't change anything.`)} onReply={reply} live={live && !working} />
         )}
       </div>
+      {/* What waits on you, at the end where Focus lands (not above a long transcript). */}
+      {s.pending.map((a) => <Ask key={a.requestId} s={s} a={a} live={live} />)}
       {err && <p className="mm-error mm-pad">{err}</p>}
       <Composer s={s} live={live} />
     </main>
