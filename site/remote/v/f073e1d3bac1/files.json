@@ -1,9 +1,17 @@
 {
-"version": "2c698e363707",
+"version": "f073e1d3bac1",
 "files": [
 [
 "apple-touch-icon.png",
 "8e764095b383616f9af67f4c24f54210c9821ca150351af6bf8e8b342ce6bad1"
+],
+[
+"assets/Terminal-B89B-nHX.js",
+"611871661a3c8a935f7cceb0ba260f7f71073ad66a4b95b7987461bbe6c27e0e"
+],
+[
+"assets/Terminal-BrP-ENHg.css",
+"0e5386f16cb4be78a2fe911e014a810da76ea2db47d8c8b2a966516b2fd5270b"
 ],
 [
 "assets/atkinson-hyperlegible-mono-latin-400-normal-CmMGer93.woff2",
@@ -54,16 +62,16 @@
 "acd5d0771650ceddafa2beb172dc7ada45581f7641db03a70f4a13677ce799d1"
 ],
 [
-"assets/index-CUCKDhxx.js",
-"e7b565da6670860326e7e657670ae6b7ad0dbeda50ec8c61c3a9cdaac016c283"
+"assets/index-DoxU1hbe.css",
+"c4e978fb8b7846b43060b625a2c57c73093d4c6f2df2fa6e7c285524b7430413"
 ],
 [
-"assets/index-pHsqtLl4.css",
-"0b5813e770815a80c474dec2b8779154ab095c7bb255237b51e76a1d34b3c994"
+"assets/index-lE_HQUlx.js",
+"661dfcd11796816a7f7ae337d2a12626c4fc21f6f1bd8f489915c24833794a7e"
 ],
 [
-"assets/remote_web_bg-Cmt1iPFJ.wasm",
-"4e0b8bee4dfcb86910e5f9b8e5299740bbd7e49a0fedff6916d5820f1d004c9e"
+"assets/remote_web_bg-BnIZEuau.wasm",
+"f3ffa5bb8e102d10ce92b285197afbdf587fc48ee662b8e353e88527b1dd090b"
 ],
 [
 "icon-192.png",
@@ -75,7 +83,7 @@
 ],
 [
 "index.html",
-"7c1de690caf2078476e18f4191785d10e33d9bf845c4a558bab46a9f5d5ed74a"
+"2963588627023575308543bb8222be9e6e8948638ecac0a2cf108508b4e4da04"
 ],
 [
 "manifest.webmanifest",
