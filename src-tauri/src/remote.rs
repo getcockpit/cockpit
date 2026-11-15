@@ -89,6 +89,10 @@ pub trait Host: Send + Sync + 'static {
     fn event(&self, id: &str) -> Option<Stored>;
     /// One session's last `limit` rows, oldest first.
     fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored>;
+    /// A session's changed files (`path` None) or one file's diff, in that session's own folder.
+    fn changes(&self, _session: &str, _path: Option<&str>) -> Result<Value, String> {
+        Err("no changes here".into())
+    }
     /// Working docs touched lately (folded on the Mac), as the desktop's `docs_list` gives them.
     fn docs(&self) -> Vec<Value> {
         Vec::new()
@@ -480,6 +484,20 @@ impl Link {
                                 Err(e) => Frame::Ack { id, ok: false, result: None, error: Some(e) },
                             }
                         }
+                        Some(Ok(Frame::FetchChanges { id, session, path })) => {
+                            let s = shared.clone();
+                            let want_diff = path.is_some();
+                            let out = if s.host.session_exists(&session) {
+                                tokio::task::spawn_blocking(move || s.host.changes(&session, path.as_deref())).await.map_err(|e| e.to_string())?
+                            } else {
+                                Err(format!("unknown session {session}"))
+                            };
+                            match out {
+                                Ok(v) if want_diff => Frame::Changes { id, files: None, diff: v.as_str().map(str::to_owned), error: None },
+                                Ok(v) => Frame::Changes { id, files: Some(v), diff: None, error: None },
+                                Err(e) => Frame::Changes { id, files: None, diff: None, error: Some(e) },
+                            }
+                        }
                         Some(Ok(Frame::FetchDocs { id })) => {
                             let s = shared.clone();
                             let docs = tokio::task::spawn_blocking(move || s.host.docs()).await.map_err(|e| e.to_string())?;
@@ -653,7 +671,7 @@ impl Light {
         if r.kind.starts_with("doc.") || r.kind.starts_with("ui.doc_") {
             return true;
         }
-        let Some(s) = r.session_id.as_deref() else { return r.kind.starts_with("ui.workspace_") };
+        let Some(s) = r.session_id.as_deref() else { return r.kind.starts_with("ui.workspace_") || r.kind == "sidecar.limits" };
         match r.kind.as_str() {
             "ui.session_requested" | "ui.session_unarchived" => {
                 self.live.insert(s.to_owned());
@@ -705,6 +723,17 @@ impl Host for AppHost {
         let log = self.0.state::<crate::eventlog::EventLog>();
         // Like the desktop's first load: archived sessions come without their transcripts.
         log.list_wire(None, Some(after), limit as i64, true).unwrap_or_default().into_iter().filter_map(stored).collect()
+    }
+
+    fn changes(&self, session: &str, path: Option<&str>) -> Result<Value, String> {
+        use tauri::Manager;
+        // The session's own folder, from its start row: the worktree it runs in, else where it started.
+        let rows = self.0.state::<crate::eventlog::EventLog>().list(Some(session), None, 100_000).map_err(|e| e.to_string())?;
+        let cwd = rows.iter().rev().find(|e| e.kind == "ui.session_requested").and_then(|e| e.payload["cwd"].as_str().map(str::to_owned)).ok_or("no folder for this session")?;
+        match path {
+            None => crate::changes::session_changes(self.0.clone(), cwd).map(|f| serde_json::to_value(f).unwrap_or_default()),
+            Some(p) => crate::changes::session_diff(self.0.clone(), cwd, p.to_owned()).map(Value::String),
+        }
     }
 
     fn docs(&self) -> Vec<Value> {
@@ -1314,6 +1343,15 @@ mod tests {
         let ran = fake.ran.lock().unwrap().clone();
         assert!(ran.contains(&Resolved::LogUi { session: Some("s1".into()), kind: "ui.review_noted".into(), payload: serde_json::json!({ "finding_id": "f1" }), anchor: Some("review:f1".into()) }));
         assert!(ran.contains(&Resolved::Start { cwd: "/u/app".into(), workspace: "personal".into(), prompt: "/review 12".into(), kind: "review".into() }));
+        // Changes only for a session that exists (the Mac maps it to that session's folder).
+        link.send(&Frame::FetchChanges { id: "c1".into(), session: "nope".into(), path: None }).await.unwrap();
+        loop {
+            if let Frame::Changes { id, error, files, .. } = link.next().await.unwrap() {
+                assert_eq!(id, "c1");
+                assert!(files.is_none() && error.unwrap().contains("unknown session"));
+                break;
+            }
+        }
         // Docs on request.
         link.send(&Frame::FetchDocs { id: "d1".into() }).await.unwrap();
         loop {
@@ -1376,7 +1414,8 @@ mod tests {
         let row = |sid: Option<&str>, kind: &str, payload: serde_json::Value| Stored { id: "1".into(), kind: kind.into(), session_id: sid.map(Into::into), created_at: 0, json: serde_json::json!({ "kind": kind, "payload": payload }).to_string() };
         let mut l = Light::default();
         assert!(l.keep(&row(None, "ui.workspace_created", serde_json::json!({}))));
-        assert!(!l.keep(&row(None, "sidecar.limits", serde_json::json!({}))));
+        assert!(l.keep(&row(None, "sidecar.limits", serde_json::json!({}))), "usage limits, for the phone's menu");
+        assert!(!l.keep(&row(None, "sidecar.ready", serde_json::json!({}))));
         assert!(!l.keep(&row(Some("s"), "sidecar.permission_request", serde_json::json!({}))), "unknown session");
         assert!(l.keep(&row(Some("s"), "ui.session_requested", serde_json::json!({}))));
         assert!(l.keep(&row(Some("s"), "sidecar.permission_request", serde_json::json!({}))));

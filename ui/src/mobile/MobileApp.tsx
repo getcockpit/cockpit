@@ -6,9 +6,18 @@ import { pickTile } from "../picker/pick";
 import { sessionTitle } from "../picker/title";
 import { LABEL } from "../components";
 import { shortError } from "../components/ErrorLine";
-import type { PendingAsk, SessionState, TranscriptItem } from "../state/types";
+import type { PendingAsk, SessionState } from "../state/types";
 import * as cmd from "./commands";
 import { pickWorkspace, workspaceChips } from "./workspaces";
+import { api } from "../state/store";
+import { Transcript } from "../screens/Focus";
+import { ReviewChanges } from "../screens/ReviewChanges";
+import { AddressView, ReviewView } from "../screens/Flows";
+import { PlanPanel } from "../components/PlanPanel";
+import { CatalogView } from "../components/CatalogView";
+import { Markdown } from "../components/Markdown";
+import { promptFor } from "../screens/StartPicker";
+import { blockView, docApi, docsOf, isOpenQuestion, orderedBlocks, SECTION_LABEL, useDocs, type Doc } from "../state/docs";
 
 // Cockpit Remote on the iPhone (doc "Cockpit Remote", phases 2 and 4). The Mac is the brain: the
 // mobile core (mobile/src-tauri) mirrors its event log, and the desktop's own store and reducer
@@ -123,6 +132,10 @@ function Paired({ remote }: { remote: RemoteState }) {
   }, []);
   const [menu, setMenu] = useState(false);
   const [starting, setStarting] = useState(false);
+  // Working docs live on the Mac; the desktop's hook refetches them whenever a doc row lands.
+  const docs = useDocs() ?? [];
+  const [openDoc, setOpenDoc] = useState<string | null>(null);
+  const doc = openDoc ? docs.find((d) => d.id === openDoc) ?? null : null;
   // The workspace on show, remembered on this phone; a deleted one falls back to All.
   const [chosenWs, setChosenWs] = useState<string | null>(() => localStorage.getItem("mr.remote.workspace"));
   const ws = pickWorkspace(chosenWs, state.workspaces);
@@ -133,27 +146,32 @@ function Paired({ remote }: { remote: RemoteState }) {
     .sort((a, b) => (RANK[a.tile.state] ?? 9) - (RANK[b.tile.state] ?? 9) || lastAt(b.s) - lastAt(a.s)), [state.sessions]);
   const chips = workspaceChips(state.workspaces, allRows.map((r) => ({ s: r.s, needs: r.tile.state === "needs_you" })));
   const rows = ws === "all" ? allRows : allRows.filter((r) => r.s.workspace === ws);
-  const session = open ? state.sessions[open] : null;
+  const session = open && !doc ? state.sessions[open] : null;
+  // Docs waiting on your answers, for the sessions on show.
+  const shown = new Set(rows.map((r) => r.s.id));
+  // Docs whose session isn't known here (archived, or synced light) still show; a known session
+  // in another workspace hides its doc with it.
+  const askingDocs = docs.filter((d) => (!d.session_id || shown.has(d.session_id) || !state.sessions[d.session_id]) && orderedBlocks(d).some(isOpenQuestion));
   const needs = rows.filter((r) => r.tile.state === "needs_you").length;
   const lamp = remote.connected ? (remote.live ? "live" : "sync") : "off";
 
   return (
     <div className="mm-screen">
       <header className="mm-band" data-mr="MobileBar">
-        {session ? <button type="button" className="mr-key" onClick={() => setOpen(null)}>‹ Wall</button> : <strong className="mm-grow">{remote.paired?.name}</strong>}
-        {session && <span className="mm-grow" />}
+        {doc ? <button type="button" className="mr-key" onClick={() => setOpenDoc(null)}>‹ Back</button> : session ? <button type="button" className="mr-key" onClick={() => setOpen(null)}>‹ Wall</button> : <strong className="mm-grow">{remote.paired?.name}</strong>}
+        {(session || doc) && <span className="mm-grow" />}
         <span data-mr="MobileLink" data-mr-source={lamp} className="mm-link" data-on={lamp}>
           {remote.connected ? (remote.live ? "Live" : "Catching up…") : remote.error ? "Mac unreachable" : "Connecting…"}
         </span>
-        {!session && <button type="button" className="mr-key" data-mr="MobileStartOpen" onClick={() => { setMenu(false); setStarting(!starting); }}>＋</button>}
-        {!session && <button type="button" className="mr-key" aria-label="Menu" onClick={() => { setStarting(false); setMenu(!menu); }}>⋯</button>}
+        {!session && !doc && <button type="button" className="mr-key" data-mr="MobileStartOpen" onClick={() => { setMenu(false); setStarting(!starting); }}>＋</button>}
+        {!session && !doc && <button type="button" className="mr-key" aria-label="Menu" onClick={() => { setStarting(false); setMenu(!menu); }}>⋯</button>}
       </header>
       {!session && <InstallHint remote={remote} />}
       {!session && <UpdateBanner remote={remote} />}
-      {menu && !session && <Menu remote={remote} onClose={() => setMenu(false)} />}
+      {menu && !session && <Menu remote={remote} usage={state.usage} onClose={() => setMenu(false)} />}
       {starting && !session && <Start known={remote.known} live={remote.connected} workspace={ws === "all" ? null : ws} onClose={() => setStarting(false)} onStarted={(id) => { setStarting(false); setOpen(id); }} />}
       {!remote.connected && remote.error && <p className="mm-note">{remote.error}. Showing what this phone last saw; it retries by itself.</p>}
-      {session ? <Focus s={session} live={remote.connected} /> : (
+      {doc ? <DocReader d={doc} live={remote.connected} /> : session ? <Focus s={session} live={remote.connected} docs={docs} onOpenDoc={setOpenDoc} onClosed={() => setOpen(null)} /> : (
         <main data-mr="MobileWall" className="mm-list">
           {state.workspaces.length > 1 && (
             <nav data-mr="MobileWorkspaces" className="mm-ws" aria-label="Workspaces">
@@ -168,12 +186,19 @@ function Paired({ remote }: { remote: RemoteState }) {
           {!state.loaded ? <p className="mm-dim mm-pad">Loading…</p> : rows.length === 0 ? <p className="mm-dim mm-pad">{ws === "all" ? "No sessions on the Mac yet." : `No sessions in ${chips.find((c) => c.id === ws)?.name ?? "this workspace"}.`}</p> : (
             <>
               {needs > 0 && <p className="mm-section" data-on="needs">{needs} need{needs === 1 ? "s" : ""} you</p>}
+              {askingDocs.map((d) => (
+                <button key={d.id} type="button" className="mm-row" data-mr="MobileDocAsks" data-mr-source={d.id} data-state="needs_you" onClick={() => setOpenDoc(d.id)}>
+                  <span className="mm-lamp" data-state="needs_you" />
+                  <span className="mm-grow mm-col"><b className="mm-clip">▤ {d.title}</b><span className="mm-dim">{orderedBlocks(d).filter(isOpenQuestion).length} question(s) for you</span></span>
+                </button>
+              ))}
               {rows.map(({ s, tile }) => (
                 <button key={s.id} type="button" className="mm-row" data-mr="MobileTile" data-mr-source={s.id} data-state={tile.state} onClick={() => setOpen(s.id)}>
                   <span className="mm-lamp" data-state={tile.state} />
                   <span className="mm-grow mm-col">
                     <b className="mm-clip">{sessionTitle(s)}</b>
-                    <span className="mm-dim mm-clip">{LABEL[tile.state]}{tile.doing && (tile.doing !== "Starting…" || tile.state === "starting") ? ` · ${tile.doing}` : ""}</span>
+                    <span className="mm-dim mm-clip">{LABEL[tile.state]}{tile.doing && (tile.doing !== "Starting…" || tile.state === "starting") ? ` · ${tile.doing}` : ""}{tile.progressLabel ? ` · ${tile.progressLabel}` : ""}</span>
+                    {tile.progress != null && <span className="mm-progress" aria-label={tile.progressLabel}><span style={{ width: `${Math.round(tile.progress * 100)}%` }} /></span>}
                   </span>
                 </button>
               ))}
@@ -185,7 +210,7 @@ function Paired({ remote }: { remote: RemoteState }) {
   );
 }
 
-function Menu({ remote, onClose }: { remote: RemoteState; onClose: () => void }) {
+function Menu({ remote, onClose, usage }: { remote: RemoteState; onClose: () => void; usage?: { fiveHour: number | null; weekly: number | null } }) {
   const [msg, setMsg] = useState("");
   const forget = async () => {
     if (!confirm(`Forget ${remote.paired?.name}? This phone's copy of its sessions is wiped, and pairing again needs the Mac.`)) return;
@@ -194,6 +219,9 @@ function Menu({ remote, onClose }: { remote: RemoteState; onClose: () => void })
   return (
     <div data-mr="MobileMenu" className="mm-sheet mm-pad">
       <span className="mm-dim">Paired with {remote.paired?.name}. Everything travels end to end encrypted, straight between this phone and the Mac.{remote.version ? ` App version ${remote.version}, checked against your Mac's Cockpit.` : ""}</span>
+      {usage && (usage.fiveHour != null || usage.weekly != null) && (
+        <span data-mr="MobileUsage">Claude usage: {usage.fiveHour != null ? `${Math.round(usage.fiveHour * 100)}% of 5 hours` : ""}{usage.fiveHour != null && usage.weekly != null ? " · " : ""}{usage.weekly != null ? `${Math.round(usage.weekly * 100)}% of the week` : ""}</span>
+      )}
       {remote.web && <button type="button" className="mr-key mm-wide" data-tone="primary" data-mr="MobileNotify" onClick={() => void invoke<string>("remote_push_enable").then(setMsg, (e) => setMsg(shortError(e)))}>Turn on notifications</button>}
       <button type="button" className="mr-key mm-wide" onClick={() => void forget()}>Forget this Mac</button>
       {msg && <p className="mm-error">{msg}</p>}
@@ -215,12 +243,18 @@ function useSend() {
   return { busy, err, run };
 }
 
-function Focus({ s, live }: { s: SessionState; live: boolean }) {
+function Focus({ s, live, docs, onOpenDoc, onClosed }: { s: SessionState; live: boolean; docs: Doc[]; onOpenDoc: (id: string) => void; onClosed: () => void }) {
   const tile = pickTile(s);
   const { busy, err, run } = useSend();
+  const [actions, setActions] = useState(false);
+  // The desktop's change review (files, diffs, line notes, "looks good → PR"), fetched from the
+  // session's own folder on the Mac.
+  const [changes, setChanges] = useState(false);
   // The light sync carries no transcripts: fetch this session's when it opens.
   useEffect(() => { hydrate(s.id); window.scrollTo(0, document.body.scrollHeight); }, [s.id]);
   const working = ["working", "starting", "almost"].includes(tile.state);
+  const reply = (text: string) => void api.send(s.id, text).catch(() => {});
+  const mine = docsOf(docs, s.id);
   return (
     <main data-mr="MobileFocus" data-mr-source={s.id} className="mm-col mm-focus">
       <div className="mm-pad mm-col" style={{ gap: 4 }}>
@@ -228,14 +262,99 @@ function Focus({ s, live }: { s: SessionState; live: boolean }) {
         <span className="mm-row-flat">
           <span className="mm-dim mm-grow"><span className="mm-lamp" data-state={tile.state} /> {LABEL[tile.state]}{tile.progressLabel ? ` · ${tile.progressLabel}` : ""}</span>
           {working && <button type="button" className="mr-key" data-mr="MobileInterrupt" disabled={!live || !!busy} onClick={() => void run("interrupt", cmd.interrupt(s.id))}>{busy === "interrupt" ? "Stopping…" : "Interrupt"}</button>}
+          {Object.keys(s.files).length > 0 && <button type="button" className="mr-key" data-mr="MobileChanges" onClick={() => setChanges(!changes)}>{changes ? "Transcript" : `Changes · ${Object.keys(s.files).length}`}</button>}
+          <button type="button" className="mr-key" aria-label="Session actions" data-mr="MobileSessionActions" onClick={() => setActions(!actions)}>⋯</button>
         </span>
       </div>
+      {actions && <SessionActions s={s} live={live} onClosed={onClosed} />}
+      {s.todos.length > 0 && <div className="mm-desk"><PlanPanel s={s} /></div>}
+      {mine.map((d) => {
+        const open = orderedBlocks(d).filter(isOpenQuestion).length;
+        return (
+          <button key={d.id} type="button" className="mm-row" data-mr="MobileDoc" data-mr-source={d.id} data-state={open ? "needs_you" : undefined} onClick={() => onOpenDoc(d.id)}>
+            <span className="mm-grow mm-col"><b className="mm-clip">▤ {d.title}</b><span className="mm-dim">{open ? `${open} question(s) for you` : `Working doc · v${d.version}`}</span></span>
+          </button>
+        );
+      })}
       {s.pending.map((a) => <Ask key={a.requestId} s={s} a={a} live={live} />)}
-      <ol className="mm-transcript">
-        {s.transcript.map((t) => <Item key={t.id} t={t} />)}
-      </ol>
+      <div className="mm-desk">
+        {changes ? <ReviewChanges s={s} start={Object.keys(s.files)[0] ?? ""} onClose={() => setChanges(false)} /> : s.review ? <ReviewView s={s} /> : s.address ? <AddressView s={s} /> : (
+          <Transcript items={s.transcript} commands={s.commands} plan={s.todos} running={working} raw={false} diagrams={s.diagrams} onDiscover={(what) => reply(`Tell me more about ${what}. Don't change anything.`)} onReply={reply} live={live && !working} />
+        )}
+      </div>
       {err && <p className="mm-error mm-pad">{err}</p>}
       <Composer s={s} live={live} />
+    </main>
+  );
+}
+
+// Rename and archive, as the desktop's session menu does (the same ui.* rows).
+function SessionActions({ s, live, onClosed }: { s: SessionState; live: boolean; onClosed: () => void }) {
+  const [msg, setMsg] = useState("");
+  const rename = async () => {
+    const name = prompt("Name this session", sessionTitle(s));
+    if (name == null) return;
+    try { await api.log("ui.session_renamed", { name: name.trim() }, s.id); } catch (e) { setMsg(shortError(e)); }
+  };
+  const archive = async () => {
+    if (!confirm("Mark it done? It leaves the Wall and stops if it's running.")) return;
+    try { await api.log("ui.session_archived", { by: "phone" }, s.id); onClosed(); } catch (e) { setMsg(shortError(e)); }
+  };
+  return (
+    <div data-mr="MobileSessionMenu" className="mm-sheet mm-pad">
+      <button type="button" className="mr-key mm-wide" disabled={!live} onClick={() => void rename()}>Rename</button>
+      <button type="button" className="mr-key mm-wide" disabled={!live} onClick={() => void archive()}>Done · archive</button>
+      {msg && <p className="mm-error">{msg}</p>}
+    </div>
+  );
+}
+
+// A working doc on the phone: its blocks in order with their views, your answers to its
+// questions, notes, and Send (the desktop's doc actions: the same ui.doc_* rows and doc_feedback).
+function DocReader({ d, live }: { d: Doc; live: boolean }) {
+  const [msg, setMsg] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [picks, setPicks] = useState<Record<string, string[]>>({});
+  const [body, setBody] = useState<Record<string, boolean>>({});
+  const pending = d.pending_notes.length + d.pending_changes.length;
+  const act = async (f: () => Promise<unknown>, done = "") => { setMsg(""); try { await f(); setMsg(done); } catch (e) { setMsg(shortError(e)); } };
+  return (
+    <main data-mr="MobileDocReader" data-mr-source={d.id} className="mm-col mm-focus">
+      <div className="mm-pad mm-col" style={{ gap: 4 }}>
+        <b>▤ {d.title}</b>
+        <span className="mm-dim">Working doc · v{d.version}{pending ? ` · ${pending} change(s) not sent yet` : ""}</span>
+        {pending > 0 && <button type="button" className="mr-key mm-wide" data-tone="primary" data-mr="MobileDocSend" disabled={!live} onClick={() => void act(() => invoke("remote_doc_send", { docId: d.id, regenerate: true }), "Sent: Claude is updating the doc.")}>Send to Claude</button>}
+        {msg && <span className="mm-dim">{msg}</span>}
+      </div>
+      {orderedBlocks(d).map((b) => {
+        const opts = b.data?.options ?? [];
+        const multi = !!b.data?.multiSelect;
+        const chosen = picks[b.id] ?? [];
+        return (
+          <section key={b.id} className="mm-block" data-mr="MobileDocBlock" data-mr-source={b.id} data-open={isOpenQuestion(b) || undefined}>
+            <span className="mm-dim mm-mono">{SECTION_LABEL[b.section] ?? b.section}</span>
+            <b>{b.takeaway}</b>
+            {b.key && <span className="mm-dim">{b.key}</span>}
+            {blockView(b).length > 0 && <div className="mm-desk"><CatalogView id={b.id} title="" blocks={blockView(b)} onReply={(t) => void act(() => docApi.note(d, b.id, t), "Noted.")} live={false} /></div>}
+            {b.body && (body[b.id] ? <div className="mm-text"><Markdown text={b.body} /></div> : <button type="button" className="mr-key" onClick={() => setBody((x) => ({ ...x, [b.id]: true }))}>Read more</button>)}
+            {b.section === "question" && (b.decision ? <span className="mm-ok">Decided: {b.decision}</span> : (
+              <div className="mm-col" style={{ gap: 6 }}>
+                {opts.map((o) => (
+                  <button key={o.label} type="button" className="mm-option" aria-pressed={chosen.includes(o.label)} disabled={!live}
+                    onClick={() => multi ? setPicks((p) => ({ ...p, [b.id]: chosen.includes(o.label) ? chosen.filter((x) => x !== o.label) : [...chosen, o.label] })) : void act(() => docApi.decide(d, b.id, o.label), "Decided. Send to Claude when you're done.")}>
+                    <b>{o.label}</b>{o.description && <span className="mm-dim">{o.description}</span>}
+                  </button>
+                ))}
+                {multi && <button type="button" className="mr-key" data-tone="needs" disabled={!live || !chosen.length} onClick={() => void act(() => docApi.decide(d, b.id, chosen.join(", ")), "Decided.")}>Decide</button>}
+              </div>
+            ))}
+            <form className="mm-row-flat" onSubmit={(e) => { e.preventDefault(); const t = (notes[b.id] ?? "").trim(); if (t) void act(() => docApi.note(d, b.id, t), "Noted.").then(() => setNotes((x) => ({ ...x, [b.id]: "" }))); }}>
+              <input className="mm-input mm-grow" placeholder="Note on this block…" value={notes[b.id] ?? ""} onChange={(e) => setNotes((x) => ({ ...x, [b.id]: e.target.value }))} disabled={!live} />
+              <button type="submit" className="mr-key" disabled={!live || !(notes[b.id] ?? "").trim()}>Note</button>
+            </form>
+          </section>
+        );
+      })}
     </main>
   );
 }
@@ -305,9 +424,11 @@ function Start({ known, live, workspace, onClose, onStarted }: { known: Known; l
   const [ws, setWs] = useState(known.workspaces.find((w) => w.id === workspace)?.id ?? known.workspaces[0]?.id ?? "");
   const [repo, setRepo] = useState(known.repos[0]?.id ?? "");
   const [prompt, setPrompt] = useState("");
+  // The desktop Start picker's kinds; Review and Address take a PR and run your own commands.
+  const [kind, setKind] = useState<"blank" | "plan" | "review" | "address">("blank");
   const { busy, err, run } = useSend();
   const go = async () => {
-    const r = await run("start", cmd.start(ws, repo, prompt));
+    const r = await run("start", cmd.start(ws, repo, promptFor(kind, prompt), kind));
     if (r !== undefined) { if (r?.session) onStarted(r.session); else onClose(); }
   };
   if (!known.repos.length) return <div data-mr="MobileStart" className="mm-sheet mm-pad"><span className="mm-dim">No repos yet: start a session on the Mac once, and its repo shows up here.</span></div>;
@@ -322,7 +443,14 @@ function Start({ known, live, workspace, onClose, onStarted }: { known: Known; l
           <select className="mm-input" value={ws} onChange={(e) => setWs(e.target.value)}>{known.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
         </label>
       )}
-      <textarea className="mm-input" rows={3} placeholder="What should Claude do?" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+      <div className="mm-ws" role="radiogroup" aria-label="Kind" data-mr="MobileStartKind">
+        {([["blank", "Task"], ["plan", "Plan"], ["review", "Review PR"], ["address", "Address PR"]] as const).map(([k, label]) => (
+          <button key={k} type="button" role="radio" className="mm-chip" aria-pressed={kind === k} aria-checked={kind === k} onClick={() => setKind(k)}>{label}</button>
+        ))}
+      </div>
+      {kind === "review" || kind === "address"
+        ? <input className="mm-input" placeholder="PR number or link" value={prompt} onChange={(e) => setPrompt(e.target.value)} autoCapitalize="off" />
+        : <textarea className="mm-input" rows={3} placeholder={kind === "plan" ? "What should we plan?" : "What should Claude do?"} value={prompt} onChange={(e) => setPrompt(e.target.value)} />}
       <span className="mm-row-flat">
         <button type="button" className="mr-key mm-grow" data-tone="primary" data-mr="MobileStartGo" disabled={!live || !prompt.trim() || !repo || !!busy} onClick={() => void go()}>{busy ? "Starting…" : "Start · Face ID"}</button>
         <button type="button" className="mr-key" onClick={onClose}>Cancel</button>
@@ -339,17 +467,3 @@ function summarize(input: Record<string, unknown>): string {
   return typeof v === "string" ? v.slice(0, 240) : "";
 }
 
-function Item({ t }: { t: TranscriptItem }) {
-  switch (t.kind) {
-    case "user":
-      return <li data-mr="MobileUser" data-mr-source={t.id} className="mm-user"><span className="mm-dim mm-mono">{t.via === "phone" ? "▯ phone →" : t.via === "doc" ? "▤ doc →" : t.via === "child" ? "↳ child →" : "you →"}</span><span className="mm-text">{t.text}</span></li>;
-    case "text":
-      return <li data-mr="MobileText" data-mr-source={t.id} className="mm-text">{t.text}</li>;
-    case "tool":
-      return <li data-mr="MobileTool" data-mr-source={t.id} className="mm-tool mm-mono mm-clip" data-error={t.isError ? "1" : undefined}>{t.name} {summarize(t.input)}</li>;
-    case "view":
-      return <li data-mr="MobileView" data-mr-source={t.id} className="mm-tool"><b>{t.title}</b> <span className="mm-dim">· open on the Mac for the full view</span></li>;
-    case "result":
-      return <li data-mr="MobileResult" data-mr-source={t.id} className="mm-dim mm-result">{t.ok ? "Turn ended" : "Turn failed"}</li>;
-  }
-}

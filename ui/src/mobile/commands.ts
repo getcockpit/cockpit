@@ -10,7 +10,7 @@ export type Command =
   | { kind: "answer_question"; args: { session: string; request_id: string; input: Record<string, unknown>; answers: Record<string, string> } }
   | { kind: "interrupt"; args: { session: string } }
   | { kind: "stop_session"; args: { session: string } }
-  | { kind: "start_session"; args: { workspace_id: string; repo_id: string; prompt: string } };
+  | { kind: "start_session"; args: { workspace_id: string; repo_id: string; prompt: string; kind?: string } };
 
 export const reply = (session: string, text: string): Command => ({ kind: "send_prompt", args: { session, text: text.trim() } });
 
@@ -26,8 +26,10 @@ export const answer = (session: string, a: Extract<PendingAsk, { kind: "question
 
 export const interrupt = (session: string): Command => ({ kind: "interrupt", args: { session } });
 
-export const start = (workspaceId: string, repoId: string, prompt: string): Command =>
-  ({ kind: "start_session", args: { workspace_id: workspaceId, repo_id: repoId, prompt: prompt.trim() } });
+// kind: blank (default), plan, review or address; the prompt is what the desktop's Start picker
+// would send for it (screens/StartPicker.promptFor).
+export const start = (workspaceId: string, repoId: string, prompt: string, kind?: string): Command =>
+  ({ kind: "start_session", args: { workspace_id: workspaceId, repo_id: repoId, prompt: prompt.trim(), ...(kind && kind !== "blank" ? { kind } : {}) } });
 
 /** Every question has at least one pick. */
 export const answered = (a: Extract<PendingAsk, { kind: "question" }>, picks: Record<string, string[]>) =>

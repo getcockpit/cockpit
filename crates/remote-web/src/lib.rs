@@ -151,6 +151,17 @@ impl WebLink {
         self.out(Out::Frame(Frame::FetchSession { id, session }))
     }
 
+    /// Asks for a session's changed files (`path` empty) or one file's diff; the answer comes back
+    /// as `{"t":"changes","id":…}`.
+    pub fn fetch_changes(&self, id: String, session: String, path: String) -> Result<(), JsValue> {
+        self.out(Out::Frame(Frame::FetchChanges { id, session, path: Some(path).filter(|p| !p.is_empty()) }))
+    }
+
+    /// Asks for the working docs; they come back as `{"t":"docs","id":…,"docs":[…]}`.
+    pub fn fetch_docs(&self, id: String) -> Result<(), JsValue> {
+        self.out(Out::Frame(Frame::FetchDocs { id }))
+    }
+
     fn out(&self, o: Out) -> Result<(), JsValue> {
         self.tx.as_ref().ok_or("link closed")?.send(o).map_err(|_| js_err("link closed"))
     }

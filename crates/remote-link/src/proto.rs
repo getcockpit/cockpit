@@ -124,6 +124,10 @@ pub enum Frame {
     Live { cursor: String },
     Event { event: Value },
     Fetch { id: String },
+    /// A session's changed files (`path` empty) or one file's diff, from the session's own folder
+    /// on the Mac (the phone names the session, never a path to a folder).
+    FetchChanges { id: String, session: String, #[serde(default)] path: Option<String> },
+    Changes { id: String, #[serde(default, skip_serializing_if = "Option::is_none")] files: Option<Value>, #[serde(default, skip_serializing_if = "Option::is_none")] diff: Option<String>, #[serde(default, skip_serializing_if = "Option::is_none")] error: Option<String> },
     /// The working docs (folded on the Mac), recent ones.
     FetchDocs { id: String },
     Docs { id: String, docs: Vec<Value> },
