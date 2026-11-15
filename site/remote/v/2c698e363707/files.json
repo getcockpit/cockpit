@@ -1,5 +1,5 @@
 {
-"version": "e628bec456fb",
+"version": "2c698e363707",
 "files": [
 [
 "apple-touch-icon.png",
@@ -54,20 +54,16 @@
 "acd5d0771650ceddafa2beb172dc7ada45581f7641db03a70f4a13677ce799d1"
 ],
 [
-"assets/index-Bn9dfmIo.js",
-"c8b644af9bcd3cab8ab29c9af232699cccaf59ecfd2a259dd99775cdbb382066"
+"assets/index-CUCKDhxx.js",
+"e7b565da6670860326e7e657670ae6b7ad0dbeda50ec8c61c3a9cdaac016c283"
 ],
 [
-"assets/index-BzVWcRKr.css",
-"61dd54769d87b37c4544dc5ca9b7bced6453f999d3c78a766d1d15ab6370728f"
+"assets/index-pHsqtLl4.css",
+"0b5813e770815a80c474dec2b8779154ab095c7bb255237b51e76a1d34b3c994"
 ],
 [
 "assets/remote_web_bg-Cmt1iPFJ.wasm",
 "4e0b8bee4dfcb86910e5f9b8e5299740bbd7e49a0fedff6916d5820f1d004c9e"
-],
-[
-"assets/webcore-Dq3S20vn.js",
-"f78831d956e853756e131ebacd88d97e39be19fc80b588523a3d2b06fe3d4e5f"
 ],
 [
 "icon-192.png",
@@ -79,7 +75,7 @@
 ],
 [
 "index.html",
-"be5ea15c0e1d32c0a16798f006d2c5551f2f5c6020b2ea94bb97fc26df7b13b6"
+"7c1de690caf2078476e18f4191785d10e33d9bf845c4a558bab46a9f5d5ed74a"
 ],
 [
 "manifest.webmanifest",
