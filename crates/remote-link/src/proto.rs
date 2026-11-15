@@ -124,6 +124,9 @@ pub enum Frame {
     Live { cursor: String },
     Event { event: Value },
     Fetch { id: String },
+    /// The working docs (folded on the Mac), recent ones.
+    FetchDocs { id: String },
+    Docs { id: String, docs: Vec<Value> },
     /// One session's recent rows (its transcript), for a phone that synced light.
     FetchSession { id: String, session: String },
     /// The answer to `FetchSession`: the session's last `SESSION_ROWS` rows, oldest first.
@@ -140,6 +143,18 @@ impl Frame {
         s
     }
 }
+
+/// The `ui.*` rows a phone may record: the user's notes and choices, renames and archiving,
+/// exactly what the desktop's buttons write. None of them runs anything by itself.
+pub const LOG_UI_KINDS: &[&str] = &[
+    "ui.review_noted", "ui.review_unnoted", "ui.address_chosen",
+    "ui.doc_note", "ui.doc_decision", "ui.doc_edit",
+    "ui.diff_note", "ui.diff_notes_sent", "ui.changes_approved",
+    "ui.session_renamed", "ui.session_archived", "ui.session_unarchived",
+];
+
+/// Session kinds a phone may start (the desktop's Start picker modes).
+pub const START_KINDS: &[&str] = &["blank", "plan", "review", "address"];
 
 /// The web app's origin and WebAuthn relying party (decision 46).
 pub const ORIGIN: &str = "https://getcockpit.github.io";
@@ -233,7 +248,13 @@ pub enum Command {
     Interrupt { session: String },
     StopSession { session: String },
     /// Ids from `Known`, never paths: the Mac maps them back itself.
-    StartSession { workspace_id: String, repo_id: String, prompt: String },
+    /// `kind`: blank (default), plan, review or address, as the desktop's Start picker offers.
+    StartSession { workspace_id: String, repo_id: String, prompt: String, #[serde(default, skip_serializing_if = "Option::is_none")] kind: Option<String> },
+    /// Records one of the user's own actions, the same `ui.*` row a desktop button writes
+    /// (`LOG_UI_KINDS`: notes, choices, renames, archiving), so the desktop's screens work as is.
+    LogUi { #[serde(default)] session: Option<String>, kind: String, payload: Value, #[serde(default)] anchor: Option<String> },
+    /// Sends a working doc's pending notes and decisions to its session (the doc's Send).
+    DocSend { doc_id: String, #[serde(default)] regenerate: bool },
     /// The phone's Web Push subscription (`PushSubscription.toJSON()`), so the Mac can notify it.
     RegisterPush { subscription: Value },
 }
@@ -246,7 +267,8 @@ impl Command {
             | Command::PermissionResponse { session, .. }
             | Command::Interrupt { session }
             | Command::StopSession { session } => Some(session),
-            Command::StartSession { .. } | Command::RegisterPush { .. } => None,
+            Command::LogUi { session, .. } => session.as_deref(),
+            Command::StartSession { .. } | Command::RegisterPush { .. } | Command::DocSend { .. } => None,
         }
     }
 
@@ -270,6 +292,13 @@ impl Command {
                 _ => Err("decision.behavior must be allow or deny".into()),
             },
             Command::AnswerQuestion { answers, .. } if answers.is_empty() => Err("no answers".into()),
+            Command::StartSession { kind: Some(k), .. } if !START_KINDS.contains(&k.as_str()) => Err(format!("can't start a {k} session from the phone")),
+            Command::LogUi { kind, payload, .. } => {
+                if !LOG_UI_KINDS.contains(&kind.as_str()) {
+                    return Err(format!("{kind} isn't something the phone records"));
+                }
+                if payload.is_object() { Ok(()) } else { Err("payload must be an object".into()) }
+            }
             Command::RegisterPush { subscription } => {
                 let ok = subscription["endpoint"].as_str().is_some_and(|e| e.starts_with("https://"))
                     && subscription["keys"]["p256dh"].is_string()
@@ -459,6 +488,8 @@ mod tests {
         assert!(verify_proof(&key, &assert_with(&other, json, "n1", ORIGIN, RP_ID, 0x05), "n1", &origins, RP_ID).is_err(), "another key");
         let deny = Command::PermissionResponse { session: "s".into(), request_id: "r".into(), decision: json!({ "behavior": "deny" }) };
         assert!(!deny.needs_presence());
+        let review = Command::StartSession { workspace_id: "w".into(), repo_id: "r".into(), prompt: "/review 12".into(), kind: Some("review".into()) };
+        assert!(review.needs_presence() && review.check().is_ok());
     }
 
     #[test]
@@ -493,6 +524,10 @@ mod tests {
         for bad in ["run_shell", "read_file", "terminal", "self_build"] {
             assert!(serde_json::from_value::<Frame>(json!({ "t": "command", "id": "1", "kind": bad, "args": { "cmd": "rm -rf /" } })).is_err(), "{bad}");
         }
+        let shell = Command::LogUi { session: None, kind: "ui.terminal_opened".into(), payload: json!({}), anchor: None };
+        assert!(shell.check().is_err(), "only the listed ui.* rows");
+        let odd = Command::StartSession { workspace_id: "w".into(), repo_id: "r".into(), prompt: "p".into(), kind: Some("godmode".into()) };
+        assert!(odd.check().is_err());
         let plain_http = Command::RegisterPush { subscription: json!({ "endpoint": "http://evil.example/", "keys": { "p256dh": "B", "auth": "a" } }) };
         assert!(plain_http.check().is_err(), "pushes only go to https push services");
         let weird = Command::PermissionResponse { session: "s".into(), request_id: "r".into(), decision: json!({ "behavior": "always" }) };
@@ -513,6 +548,9 @@ mod tests {
             json!({ "kind": "stop_session", "args": { "session": "s" } }),
             json!({ "kind": "start_session", "args": { "workspace_id": "personal", "repo_id": "a1b2", "prompt": "fix it" } }),
             json!({ "kind": "register_push", "args": { "subscription": { "endpoint": "https://web.push.apple.com/x", "keys": { "p256dh": "B", "auth": "a" } } } }),
+            json!({ "kind": "start_session", "args": { "workspace_id": "personal", "repo_id": "a1b2", "prompt": "/review 12", "kind": "review" } }),
+            json!({ "kind": "log_ui", "args": { "session": "s", "kind": "ui.review_noted", "payload": { "finding_id": "f1" }, "anchor": "review:f1" } }),
+            json!({ "kind": "doc_send", "args": { "doc_id": "doc_1", "regenerate": true } }),
         ] {
             let c: Command = serde_json::from_value(v.clone()).unwrap_or_else(|e| panic!("{v}: {e}"));
             c.check().unwrap();

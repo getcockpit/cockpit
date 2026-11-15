@@ -74,8 +74,10 @@ pub enum Resolved {
     Respond { session: String, request_id: String, decision: Value },
     Interrupt { session: String },
     Stop { session: String },
-    Start { cwd: String, workspace: String, prompt: String },
+    Start { cwd: String, workspace: String, prompt: String, kind: String },
     RegisterPush { subscription: Value },
+    LogUi { session: Option<String>, kind: String, payload: Value, anchor: Option<String> },
+    DocSend { doc_id: String, regenerate: bool },
 }
 
 pub trait Host: Send + Sync + 'static {
@@ -87,6 +89,10 @@ pub trait Host: Send + Sync + 'static {
     fn event(&self, id: &str) -> Option<Stored>;
     /// One session's last `limit` rows, oldest first.
     fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored>;
+    /// Working docs touched lately (folded on the Mac), as the desktop's `docs_list` gives them.
+    fn docs(&self) -> Vec<Value> {
+        Vec::new()
+    }
     fn known(&self) -> Known;
     fn session_exists(&self, id: &str) -> bool;
     /// Runs a resolved command exactly as the desktop would. Called off the async runtime.
@@ -223,16 +229,18 @@ impl Shared {
             Command::PermissionResponse { session, request_id, decision } => Resolved::Respond { session, request_id, decision },
             Command::Interrupt { session } => Resolved::Interrupt { session },
             Command::StopSession { session } => Resolved::Stop { session },
-            Command::StartSession { workspace_id, repo_id, prompt } => {
+            Command::StartSession { workspace_id, repo_id, prompt, kind } => {
                 let known = self.host.known();
                 let repo = known.repos.iter().find(|r| r.id == repo_id).ok_or("unknown repo: start it once on the Mac first")?;
                 if !known.workspaces.iter().any(|w| w.id == workspace_id) {
                     return Err("unknown workspace".into());
                 }
                 self.starts.lock().unwrap().take(proto::now_ms())?;
-                Resolved::Start { cwd: repo.path.clone(), workspace: workspace_id, prompt }
+                Resolved::Start { cwd: repo.path.clone(), workspace: workspace_id, prompt, kind: kind.unwrap_or_else(|| "blank".into()) }
             }
             Command::RegisterPush { subscription } => Resolved::RegisterPush { subscription },
+            Command::LogUi { session, kind, payload, anchor } => Resolved::LogUi { session, kind, payload, anchor },
+            Command::DocSend { doc_id, regenerate } => Resolved::DocSend { doc_id, regenerate },
         })
     }
 
@@ -472,6 +480,11 @@ impl Link {
                                 Err(e) => Frame::Ack { id, ok: false, result: None, error: Some(e) },
                             }
                         }
+                        Some(Ok(Frame::FetchDocs { id })) => {
+                            let s = shared.clone();
+                            let docs = tokio::task::spawn_blocking(move || s.host.docs()).await.map_err(|e| e.to_string())?;
+                            Frame::Docs { id, docs }
+                        }
                         Some(Ok(Frame::FetchSession { id, session })) => {
                             let s = shared.clone();
                             let sid = session.clone();
@@ -636,6 +649,10 @@ impl Light {
     }
 
     pub fn keep(&mut self, r: &Stored) -> bool {
+        // Doc rows of any session: the phone refetches its docs when one lands.
+        if r.kind.starts_with("doc.") || r.kind.starts_with("ui.doc_") {
+            return true;
+        }
         let Some(s) = r.session_id.as_deref() else { return r.kind.starts_with("ui.workspace_") };
         match r.kind.as_str() {
             "ui.session_requested" | "ui.session_unarchived" => {
@@ -647,6 +664,7 @@ impl Light {
         }
         self.live.contains(s)
             && (r.kind.starts_with("ui.session_")
+                || ["flow.", "plan.", "ui.review_", "ui.address_"].iter().any(|p| r.kind.starts_with(p))
                 || matches!(r.kind.as_str(), "sidecar.session_started" | "sidecar.session_ended" | "sidecar.permission_request" | "ui.permission_answered" | "ui.message_sent" | "session.titled")
                 || (r.kind == "sidecar.sdk" && r.json.contains("\"type\":\"result\"") && serde_json::from_str::<Value>(&r.json).is_ok_and(|v| v["payload"]["message"]["type"] == "result")))
     }
@@ -689,6 +707,12 @@ impl Host for AppHost {
         log.list_wire(None, Some(after), limit as i64, true).unwrap_or_default().into_iter().filter_map(stored).collect()
     }
 
+    fn docs(&self) -> Vec<Value> {
+        use tauri::Manager;
+        let since = proto::now_ms() - 30 * 86_400_000;
+        self.0.state::<crate::docs::Docs>().list().into_iter().filter(|d| d.updated_at >= since).filter_map(|d| serde_json::to_value(d).ok()).collect()
+    }
+
     fn session_rows(&self, session: &str, limit: usize) -> Vec<Stored> {
         use tauri::Manager;
         let rows: Vec<Stored> = self.0.state::<crate::eventlog::EventLog>().session_wire(session).unwrap_or_default().into_iter().filter(|w| w.session_id.as_deref() == Some(session)).filter_map(stored).collect();
@@ -725,8 +749,22 @@ impl Host for AppHost {
                 crate::eventlog::record(&app, Some(&session), "ui.session_stop_requested", &serde_json::json!({}), None);
                 sc::session_stop(state(), session).map(|_| Value::Null)
             }
-            Resolved::Start { cwd, workspace, prompt } => {
-                sc::start_now(app.clone(), state(), cwd, prompt, None, None, Some("blank".into()), None, None, Some(workspace), None, None).map(|id| serde_json::json!({ "session": id }))
+            Resolved::Start { cwd, workspace, prompt, kind } => {
+                sc::start_now(app.clone(), state(), cwd, prompt, None, None, Some(kind), None, None, Some(workspace), None, None).map(|id| serde_json::json!({ "session": id }))
+            }
+            Resolved::LogUi { session, kind, payload, anchor } => {
+                crate::eventlog::record(&app, session.as_deref(), &kind, &payload, anchor.as_deref()).ok_or("couldn't record it")?;
+                // Archiving from the phone also stops the session, as the desktop's Done does.
+                if kind == "ui.session_archived" && let Some(s) = &session {
+                    let _ = sc::session_stop(state(), s.clone());
+                }
+                Ok(Value::Null)
+            }
+            Resolved::DocSend { doc_id, regenerate } => {
+                let docs = app.state::<crate::docs::Docs>();
+                let session = docs.get(&doc_id).and_then(|d| d.session_id.clone()).ok_or("this doc has no session to send to")?;
+                let msg = crate::docs::doc_feedback(app.clone(), docs, doc_id, regenerate)?;
+                sc::session_send(app.clone(), state(), session, msg, None).map(|_| Value::Null)
             }
             Resolved::RegisterPush { subscription } => {
                 let sub: remote_push::Subscription = serde_json::from_value(subscription).map_err(|e| format!("bad push subscription: {e}"))?;
@@ -1155,12 +1193,12 @@ mod tests {
         assert!(ack.is_ok(), "{ack:?}");
         let ack = link.command(Command::SendPrompt { session: "nope".into(), text: "hi".into() }).await.unwrap();
         assert!(ack.unwrap_err().contains("unknown session"));
-        let ack = link.command(Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "go".into() }).await.unwrap();
+        let ack = link.command(Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "go".into(), kind: None }).await.unwrap();
         assert!(ack.is_ok());
-        let ack = link.command(Command::StartSession { workspace_id: "personal".into(), repo_id: "/etc".into(), prompt: "go".into() }).await.unwrap();
+        let ack = link.command(Command::StartSession { workspace_id: "personal".into(), repo_id: "/etc".into(), prompt: "go".into(), kind: None }).await.unwrap();
         assert!(ack.is_err());
         let ran = fake.ran.lock().unwrap().clone();
-        assert_eq!(ran, vec![Resolved::Send { session: "s1".into(), text: "hi".into() }, Resolved::Start { cwd: "/u/app".into(), workspace: "personal".into(), prompt: "go".into() }]);
+        assert_eq!(ran, vec![Resolved::Send { session: "s1".into(), text: "hi".into() }, Resolved::Start { cwd: "/u/app".into(), workspace: "personal".into(), prompt: "go".into(), kind: "blank".into() }]);
 
         // Unpair cuts the live link, and the phone can't come back.
         shared.unpair();
@@ -1229,7 +1267,7 @@ mod tests {
 
         let mut link = phone.link(router.endpoint().addr(), "").await.unwrap();
         link.until_live().await.unwrap();
-        let start = Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "go".into() };
+        let start = Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "go".into(), kind: None };
         let json = serde_json::to_string(&start).unwrap();
         // No proof: refused.
         let r = link.command(start.clone()).await.unwrap();
@@ -1238,7 +1276,7 @@ mod tests {
         let id = link.send_command_proved(start.clone(), Some(webauthn(&sk, &json, "other-link"))).await.unwrap();
         assert!(wait_ack(&mut link, &id).await.unwrap_err().contains("something else"));
         // A proof over a different command: refused.
-        let other = serde_json::to_string(&Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "rm".into() }).unwrap();
+        let other = serde_json::to_string(&Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "rm".into(), kind: None }).unwrap();
         let id = link.send_command_proved(start.clone(), Some(webauthn(&sk, &other, &link.nonce.clone()))).await.unwrap();
         assert!(wait_ack(&mut link, &id).await.is_err());
         // The real thing: runs once.
@@ -1251,6 +1289,40 @@ mod tests {
         let deny = Command::PermissionResponse { session: "s1".into(), request_id: "r".into(), decision: serde_json::json!({ "behavior": "deny", "message": "no" }) };
         assert!(link.command(deny).await.unwrap().is_ok());
         assert_eq!(fake.ran.lock().unwrap().iter().filter(|r| matches!(r, Resolved::Start { .. })).count(), 1);
+        router.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_phone_records_the_desktops_actions_and_reads_docs() {
+        let (fake, shared, router) = mac().await;
+        fake.push("ui.session_requested", Some("s1"));
+        let phone = Peer::bind(SecretKey::generate(), true).await.unwrap();
+        pair(&shared, &router, &phone).await.unwrap();
+        let mut link = phone.link(router.endpoint().addr(), "").await.unwrap();
+        link.until_live().await.unwrap();
+        // A review note, as the desktop's Flows screen writes it.
+        let note = Command::LogUi { session: Some("s1".into()), kind: "ui.review_noted".into(), payload: serde_json::json!({ "finding_id": "f1" }), anchor: Some("review:f1".into()) };
+        assert!(link.command(note.clone()).await.unwrap().is_ok());
+        // Nothing outside the list, and only for sessions that exist.
+        let shell = Command::LogUi { session: Some("s1".into()), kind: "ui.terminal_opened".into(), payload: serde_json::json!({}), anchor: None };
+        assert!(link.command(shell).await.unwrap().is_err());
+        let ghost = Command::LogUi { session: Some("nope".into()), kind: "ui.review_noted".into(), payload: serde_json::json!({}), anchor: None };
+        assert!(link.command(ghost).await.unwrap().is_err());
+        // A review start from the phone (no passkey here: the phone gates it itself).
+        let review = Command::StartSession { workspace_id: "personal".into(), repo_id: "r1".into(), prompt: "/review 12".into(), kind: Some("review".into()) };
+        assert!(link.command(review).await.unwrap().is_ok());
+        let ran = fake.ran.lock().unwrap().clone();
+        assert!(ran.contains(&Resolved::LogUi { session: Some("s1".into()), kind: "ui.review_noted".into(), payload: serde_json::json!({ "finding_id": "f1" }), anchor: Some("review:f1".into()) }));
+        assert!(ran.contains(&Resolved::Start { cwd: "/u/app".into(), workspace: "personal".into(), prompt: "/review 12".into(), kind: "review".into() }));
+        // Docs on request.
+        link.send(&Frame::FetchDocs { id: "d1".into() }).await.unwrap();
+        loop {
+            if let Frame::Docs { id, docs } = link.next().await.unwrap() {
+                assert_eq!(id, "d1");
+                assert!(docs.is_empty(), "the fake Mac has none");
+                break;
+            }
+        }
         router.shutdown().await.unwrap();
     }
 

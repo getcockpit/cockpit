@@ -85,7 +85,7 @@ async fn cli(args: Vec<String>) -> Result<(), String> {
         }
         ["send", session, text] => link.command(Command::SendPrompt { session: (*session).into(), text: (*text).into() }).await?.map(|v| out(serde_json::json!({ "t": "ok", "result": v }))),
         ["start", ws, repo, prompt] => link
-            .command(Command::StartSession { workspace_id: (*ws).into(), repo_id: (*repo).into(), prompt: (*prompt).into() })
+            .command(Command::StartSession { workspace_id: (*ws).into(), repo_id: (*repo).into(), prompt: (*prompt).into(), kind: None })
             .await?
             .map(|v| out(serde_json::json!({ "t": "ok", "result": v }))),
         ["stop", session] => link.command(Command::StopSession { session: (*session).into() }).await?.map(|v| out(serde_json::json!({ "t": "ok", "result": v }))),

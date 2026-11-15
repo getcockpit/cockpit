@@ -217,6 +217,8 @@ impl EventLog {
                (session_id IS NULL AND kind >= 'ui.workspace_' AND kind < 'ui.workspace`')
                OR (session_id IN live AND (kind >= 'ui.session_' AND kind < 'ui.session`'
                    OR kind IN ('sidecar.session_started', 'sidecar.session_ended', 'sidecar.permission_request', 'ui.permission_answered', 'ui.message_sent', 'session.titled')
+                   OR kind >= 'flow.' AND kind < 'flow/' OR kind >= 'plan.' AND kind < 'plan/'
+                   OR kind >= 'ui.review_' AND kind < 'ui.review`' OR kind >= 'ui.address_' AND kind < 'ui.address`'
                    OR (kind = 'sidecar.sdk' AND json_extract(payload, '$.message.type') = 'result'))))
              ORDER BY id",
         )?;
