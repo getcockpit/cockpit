@@ -8,6 +8,7 @@ import { LABEL } from "../components";
 import { shortError } from "../components/ErrorLine";
 import type { PendingAsk, SessionState, TranscriptItem } from "../state/types";
 import * as cmd from "./commands";
+import { pickWorkspace, workspaceChips } from "./workspaces";
 
 // Cockpit Remote on the iPhone (doc "Cockpit Remote", phases 2 and 4). The Mac is the brain: the
 // mobile core (mobile/src-tauri) mirrors its event log, and the desktop's own store and reducer
@@ -122,10 +123,16 @@ function Paired({ remote }: { remote: RemoteState }) {
   }, []);
   const [menu, setMenu] = useState(false);
   const [starting, setStarting] = useState(false);
-  const rows = useMemo(() => Object.values(state.sessions)
+  // The workspace on show, remembered on this phone; a deleted one falls back to All.
+  const [chosenWs, setChosenWs] = useState<string | null>(() => localStorage.getItem("mr.remote.workspace"));
+  const ws = pickWorkspace(chosenWs, state.workspaces);
+  const chooseWs = (id: string) => { setChosenWs(id); localStorage.setItem("mr.remote.workspace", id); };
+  const allRows = useMemo(() => Object.values(state.sessions)
     .filter((s) => !s.archivedAt)
     .map((s) => ({ s, tile: pickTile(s) }))
     .sort((a, b) => (RANK[a.tile.state] ?? 9) - (RANK[b.tile.state] ?? 9) || lastAt(b.s) - lastAt(a.s)), [state.sessions]);
+  const chips = workspaceChips(state.workspaces, allRows.map((r) => ({ s: r.s, needs: r.tile.state === "needs_you" })));
+  const rows = ws === "all" ? allRows : allRows.filter((r) => r.s.workspace === ws);
   const session = open ? state.sessions[open] : null;
   const needs = rows.filter((r) => r.tile.state === "needs_you").length;
   const lamp = remote.connected ? (remote.live ? "live" : "sync") : "off";
@@ -144,11 +151,21 @@ function Paired({ remote }: { remote: RemoteState }) {
       {!session && <InstallHint remote={remote} />}
       {!session && <UpdateBanner remote={remote} />}
       {menu && !session && <Menu remote={remote} onClose={() => setMenu(false)} />}
-      {starting && !session && <Start known={remote.known} live={remote.connected} onClose={() => setStarting(false)} onStarted={(id) => { setStarting(false); setOpen(id); }} />}
+      {starting && !session && <Start known={remote.known} live={remote.connected} workspace={ws === "all" ? null : ws} onClose={() => setStarting(false)} onStarted={(id) => { setStarting(false); setOpen(id); }} />}
       {!remote.connected && remote.error && <p className="mm-note">{remote.error}. Showing what this phone last saw; it retries by itself.</p>}
       {session ? <Focus s={session} live={remote.connected} /> : (
         <main data-mr="MobileWall" className="mm-list">
-          {!state.loaded ? <p className="mm-dim mm-pad">Loading…</p> : rows.length === 0 ? <p className="mm-dim mm-pad">No sessions on the Mac yet.</p> : (
+          {state.workspaces.length > 1 && (
+            <nav data-mr="MobileWorkspaces" className="mm-ws" aria-label="Workspaces">
+              {chips.map((c) => (
+                <button key={c.id} type="button" className="mm-chip" data-mr="MobileWorkspace" data-mr-source={c.id} aria-pressed={ws === c.id} onClick={() => chooseWs(c.id)}>
+                  {c.name}
+                  {c.needs > 0 ? <span className="mm-count" data-on="needs">{c.needs}</span> : <span className="mm-count">{c.sessions}</span>}
+                </button>
+              ))}
+            </nav>
+          )}
+          {!state.loaded ? <p className="mm-dim mm-pad">Loading…</p> : rows.length === 0 ? <p className="mm-dim mm-pad">{ws === "all" ? "No sessions on the Mac yet." : `No sessions in ${chips.find((c) => c.id === ws)?.name ?? "this workspace"}.`}</p> : (
             <>
               {needs > 0 && <p className="mm-section" data-on="needs">{needs} need{needs === 1 ? "s" : ""} you</p>}
               {rows.map(({ s, tile }) => (
@@ -283,8 +300,9 @@ function Composer({ s, live }: { s: SessionState; live: boolean }) {
 
 // Start a session from the phone: a workspace and a repo the Mac already knows (ids only; the Mac
 // maps them to its paths), plus the first prompt. Face ID first; 5 an hour (the Mac counts).
-function Start({ known, live, onClose, onStarted }: { known: Known; live: boolean; onClose: () => void; onStarted: (id: string) => void }) {
-  const [ws, setWs] = useState(known.workspaces[0]?.id ?? "");
+function Start({ known, live, workspace, onClose, onStarted }: { known: Known; live: boolean; workspace: string | null; onClose: () => void; onStarted: (id: string) => void }) {
+  // The workspace on show on the Wall, if the Mac knows it.
+  const [ws, setWs] = useState(known.workspaces.find((w) => w.id === workspace)?.id ?? known.workspaces[0]?.id ?? "");
   const [repo, setRepo] = useState(known.repos[0]?.id ?? "");
   const [prompt, setPrompt] = useState("");
   const { busy, err, run } = useSend();

@@ -47,3 +47,11 @@ body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-are
 .mm-composer { position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: var(--mr-band); }
 .mm-full { flex-basis: 100%; }
 select.mm-input { font-family: var(--mr-font); }
+/* Workspace switcher: chips scroll sideways; the chosen one is teal (selected), counts are amber
+   when something in that workspace needs you. */
+.mm-ws { display: flex; gap: var(--mr-gap); overflow-x: auto; padding: 8px 12px; background: var(--mr-band); scrollbar-width: none; }
+.mm-ws::-webkit-scrollbar { display: none; }
+.mm-chip { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--mr-radius); background: var(--mr-well); color: var(--mr-ink); font: inherit; font-weight: 700; }
+.mm-chip[aria-pressed="true"] { background: var(--mr-selected); color: var(--mr-tile); }
+.mm-count { font-family: var(--mr-mono); font-size: 12px; padding: 0 6px; background: var(--mr-tile); color: var(--mr-ink-3); }
+.mm-count[data-on="needs"] { background: var(--mr-needs); color: var(--mr-ink); }
