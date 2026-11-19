@@ -444,6 +444,30 @@ pub async fn write_frame(s: &mut iroh::endpoint::SendStream, f: &Frame) -> Resul
     s.write_all(f.line().as_bytes()).await.map_err(|e| e.to_string())
 }
 
+/// iroh writes relay hosts fully qualified (`euc1-1.relay.n0.iroh.link.`). Chrome connects to that,
+/// WebKit (every iPhone browser) times out on it, so the browser dials, and the Mac publishes for
+/// address lookup, the same host without the final dot.
+pub fn strip_root_dot(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else { return url.to_owned() };
+    let (host, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, String::new()));
+    let host = match host.rsplit_once(':') {
+        Some((h, port)) if port.chars().all(|c| c.is_ascii_digit()) => format!("{}:{port}", h.trim_end_matches('.')),
+        _ => host.trim_end_matches('.').to_owned(),
+    };
+    format!("{scheme}://{host}{path}")
+}
+
+/// `addrs` with every relay URL through `strip_root_dot`.
+pub fn for_webkit(addrs: &[iroh::TransportAddr]) -> Vec<iroh::TransportAddr> {
+    addrs
+        .iter()
+        .map(|a| match a {
+            iroh::TransportAddr::Relay(url) => strip_root_dot(url.as_str()).parse().map(iroh::TransportAddr::Relay).unwrap_or_else(|_| a.clone()),
+            other => other.clone(),
+        })
+        .collect()
+}
+
 pub fn now_ms() -> i64 {
     n0_future::time::SystemTime::now().duration_since(n0_future::time::SystemTime::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
