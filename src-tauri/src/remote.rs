@@ -553,7 +553,10 @@ pub async fn listen(shared: Arc<Shared>, key: SecretKey, local: bool) -> Result<
     let ep = if local {
         Endpoint::builder(iroh::endpoint::presets::Minimal).secret_key(key).bind().await
     } else {
-        Endpoint::builder(iroh::endpoint::presets::N0).secret_key(key).bind().await
+        // What address lookup publishes: relay hosts without the root dot, so a phone whose saved
+        // relay went stale (this Mac moved networks and picked another) finds it from Safari too.
+        let browsers = iroh::address_lookup::AddrFilter::new(|addrs| std::borrow::Cow::Owned(proto::for_webkit(addrs)));
+        Endpoint::builder(iroh::endpoint::presets::N0).secret_key(key).addr_filter(browsers).bind().await
     }
     .map_err(|e| e.to_string())?;
     Ok(Router::builder(ep).accept(proto::ALPN_PAIR, Pairing(shared.clone())).accept(proto::ALPN_LINK, Link(shared)).spawn())
@@ -938,6 +941,100 @@ fn start_endpoint(app: &tauri::AppHandle, remote: &Remote, rotate: bool) -> Resu
     Ok(())
 }
 
+/// Whether the endpoint holds a live connection to its home relay: the phone (a browser, relay
+/// only) can't reach the Mac without one.
+fn online(router: &Router) -> bool {
+    use iroh::Watcher;
+    router.endpoint().home_relay_status().get().iter().any(|s| s.is_connected())
+}
+
+/// What the link watchdog does on one tick.
+#[derive(Debug, PartialEq)]
+enum Heal {
+    Nothing,
+    /// Tell iroh the network may have changed (a wake, a new Wi-Fi, tethering): it re-probes and
+    /// reconnects the relay. Harmless when nothing changed.
+    Nudge,
+    /// Build the endpoint again with the same key and pairing: a nudge didn't bring it back.
+    Rebuild,
+}
+
+const HEAL_TICK: Duration = Duration::from_secs(10);
+
+/// `offline`: how long the relay has been down (zero when up); `slept`: the Mac slept since the
+/// last tick; `since_rebuild`: time since the last rebuild.
+fn heal(offline: Duration, slept: bool, since_rebuild: Duration) -> Heal {
+    if offline >= Duration::from_secs(40) && since_rebuild >= Duration::from_secs(120) {
+        Heal::Rebuild
+    } else if slept || offline >= HEAL_TICK {
+        Heal::Nudge
+    } else {
+        Heal::Nothing
+    }
+}
+
+/// Keeps the link reachable: after sleep or a network switch the endpoint could sit with no relay
+/// connection for good, and the phone saw "Connecting…" until Cockpit restarted.
+fn watchdog(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use tauri::Manager;
+        let (mut down_since, mut rebuilt) = (None::<std::time::Instant>, std::time::Instant::now());
+        let (mut wall, mut mono) = (std::time::SystemTime::now(), std::time::Instant::now());
+        loop {
+            std::thread::sleep(HEAL_TICK);
+            // The monotonic clock stops while the Mac sleeps; the wall clock doesn't.
+            let slept = wall.elapsed().unwrap_or_default().saturating_sub(mono.elapsed()) > Duration::from_secs(20);
+            (wall, mono) = (std::time::SystemTime::now(), std::time::Instant::now());
+            let Some(remote) = app.try_state::<Remote>() else { continue };
+            let Some(ep) = remote.running.lock().unwrap().as_ref().map(|(_, r)| (online(r), r.endpoint().clone())) else {
+                down_since = None;
+                continue;
+            };
+            let (up, ep) = ep;
+            if up {
+                down_since = None;
+            } else if down_since.is_none() {
+                down_since = Some(std::time::Instant::now());
+            }
+            let offline = down_since.map(|t| t.elapsed()).unwrap_or_default();
+            match heal(offline, slept, rebuilt.elapsed()) {
+                Heal::Nothing => {}
+                Heal::Nudge => wait(async move { ep.network_change().await }),
+                Heal::Rebuild => {
+                    eprintln!("[remote] relay unreachable for {}s: rebuilding the endpoint", offline.as_secs());
+                    rebuilt = std::time::Instant::now();
+                    down_since = None;
+                    if let Err(e) = rebuild_endpoint(&remote) {
+                        eprintln!("[remote] rebuild failed: {e}");
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// The same `Shared` (pairing, live state) on a fresh endpoint with the same key.
+fn rebuild_endpoint(remote: &Remote) -> Result<(), String> {
+    let Some((shared, old)) = remote.running.lock().unwrap().take() else { return Ok(()) };
+    let key = identity(&remote.dir, false)?;
+    let local = std::env::var("MR_REMOTE_LOCAL").is_ok();
+    let s = shared.clone();
+    let router = wait(async move {
+        let _ = old.shutdown().await;
+        listen(s, key, local).await
+    })?;
+    let mut running = remote.running.lock().unwrap();
+    if running.is_none() && remote.load().enabled {
+        *running = Some((shared, router));
+    } else {
+        // Turned off (or on again) meanwhile: that wins.
+        tauri::async_runtime::spawn(async move {
+            let _ = router.shutdown().await;
+        });
+    }
+    Ok(())
+}
+
 fn stop_endpoint(remote: &Remote) {
     if let Some((_, router)) = remote.running.lock().unwrap().take() {
         tauri::async_runtime::spawn(async move {
@@ -1000,6 +1097,7 @@ pub fn start(app: &tauri::AppHandle, dir: &std::path::Path) {
     use tauri::Manager;
     app.manage(Remote { dir: dir.to_path_buf(), running: Mutex::new(None) });
     keep_awake(app.clone());
+    watchdog(app.clone());
     let remote = app.state::<Remote>();
     if remote.load().enabled
         && let Err(e) = start_endpoint(app, &remote, false)
@@ -1012,7 +1110,7 @@ pub fn start(app: &tauri::AppHandle, dir: &std::path::Path) {
 pub fn remote_status(remote: tauri::State<'_, Remote>) -> Value {
     let store = remote.load();
     let shared = remote.shared();
-    let id = remote.running.lock().unwrap().as_ref().map(|(_, r)| r.endpoint().id().to_string());
+    let (id, reachable) = remote.running.lock().unwrap().as_ref().map(|(_, r)| (Some(r.endpoint().id().to_string()), online(r))).unwrap_or((None, false));
     serde_json::json!({
         "enabled": store.enabled,
         "running": shared.is_some(),
@@ -1022,6 +1120,7 @@ pub fn remote_status(remote: tauri::State<'_, Remote>) -> Value {
         "connected": shared.as_ref().is_some_and(|s| s.connected()),
         "last_seen": shared.as_ref().map(|s| s.last_seen()).filter(|t| *t > 0),
         "awake": AWAKE.load(Ordering::Relaxed),
+        "reachable": reachable,
     })
 }
 
@@ -1400,13 +1499,37 @@ mod tests {
         let shared = Shared::new(Box::new(fake.clone()), *key.public().as_bytes(), "Net Mac".into(), None, Box::new(|_| {}));
         let router = listen(shared.clone(), key, false).await.unwrap();
         router.endpoint().online().await;
-        let phone = Peer::bind(SecretKey::generate(), false).await.unwrap();
+        let phone_key = SecretKey::generate();
+        let phone = Peer::bind(phone_key.clone(), false).await.unwrap();
         pair(&shared, &router, &phone).await.unwrap();
         let t = std::time::Instant::now();
         let mut link = phone.link(iroh::EndpointAddr::new(router.endpoint().id()), "").await.unwrap();
         assert_eq!(link.until_live().await.unwrap().len(), 1);
         eprintln!("linked by key alone in {:?}", t.elapsed());
+        drop(link);
+        // A stale saved address (the Mac moved to another relay since pairing): address lookup
+        // finds where it is now. A fresh phone endpoint, so nothing is cached.
+        let mac = router.endpoint().id();
+        let mut stale = iroh::EndpointAddr::new(mac);
+        stale.addrs.insert(iroh::TransportAddr::Relay("https://aps1-1.relay.n0.iroh.link/".parse().unwrap()));
+        let phone2 = Peer::bind(phone_key, false).await.unwrap();
+        drop(phone);
+        let t = std::time::Instant::now();
+        let mut link = phone2.link(stale, "").await.unwrap();
+        assert_eq!(link.until_live().await.unwrap().len(), 1);
+        eprintln!("linked from a stale relay in {:?}; z32 {}", t.elapsed(), mac.to_z32());
         router.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn the_watchdog_nudges_after_sleep_and_rebuilds_a_link_that_stays_down() {
+        let s = Duration::from_secs;
+        assert_eq!(heal(s(0), false, s(500)), Heal::Nothing, "online, awake: leave it");
+        assert_eq!(heal(s(0), true, s(500)), Heal::Nudge, "just woke: re-probe even if it says online");
+        assert_eq!(heal(s(5), false, s(500)), Heal::Nothing, "a blip: iroh reconnects by itself");
+        assert_eq!(heal(s(10), false, s(500)), Heal::Nudge);
+        assert_eq!(heal(s(40), false, s(500)), Heal::Rebuild);
+        assert_eq!(heal(s(40), false, s(60)), Heal::Nudge, "no rebuild loop while truly offline");
     }
 
     #[test]

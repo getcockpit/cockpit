@@ -17,6 +17,7 @@ type Status = {
   connected: boolean;
   last_seen: number | null;
   awake?: boolean;
+  reachable?: boolean;
 };
 type Qr = { text: string; svg: string; expires_at: number };
 
@@ -51,7 +52,7 @@ export function RemoteSettings() {
         <Key tone={st.enabled ? undefined : "primary"} onClick={() => void act(() => invoke("remote_set_enabled", { on: !st.enabled }))}>{st.enabled ? "Turn Remote off" : "Turn Remote on"}</Key>
         <span className="mr-dim" style={{ fontSize: 12 }}>
           {st.enabled
-            ? st.running ? `On. Only the paired phone can connect; off cuts it at once. ${st.awake ? "Keeping this Mac awake while sessions work." : "The Mac may sleep while nothing works."} A closed lid on battery still sleeps.` : "On, but the link didn't start. Turn it off and on again."
+            ? st.running ? `On${st.reachable === false ? ", but the phone can't reach this Mac right now (no internet, or it just woke or switched networks); reconnecting by itself" : ""}. Only the paired phone can connect; off cuts it at once. ${st.awake ? "Keeping this Mac awake while sessions work." : "The Mac may sleep while nothing works."} A closed lid on battery still sleeps.` : "On, but the link didn't start. Turn it off and on again."
             : "Off: no link, nothing reachable. The phone app pairs once, in person, by QR."}
         </span>
       </div>

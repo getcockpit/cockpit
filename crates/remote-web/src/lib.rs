@@ -11,29 +11,10 @@ use remote_link::Peer;
 use tokio::sync::mpsc;
 use wasm_bindgen::prelude::*;
 
-/// iroh writes relay hosts fully qualified (`euc1-1.relay.n0.iroh.link.`). Chrome connects to that,
-/// WebKit (every iPhone browser) times out on it, so the browser dials the same host without the
-/// final dot.
-fn for_webkit(addr: EndpointAddr) -> EndpointAddr {
-    let mut v = serde_json::to_value(&addr).unwrap_or_default();
-    if let Some(list) = v["addrs"].as_array_mut() {
-        for a in list {
-            if let Some(url) = a["Relay"].as_str() {
-                a["Relay"] = strip_root_dot(url).into();
-            }
-        }
-    }
-    serde_json::from_value(v).unwrap_or(addr)
-}
-
-fn strip_root_dot(url: &str) -> String {
-    let Some((scheme, rest)) = url.split_once("://") else { return url.to_owned() };
-    let (host, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, String::new()));
-    let host = match host.rsplit_once(':') {
-        Some((h, port)) if port.chars().all(|c| c.is_ascii_digit()) => format!("{}:{port}", h.trim_end_matches('.')),
-        _ => host.trim_end_matches('.').to_owned(),
-    };
-    format!("{scheme}://{host}{path}")
+/// The same address with relay hosts WebKit can dial (`proto::strip_root_dot`).
+fn for_webkit(mut addr: EndpointAddr) -> EndpointAddr {
+    addr.addrs = remote_link::proto::for_webkit(&addr.addrs.iter().cloned().collect::<Vec<_>>()).into_iter().collect();
+    addr
 }
 
 fn js_err(e: impl std::fmt::Display) -> JsValue {
@@ -177,9 +158,9 @@ mod tests {
 
     #[test]
     fn relay_hosts_lose_only_the_root_dot() {
-        assert_eq!(strip_root_dot("https://euc1-1.relay.n0.iroh.link./"), "https://euc1-1.relay.n0.iroh.link/");
-        assert_eq!(strip_root_dot("https://relay.example.com.:8443/x"), "https://relay.example.com:8443/x");
-        assert_eq!(strip_root_dot("https://relay.example.com/"), "https://relay.example.com/");
-        assert_eq!(strip_root_dot("not a url"), "not a url");
+        assert_eq!(remote_link::proto::strip_root_dot("https://euc1-1.relay.n0.iroh.link./"), "https://euc1-1.relay.n0.iroh.link/");
+        assert_eq!(remote_link::proto::strip_root_dot("https://relay.example.com.:8443/x"), "https://relay.example.com:8443/x");
+        assert_eq!(remote_link::proto::strip_root_dot("https://relay.example.com/"), "https://relay.example.com/");
+        assert_eq!(remote_link::proto::strip_root_dot("not a url"), "not a url");
     }
 }
