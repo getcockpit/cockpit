@@ -188,6 +188,22 @@
     <span class="eyebrow">Free and open source · for Claude Code</span>
     <h1>Run more Claude Code sessions without losing track.</h1>
     <p class="lede">Cockpit runs your sessions side by side and pulls everything that needs you into one queue, with the exact command or question in front of you. One key each, and every session keeps moving.</p>
+    <script>
+      // Live headline A/B (research/synthetic/PLAN.md, phase 6): half of visitors see the previous headline.
+      // Sticky per browser; ?hero=a|b forces one. Conversions are counted per variant as ab/<variant>/<event>.
+      (() => {
+        const forced = new URLSearchParams(location.search).get("hero");
+        let v = forced === "a" || forced === "b" ? forced : null;
+        try { v ??= localStorage.getItem("cockpit.hero"); } catch {}
+        if (v !== "a" && v !== "b") v = Math.random() < 0.5 ? "a" : "b";
+        try { localStorage.setItem("cockpit.hero", v); } catch {}
+        window.heroVariant = v;
+        if (v === "a") {
+          document.querySelector(".hero h1").textContent = "Run ten Claude Code sessions. Read none of them.";
+          document.querySelector(".hero .lede").textContent = "Every question, permission and plan from all your sessions lands in one queue, with only the context it needs. One key each. You decide; you don't reread.";
+        }
+      })();
+    </script>
     <div class="cta">
       <a class="btn primary" id="dl-main" href="#download">Download Cockpit, free</a>
       <a class="btn" id="watch" href="#film">▶ Watch the 45-second film</a>
@@ -375,7 +391,12 @@
 </script>
 <script>
   // Analytics: GoatCounter, cookie-free and anonymous. Page views are automatic; these are the events.
-  const track = (name) => window.goatcounter?.count?.({ path: name, title: name, event: true });
+  const count = (name) => window.goatcounter?.count?.({ path: name, title: name, event: true });
+  // Every event is also counted under the visitor's headline variant, so the split reads straight off GoatCounter.
+  const track = (name) => { count(name); if (window.heroVariant) count(`ab/${window.heroVariant}/${name}`); };
+  // One view per visit and variant, once GoatCounter has loaded (it loads async).
+  const seen = setInterval(() => { if (window.goatcounter?.count) { clearInterval(seen); count(`ab/${window.heroVariant}/view`); } }, 300);
+  setTimeout(() => clearInterval(seen), 10000);
   document.addEventListener("click", (e) => {
     const a = e.target.closest("a, button");
     if (!a) return;
