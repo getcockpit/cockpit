@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cockpit · Run ten Claude Code sessions. Read none of them.</title>
-<meta name="description" content="Less reading, faster decisions: Cockpit shows each Claude Code decision with only the context it needs, in one queue you clear with one key. Free and open source for macOS, Windows and Linux, on the Claude plan you already have.">
-<meta property="og:title" content="Cockpit: run ten Claude Code sessions. Read none of them.">
-<meta property="og:description" content="Every question, permission and plan from all your Claude Code sessions in one queue you clear with one key. Free, open source, no account.">
+<title>Cockpit · Run more Claude Code sessions without losing track</title>
+<meta name="description" content="Cockpit runs your Claude Code sessions side by side and puts every question, permission and plan in one queue, with the exact command in front of you. One key each. Free and open source for macOS, Windows and Linux, on the Claude plan you already have.">
+<meta property="og:title" content="Cockpit: run more Claude Code sessions without losing track">
+<meta property="og:description" content="Every question, permission and plan from all your Claude Code sessions in one queue, with the exact command in front of you. Free, open source, no account.">
 <meta property="og:image" content="https://getcockpit.github.io/assets/social.jpg">
 <meta property="og:url" content="https://getcockpit.github.io/">
 <meta name="twitter:card" content="summary_large_image">
@@ -156,7 +156,8 @@
     <a class="brand" href="#"><img src="assets/icon.png" alt="">Cockpit</a>
     <div class="links">
       <a href="#how">How it works</a>
-      <a href="#privacy">Privacy</a>
+      <a href="#safety">Safety</a>
+      <a href="#work">At work</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/getcockpit/cockpit">GitHub</a>
       <a class="nav-dl" href="#download">Download</a>
@@ -167,14 +168,13 @@
 <header class="hero">
   <div class="wrap">
     <span class="eyebrow">Free and open source · for Claude Code</span>
-    <h1>Run ten Claude Code sessions. Read none of them.</h1>
-    <p class="lede">Every question, permission and plan from all your sessions lands in one queue, with only the context it needs. One key each. You decide; you don't reread.</p>
+    <h1>Run more Claude Code sessions without losing track.</h1>
+    <p class="lede">Cockpit runs your sessions side by side and pulls everything that needs you into one queue, with the exact command or question in front of you. One key each, and every session keeps moving.</p>
     <div class="cta">
       <a class="btn primary" id="dl-main" href="#download">Download Cockpit, free</a>
       <a class="btn" id="watch" href="#film">▶ Watch the 45-second film</a>
     </div>
-    <p class="fine">2-minute install · no account · runs on the Claude plan you already have · macOS, Windows, Linux</p>
-    <p class="kicker">Grey and calm until something needs you.</p>
+    <p class="fine">2-minute install · no account · uses the Claude plan you already pay for · macOS, Windows, Linux</p>
   </div>
   <div class="wrap">
     <div class="film" id="film">
@@ -182,8 +182,8 @@
     </div>
     <p class="fine" style="text-align:center;margin:10px 0 18px" id="film-note">The real app, no sound. <a href="#film" id="watch-2">Play the full 45-second film with its score ▶</a></p>
     <div class="proof">
-      <div><b>10</b><span>sessions side by side, each in its own worktree</span></div>
-      <div><b>1 key</b><span>to allow, deny or answer anything</span></div>
+      <div><b>1 queue</b><span>for every session's questions, permissions and plans</span></div>
+      <div><b>1 key</b><span>to allow, deny or answer, with the exact command in front of you</span></div>
       <div><b>0</b><span>servers, accounts or stored tokens</span></div>
       <div><b>MIT</b><span>open source, every line on GitHub</span></div>
     </div>
@@ -193,91 +193,88 @@
 <section class="band">
   <div class="wrap">
     <h2>Same question. Two ways to answer it.</h2>
-    <p class="sub">In a terminal you rebuild the context for every decision. In Cockpit it arrives with the question, and the safe answer is one key.</p>
+    <p class="sub">Claude asks to run something. In a terminal you scroll up to work out what and where. In Cockpit that arrives with the question.</p>
     <div class="ab">
       <div class="them">
         <h3>Claude Code in a terminal</h3>
-        <div class="scroll"><div class="bar">claude — ~/code/shop-worktrees/retire-invoices · tab 6 of 8</div>⏺ Read(src/billing/invoices.ts)<br>  ⎿  Read 214 lines<br>⏺ Update(src/billing/invoices.ts)<br>  ⎿  Updated with 6 additions and 3 removals<br>⏺ Bash(bun test src/billing)<br>  ⎿  48 pass, 0 fail<br>⏺ Searching for invoices_v1 readers…<br>  ⎿  Found 0 files<br>✻ Thinking…<br>⏺ The readers are moved. Backfill next.<br>⏺ Bash(bun run backfill --dry-run)<br>  ⎿  12,408 rows would be copied<br>⏺ Bash(bun run backfill)<br>  ⎿  12,408 rows copied<br>⏺ Dropping the old table now.<br>⏺ Bash(psql "$PROD_DATABASE_URL" -c …)<br><span class="ask">  Do you want to proceed?</span><br><span class="ask">  ❯ 1. Yes  2. No</span><br>⏺ Read(src/billing/report.ts)<br>  ⎿  Read 96 lines<br>⏺ Update(src/billing/report.ts)</div>
+        <div class="scroll"><div class="bar">claude - ~/code/shop-worktrees/retire-invoices · tab 6 of 8</div>⏺ Read(src/billing/invoices.ts)<br>  ⎿  Read 214 lines<br>⏺ Update(src/billing/invoices.ts)<br>  ⎿  Updated with 6 additions and 3 removals<br>⏺ Bash(bun test src/billing)<br>  ⎿  48 pass, 0 fail<br>⏺ Searching for invoices_v1 readers…<br>  ⎿  Found 0 files<br>✻ Thinking…<br>⏺ The readers are moved. Backfill next.<br>⏺ Bash(bun run backfill --dry-run)<br>  ⎿  12,408 rows would be copied<br>⏺ Bash(bun run backfill)<br>  ⎿  12,408 rows copied<br>⏺ Dropping the old table now.<br>⏺ Bash(psql "$PROD_DATABASE_URL" -c …)<br><span class="ask">  Do you want to proceed?</span><br><span class="ask">  ❯ 1. Yes  2. No</span><br>⏺ Read(src/billing/report.ts)<br>  ⎿  Read 96 lines<br>⏺ Update(src/billing/report.ts)</div>
         <p class="cap">Which table? Which database? Scroll up and find out, in one of eight tabs.</p>
       </div>
       <div class="us">
         <h3>Claude Code in Cockpit</h3>
         <div class="shot"><img src="assets/risk-card.jpg" alt="The same request as a card: the exact psql command against production, High risk in red, Deny as the first key" loading="lazy"><img src="assets/safer.jpg" alt="After Deny, Claude offers to run it on staging first" loading="lazy" style="margin-top:8px"></div>
-        <p class="cap">Production, <code>CASCADE</code>, high risk. Press <span class="key">D</span>, and Claude comes back with a safer plan.</p>
+        <p class="cap">Production, <code>CASCADE</code>, high risk. Press <span class="key">D</span> and Claude comes back with a safer plan.</p>
       </div>
     </div>
   </div>
 </section>
 
-<section>
+<section id="safety">
   <div class="wrap">
-    <h2>Only what you need to decide.</h2>
-    <p class="sub">Reading is the tiring part. A terminal makes you rebuild the context for every decision. Cockpit brings it with the question and leaves everything else out.</p>
+    <h2>You still make every call. You just stop hunting for them.</h2>
+    <p class="sub">Faster answers only help if they're the right ones. So Cockpit doesn't summarise a risky command for you - it shows the real one, and tells you why it's flagged.</p>
     <div class="vs" style="grid-template-columns:repeat(3,1fr)">
-      <div class="us"><h3>Only the decision</h3><ul><li>The question, the options and their trade-offs. You don't scroll back through 400 lines to see why it's asking.</li></ul></div>
-      <div class="us"><h3>Only the risk</h3><ul><li>The exact command, where it runs, and how hard it is to undo, highlighted before you press a key.</li></ul></div>
-      <div class="us"><h3>Only what changed</h3><ul><li>The plan's progress and the files it touched, grouped by folder. Auth and migrations are flagged.</li></ul></div>
+      <div class="us"><h3>The exact command</h3><ul><li>Not a paraphrase. The full command, where it runs, and what it touches. The transcript is one key away (<span class="key">⌘R</span>) if you want more.</li></ul></div>
+      <div class="us"><h3>Plain rules, not a guess</h3><ul><li>Risk comes from rules you can read: force-push, <code>rm -rf</code>, <code>sudo</code>, <code>DROP TABLE</code>, <code>curl | sh</code>, writes outside the project. No model deciding what's safe. <a href="https://github.com/getcockpit/cockpit/blob/main/ui/src/picker/risk-rules.json">See the rules</a></li></ul></div>
+      <div class="us"><h3>You set the bar</h3><ul><li>Ask only for risky stuff (the default), ask for every command, or ask for everything. Change it any time. Deny is always the first key on a high-risk card.</li></ul></div>
     </div>
-    <h3 style="margin:64px 0 18px;font-size:28px">What changed for me</h3>
-    <blockquote class="quote"><p>“The difference I didn't expect was how much less tired I was. Each decision arrives with only the context it needs, so I'm not rebuilding it from scrollback every time.”</p><cite>Bohdan Kostko, who built Cockpit</cite></blockquote>
-    <div class="proof" style="grid-template-columns:repeat(2,1fr)">
-      <div><b>~7 → ~70</b><span>Claude Code sessions a day</span></div>
-      <div><b>4 → 11</b><span>sessions running at once at peak (14 on the busiest day)</span></div>
-    </div>
-    <p class="fine">My own numbers: 25 days in terminals vs the first 4 days in Cockpit. A small sample, and most of that week went into building Cockpit itself. Measured from session file timestamps; no content was read.</p>
   </div>
 </section>
 
-<section id="how">
+<section class="band" id="how">
   <div class="wrap">
     <h2>A morning with eight sessions.</h2>
-    <p class="sub">Five moments where Cockpit saves you the reading.</p>
+    <p class="sub">Four moments where Cockpit saves you the reading. It's useful with one session, and it earns its keep with five.</p>
 
     <div class="step">
-      <div class="head"><div class="n">1</div><div><h3>Everything that needs you, in one queue.</h3><p>Questions, permissions and plan approvals from every session, oldest first. Press <span class="key">1</span>–<span class="key">3</span> to pick, <span class="key">A</span> to allow, <span class="key">D</span> to deny. The session carries on by itself.</p></div></div>
-      <div class="shot"><img src="assets/queue.jpg" alt="The Needs-you queue with a question and its options" loading="lazy"></div>
+      <div class="head"><div class="n">1</div><div><h3>Everything that needs you, in one queue.</h3><p>Questions, permissions and plan approvals from every session, oldest first. Press <span class="key">1</span>–<span class="key">3</span> to pick, <span class="key">A</span> to allow, <span class="key">D</span> to deny. The session carries on by itself, and nothing sits waiting in tab six.</p></div></div>
+      <div class="shot"><img src="assets/queue.jpg" alt="The queue with a question and its options" loading="lazy"></div>
     </div>
 
     <div class="step">
-      <div class="head"><div class="n">2</div><div><h3>One window per client.</h3><p>Each workspace has its own Claude sign-in, memory and history, and shares your skills and settings. Switch with <span class="key">⌘1</span>–<span class="key">9</span>. Press <span class="key">⌘0</span> for the Overview: every workspace on one map, with what needs you counted beside its name. Click anything on it to jump straight in.</p></div></div>
-      <div class="shot"><img src="assets/overview.jpg" alt="The Overview: three workspaces on one canvas, each with its sessions grouped into resume, in progress and review, and a needs-you count beside its name" loading="lazy"></div>
+      <div class="head"><div class="n">2</div><div><h3>A plan you can read in ten seconds.</h3><p>Pick "plan it first" and Claude writes one page before touching code: the goal, what's in and out, the risks, and the questions it needs you to answer. Answer them inline, leave notes, then hit <b>Build from plan</b>.</p></div></div>
+      <div class="shot"><img src="assets/doc.jpg" alt="A plan as a map of blocks with open questions pinned to the side" loading="lazy"></div>
     </div>
 
     <div class="step">
-      <div class="head"><div class="n">3</div><div><h3>Review a PR one finding at a time.</h3><p>Your <code>/review</code> comes back as findings, riskiest first, each with its snippet. Press <span class="key">N</span> to note one, then publish every note as one GitHub review and approve. On your own PRs, Address does the reverse: each reviewer thread becomes a choice, and the session makes the fix.</p></div></div>
+      <div class="head"><div class="n">3</div><div><h3>PR reviews, one finding at a time.</h3><p>Your <code>/review</code> comes back as findings, riskiest first, each with its snippet. Press <span class="key">N</span> to note one, then publish them as one GitHub review. On your own PRs it runs the other way: each reviewer comment becomes a choice, and the session makes the fix.</p></div></div>
       <div class="shot"><img src="assets/review.jpg" alt="Guided PR review with a noted finding" loading="lazy"></div>
     </div>
 
     <div class="step">
-      <div class="head"><div class="n">4</div><div><h3>Catch the command that sounds harmless.</h3><p>Claude says "drop the old invoices table." The card shows the rest: it's production, and it's <code>CASCADE</code>. Press <span class="key">D</span>, and Claude comes back with a safer plan instead of a restore from backup.</p></div></div>
-      <div class="shot"><img src="assets/risk.jpg" alt="A production DROP TABLE flagged high risk, waiting for approval" loading="lazy"></div>
-      <div class="shot" style="margin-top:4px"><img src="assets/done.jpg" alt="After Deny, Claude proposes running it on staging first" loading="lazy"></div>
-    </div>
-
-    <div class="step">
-      <div class="head"><div class="n">5</div><div><h3>Plans you can read in ten seconds.</h3><p>Ask Claude to plan before it codes and you get a one-page map: goal, scope, design, risks and open questions, each drawn the way it reads best. Mark it up, send every note at once, then hit <b>Build from doc</b>.</p></div></div>
-      <div class="shot"><img src="assets/doc.jpg" alt="A plan as a map of blocks with open questions pinned to the side" loading="lazy"></div>
+      <div class="head"><div class="n">4</div><div><h3>One workspace per client.</h3><p>Each workspace has its own Claude sign-in, memory and history, and shares your skills and settings. <span class="key">⌘1</span>–<span class="key">9</span> to switch, <span class="key">⌘0</span> to see all of them on one map, with what needs you counted beside each name.</p></div></div>
+      <div class="shot"><img src="assets/overview.jpg" alt="Every workspace on one map, each with its sessions and a needs-you count" loading="lazy"></div>
     </div>
 
     <h3 style="margin:104px 0 18px;font-size:28px">Also in the box</h3>
     <div class="box">
-      <div><b>A worktree per session</b>Ten sessions on one repo never trip over each other. Start one from anywhere with <span class="key">⌘K</span>.</div>
-      <div><b>Your terminal, one key away</b>The raw transcript is <span class="key">⌘R</span>; hand any session to a real terminal with <span class="key">⌘T</span>.</div>
-      <div><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"><b>Change map</b>Every session's plan with live progress, and the files it touched grouped by folder. Auth and migrations are flagged.</div>
-      <div><img src="assets/timeline.jpg" alt="Timeline of sessions with forecasts" loading="lazy"><b>Timeline</b>What every session did, what it does next, and who will need you in the next 15 minutes.</div>
+      <div><b>Next to your terminal, not instead of it</b>It drives the <code>claude</code> you already have installed, so your hooks, skills, MCP servers and <code>CLAUDE.md</code> behave the same. Hand any session to a real terminal with <span class="key">⌘T</span>.</div>
+      <div><b>A worktree per session</b>Ten sessions on one repo never trip over each other. Prefer your own checkout? Turn it off per session.</div>
+      <div><b>Your limits, always visible</b>The 5-hour and weekly meters sit in the header, so running more sessions never surprises you.</div>
+      <div><img src="assets/changes.jpg" alt="Plan progress and the files a session changed" loading="lazy"><b>What changed</b>Each session's plan with live progress, and the files it touched grouped by folder. Auth and migrations are flagged.</div>
+      <div><b>Your keys, your plan, your machine</b>No account, no cloud, no extra bill. Sessions run on the Claude plan you already pay for.</div>
+      <div><b>Start anything with <span class="key">⌘K</span></b>Say what you want, pick a folder, choose "do it" or "plan it first". That's the whole form.</div>
     </div>
   </div>
 </section>
 
-<section class="band" id="privacy">
+<section>
+  <div class="wrap narrow">
+    <h2>Why I built it.</h2>
+    <blockquote class="quote"><p>“I was running Claude Code in four or five terminal tabs and spending more energy finding which one was stuck, and scrolling up to work out what it was asking, than actually deciding. So I built the thing I wanted.”</p><cite>Bohdan Kostko, who builds Cockpit</cite></blockquote>
+    <p class="sub" style="margin-top:28px">I've used it every day since, mostly to build Cockpit itself, so take my enthusiasm with a pinch of salt. What I didn't expect was how much less tired I am at the end of the day. It's free and MIT because that's how I'd want to try a tool like this. If something's off, <a href="https://github.com/getcockpit/cockpit/issues">open an issue</a>.</p>
+  </div>
+</section>
+
+<section class="band" id="work">
   <div class="wrap">
-    <h2>Your Claude. Your machine.</h2>
-    <p class="sub">Cockpit drives the Claude Code you already use, through Anthropic's official Agent SDK, signed in as you. Your skills, hooks and settings all keep working.</p>
+    <h2>Bringing it to work?</h2>
+    <p class="sub">Fair question for anything that sits next to your agent. Try it on a side project first, then send your security team this:</p>
     <div class="trust">
-      <div><b>No tokens touched</b>It never reads or stores your Claude login.</div>
-      <div><b>No server</b>History stays in a local file on your computer.</div>
-      <div><b>No lock-in</b>Hand any session to a real terminal with <span class="key">⌘T</span>.</div>
-      <div><b>No cost</b>MIT licensed. It uses your existing plan, with nothing extra to pay.</div>
+      <div><b>No tokens touched</b>It drives your real Claude Code through Anthropic's official Agent SDK, signed in as you. It never reads or stores your login.</div>
+      <div><b>No server</b>There's nothing of ours to send data to. History stays in a local file on your machine.</div>
+      <div><b>Every line is public</b>MIT licensed. Read it, audit it, or build it yourself with one command.</div>
+      <div><b>No lock-in</b>Your sessions are normal Claude Code sessions. Hand any of them to a terminal with <span class="key">⌘T</span>.</div>
     </div>
   </div>
 </section>
@@ -285,13 +282,14 @@
 <section id="download">
   <div class="wrap">
     <h2>Up and running in 2 minutes.</h2>
-    <p class="sub">You need Claude Code, signed in. Don't have it yet?</p>
-    <div class="term" style="position:relative"><button class="copy" data-copy="curl -fsSL https://getcockpit.github.io/install.sh | bash" type="button">Copy Cockpit install</button><span class="c"># 1. Claude Code, signed in once (skip if you have it)</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit: macOS or Linux, no security prompts</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
-    <p class="sub" style="margin:-8px 0 28px;font-size:18px">Prefer a normal download? Pick yours below.</p>
+    <p class="sub">You need Claude Code, signed in. Don't have it yet? Step 1 below.</p>
+    <div class="term" style="position:relative"><button class="copy" data-copy="curl -fsSL https://getcockpit.github.io/install.sh | bash" type="button">Copy Cockpit install</button><span class="c"># 1. Claude Code, signed in once (skip if you have it)</span><br><span class="p">$</span> curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; claude<br><br><span class="c"># 2. Cockpit: macOS or Linux</span><br><span class="p">$</span> curl -fsSL https://getcockpit.github.io/install.sh | bash</div>
+    <p class="fine" style="margin:-12px 0 28px">It downloads the latest release from GitHub and puts it in Applications. <a href="install.sh">Read the script</a> - it's short.</p>
+    <p class="sub" style="margin:0 0 28px;font-size:18px">Prefer a normal download? Pick yours below.</p>
     <div class="dl">
       <div data-os="mac"><h3>macOS</h3><div class="req">macOS 11+ · Apple Silicon and Intel</div><div class="files" data-match="\.dmg$"></div><div class="tip">The one-line installer above skips the "unidentified developer" prompt. From the .dmg, run <code>xattr -dr com.apple.quarantine /Applications/Cockpit.app</code> once.</div></div>
       <div data-os="win"><h3>Windows</h3><div class="req">Windows 10/11 · x64</div><div class="files" data-match="\.(exe|msi)$"></div><div class="tip">If SmartScreen asks: More info → Run anyway</div></div>
-      <div data-os="linux"><h3>Linux</h3><div class="req">x64 · Ubuntu 22.04+, Fedora 38+</div><div class="files" data-match="\.(AppImage|deb|rpm)$"></div><div class="tip">Windows and Linux are new, so please <a href="https://github.com/getcockpit/cockpit/issues">report anything odd</a></div></div>
+      <div data-os="linux"><h3>Linux</h3><div class="req">x64 · Ubuntu 22.04+, Fedora 38+</div><div class="files" data-match="\.(AppImage|deb|rpm)$"></div><div class="tip">Windows and Linux are newer than macOS, so please <a href="https://github.com/getcockpit/cockpit/issues">report anything odd</a></div></div>
     </div>
   </div>
 </section>
@@ -299,11 +297,13 @@
 <section class="band" id="faq">
   <div class="wrap narrow">
     <h2>Questions</h2>
-    <details><summary>Is it really free?</summary><p>Yes. Cockpit is MIT licensed. Your sessions use your existing Claude plan (Pro, Max, Team or API), exactly as they do in a terminal.</p></details>
-    <details><summary>Do my skills, commands, hooks and settings still work?</summary><p>Yes. Cockpit runs your real Claude Code with your real setup. Workspaces keep memory and history separate per client while sharing your skills and settings.</p></details>
-    <details><summary>What if a card gets something wrong?</summary><p>The full transcript is one key away (<span class="key">⌘R</span>), and every approval shows the exact command before it runs.</p></details>
-    <details><summary>How is this different from Conductor or Vibe Kanban?</summary><p>They help you run agents in parallel. Cockpit is about deciding: one queue across every session, one key per answer, risky commands and unbacked claims flagged before you act. It runs locally on your own Claude Code, with no account and no cloud.</p></details>
-    <details><summary>Why one git worktree per session? Don't they share my environment?</summary><p>Each session gets its own checkout so edits never collide, while it uses your normal machine, tools and Claude setup. Like any fresh clone, a worktree may need its dependencies installed; ask the session, or note it in your project's CLAUDE.md. Prefer your own checkout? Turn worktrees off when you start a session. Review and Address always run in your existing clone.</p></details>
+    <details><summary>I only run one session at a time. Is it for me?</summary><p>Probably yes, just for different reasons: plans you can read in seconds, risky commands shown in full before you answer, and what changed grouped by folder. And once waiting on sessions stops being a chore, a second and third one get a lot easier.</p></details>
+    <details><summary>Won't one-key answers make me rubber-stamp things?</summary><p>That's the risk we design against. You choose when you're asked, the card shows the real command and why it's flagged, and Deny is the first key on anything high risk. The point is to spend your attention on the calls that matter, not on finding them.</p></details>
+    <details><summary>Does it replace my terminal or tmux setup?</summary><p>No. It runs your real Claude Code, with your skills, hooks and settings. Any session can go to a real terminal with <span class="key">⌘T</span>, and the raw transcript is always <span class="key">⌘R</span>.</p></details>
+    <details><summary>Will more sessions burn through my plan limits?</summary><p>Sessions use your plan exactly as they would in a terminal, nothing extra. Running more at once uses more, so your 5-hour and weekly usage sits in the header, and you can cap how many work at once in Settings.</p></details>
+    <details><summary>Is it really free?</summary><p>Yes. MIT licensed, no account, no paid tier. Sessions run on your existing Claude plan (Pro, Max, Team or API).</p></details>
+    <details><summary>How is this different from Conductor or Vibe Kanban?</summary><p>They help you run agents in parallel. Cockpit is about deciding: one queue across every session, the exact command and its risk in front of you, one key per answer. It runs locally on your own Claude Code, with no account and no cloud.</p></details>
+    <details><summary>Why one git worktree per session?</summary><p>So edits never collide. Each session gets its own checkout and uses your normal machine, tools and Claude setup. Like any fresh clone, a worktree may need its dependencies installed; ask the session, or note it in your <code>CLAUDE.md</code>. Prefer your own checkout? Turn worktrees off when you start a session.</p></details>
     <details><summary>Is this made by Anthropic?</summary><p>No. Cockpit is an independent open-source project built on Anthropic's public Agent SDK. "Claude" and "Claude Code" are trademarks of Anthropic.</p></details>
     <details><summary>Can I build it or contribute?</summary><p>Please do: <code>git clone https://github.com/getcockpit/cockpit && ./scripts/dev.sh</code>. See <a href="https://github.com/getcockpit/cockpit/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p></details>
   </div>
@@ -311,8 +311,8 @@
 
 <section class="final">
   <div class="wrap">
-    <h2>Stop reading. Start deciding.</h2>
-    <p>Free, open source, and running in two minutes.</p>
+    <h2>Try it on your next task.</h2>
+    <p>Free, open source, and running in two minutes. No account to make, nothing to cancel.</p>
     <div class="cta">
       <a class="btn primary" id="dl-final" href="#download">Download Cockpit, free</a>
       <a class="btn" href="https://github.com/getcockpit/cockpit">★ Star on GitHub</a>
