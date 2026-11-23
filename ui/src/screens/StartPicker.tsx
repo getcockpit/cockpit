@@ -16,10 +16,10 @@ import { useDraft, writeDraft } from "../state/drafts";
 
 // ⌘K start picker (decision 18): Review / Address / Plan / Blank, each with its own suggestions.
 const MODES: { id: SessionKind; name: string; what: string; placeholder: string }[] = [
-  { id: "blank", name: "Blank", what: "Any task, straight away", placeholder: "What should Claude do?" },
-  { id: "plan", name: "Plan", what: "A working doc first, code later", placeholder: "Describe what you want to build…" },
+  { id: "blank", name: "Task", what: "Any task, straight away", placeholder: "What should Claude do?" },
+  { id: "plan", name: "Plan", what: "A one-page plan first, code later", placeholder: "Describe what you want to build…" },
   { id: "review", name: "Review", what: "Your /review on a PR", placeholder: "PR number or URL, e.g. 4412" },
-  { id: "address", name: "Address", what: "Your /pr-address, thread by thread", placeholder: "Your PR number" },
+  { id: "address", name: "Fix PR comments", what: "Your /pr-address, one reviewer thread at a time", placeholder: "Your PR number" },
 ];
 
 // Your own kinds (MR-80) sit next to the built-in ones; their mode id is `p:<preset id>`.
@@ -53,7 +53,7 @@ export function promptFor(mode: SessionKind, text: string): string {
 // What happens when you press Start, per kind (shown in the footer instead of stale copy).
 const HOW: Record<SessionKind, string> = {
   blank: "Runs in its own git worktree, so your checkout stays clean",
-  plan: "Writes a working doc you annotate; no code until you say so",
+  plan: "Writes a one-page plan you mark up; no code until you say so",
   review: "Runs your /review and shows its findings step by step",
   address: "Runs your /pr-address and walks each reviewer thread",
 };
@@ -301,7 +301,7 @@ function PresetEditor({ draft, onChange, onSave, onCancel }: { draft: Draft; onC
   return (
     <form data-mr="PresetEditor" data-mr-source={draft.id ?? "new"} onSubmit={(e) => { e.preventDefault(); onSave(); }}
       style={{ display: "flex", flexDirection: "column", gap: 10, padding: "8px 8px 4px" }}>
-      <span className="mr-dim">{draft.id ? "Edit your kind" : "A new kind of session, next to Blank and Plan"}</span>
+      <span className="mr-dim">{draft.id ? "Edit your kind" : "A new kind of session, next to Task and Plan"}</span>
       <input autoFocus className="mr-input" placeholder="Name, e.g. Triage" aria-label="Name" value={draft.name} onChange={(e) => onChange({ ...draft, name: e.target.value })} style={{ background: "var(--mr-well)" }} />
       <input className="mr-input mr-mono" placeholder="Prompt, e.g. /triage {text}  ({text} is what you type)" aria-label="Prompt template" value={draft.template} onChange={(e) => onChange({ ...draft, template: e.target.value })} style={{ background: "var(--mr-well)" }} />
       <div className="mr-row" style={{ gap: 10 }}>

@@ -147,7 +147,7 @@ export function WorkspaceTabs({ state, docs, active, onSwitch, onSignIn, onSetti
         <button type="button" onClick={() => setAdding(true)} aria-label="New workspace" style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>+</button>
       )}
       <span className="mr-grow" />
-      {onOverview && <button type="button" data-mr="OverviewButton" data-mr-source="overview" aria-pressed={!!overviewOn} onClick={onOverview} title="Every workspace on one canvas" style={{ padding: "6px 10px", border: 0, background: overviewOn ? "var(--mr-band)" : "transparent", color: overviewOn ? "var(--mr-ink)" : "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Overview <span className="mr-mono">{keyLabel("⌘0")}</span></button>}
+      {onOverview && <button type="button" data-mr="OverviewButton" data-mr-source="overview" aria-pressed={!!overviewOn} onClick={onOverview} title="Every workspace on one map" style={{ padding: "6px 10px", border: 0, background: overviewOn ? "var(--mr-band)" : "transparent", color: overviewOn ? "var(--mr-ink)" : "var(--mr-well)", cursor: "pointer", font: "inherit", whiteSpace: "nowrap", flex: "none" }}>All workspaces <span className="mr-mono">{keyLabel("⌘0")}</span></button>}
       {state.workspaces.length > 1 && <button type="button" onClick={onSwitcher} title={keyLabel("Switch workspace (⌃Tab cycles)")} style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Switch <span className="mr-mono">{keyLabel("⌘J")}</span></button>}
       <button type="button" onClick={onSettings} style={{ padding: "6px 10px", border: 0, background: "transparent", color: "var(--mr-well)", cursor: "pointer", font: "inherit" }}>Settings <span className="mr-mono">{keyLabel("⌘,")}</span></button>
     </nav>
@@ -211,7 +211,7 @@ export function DeleteWorkspace({ state, docs, id, onClose, onDeleted }: { state
       <form onSubmit={(e) => { e.preventDefault(); void del(); }} className="mr-sheet" style={{ width: "100%", maxWidth: 520, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 12, padding: 18, boxShadow: "inset 4px 0 0 var(--mr-error)" }}>
         <strong style={{ fontSize: 18 }}>Delete “{ws.name}”?</strong>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span>{sessions.length ? `${sessions.length} session${sessions.length === 1 ? "" : "s"}` : "No sessions"}{docCount ? ` and ${docCount} working doc${docCount === 1 ? "" : "s"}` : ""} {sessions.length + docCount === 1 ? "moves" : "move"} to Personal's archive as read-only history. They can't be resumed.</span>
+          <span>{sessions.length ? `${sessions.length} session${sessions.length === 1 ? "" : "s"}` : "No sessions"}{docCount ? ` and ${docCount} plan${docCount === 1 ? "" : "s"}` : ""} {sessions.length + docCount === 1 ? "moves" : "move"} to Personal's archive as read-only history. They can't be resumed.</span>
           {running > 0 && <span style={{ color: "var(--mr-needs-ink)", fontWeight: 600 }}>{running} still open will be stopped.</span>}
           <span className="mr-dim">Its own Claude sign-in and memory go to the macOS Trash, so you can still get them back from there.</span>
         </div>

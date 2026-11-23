@@ -21,7 +21,7 @@ export function PlanPanel({ s }: { s: SessionState }) {
   return (
     <section data-mr="PlanPanel" data-mr-source={s.id} style={{ background: "var(--mr-tile)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
       <div className="mr-row" style={{ alignItems: "baseline" }}>
-        <h2 className="mr-h mr-grow">Plan</h2>
+        <h2 className="mr-h mr-grow">Steps</h2>
         <span className="mr-mono" style={{ fontSize: 12 }}><b>{done}</b> of {todos.length} · <b>{pct}%</b></span>
       </div>
       <ProgressTrack segs={open ? planSegs(todos).map((x) => (x === "current" ? "todo" : x)) : planSegs(todos, working)} live={working} source={s.id}

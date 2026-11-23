@@ -185,7 +185,7 @@ export function DocMap({ doc, state, onBack, onOpenSession }: { doc: Doc; state:
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
               {pending > 0 && <Key k="⌘↵" tone="primary" onClick={() => void sendFeedback(true)}>Regenerate with {pending} {pending === 1 ? "change" : "changes"}</Key>}
               {pending > 0 && <Key onClick={() => void sendFeedback(false)}>Just send, don't regenerate</Key>}
-              <Key k={pending === 0 ? "⌘↵" : undefined} tone={pending === 0 && open.length === 0 ? "primary" : undefined} onClick={() => void build()} disabled={!blocks.length}>Build from this doc</Key>
+              <Key k={pending === 0 ? "⌘↵" : undefined} tone={pending === 0 && open.length === 0 ? "primary" : undefined} onClick={() => void build()} disabled={!blocks.length}>Build from this plan</Key>
               {open.length > 0 && <span className="mr-dim" style={{ fontSize: 12 }}>You can build now, but {open.length === 1 ? "the open question" : `the ${open.length} open questions`} will be left to Claude.</span>}
               {sent && <span style={{ color: "var(--mr-done)" }}>{sent}</span>}
             </div>
@@ -277,7 +277,7 @@ function BlockOpen(props: {
       </form>
       <div className="mr-row" style={{ flexWrap: "wrap" }}>
         {folded && b.body && <Key k="⌘-click" onClick={props.onDeeper}>{deep ? "Less detail" : "Show the reasoning"}</Key>}
-        <Key k="⌥-click" onClick={props.onDiscover} disabled={!!thread}>Discover in a side session</Key>
+        <Key k="⌥-click" onClick={props.onDiscover} disabled={!!thread}>Ask about this in a side session</Key>
         <span className="mr-dim" style={{ fontSize: 12 }}>Click text to edit</span>
       </div>
     </div>

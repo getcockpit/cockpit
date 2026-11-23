@@ -87,7 +87,7 @@ export function FlowRow({ s, what, selected, onOpen }: { s: SessionState; what: 
       <div className="mr-flag" />
       <div className="mr-qbody" style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
         <span style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0 }}>
-          <span className="mr-row" style={{ gap: 6 }}><strong className="mr-ink2">{s.kind === "review" ? "Review" : "Address"}</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{sessionTitle(s)}</span></span>
+          <span className="mr-row" style={{ gap: 6 }}><strong className="mr-ink2">{s.kind === "review" ? "Review" : "Fix PR comments"}</strong><span className="mr-dim">/</span><span className="mr-ink2 mr-ellipsis">{sessionTitle(s)}</span></span>
           <span className="mr-ask">{what}</span>
         </span>
         <Key k="↵" tone="primary" onClick={onOpen}>{s.kind === "review" ? "Continue review" : "Continue"}</Key>
