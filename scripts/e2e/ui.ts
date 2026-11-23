@@ -168,14 +168,16 @@ const flows: Flow[] = [
   { name: "J1 first run shows the onboarding", run: async () => {
     await ui.open("fresh");
     await ui.tags("Onboarding", 1);
-    for (const step of ["1 Try it", "2 Connect", "3 Your first task"]) await ui.see("button", step);
+    for (const step of ["1 The wall", "2 Your projects", "3 Connect", "4 Your first task"]) await ui.see("button", step);
   } },
-  { name: "J1 intro: answer the card, connect, pick a first task (three steps, MR-216)", run: async () => {
+  { name: "J1 intro: answer the card, then your projects, connect, a first task (four steps, MR-217)", run: async () => {
     await ui.open("fresh");
-    await ui.css('[data-mr="Onboarding"][data-mr-source="Try it"]', 1);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="The wall"]', 1);
     await ui.see("button", "D Deny"); // a session on the mock wall stops to ask
     await ui.key("d");
-    await ui.seeText("pushing to a branch instead");
+    await ui.seeText("Good call.");
+    await ui.click("button", /Next: your projects/);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Your projects"]', 1);
     await ui.click("button", /Next: connect/);
     await ui.css('[data-mr="Onboarding"][data-mr-source="Connect"]', 1);
     await ui.seeText("When should sessions stop and ask you?");
@@ -183,6 +185,27 @@ const flows: Flow[] = [
     await ui.css('[data-mr="Onboarding"][data-mr-source="Your first task"]', 1);
     await ui.see("button", /Plan it first/);
     await ui.see("button", "Fix PR comments");
+  } },
+  { name: "J1 intro: switch workspaces, open All workspaces, jump in from the map", run: async () => {
+    await ui.open("fresh");
+    await ui.key("ArrowRight");
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Your projects"]', 1);
+    await ui.key("Mod+2");
+    await ui.css('[data-mr="DemoWorkspaces"][data-mr-source="Client A"]', 1);
+    await ui.key("Mod+0");
+    await ui.css('[data-mr="DemoWorkspaces"][data-mr-source="overview"]', 1);
+    await ui.clickCss('[data-mr="DemoBlock"][data-mr-source="Review PR #482"]');
+    await ui.seeText("Opened from the map");
+  } },
+  { name: "J1 intro: note a finding, publish and approve", run: async () => {
+    await ui.open("fresh");
+    await ui.key("ArrowRight");
+    await ui.css('[data-mr="DemoReview"][data-mr-source="finding"]', 1);
+    await ui.key("n");
+    await ui.css('[data-mr="DemoReview"][data-mr-source="noted"]', 1);
+    await ui.key("Mod+Enter");
+    await ui.css('[data-mr="DemoReview"][data-mr-source="published"]', 1);
+    await ui.see("button", "Fix it"); // Fix PR comments, on your own PRs
   } },
   { name: "J2 start a session from the empty wall", run: async () => {
     await ui.open("empty");

@@ -27,13 +27,20 @@ done
 
 # Packaged UI: auto-review starts off (MR-93).
 export VITE_MR_PACKAGED=1
-# Ad-hoc signature ("-"): no Developer ID needed; Gatekeeper asks once on the friend's Mac.
+# Signing: with a Developer ID (APPLE_SIGNING_IDENTITY, plus APPLE_CERTIFICATE + APPLE_CERTIFICATE_PASSWORD on CI)
+# Tauri signs with it, and with APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID it also notarises and staples, so
+# Gatekeeper opens the app with no prompt (docs/SIGNING.md). Without them: an ad-hoc signature ("-"), and
+# Gatekeeper asks once. Empty variables (CI secrets not set yet) are dropped so Tauri doesn't try half a setup.
+for v in APPLE_SIGNING_IDENTITY APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+  [ -n "${!v:-}" ] || unset "$v"
+done
+identity="${APPLE_SIGNING_IDENTITY:--}"
 # The Tauri CLI: cargo's if installed, else the one in ui/node_modules (CI).
 tauri=(cargo tauri); cargo tauri --version >/dev/null 2>&1 || tauri=(node "$root/ui/node_modules/@tauri-apps/cli/tauri.js")
 # With the updater key (CI releases, MR-136) Tauri also writes Cockpit.app.tar.gz + .sig for in-app updates.
 updater=false; [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && updater=true
 (cd "$root/src-tauri" && "${tauri[@]}" build --target universal-apple-darwin --bundles app \
-  --config "{\"bundle\":{\"createUpdaterArtifacts\":$updater,\"macOS\":{\"signingIdentity\":\"-\",\"minimumSystemVersion\":\"11.0\",\"entitlements\":\"Entitlements.plist\"}}}")
+  --config "{\"bundle\":{\"createUpdaterArtifacts\":$updater,\"macOS\":{\"signingIdentity\":\"$identity\",\"minimumSystemVersion\":\"11.0\",\"entitlements\":\"Entitlements.plist\"}}}")
 if $updater; then
   b="$root/src-tauri/target/universal-apple-darwin/release/bundle/macos"
   cp "$b/Cockpit.app.tar.gz" "$root/dist/Cockpit-macos.app.tar.gz"

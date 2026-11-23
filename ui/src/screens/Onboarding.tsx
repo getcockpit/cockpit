@@ -4,22 +4,24 @@ import { PermissionOptions, usePermissionPick } from "../components/PermissionCh
 import { Bar, Key, Lamp, Lamps, RiskMeter, StateMark } from "../components";
 import { FlowDiagram } from "../components/FlowDiagram";
 import { keyOf } from "../components/keys";
-import { keyLabel } from "../platform";
+import { keyLabel, modKey } from "../platform";
 import type { TileSpec } from "../picker/pick";
 import { api } from "../state/store";
 import type { AppState, Diagram, SessionKind } from "../state/types";
 const SignInPane = lazy(() => import("./Terminal").then((m) => ({ default: m.SignInPane })));
 
-// First run (MR-37, made full-screen and hands-on in MR-38, cut to three steps in MR-216 on the synthetic
-// panel's evidence: research/synthetic/FINDINGS.md). Value first, about a minute:
-// 1. try it: a live mock wall where you answer a real-looking decision card, then see a plan arrive as a picture
-// 2. connect: a live check that Claude Code is installed and signed in (the official `claude` /login, never an
+// First run (MR-37, made full-screen and hands-on in MR-38, four steps in MR-217 on the synthetic panel's
+// evidence: research/synthetic/FINDINGS.md, intro H). Two minutes:
+// 1. the wall: a live mock wall where you answer a real-looking decision card, then see a plan arrive as a picture
+//    (its value-first copy is what kept the intro appealing; a demo-first rewrite lost appeal)
+// 2. your projects: workspaces (⌘2, ⌘0, jump in from the map), then review one finding at a time
+// 3. connect: a live check that Claude Code is installed and signed in (the official `claude` /login, never an
 //    in-app login), and how often sessions ask (I106)
-// 3. your first task: do it, or plan it first.
-// Workspaces, PR reviews, fixing PR comments and plans come later as one tip at a time on the Wall (suggest.ts).
+// 4. your first task: do it, or plan it first.
+// Plans and fixing PR comments come later as one tip at a time on the Wall (suggest.ts).
 // Shows once (ui.onboarded); Settings → Show the intro brings it back.
 
-const STEPS = ["Try it", "Connect", "Your first task"] as const;
+const STEPS = ["The wall", "Your projects", "Connect", "Your first task"] as const;
 
 export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone: () => void; onStart: (kind: SessionKind) => void }) {
   const [step, setStep] = useState(0);
@@ -61,14 +63,15 @@ export function Onboarding({ state, onDone, onStart }: { state: AppState; onDone
           ))}
         </nav>
         <span className="mr-grow" />
-        <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>About a minute · ← → to move</span>
+        <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>About two minutes · ← → to move</span>
         <Key k="esc" onClick={() => finish(null)}>Skip intro</Key>
       </header>
 
       <main key={step} className="mr-zoom-in mr-onb-main" style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
         {step === 0 && <WallStep onNext={() => go(1)} />}
-        {step === 1 && <ConnectStep state={state} onNext={() => go(2)} />}
-        {step === 2 && <GoStep onStart={(k) => finish(k)} />}
+        {step === 1 && <ProjectsStep onNext={() => go(2)} />}
+        {step === 2 && <ConnectStep state={state} onNext={() => go(3)} />}
+        {step === 3 && <GoStep onStart={(k) => finish(k)} />}
       </main>
     </div>
   );
@@ -122,8 +125,8 @@ function WallStep({ onNext }: { onNext: () => void }) {
   const count = (s: TileSpec["state"]) => sims.filter((x) => x.s === s).length;
   return (
     <>
-      <Title kicker="Try it" sub={<>Four Claude Code sessions are running below. Grey means they're fine. <b>Amber</b> means one needs you. Everything else can wait.</>}>
-        One of these sessions is about to <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>need you</span>.
+      <Title kicker="Claude Code, but visual" sub={<>Run many Claude Code sessions at once, on your own plan. Instead of scrolling through transcripts, you watch a wall. <b>Amber</b> means a session needs you. Everything else can wait.</>}>
+        Stop reading. Start <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>deciding</span>.
       </Title>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--mr-gap)" }}>
         <Lamps>
@@ -161,14 +164,14 @@ function WallStep({ onNext }: { onNext: () => void }) {
         {(asked === "allowed" || asked === "denied") && (
           <div className="mr-onb-rise mr-row" style={{ gap: 14 }}>
             <Burst />
-            <strong style={{ fontSize: 20 }}>{asked === "denied" ? "Denied. It's pushing to a branch instead." : "Done, in one keystroke."}</strong>
-            <span className="mr-dim">That's the whole loop: anything that needs you shows up here, with what you need to decide. Press a key and the session keeps going. The transcript is one key away if you want it (<span className="mr-mono">{keyLabel("⌘R")}</span>).</span>
+            <strong style={{ fontSize: 20 }}>{asked === "denied" ? "Good call." : "Done, in one keystroke."}</strong>
+            <span className="mr-dim">That's the loop: glance, decide, move on. Real cards work the same way: <span className="mr-mono">J/K</span> to move, <span className="mr-mono">A/D</span> to answer, <span className="mr-mono">{keyLabel("⌘K")}</span> to start a session, <span className="mr-mono">{keyLabel("⌘⇧D")}</span> to mark one done.</span>
           </div>
         )}
         {(asked === "allowed" || asked === "denied") && <PlanPicture />}
         {asked === null && <span className="mr-dim">Watch the wall. One of these sessions is about to need you…</span>}
       </div>
-      <Next onClick={onNext} ready={asked === "allowed" || asked === "denied"}>Next: connect</Next>
+      <Next onClick={onNext} ready={asked === "allowed" || asked === "denied"}>Next: your projects</Next>
     </>
   );
 }
@@ -216,7 +219,178 @@ function PlanPicture() {
   );
 }
 
-// ── 2. Connect: live checks, then how often sessions ask. ──
+// A small "done it" checklist the new steps share.
+function Tasks({ items }: { items: { done: boolean; text: React.ReactNode }[] }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {items.map((t, i) => (
+        <div key={i} className="mr-row" style={{ gap: 12, padding: "8px 12px", background: t.done ? "var(--mr-tile)" : "var(--mr-well)", transition: "background .3s" }}>
+          <span key={String(t.done)} className={t.done ? "mr-onb-pop mr-mono" : "mr-mono"} style={{ width: 18, color: t.done ? "var(--mr-done)" : "var(--mr-ink-3)", fontSize: 16 }}>{t.done ? "✓" : "○"}</span>
+          <span>{t.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── 2a. Workspaces: one per client, and all of them on one map. ──
+type DemoItem = { t: string; s: TileSpec["state"] };
+const DEMO_WS: { name: string; items: DemoItem[] }[] = [
+  { name: "Personal", items: [{ t: "Fix the login redirect", s: "working" }, { t: "Bump dependencies", s: "almost" }] },
+  { name: "Client A", items: [{ t: "Migrate billing to Stripe", s: "needs_you" }, { t: "Review PR #482", s: "working" }, { t: "Q4 export plan", s: "review" }] },
+];
+
+function WorkspacesDemo() {
+  const [at, setAt] = useState(0);
+  const [overview, setOverview] = useState(false);
+  const [switched, setSwitched] = useState(false);
+  const [mapped, setMapped] = useState(false);
+  const [opened, setOpened] = useState<string | null>(null);
+  const pick = (i: number) => { setAt(i); setOverview(false); if (i !== 0) setSwitched(true); };
+  const showMap = () => { setOverview(true); setMapped(true); };
+  // The app's own ⌘0 / ⌘1–9 stand down while a dialog is open (appKey), so the intro handles them here.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (!modKey(e) || e.shiftKey || e.altKey) return;
+      const key = keyOf(e);
+      if (key === "0") { e.preventDefault(); showMap(); }
+      if (key === "1" || key === "2") { e.preventDefault(); pick(Number(key) - 1); }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
+  const needs = (w: (typeof DEMO_WS)[number]) => w.items.filter((x) => x.s === "needs_you").length;
+  return (
+    <>
+      <Title kicker="One window per client" sub="Each workspace keeps its own Claude sign-in, memory and history, and shares your skills and settings. All workspaces shows every workspace on one map, so nothing waits unseen in another tab.">
+        Every project, <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>one glance</span>.
+      </Title>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)", gap: 28, alignItems: "start", maxWidth: 1100 }}>
+        <Tasks items={[
+          { done: switched, text: <>Switch to <b>Client A</b>: press <span className="mr-mono">{keyLabel("⌘2")}</span> or click its tab</> },
+          { done: mapped, text: <>Open <b>All workspaces</b>: <span className="mr-mono">{keyLabel("⌘0")}</span></> },
+          { done: opened !== null, text: <>Click a session on the map to jump straight in</> },
+        ]} />
+        <div data-mr="DemoWorkspaces" data-mr-source={overview ? "overview" : DEMO_WS[at].name} style={{ background: "var(--mr-well)", display: "flex", flexDirection: "column" }}>
+          <div className="mr-row" style={{ gap: 2, padding: 3, background: "var(--mr-ink)" }}>
+            {DEMO_WS.map((w, i) => (
+              <button key={w.name} type="button" data-mr="DemoTab" data-mr-source={w.name} aria-pressed={!overview && at === i} onClick={() => pick(i)}
+                style={{ border: 0, padding: "6px 12px", font: "inherit", cursor: "pointer", background: !overview && at === i ? "var(--mr-tile)" : "transparent", color: !overview && at === i ? "var(--mr-ink)" : "var(--mr-tile)", display: "flex", gap: 8, alignItems: "center" }}>
+                {w.name}<span className="mr-mono" style={{ fontSize: 11, opacity: 0.6 }}>{keyLabel(`⌘${i + 1}`)}</span>
+                {needs(w) > 0 && <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 5px", fontSize: 12, fontWeight: 700 }}>{needs(w)}</span>}
+              </button>
+            ))}
+            <span className="mr-grow" />
+            <button type="button" data-mr="DemoTab" data-mr-source="Overview" aria-pressed={overview} onClick={showMap}
+              className={switched && !mapped ? "mr-onb-nudge" : undefined}
+              style={{ border: 0, padding: "6px 12px", font: "inherit", cursor: "pointer", background: overview ? "var(--mr-tile)" : "transparent", color: overview ? "var(--mr-ink)" : "var(--mr-tile)" }}>
+              All workspaces <span className="mr-mono" style={{ fontSize: 11, opacity: 0.6 }}>{keyLabel("⌘0")}</span>
+            </button>
+          </div>
+          <div key={overview ? "map" : at} className="mr-onb-rise" style={{ padding: 14, minHeight: 210 }}>
+            {overview ? (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                {DEMO_WS.map((w, i) => (
+                  <div key={w.name} style={{ background: "var(--mr-base)", padding: 10, display: "flex", flexDirection: "column", gap: 6, boxShadow: needs(w) > 0 ? "inset 3px 0 0 var(--mr-needs)" : undefined }}>
+                    <span className="mr-row" style={{ gap: 8 }}><strong>{w.name}</strong>{needs(w) > 0 && <span className="mr-dim" style={{ fontSize: 12 }}>⚠ {needs(w)} needs you</span>}</span>
+                    {w.items.map((x) => (
+                      <button key={x.t} type="button" data-mr="DemoBlock" data-mr-source={x.t} onClick={() => { setOpened(x.t); setAt(i); setOverview(false); }}
+                        style={{ border: 0, padding: "6px 8px", font: "inherit", fontSize: 13, textAlign: "left", cursor: "pointer", background: "var(--mr-tile)", color: "var(--mr-ink)", display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span>{x.t}</span><StateMark s={x.s} />
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                {DEMO_WS[at].items.map((x) => (
+                  <div key={x.t} style={{ padding: 12, background: "var(--mr-tile)", display: "flex", flexDirection: "column", gap: 6, boxShadow: opened === x.t ? "inset 0 0 0 3px var(--mr-selected)" : x.s === "needs_you" ? "inset 0 0 0 3px var(--mr-needs)" : undefined }}>
+                    <StateMark s={x.s} /><strong style={{ fontSize: 14 }}>{x.t}</strong>
+                    {opened === x.t && <span className="mr-onb-rise mr-dim" style={{ fontSize: 12 }}>Opened from the map</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {opened !== null && (
+        <div className="mr-onb-rise mr-row" style={{ gap: 14 }}>
+          <Burst />
+          <strong style={{ fontSize: 20 }}>Straight there.</strong>
+          <span className="mr-dim">{keyLabel("⌘1–9 jump to a workspace; ⌘0 is the map of all of them, and where Cockpit opens when you have several.")}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── 2b. Review a PR one finding at a time; Fix PR comments turns reviewer threads into fixes. ──
+function ReviewDemo() {
+  const [noted, setNoted] = useState(false);
+  const [published, setPublished] = useState(false);
+  const [fix, setFix] = useState<string | null>(null);
+  const note = () => setNoted(true);
+  const publish = () => { if (noted) setPublished(true); };
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      const key = keyOf(e);
+      if (key === "n" && !modKey(e)) { e.preventDefault(); note(); }
+      if (key === "Enter" && modKey(e)) { e.preventDefault(); publish(); }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
+  return (
+    <>
+      <Title kicker="Review, one finding at a time" sub={<>Start a review from <span className="mr-mono">{keyLabel("⌘K")}</span> and your <span className="mr-mono">/review</span> comes back as findings, riskiest first, each with its snippet. Note the ones that matter and publish them as one GitHub review.</>}>
+        Read the <span style={{ background: "var(--mr-needs)", color: "var(--mr-needs-ink)", padding: "0 8px" }}>risk</span>, not the whole diff.
+      </Title>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 2fr)", gap: 28, alignItems: "start", maxWidth: 1100 }}>
+        <Tasks items={[
+          { done: noted, text: <>Note the finding: press <span className="mr-mono">N</span></> },
+          { done: published, text: <>Publish and approve: <span className="mr-mono">{keyLabel("⌘↵")}</span></> },
+        ]} />
+        <div data-mr="DemoReview" data-mr-source={published ? "published" : noted ? "noted" : "finding"} style={{ background: "var(--mr-tile)", padding: 16, display: "flex", flexDirection: "column", gap: 10, boxShadow: "inset 4px 0 0 var(--mr-error)" }}>
+          <span className="mr-dim mr-mono" style={{ fontSize: 12 }}>PR #482 · Retry the billing export · finding 1 of 3 · riskiest first</span>
+          <strong style={{ fontSize: 17 }}>Retries forever, with no backoff</strong>
+          <code className="mr-code mr-mono" style={{ padding: 8, whiteSpace: "pre", fontSize: 12 }}>{"billing/export.ts:42\n  while (!ok) ok = await send(batch);"}</code>
+          <span className="mr-dim">A provider outage turns into a tight loop that hammers it and never gives up.</span>
+          {noted && <span className="mr-onb-rise" style={{ padding: "6px 10px", background: "var(--mr-well)", fontSize: 13 }}>Your note on line 42: “Cap the retries and back off.”</span>}
+          <div className="mr-row" style={{ gap: 8 }}>
+            {!noted && <Key k="N" tone="primary" onClick={note}>Note it</Key>}
+            {noted && !published && <span className="mr-onb-nudge"><Key k="⌘↵" tone="primary" onClick={publish}>Publish and approve</Key></span>}
+            {published && <span className="mr-onb-rise mr-row" style={{ gap: 10 }}><Burst /><strong>Published: 1 comment, approved.</strong></span>}
+          </div>
+        </div>
+      </div>
+      {published && (
+        <div className="mr-onb-rise" style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 1100 }}>
+          <span className="mr-dim">On your own PRs it runs the other way. <b>Fix PR comments</b> takes each reviewer thread and asks how to answer it; the session makes the fix:</span>
+          <div className="mr-row" style={{ gap: 12, padding: 14, background: "var(--mr-tile)", boxShadow: "inset 4px 0 0 var(--mr-needs)", flexWrap: "wrap" }}>
+            <span className="mr-grow">Reviewer: “Can this reuse the shared backoff helper?”</span>
+            {["Fix it", "Reply", "Skip"].map((o) => <Key key={o} tone={fix === o ? "primary" : undefined} pressed={fix === o} onClick={() => setFix(o)}>{o}</Key>)}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── 2. Your projects: both demos on one step. ──
+function ProjectsStep({ onNext }: { onNext: () => void }) {
+  return (
+    <>
+      <WorkspacesDemo />
+      <div style={{ height: 28 }} />
+      <ReviewDemo />
+      <Next onClick={onNext}>Next: connect</Next>
+    </>
+  );
+}
+
+// ── 3. Connect: live checks, then how often sessions ask. ──
 function ConnectStep({ state, onNext }: { state: AppState; onNext: () => void }) {
   const [signIn, setSignIn] = useState(false);
   const claude = state.sidecar.claude;
@@ -277,7 +451,7 @@ function Check({ ok, title, detail, action, optional }: { ok: boolean | null; ti
   );
 }
 
-// ── 3. Your first task. ──
+// ── 4. Your first task. ──
 function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
   const kinds = [
     { id: "blank" as const, t: "Do it now", d: "Say what you want. It runs in its own git worktree, so your checkout stays clean.", k: "↵" },
@@ -303,7 +477,7 @@ function GoStep({ onStart }: { onStart: (kind: SessionKind) => void }) {
         ))}
       </div>
       <div className="mr-row" style={{ gap: 18, marginTop: "auto" }}>
-        <span className="mr-dim">Or: <button type="button" className="mr-key" onClick={() => onStart("review")}>Review a PR</button> · <button type="button" className="mr-key" onClick={() => onStart("address")}>Fix PR comments</button>. The rest shows up one tip at a time as you go. <span className="mr-mono">{keyLabel("⌘K")}</span> starts anything, from anywhere.</span>
+        <span className="mr-dim">Or: <button type="button" className="mr-key" onClick={() => onStart("review")}>Review a PR</button> · <button type="button" className="mr-key" onClick={() => onStart("address")}>Fix PR comments</button>. Plans and the rest show up one tip at a time as you go. <span className="mr-mono">{keyLabel("⌘K")}</span> starts anything, from anywhere.</span>
         <span className="mr-grow" />
         <span className="mr-onb-nudge"><Key k="↵" tone="primary" onClick={() => onStart("blank")}>Start</Key></span>
       </div>
