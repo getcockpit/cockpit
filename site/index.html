@@ -71,6 +71,7 @@
   .vs > div { background: var(--tile); padding: 30px 32px; }
   .vs h3 { margin: 0 0 18px; font-size: 15px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
   .vs .them h3::before { content: "■ "; color: var(--error); }
+  .vs.three { grid-template-columns: repeat(3, 1fr); }
   .vs .us { border-left: 6px solid var(--needs); }
   .vs .us h3::before { content: "■ "; color: var(--needs); }
   .vs ul { margin: 0; padding: 0; list-style: none; }
@@ -144,9 +145,26 @@
   @media (max-width: 860px) {
     .proof, .trust, .dl { grid-template-columns: 1fr 1fr; }
     .ab, .box { grid-template-columns: 1fr; }
-    .vs, .pair, .pair.tall { grid-template-columns: 1fr; }
+    .vs, .vs.three, .pair, .pair.tall { grid-template-columns: 1fr; }
     .step .head { grid-template-columns: 1fr; }
     nav .links a:not(.nav-dl) { display: none; }
+  }
+  @media (max-width: 560px) {
+    section { padding: 64px 0; }
+    .wrap { padding: 0 18px; }
+    .proof, .trust, .dl, .box { grid-template-columns: 1fr; }
+    .proof div { display: flex; align-items: baseline; gap: 12px; padding: 16px 18px; text-align: left; }
+    .proof b { font-size: 26px; flex: none; min-width: 3.6em; }
+    .sub { font-size: 18px; }
+    .step { margin-bottom: 64px; }
+    .step p { font-size: 18px; }
+    .term { padding-top: 60px; font-size: 14px; overflow-wrap: anywhere; }
+    .dl code, .dl .tip { overflow-wrap: anywhere; }
+    .vs > div, .trust div, .box > div { padding: 20px; }
+    .box img { margin: -20px -20px 16px; width: calc(100% + 40px); }
+    .quote { padding: 22px 22px; }
+    .final { padding: 72px 0; }
+    .eyebrow { font-size: 12px; }
   }
 </style>
 </head>
@@ -213,7 +231,7 @@
   <div class="wrap">
     <h2>You still make every call. You just stop hunting for them.</h2>
     <p class="sub">Faster answers only help if they're the right ones. So Cockpit doesn't summarise a risky command for you - it shows the real one, and tells you why it's flagged.</p>
-    <div class="vs" style="grid-template-columns:repeat(3,1fr)">
+    <div class="vs three">
       <div class="us"><h3>The exact command</h3><ul><li>Not a paraphrase. The full command, where it runs, and what it touches. The transcript is one key away (<span class="key">⌘R</span>) if you want more.</li></ul></div>
       <div class="us"><h3>Plain rules, not a guess</h3><ul><li>Risk comes from rules you can read: force-push, <code>rm -rf</code>, <code>sudo</code>, <code>DROP TABLE</code>, <code>curl | sh</code>, writes outside the project. No model deciding what's safe. <a href="https://github.com/getcockpit/cockpit/blob/main/ui/src/picker/risk-rules.json">See the rules</a></li></ul></div>
       <div class="us"><h3>You set the bar</h3><ul><li>Ask only for risky stuff (the default), ask for every command, or ask for everything. Change it any time. Deny is always the first key on a high-risk card.</li></ul></div>
@@ -330,7 +348,9 @@
 <script>
   // Fill the download cards from the latest GitHub release and point the main buttons at the visitor's OS.
   const ua = navigator.userAgent;
-  const os = /Mac/.test(ua) ? "mac" : /Win/.test(ua) ? "win" : /Linux|X11/.test(ua) ? "linux" : null;
+  // Phones and tablets can't run it (an iPhone says "like Mac OS X"): no OS pick, the buttons lead to the download cards.
+  const mobile = /iPhone|iPad|iPod|Android|Mobile/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1);
+  const os = mobile ? null : /Mac/.test(ua) ? "mac" : /Win/.test(ua) ? "win" : /Linux|X11/.test(ua) ? "linux" : null;
   const names = { mac: "macOS", win: "Windows", linux: "Linux" };
   if (os) document.querySelector(`[data-os="${os}"]`).classList.add("me");
   const latest = "https://github.com/getcockpit/cockpit/releases/latest";
