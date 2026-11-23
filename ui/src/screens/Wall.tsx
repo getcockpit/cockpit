@@ -55,6 +55,12 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
     else if (a.kind === "docs_done") { for (const id of a.ids) { const d = docs.find((x) => x.id === id); if (d) await docApi.done(d); } }
     else if (a.kind === "usage_review") { onOpen(await api.start(a.repo, USAGE_REVIEW, "blank", false)); void api.log("ui.suggestion_dismissed", { id: g.id }); }
     else if (a.kind === "resume") { const s = state.sessions[a.id]; if (s) await api.resume(s); }
+    else if (a.kind === "tip") {
+      void api.log("ui.suggestion_dismissed", { id: g.id }); // a tip shows once: acting on it retires it
+      if (a.tip === "workspaces") onSettings?.();
+      else if (a.tip === "plan") { try { localStorage.setItem("mr.mode", "plan"); } catch { /* convenience only */ } onStart(); }
+      else onStart({ mode: a.tip, text: "" });
+    }
   };
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const discover = async (s: SessionState) => onOpen(await sideThread(s));
@@ -131,7 +137,7 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
             </div>}
             {/* Your call (MR-107): worth doing, but nothing is blocked on it, so no amber, no count, no notification. */}
             {suggestions.length > 0 && <>
-              <h3 className="mr-dim" style={{ margin: queue.length ? "6px 0 0" : 0, fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>Your call <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>· nothing waits on these</span></h3>
+              <h3 className="mr-dim" style={{ margin: queue.length ? "6px 0 0" : 0, fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>Suggestions <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>· nothing waits on these</span></h3>
               <div className="mr-queue">
                 {suggestions.map((g, i) => <CallRow key={g.id} g={g} selected={queue.length + i === sel} onAct={() => void act(g)} />)}
               </div>

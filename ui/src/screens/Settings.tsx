@@ -146,9 +146,9 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
         </section>}
 
         {tab === "keys" && <section data-mr="CockpitLayerSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <h2 className="mr-h">Cockpit layer <span className="mr-dim" style={{ fontWeight: 400 }}>who draws the cards, plans and titles</span></h2>
+          <h2 className="mr-h">Card model <span className="mr-dim" style={{ fontWeight: 400 }}>who draws the cards, plans and titles</span></h2>
           <div className="mr-row" style={{ gap: 12 }}>
-            <Segmented label="Cards by" value={state.cockpitLayer ? "layer" : "session"} options={[["session", "Claude, in the session"], ["layer", "Cockpit layer"]]} onPick={(v) => void api.log("ui.cockpit_layer_set", { on: v === "layer" })} />
+            <Segmented label="Cards by" value={state.cockpitLayer ? "layer" : "session"} options={[["session", "Claude, in the session"], ["layer", "Card model"]]} onPick={(v) => void api.log("ui.cockpit_layer_set", { on: v === "layer" })} />
             <span className="mr-dim" style={{ fontSize: 12 }}>{state.cockpitLayer ? "Sessions run as plain Claude Code. After each turn a small model on the Cockpit key draws the cards, so none of it uses your Claude plan." : "Claude draws the cards itself, which adds about 6% to what sessions use of your plan."} Applies to sessions started or resumed after the change.</span>
           </div>
           {(() => {
@@ -247,7 +247,7 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
         {tab === "usage" && <Usage />}
 
         {tab === "keys" && <section data-mr="ClefSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <h2 className="mr-h">Picker model <span className="mr-dim" style={{ fontWeight: 400 }}>Cloudflare Clef-flash reads unclear prose; without it the app uses its own rules</span></h2>
+          <h2 className="mr-h">Message sorter <span className="mr-dim" style={{ fontWeight: 400 }}>Cloudflare Clef-flash reads unclear prose; without it the app uses its own rules</span></h2>
           {(() => {
             const m = state.clef.day === new Date().toISOString().slice(0, 10) ? state.clef : { calls: 0, tokens: 0, errors: 0 };
             return (

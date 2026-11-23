@@ -85,7 +85,7 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
       {[
         { label: "Mark as wrong & fix…", hint: "", run: () => { onOpen(); setHover(null); setMarked({ ...menu.t, rect: menu.t.el.getBoundingClientRect() }); } },
         { label: "Go deeper", hint: keyLabel("⌘-click"), run: () => click(menu.origin, isMac() ? { metaKey: true } : { ctrlKey: true }) },
-        { label: "Discover in a side session", hint: keyLabel("⌥-click"), run: () => click(menu.origin, { altKey: true }) },
+        { label: "Ask about this in a side session", hint: keyLabel("⌥-click"), run: () => click(menu.origin, { altKey: true }) },
         { label: "Inspect everything", hint: keyLabel("⌘⇧G"), run: () => onOpen() },
         ...(() => { const a = menu.t.source ? sessionAction?.(menu.t.source, menu.t.component) : null; return a ? [{ label: a.label, hint: "", run: a.run }] : []; })(),
       ].map((it) => (
@@ -121,7 +121,7 @@ export function GodMode({ on, onOpen, onClose, view, onOpenSession, sessionActio
     <>{menuEl}
     <div data-godmode-ui style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 50 }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "6px 16px", background: "var(--mr-ink)", color: "var(--mr-tile)", display: "flex", gap: 16, pointerEvents: "auto" }}>
-        <strong>God mode</strong><span style={{ opacity: 0.8 }}>Hover to inspect · click (or right-click anywhere, any time) to mark it wrong · esc to leave</span>
+        <strong>Fix this app</strong><span style={{ opacity: 0.8 }}>Hover to inspect · click (or right-click anywhere, any time) to mark it wrong · esc to leave</span>
       </div>
       {box && <div style={{ position: "absolute", left: box.left, top: box.top, width: box.width, height: box.height, outline: `2px solid ${marked ? "var(--mr-error)" : "var(--mr-selected)"}`, background: "rgba(14,110,120,.06)" }} />}
       {hover && !marked && box && (

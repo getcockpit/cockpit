@@ -168,41 +168,21 @@ const flows: Flow[] = [
   { name: "J1 first run shows the onboarding", run: async () => {
     await ui.open("fresh");
     await ui.tags("Onboarding", 1);
-    for (const step of ["1 The wall", "2 Workspaces", "3 Review", "4 Plans", "5 Connect", "6 Permissions", "7 Go"]) await ui.see("button", step);
+    for (const step of ["1 Try it", "2 Connect", "3 Your first task"]) await ui.see("button", step);
   } },
-  { name: "J1 intro: switch workspaces, open the Overview, jump in from the map", run: async () => {
+  { name: "J1 intro: answer the card, connect, pick a first task (three steps, MR-216)", run: async () => {
     await ui.open("fresh");
-    await ui.key("ArrowRight");
-    await ui.css('[data-mr="Onboarding"][data-mr-source="Workspaces"]', 1);
-    await ui.key("Mod+2");
-    await ui.css('[data-mr="DemoWorkspaces"][data-mr-source="Client A"]', 1);
-    await ui.key("Mod+0");
-    await ui.css('[data-mr="DemoWorkspaces"][data-mr-source="overview"]', 1);
-    await ui.clickCss('[data-mr="DemoBlock"][data-mr-source="Review PR #482"]');
-    await ui.seeText("Opened from the map");
-    await ui.click("button", /Next: review/);
-    await ui.css('[data-mr="Onboarding"][data-mr-source="Review"]', 1);
-  } },
-  { name: "J1 intro: note a finding, publish and approve", run: async () => {
-    await ui.open("fresh");
-    await ui.key("ArrowRight", "ArrowRight");
-    await ui.css('[data-mr="DemoReview"][data-mr-source="finding"]', 1);
-    await ui.key("n");
-    await ui.css('[data-mr="DemoReview"][data-mr-source="noted"]', 1);
-    await ui.key("Mod+Enter");
-    await ui.css('[data-mr="DemoReview"][data-mr-source="published"]', 1);
-    await ui.see("button", "Fix it"); // Address, on your own PRs
-  } },
-  { name: "J1 intro: decide a plan's question, then build from it", run: async () => {
-    await ui.open("fresh");
-    await ui.key("ArrowRight", "ArrowRight", "ArrowRight");
-    await ui.css('[data-mr="DemoPlan"][data-mr-source="open"]', 1);
-    await ui.click("button", "On demand");
-    await ui.css('[data-mr="DemoPlan"][data-mr-source="On demand"]', 1);
-    await ui.click("button", "Build from doc");
-    await ui.css('[data-mr="DemoPlan"][data-mr-source="built"]', 1);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Try it"]', 1);
+    await ui.see("button", "D Deny"); // a session on the mock wall stops to ask
+    await ui.key("d");
+    await ui.seeText("pushing to a branch instead");
     await ui.click("button", /Next: connect/);
     await ui.css('[data-mr="Onboarding"][data-mr-source="Connect"]', 1);
+    await ui.seeText("When should sessions stop and ask you?");
+    await ui.click("button", /Next: your first task/);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Your first task"]', 1);
+    await ui.see("button", /Plan it first/);
+    await ui.see("button", "Fix PR comments");
   } },
   { name: "J2 start a session from the empty wall", run: async () => {
     await ui.open("empty");
@@ -374,7 +354,7 @@ const flows: Flow[] = [
   { name: "J12 address a PR from the picker", run: async () => {
     await ui.open("busy");
     await ui.click("button", key("K", "Start"));
-    await ui.click("radio", "Address");
+    await ui.click("radio", "Fix PR comments");
     await ui.see("button", "#479 Billing CSV export");
     await ui.click("button", "#479 Billing CSV export");
     // No clone known for acme/billing yet: it asks for the folder once (a native dialog from here).
@@ -388,7 +368,7 @@ const flows: Flow[] = [
     await ui.press("Enter");
     await ui.click("button", /Regenerate with 1 change$/);
     await ui.seeText("Changed in v3");
-    await ui.see("button", /Build from this doc$/);
+    await ui.see("button", /Build from this plan$/);
   } },
   { name: "J14 report a bug and get a fix session", run: async () => {
     await ui.open("busy");
@@ -486,7 +466,7 @@ const flows: Flow[] = [
     await ui.click("button", "Open workspace Client X");
     await ui.tags("OverviewCanvas", 0);
     await ui.see("button", "Open Quarterly usage report");
-    await ui.click("button", /^Overview/);
+    await ui.click("button", /^All workspaces/);
     await ui.click("button", "Open Overview canvas");
     await ui.tags("DocBlock", some);
   } },
@@ -1082,7 +1062,7 @@ const flows: Flow[] = [
   { name: "Keys: picker ↓ / Enter pick a PR to address", run: async () => {
     await ui.open("busy");
     await ui.key("Mod+k");
-    await ui.click("radio", "Address");
+    await ui.click("radio", "Fix PR comments");
     await ui.see("button", "#479 Billing CSV export");
     await ui.key("Enter"); // the first PR is selected
     await ui.tags("AskRepo", 1);

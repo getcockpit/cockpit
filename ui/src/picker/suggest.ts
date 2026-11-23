@@ -14,12 +14,28 @@ export type Suggestion = {
   id: string; // stable, so a dismissal sticks
   why: string;
   what: string;
-  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "build_mine" } | { kind: "usage_review"; repo: string } | { kind: "docs_done"; ids: string[] };
+  action: { kind: "open_session"; id: string } | { kind: "open_doc"; id: string } | { kind: "resume"; id: string } | { kind: "build_mine" } | { kind: "usage_review"; repo: string } | { kind: "docs_done"; ids: string[] } | { kind: "tip"; tip: Tip };
   label: string;
   rank: number; // lower first
 };
 
 // One of my PRs is worth addressing when a reviewer asked for changes or a thread waits on my reply.
+// The intro is three steps (MR-216); the rest arrives later as one tip at a time, once you've run a session.
+export type Tip = "plan" | "review" | "address" | "workspaces";
+const TIPS: { tip: Tip; what: string; label: string }[] = [
+  { tip: "plan", what: "For fuzzy work, pick “Plan it first”: Claude writes a one-page plan you answer and mark up before any code", label: "Plan something" },
+  { tip: "review", what: "Review a PR one finding at a time, riskiest first, and publish your notes as one GitHub review", label: "Review a PR" },
+  { tip: "address", what: "Fix PR comments: each reviewer thread becomes a choice, and the session makes the fix", label: "Fix PR comments" },
+  { tip: "workspaces", what: "One workspace per client: its own Claude sign-in, memory and history. ⌘0 shows all of them", label: "Add a workspace" },
+];
+export function nextTip(state: AppState, dismissed: Set<string>): Suggestion | null {
+  const sessions = Object.values(state.sessions);
+  if (!sessions.some((s) => s.transcript.some((i) => i.kind === "result"))) return null; // after your first finished turn
+  const used = (t: Tip) => t === "workspaces" ? (state.workspaces?.length ?? 0) > 1 : sessions.some((s) => s.kind === t);
+  const t = TIPS.find((x) => !dismissed.has(`tip:${x.tip}`) && !used(x.tip));
+  return t ? { id: `tip:${t.tip}`, why: "Tip", what: t.what, action: { kind: "tip", tip: t.tip }, label: t.label, rank: 7 } : null;
+}
+
 export const toAddress = (p: Pr) => p.reviewDecision === "CHANGES_REQUESTED" || (p.waiting ?? 0) > 0;
 export function addressNote(p: Pr): string {
   const parts = [p.reviewDecision === "CHANGES_REQUESTED" && "changes requested", p.waiting && `${plural(p.waiting, "thread")} waiting on you`, p.isDraft && "draft"];
@@ -71,7 +87,7 @@ export function suggest(state: AppState, docs: Doc[], dismissed: Set<string>, ap
   }
   // Doc lifecycle (decision 38): shipped docs close in one click; stalled ones ask build or drop.
   const shipped = docs.filter((d) => !isBrief(d) && d.shipped_at);
-  if (shipped.length) out.push({ id: `docs-done:${shipped.map((d) => d.id).join(",")}`, why: shipped.length === 1 ? `“${shipped[0].title}” shipped` : `${plural(shipped.length, "working doc")} shipped`, what: "Mark done to archive", action: { kind: "docs_done", ids: shipped.map((d) => d.id) }, label: "Mark done", rank: 3 });
+  if (shipped.length) out.push({ id: `docs-done:${shipped.map((d) => d.id).join(",")}`, why: shipped.length === 1 ? `“${shipped[0].title}” shipped` : `${plural(shipped.length, "plan")} shipped`, what: "Mark done to archive", action: { kind: "docs_done", ids: shipped.map((d) => d.id) }, label: "Mark done", rank: 3 });
   for (const d of docs) if (isStalled(d, state.sessions, now)) out.push({ id: `doc-stalled:${d.id}:${d.updated_at}`, why: `“${d.title}” hasn't moved in ${plural(Math.floor((now - (d.updated_at ?? now)) / 86_400_000), "day")}`, what: "Build it or drop it", action: { kind: "open_doc", id: d.id }, label: "Open", rank: 5 });
   for (const s of sessions) {
     const t = pickTile(s);
@@ -87,6 +103,9 @@ export function suggest(state: AppState, docs: Doc[], dismissed: Set<string>, ap
     const ran = sessions.some((s) => s.title.startsWith(USAGE_REVIEW) && isoWeek(s.startedAt) === week);
     if (!ran) out.push({ id: `usage-review:${week}`, why: "Weekly", what: "Which features you used this week, and what to remove", action: { kind: "usage_review", repo: appRepo }, label: "Usage review", rank: 6 });
   }
+
+  const tip = nextTip(state, dismissed);
+  if (tip) out.push(tip);
 
   return out.filter((x) => !dismissed.has(x.id)).sort((a, b) => a.rank - b.rank).slice(0, 3);
 }

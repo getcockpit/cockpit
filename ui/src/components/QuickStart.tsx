@@ -14,7 +14,7 @@ import { useDraft } from "../state/drafts";
 // something running. Folder, words, kind, ↵ — the same as ⌘K, without having to know ⌘K.
 const KINDS: { id: SessionKind; name: string; what: string }[] = [
   { id: "blank", name: "Do it", what: "Start straight away, in its own worktree" },
-  { id: "plan", name: "Plan it first", what: "A working doc you shape before any code" },
+  { id: "plan", name: "Plan it first", what: "A one-page plan you shape before any code" },
 ];
 
 export function QuickStart({ state, workspace, onStarted, onMore }: { state: AppState; workspace: string; onStarted: (id: string) => void; onMore: (mode: "review" | "address") => void }) {
@@ -65,7 +65,7 @@ export function QuickStart({ state, workspace, onStarted, onMore }: { state: App
       <div className="mr-row mr-dim" style={{ gap: 14 }}>
         <span>Or:</span>
         <button type="button" className="mr-key" onClick={() => onMore("review")}>Review a PR</button>
-        <button type="button" className="mr-key" onClick={() => onMore("address")}>Address PR comments</button>
+        <button type="button" className="mr-key" onClick={() => onMore("address")}>Fix PR comments</button>
         <span className="mr-grow" />
         <span><span className="mr-mono">{keyLabel("⌘K")}</span> starts anything, from anywhere</span>
       </div>

@@ -286,7 +286,7 @@ function Focus({ s, live, docs, onOpenDoc, onClosed }: { s: SessionState; live: 
         const open = orderedBlocks(d).filter(isOpenQuestion).length;
         return (
           <button key={d.id} type="button" className="mm-row" data-mr="MobileDoc" data-mr-source={d.id} data-state={open ? "needs_you" : undefined} onClick={() => onOpenDoc(d.id)}>
-            <span className="mm-grow mm-col"><b className="mm-clip">▤ {d.title}</b><span className="mm-dim">{open ? `${open} question(s) for you` : `Working doc · v${d.version}`}</span></span>
+            <span className="mm-grow mm-col"><b className="mm-clip">▤ {d.title}</b><span className="mm-dim">{open ? `${open} question(s) for you` : `Plan · v${d.version}`}</span></span>
           </button>
         );
       })}
@@ -337,7 +337,7 @@ function DocReader({ d, live }: { d: Doc; live: boolean }) {
     <main data-mr="MobileDocReader" data-mr-source={d.id} className="mm-col mm-focus">
       <div className="mm-pad mm-col" style={{ gap: 4 }}>
         <b>▤ {d.title}</b>
-        <span className="mm-dim">Working doc · v{d.version}{pending ? ` · ${pending} change(s) not sent yet` : ""}</span>
+        <span className="mm-dim">Plan · v{d.version}{pending ? ` · ${pending} change(s) not sent yet` : ""}</span>
         {pending > 0 && <button type="button" className="mr-key mm-wide" data-tone="primary" data-mr="MobileDocSend" disabled={!live} onClick={() => void act(() => invoke("remote_doc_send", { docId: d.id, regenerate: true }), "Sent: Claude is updating the doc.")}>Send to Claude</button>}
         {msg && <span className="mm-dim">{msg}</span>}
       </div>
@@ -459,7 +459,7 @@ function Start({ known, live, workspace, onClose, onStarted }: { known: Known; l
         </label>
       )}
       <div className="mm-ws" role="radiogroup" aria-label="Kind" data-mr="MobileStartKind">
-        {([["blank", "Task"], ["plan", "Plan"], ["review", "Review PR"], ["address", "Address PR"]] as const).map(([k, label]) => (
+        {([["blank", "Task"], ["plan", "Plan"], ["review", "Review PR"], ["address", "Fix PR comments"]] as const).map(([k, label]) => (
           <button key={k} type="button" role="radio" className="mm-chip" aria-pressed={kind === k} aria-checked={kind === k} onClick={() => setKind(k)}>{label}</button>
         ))}
       </div>

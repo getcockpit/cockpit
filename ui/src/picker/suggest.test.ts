@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { addressNote, addressRow, addressState, isoWeek, suggest } from "./suggest";
+import { addressNote, addressRow, addressState, isoWeek, nextTip, suggest } from "./suggest";
 import { replay } from "../state/reduce";
 import type { MrEvent } from "../state/types";
 import type { Doc } from "../state/docs";
@@ -15,8 +15,27 @@ test("never repeats the needs-you queue; suggests no PRs; honours dismissals", (
   const doc: Doc = { id: "d1", title: "Plan", session_id: null, version: 1, pending_notes: [], pending_changes: [], blocks: { q: { id: "q", section: "question", status: "", takeaway: "How loud?", key: "", body: "", data: null, order: 1, decision: null, updated: "" } } };
   const all = suggest(state, [doc], new Set());
   // The doc's open question is in the queue, so it's not suggested again; PRs live in the picker (MR-192).
-  expect(all.map((x) => x.label)).toEqual(["Review"]);
-  expect(suggest(state, [doc], new Set([all[0].id]))).toEqual([]);
+  // After a finished turn the first tip shows too, last (MR-216).
+  expect(all.map((x) => x.label)).toEqual(["Review", "Plan something"]);
+  expect(suggest(state, [doc], new Set([all[0].id, "tip:plan", "tip:review", "tip:address", "tip:workspaces"]))).toEqual([]);
+});
+
+test("tips: one at a time, only after a finished turn, gone once used or dismissed (MR-216)", () => {
+  const fresh = replay([ev("A1", "ui.session_requested", { prompt: "fix it", cwd: "/w" })]);
+  expect(nextTip(fresh, new Set())).toBeNull();
+  const ran = replay([
+    ev("A1", "ui.session_requested", { prompt: "fix it", cwd: "/w" }),
+    ev("A2", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } }),
+  ]);
+  expect(nextTip(ran, new Set())?.id).toBe("tip:plan");
+  expect(nextTip(ran, new Set(["tip:plan"]))?.id).toBe("tip:review");
+  expect(nextTip(ran, new Set(["tip:plan", "tip:review"]))?.label).toBe("Fix PR comments");
+  const planned = replay([
+    ev("A1", "ui.session_requested", { prompt: "plan it", cwd: "/w", kind: "plan" }),
+    ev("A2", "sidecar.sdk", { message: { type: "result", is_error: false, result: "done" } }),
+  ]);
+  expect(nextTip(planned, new Set())?.id).toBe("tip:review"); // you've planned already: no plan tip
+  expect(nextTip(ran, new Set(["tip:plan", "tip:review", "tip:address", "tip:workspaces"]))).toBeNull();
 });
 
 test("addressNote: what a PR of mine waits on", () => {
@@ -76,7 +95,7 @@ test("doc lifecycle: shipped docs close in one click; a doc idle 3 days before b
     { ...base, id: "s2", title: "Two", shipped_at: now - 1 },
   ];
   const out = suggest(state, docs, new Set(), null, now);
-  expect(out.map((x) => x.why)).toEqual(["2 working docs shipped", "“Old” hasn't moved in 4 days"]);
+  expect(out.map((x) => x.why)).toEqual(["2 plans shipped", "“Old” hasn't moved in 4 days"]);
   expect(out[0].action).toEqual({ kind: "docs_done", ids: ["s1", "s2"] });
   // A build that was archived no longer counts: the doc is back to waiting, so it's stalled too.
   const dropped = replay([ev("A1", "ui.session_requested", { prompt: "build", cwd: "/w" }, "b1"), ev("A2", "ui.session_archived", {}, "b1")]);
