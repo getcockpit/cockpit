@@ -93,10 +93,16 @@ The full transcript is one key away, and any session can move to a real terminal
 ## Get started (about 2 minutes)
 
 1. **Install Claude Code** and sign in once, if you haven't yet: [claude.ai/code](https://claude.ai/code).
-2. **Install Cockpit.** On macOS or Linux, one line, with no security prompts:
+2. **Install Cockpit.** One line, with no security prompts. On macOS or Linux, in Terminal:
 
    ```bash
    curl -fsSL https://getcockpit.github.io/install.sh | bash
+   ```
+
+   On Windows, in PowerShell:
+
+   ```powershell
+   irm https://getcockpit.github.io/install.ps1 | iex
    ```
 
    Or download it from [Releases](https://github.com/getcockpit/cockpit/releases/latest): `.dmg` for macOS 11+, `-setup.exe` or `.msi` for Windows 10/11, `.AppImage`, `.deb` or `.rpm` for Linux.
