@@ -43,8 +43,6 @@
   nav .links a.nav-dl { opacity: 1; background: var(--needs); color: var(--ink); font-weight: 700; padding: 8px 14px; }
 
   .hero { text-align: center; padding: 88px 0 36px; }
-  .eyebrow { display: inline-flex; gap: 10px; align-items: center; font: 600 14px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--needs-ink); }
-  .eyebrow::before { content: ""; width: 10px; height: 10px; background: var(--needs); }
   h1 { font-size: clamp(44px, 7vw, 92px); line-height: 1; letter-spacing: -.03em; margin: 22px auto 24px; font-weight: 800; max-width: 17ch; }
   .lede { font-size: clamp(19px, 2.1vw, 24px); color: var(--ink-2); max-width: 40ch; margin: 0 auto 36px; }
   .cta { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
@@ -165,7 +163,6 @@
     .box img { margin: -20px -20px 16px; width: calc(100% + 40px); }
     .quote { padding: 22px 22px; }
     .final { padding: 72px 0; }
-    .eyebrow { font-size: 12px; }
   }
 </style>
 </head>
@@ -185,7 +182,6 @@
 
 <header class="hero">
   <div class="wrap">
-    <span class="eyebrow">Free and open source · for Claude Code</span>
     <h1>Run more Claude Code sessions without losing track.</h1>
     <p class="lede">Cockpit runs your sessions side by side and pulls everything that needs you into one queue, with the exact command or question in front of you. One key each, and every session keeps moving.</p>
     <script>
