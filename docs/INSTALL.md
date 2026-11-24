@@ -11,15 +11,23 @@ It uses **your own** Claude Code login: it never sees or stores your tokens.
   - **Windows 10/11 x64** (WebView2 is preinstalled on 11): `.msi` or `-setup.exe`
 - Downloads: https://github.com/getcockpit/cockpit/releases/latest
 - Claude Code installed and signed in. Check in Terminal: `claude --version`, then run `claude` once and log in.
-  Not installed? `curl -fsSL https://claude.ai/install.sh | bash`
+  Not installed? `curl -fsSL https://claude.ai/install.sh | bash` (Windows, in PowerShell: `irm https://claude.ai/install.ps1 | iex`)
 
-## Quickest: one line (macOS and Linux)
+## Quickest: one line (recommended)
+
+macOS or Linux, in Terminal:
 
 ```bash
 curl -fsSL https://getcockpit.github.io/install.sh | bash
 ```
 
-It installs the latest release (macOS: `/Applications/Cockpit.app`; Linux: `~/.local/bin/cockpit`) and skips the macOS "unidentified developer" prompt, because files fetched with `curl` aren't quarantined.
+Windows, in PowerShell:
+
+```powershell
+irm https://getcockpit.github.io/install.ps1 | iex
+```
+
+Each installs the latest release and starts it (macOS: `/Applications/Cockpit.app`; Linux: `~/.local/bin/cockpit`; Windows: `%LOCALAPPDATA%\Cockpit`). It skips the macOS "unidentified developer" prompt and the Windows SmartScreen warning, because files fetched from a terminal aren't marked as downloaded from the internet. Run it again to update. The steps below are for installing by hand.
 
 ## Install on macOS by hand (about 2 min)
 
@@ -35,7 +43,7 @@ It installs the latest release (macOS: `/Applications/Cockpit.app`; Linux: `~/.l
 - **Debian/Ubuntu:** `sudo apt install ./Cockpit_*_amd64.deb`
 - **Fedora/RHEL:** `sudo dnf install ./Cockpit-*.x86_64.rpm`
 
-## Install on Windows (about 1 min)
+## Install on Windows by hand (about 1 min)
 
 1. Run `Cockpit_*_x64-setup.exe` (or the `.msi`).
 2. SmartScreen may warn because the installer isn't code-signed yet: **More info → Run anyway**.

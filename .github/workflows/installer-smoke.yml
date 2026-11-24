@@ -60,6 +60,36 @@ jobs:
           Stop-Process $p.Id -Force
           Write-Host "MSI installed $($app.FullName)"
 
+  windows-one-line:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    name: Windows (one-line installer)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Piped into iex the way users run it, in both shells users have (Windows PowerShell 5.1 and PowerShell 7).
+      - name: Install with site/install.ps1 (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $env:COCKPIT_NO_OPEN = '1'
+          Get-Content site/install.ps1 -Raw | Invoke-Expression
+      - name: Reinstall over it (PowerShell 7) and start it
+        shell: pwsh
+        run: |
+          $env:COCKPIT_NO_OPEN = '1'
+          Get-Content site/install.ps1 -Raw | Invoke-Expression
+          $app = Get-ChildItem "$env:LOCALAPPDATA\Cockpit" -Recurse -Filter Cockpit.exe | Select-Object -First 1
+          if (-not $app) { throw "Cockpit.exe not installed" }
+          $p = Start-Process $app.FullName -PassThru
+          Start-Sleep 15
+          if ($p.HasExited) { throw "Cockpit exited early with code $($p.ExitCode)" }
+          Write-Host "Cockpit is running (pid $($p.Id))"
+          Stop-Process $p.Id -Force
+      - name: The published script is what irm returns
+        shell: pwsh
+        run: |
+          $live = irm https://getcockpit.github.io/install.ps1
+          if ($live -isnot [string] -or $live -notmatch 'Cockpit installer for Windows') { throw "irm didn't return the script as text: $($live.GetType())" }
+
   linux:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     name: Linux (.deb and AppImage)
