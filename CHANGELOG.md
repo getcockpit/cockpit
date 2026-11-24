@@ -4,6 +4,19 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-11-24
+
+### Added
+- **Cockpit Remote:** follow and drive your sessions from your iPhone, with no server in between. Turn it on in Settings → Remote and scan the QR code to pair. The phone gets the Wall, Focus with transcript and plan, docs with answers and notes, change review, Review and Address flows, and new sessions. Anything that runs Claude asks for Face ID first, and the phone app only takes updates your Mac vouches for.
+- **The Mac stays awake while sessions work** with Remote on, then may sleep again once every session is idle. Settings → Remote shows when it is holding the Mac awake.
+
+### Changed
+- **A shorter intro:** three steps (try it, connect and permissions, your first task). The rest comes later, one tip at a time on the Wall.
+- **Plainer names** for several features across the app.
+
+### Fixed
+- **Cockpit Remote reconnects after sleep and network switches,** and Settings says when the phone can't reach the Mac.
+
 ## [0.1.26] - 2026-11-13
 
 ### Removed
