@@ -16,6 +16,7 @@ mod layer2;
 mod migrate;
 mod notify;
 mod personal;
+mod pr_report;
 mod release_update;
 mod remote;
 mod remote_peer;
@@ -161,6 +162,7 @@ pub fn run() {
             layer3::layer3_diagram,
             sidecar::limits_refresh,
             gh::pr_repo,
+            pr_report::pr_report,
             folders::recent_folders,
             folders::folder_exists,
             folders::folder_create,

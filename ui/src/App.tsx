@@ -23,6 +23,7 @@ import { Timeline } from "./screens/Timeline";
 import { GodMode } from "./screens/GodMode";
 import { startUpdate, UpdateBanner } from "./screens/UpdateBanner";
 import { Builds } from "./screens/Builds";
+import { PrReportScreen } from "./screens/PrReport";
 import { VoiceController, type PointTarget } from "./screens/Voice";
 import { api } from "./state/store";
 import { docApi, docsOf, docStage, isBrief, liveBuilds, useDocs } from "./state/docs";
@@ -153,6 +154,7 @@ export default function App() {
   const [pickerText, setPickerText] = useState("");
   const [pickerMode, setPickerMode] = useState<"review" | "address" | undefined>(undefined);
   const [archive, setArchive] = useState(false);
+  const [prReport, setPrReport] = useState<{ repo: string; cwd: string } | null>(null);
   // Wall or Timeline (decision 29, MR-32): remembered per viewer, like the open workspace.
   const [wallView, setWallViewNow] = useState<"wall" | "timeline">(() => { try { return localStorage.getItem("mr.wallView") === "timeline" ? "timeline" : "wall"; } catch { return "wall"; } });
   const setWallView = (v: "wall" | "timeline") => navigate("side", () => { setWallViewNow(v); try { localStorage.setItem("mr.wallView", v); } catch { /* per-viewer convenience */ } });
@@ -199,7 +201,7 @@ export default function App() {
   const view = overview ? "overview" : docId ? "doc map" : focus ? "focus" : wallView;
   // Feature usage (MR-83): the main screen first, then every open overlay.
   useEffect(() => installUsage(), []);
-  useViews([view, picker && "start picker", settings && "settings", god && "god mode", archive && "archive", builds !== null && "builds", switcher && "workspace switcher", signIn && "sign in", deleting && "delete workspace", intro && "intro"].filter((v): v is string => typeof v === "string"));
+  useViews([view, picker && "start picker", settings && "settings", god && "god mode", archive && "archive", builds !== null && "builds", prReport && "pr report", switcher && "workspace switcher", signIn && "sign in", deleting && "delete workspace", intro && "intro"].filter((v): v is string => typeof v === "string"));
   const godmode = <GodMode on={god} onOpen={() => setGod(true)} sessionAction={(src, component) => { if (component === "WorkspaceTab") return src !== "personal" ? { label: "Delete workspace…", run: () => setDeleting(src) } : null; const x = state.sessions[src.split(":")[0]]; return x && !x.archivedAt ? { label: "Mark done & archive", run: () => { void api.archive(x); if (focus === x.id) setFocus(null); } } : null; }} onClose={() => setGod(false)} view={view} onOpenSession={(id) => { setDocId(null); setFocus(id); }} />;
   // Point + talk: which session does the thing under the pointer belong to?
   const resolve = (t: PointTarget) => {
@@ -225,7 +227,7 @@ export default function App() {
   const archived = Object.values(state.sessions).filter((x) => x.archivedAt);
   const archivePanel = archive && <Archive sessions={archived} onClose={() => setArchive(false)} onOpen={(id) => { setArchive(false); setDocId(null); setFocus(id); }} />;
   // Started from inside a session: it joins the Wall and the current screen stays put.
-  const overlay = picker && <StartPicker state={state} workspace={workspace} initialText={pickerText} initialMode={pickerMode} onClose={() => { setPicker(false); setPickerText(""); setPickerMode(undefined); }} onStarted={(id) => { setPicker(false); if (!focus) { setDocId(null); setFocus(id); } }} onOpen={(id) => { setPicker(false); setDocId(null); setFocus(id); }} />;
+  const overlay = picker && <StartPicker state={state} workspace={workspace} initialText={pickerText} initialMode={pickerMode} onClose={() => { setPicker(false); setPickerText(""); setPickerMode(undefined); }} onStarted={(id) => { setPicker(false); if (!focus) { setDocId(null); setFocus(id); } }} onOpen={(id) => { setPicker(false); setDocId(null); setFocus(id); }} onReport={(repo, cwd) => { setPicker(false); setPrReport({ repo, cwd }); }} />;
   // App shell: the workspace tabs stay put and only the view scrolls, so sticky headers work and
   // nothing pushes the tabs off-screen (MR-43).
   const shell = (view: React.ReactNode, overlays: React.ReactNode) => (
@@ -245,6 +247,7 @@ export default function App() {
       <Presence show={!!signIn}>{signInPanel}</Presence>
       <Presence show={settings}><Settings state={all} onDeleteWorkspace={(id) => { setSettings(false); setDeleting(id); }} onClose={() => setSettings(false)} onOpenSession={(id) => { setSettings(false); setDocId(null); setFocus(id); }} /></Presence>
       <Presence show={archive}>{archivePanel}</Presence>
+      <Presence show={!!prReport}>{prReport && <PrReportScreen repo={prReport.repo} cwd={prReport.cwd} onClose={() => setPrReport(null)} />}</Presence>
       <Toast />
       <Presence show={!!deleting}>{deleting && <DeleteWorkspace state={all} docs={allDocs} id={deleting} onClose={() => setDeleting(null)} onDeleted={() => setDeleting(null)} />}</Presence>
       <Presence show={switcher}><WorkspaceSwitcher state={all} docs={allDocs} active={workspace} onSwitch={switchTo} onClose={() => setSwitcher(false)} /></Presence>

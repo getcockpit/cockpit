@@ -3,6 +3,11 @@
 
 use tauri::AppHandle;
 
+/// Runs `gh` in `cwd` and parses its JSON output.
+pub fn run(cwd: &str, args: &[&str]) -> Result<serde_json::Value, String> {
+    gh(cwd, args)
+}
+
 fn gh(cwd: &str, args: &[&str]) -> Result<serde_json::Value, String> {
     let path = std::env::var("PATH").unwrap_or_default();
     // Where gh usually lives, ahead of the app's minimal GUI PATH; ';'-joined on Windows.
