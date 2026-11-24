@@ -68,7 +68,7 @@
 
   .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
   .vs > div { background: var(--tile); padding: 30px 32px; }
-  .vs h3 { margin: 0 0 18px; font-size: 15px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+  .vs h3 { margin: 0 0 16px; font: 700 20px/1.2 var(--font); color: var(--ink); }
   .vs .them h3::before { content: "■ "; color: var(--error); }
   .vs.three { grid-template-columns: repeat(3, 1fr); }
   .vs .us { border-left: 6px solid var(--needs); }
@@ -122,7 +122,7 @@
   .scroll::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 90px; background: linear-gradient(transparent, #0b0c0d); }
   .ab { display: grid; grid-template-columns: 1fr 1.25fr; gap: 4px; align-items: stretch; }
   .ab > div { display: flex; flex-direction: column; }
-  .ab h3 { margin: 0; padding: 14px 20px; font: 600 15px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); background: var(--tile); }
+  .ab h3 { margin: 0; padding: 14px 20px; font: 700 20px/1.2 var(--font); color: var(--ink); background: var(--tile); }
   .ab .them h3::before { content: "■ "; color: var(--error); }
   .ab .us h3::before { content: "■ "; color: var(--needs); }
   .ab .us .shot { flex: 1; display: flex; flex-direction: column; justify-content: center; background: var(--well); padding: 16px; }
