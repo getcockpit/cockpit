@@ -1,4 +1,4 @@
-import type { AppState, Attachment, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
+import type { AppState, Attachment, CommandRow, Delivery, Diagram, FileChange, McpServer, McpState, MrEvent, OutsideAsk, PendingAsk, ProseKind, Run, SessionKind, SessionState, Span, Todo, TranscriptItem, ViewBlock } from "./types";
 
 // Packaged builds (scripts/package.sh sets VITE_MR_PACKAGED=1) go to people without the /review
 // command, so auto-review starts off there (MR-93). Settings → Auto-review still turns it on.
@@ -36,6 +36,7 @@ export const initialState: AppState = {
   selfbuild: null,
   update: { phase: "idle", step: null, log: null, subjects: [], startedAt: null, whatsNew: null, restarting: null },
   overviewLayout: {},
+  outside: [],
 };
 
 function newSession(id: string, at: number, title = "", cwd = "", kind: SessionKind = "blank"): SessionState {
@@ -43,6 +44,11 @@ function newSession(id: string, at: number, title = "", cwd = "", kind: SessionK
     id, kind, preset: null, workspace: "personal", title, name: null, autoTitle: null, cwd, repo: null, branch: null, sdkSessionId: null, model: null, modelChoice: null, effort: null, modelError: null, status: "starting", startedAt: at, lastActivity: at, heardAt: at, turnOpen: false,
     pending: [], transcript: [], todos: [], runs: [], files: {}, activity: new Array(30).fill(0), spans: [{ status: "starting", from: at, to: null }], costUsd: 0, runCostUsd: 0, context: { used: null, window: null }, error: null, review: null, address: null, kinds: {}, diagrams: {}, archivedAt: null, partial: false, fixApplied: null, fromDeleted: null, moveTo: null, moveFailed: null, commands: [], mcp: null, backgroundTasks: [], goal: null, owner: null, signedOut: null, spawnedBy: null,
   };
+}
+
+function outsideAsk(p: Record<string, unknown>, at: number): OutsideAsk {
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return { id: str(p.id), sessionId: str(p.session_id), tool: str(p.tool), input: (p.input && typeof p.input === "object" ? p.input : {}) as Record<string, unknown>, cwd: str(p.cwd), repo: str(p.repo) || null, branch: str(p.branch) || null, pane: str(p.pane), term: str(p.term), at };
 }
 
 const lines = (s: unknown) => (typeof s === "string" && s.length ? s.split("\n").length : 0);
@@ -84,12 +90,16 @@ export function reduce(state: AppState, ev: MrEvent): AppState {
       case "update.restarting": return { ...next, update: { ...u, restarting: strs(p.subjects) } };
       // A fresh start: whatever was building belonged to the old app; an update we restarted for is now live.
       // Runs still marked running were children of the old app: how they ended wasn't seen (MR-85).
-      case "app.started": return { ...next, sessions: loseRuns(next.sessions, ev.created_at, (s) => ownedBy(s, ev.origin)), lastBuildAt: ev.created_at, selfbuild: null, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
+      // A restart also closes every terminal relay's connection: those prompts are the pane's alone again (MR-219).
+      case "app.started": return { ...next, outside: [], sessions: loseRuns(next.sessions, ev.created_at, (s) => ownedBy(s, ev.origin)), lastBuildAt: ev.created_at, selfbuild: null, update: { ...initialState.update, whatsNew: u.restarting ?? null } };
       case "ui.update_seen": return { ...next, update: { ...u, whatsNew: null } };
       case "ui.update_dismissed": return { ...next, update: { ...u, phase: "idle", step: null, log: null } };
     }
     return next;
   }
+  // Terminal sessions' prompts (MR-219): waiting until answered here or in the pane, or gone.
+  if (ev.kind === "hook.prompt") return next.outside.some((o) => o.id === p.id) ? next : { ...next, outside: [...next.outside, outsideAsk(p, ev.created_at)] };
+  if (ev.kind === "hook.answer" || ev.kind === "hook.resolved_elsewhere" || ev.kind === "hook.gone") return { ...next, outside: next.outside.filter((o) => o.id !== p.id) };
   if (ev.kind === "app.recovered") return { ...next, recovered: { crashedSlot: String(p.crashed_slot ?? ""), log: String(p.log ?? ""), at: ev.created_at } };
   if (ev.kind === "ui.recovery_dismissed") return { ...next, recovered: null };
   if (ev.kind === "ui.onboarded") return { ...next, onboarded: true };

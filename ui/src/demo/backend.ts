@@ -287,6 +287,15 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       : [{ number: 479, title: "Billing CSV export", url: "https://github.com/acme/billing/pull/479", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, reviewDecision: "CHANGES_REQUESTED", unresolved: 3, waiting: 2, feedback: [new Date(Date.now() - 3_600_000).toISOString()] },
         { number: 486, title: "Invoices: tax line per country", url: "https://github.com/acme/billing/pull/486", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, unresolved: 1, waiting: 1, feedback: [new Date(Date.now() - 600_000).toISOString()] },
         { number: 490, title: "Shop: faster search index", url: "https://github.com/acme/shop/pull/490", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/shop" }, unresolved: 0, waiting: 0 }];
+    case "hook_status": return { installed: hookOn, settings: "/Users/me/.claude/settings.json", supported: true };
+    case "hook_install": hookOn = true; record(null, "ui.hook_installed", {}); return handle("hook_status", {});
+    case "hook_remove": hookOn = false; record(null, "ui.hook_removed", {}); return handle("hook_status", {});
+    case "hook_answer": {
+      if (!events.some((e) => e.kind === "hook.prompt" && e.payload.id === a.id) || events.some((e) => e.kind.startsWith("hook.") && e.kind !== "hook.prompt" && e.payload.id === a.id)) throw new Error("Already answered in the terminal");
+      record(null, "hook.answer", { id: a.id, behavior: a.behavior, message: a.message ?? null });
+      return null;
+    }
+    case "hook_jump": record(null, "ui.hook_jumped", { id: a.id }); return null;
     case "pr_report": return demoPrReport(String(a.repo), Number(a.weeks ?? 8));
     case "selfbuild_list": return [];
     case "personal_history": return { worktree: "/Users/me/code/cockpit-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
@@ -435,6 +444,8 @@ const DEMO_MODELS = [
   { value: "sonnet", resolved: "claude-sonnet-5-5", displayName: "Sonnet", description: "Sonnet 5.5 · everyday tasks", efforts: ["low", "medium", "high"] },
   { value: "haiku", resolved: "claude-haiku-5-5", displayName: "Haiku", description: "Haiku 5.5 · fastest for quick answers", efforts: [] },
 ];
+
+let hookOn = false;
 
 // A believable PR report (one real team's shape: high approval, few change requests, many follow-up fixes).
 function demoPrReport(repo: string, weeks: number) {

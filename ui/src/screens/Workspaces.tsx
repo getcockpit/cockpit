@@ -13,7 +13,7 @@ import { useSessionDrag } from "../components/dragToWorkspace";
 export function needsIn(state: AppState, docs: Doc[], ws: string): number {
   const sessions = Object.values(state.sessions).filter((x) => x.workspace === ws);
   const ids = new Set(sessions.map((x) => x.id));
-  return needsQueue(sessions, docs.filter((d) => (d.session_id ? ids.has(d.session_id) : ws === "personal"))).length;
+  return needsQueue(sessions, docs.filter((d) => (d.session_id ? ids.has(d.session_id) : ws === "personal")), ws === "personal" ? state.outside : []).length;
 }
 
 // Workspace tabs (decision 24). A background tab shows how many things need you in it.

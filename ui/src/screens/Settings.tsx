@@ -170,6 +170,8 @@ export function Settings({ state, onClose, onOpenSession, onDeleteWorkspace }: {
         {tab === "browser" && <BrowserSettings />}
         {tab === "remote" && <RemoteSettings />}
 
+        {tab === "sessions" && <TerminalSessions />}
+
         {tab === "sessions" && <section data-mr="ReviewSettings" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <h2 className="mr-h">Reviews</h2>
           <div className="mr-row" style={{ gap: 12 }}>
@@ -329,5 +331,34 @@ function Segmented({ label, value, options, onPick }: { label: string; value: st
         ))}
       </div>
     </div>
+  );
+}
+
+// Attach to terminal sessions (MR-219): one hook in ~/.claude/settings.json sends the permission
+// prompts of Claude Code sessions in tmux, iTerm or any terminal to the needs-you queue.
+function TerminalSessions() {
+  const [st, setSt] = useState<{ installed: boolean; settings: string | null; supported: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => { void api.hookStatus().then(setSt).catch(() => setSt(null)); }, []);
+  const run = (f: () => Promise<{ installed: boolean; settings: string | null; supported: boolean }>) => {
+    setBusy(true); setErr("");
+    f().then(setSt, (e) => setErr(String(e).split("\n")[0])).finally(() => setBusy(false));
+  };
+  return (
+    <section data-mr="TerminalSessions" data-mr-source="hooks" style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+      <h2 className="mr-h">Terminal sessions <span className="mr-dim" style={{ fontWeight: 400 }}>prompts from Claude Code in tmux, iTerm or any terminal</span></h2>
+      <div className="mr-row" style={{ gap: 12 }}>
+        {st?.installed
+          ? <><strong style={{ color: "var(--mr-done)" }}>✓ On</strong><Key onClick={() => run(api.hookRemove)} disabled={busy}>Turn off</Key></>
+          : <Key tone="primary" onClick={() => run(api.hookInstall)} disabled={busy || st?.supported === false}>Send their prompts here</Key>}
+        <span className="mr-dim" style={{ fontSize: 12 }}>
+          Adds one PermissionRequest hook to <span className="mr-mono">{st?.settings ?? "~/.claude/settings.json"}</span>; your other hooks and settings stay as they are, and Turn off puts the file back.
+          The terminal still asks as usual: answer there or here, whichever is first. Nothing is ever allowed without your click, and with Cockpit closed the hook does nothing.
+          {st?.supported === false && " Needs macOS or Linux for now."}
+        </span>
+      </div>
+      {err && <span style={{ color: "var(--mr-error)" }}>{err}</span>}
+    </section>
   );
 }

@@ -14,7 +14,7 @@ import { docApi, docRole, docStage, groupByDoc, isBrief, isOpenQuestion, STAGE_L
 import { api } from "../state/store";
 import { cloneWorkspaces, prHere } from "../picker/autoReview";
 import type { AppState, SessionState, Todo } from "../state/types";
-import { answerAsk, AskRow, DocNeedsRow, FixRow, FlowRow, ProseRow, SignInRow } from "./AskRow";
+import { answerAsk, answerOutside, AskRow, OutsideRow, DocNeedsRow, FixRow, FlowRow, ProseRow, SignInRow } from "./AskRow";
 import { needsQueue } from "../picker/queue";
 import { QuickStart } from "../components/QuickStart";
 import { NoClaude } from "../components/NoClaude";
@@ -33,7 +33,7 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
   const sessions = state.order.map((id) => state.sessions[id]);
   const tiles = useMemo(() => sessions.map((s) => ({ s, tile: pickTile(s) })), [sessions]);
   // One queue for everything waiting on you; every needs-you count reads from it (MR-41).
-  const queue = useMemo(() => needsQueue(sessions, docs), [sessions, docs]);
+  const queue = useMemo(() => needsQueue(sessions, docs, state.outside), [sessions, docs, state.outside]);
   const running = tiles.filter((t) => !inReviewTray(t.tile));
   const review = tiles.filter((t) => inReviewTray(t.tile));
   const tileOf = useMemo(() => new Map(running.map((t) => [t.s.id, t])), [running]);
@@ -84,12 +84,14 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
       }
       const cur = queue[sel];
       if (!cur) return;
-      if (cur.kind === "ask" && k === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
+      if (cur.kind === "outside" && (k === "a" || k === "d")) { e.preventDefault(); void answerOutside(cur.o, { kind: k === "a" ? "allow" : "deny" }); }
+      else if (cur.kind === "outside" && k === "Enter") { e.preventDefault(); void api.hookJump(cur.o.id).catch(() => {}); }
+      else if (cur.kind === "ask" && k === "a" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "allow" }); }
       else if (cur.kind === "ask" && k === "d" && cur.a.kind === "permission") { e.preventDefault(); void answerAsk(cur.s, cur.a, { kind: "deny" }); }
       else if (cur.kind === "ask" && k === "s" && cur.a.kind === "question") { e.preventDefault(); void answerAsk(cur.s, cur.a, wayOut(cur.a.questions, { kind: "skip" })); }
       else if (cur.kind === "prose" && /^[1-9]$/.test(k) && cur.options[Number(k) - 1]) { e.preventDefault(); void api.send(cur.s.id, cur.options[Number(k) - 1]); }
       else if (cur.kind === "prose" && k === "r") { e.preventDefault(); (document.querySelector(`[data-reply="${cur.s.id}"]`) as HTMLInputElement | null)?.focus(); }
-      else if (k === "Enter") { e.preventDefault(); if (cur.kind === "doc") onOpenDoc(cur.d.id); else if (cur.kind === "signin" && onSignIn) onSignIn(cur.s); else onOpen(cur.s.id); }
+      else if (k === "Enter") { e.preventDefault(); if (cur.kind === "doc") onOpenDoc(cur.d.id); else if (cur.kind === "outside") void api.hookJump(cur.o.id).catch(() => {}); else if (cur.kind === "signin" && onSignIn) onSignIn(cur.s); else onOpen(cur.s.id); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -128,7 +130,8 @@ export function Wall({ state, all = state, workspace = "personal", docs, archive
             <h2 className="mr-h"><span style={{ color: queue.length ? "var(--mr-needs-ink)" : "var(--mr-ink-3)" }}>◆</span>Needs you<span className="mr-grow" /><span className="mr-dim" style={{ fontWeight: 400 }}>J/K move · A/D allow/deny · 1–3 pick · S skip · R reply · X dismiss · ↵ open</span></h2>
             {queue.length > 0 && <div className="mr-queue">
               {queue.map((q, i) =>
-                q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
+                q.kind === "outside" ? <OutsideRow key={q.key} o={q.o} selected={i === sel} />
+                : q.kind === "ask" ? <AskRow key={q.key} s={q.s} a={q.a} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "signin" ? <SignInRow key={q.key} s={q.s} selected={i === sel} onOpen={() => (onSignIn ? onSignIn(q.s) : onOpen(q.s.id))} />
                 : q.kind === "fix" ? <FixRow key={q.key} s={q.s} selected={i === sel} onOpen={() => onOpen(q.s.id)} />
                 : q.kind === "flow" ? <FlowRow key={q.key} s={q.s} what={q.what} selected={i === sel} onOpen={() => onOpen(q.s.id)} />

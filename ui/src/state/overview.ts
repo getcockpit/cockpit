@@ -244,7 +244,7 @@ export function settle(drop: Rect, others: Rect[], view?: Rect, gap = AREA_GAP /
   return { x: drop.x, y: Math.max(...others.map((o) => o.y + o.h)) + gap };
 }
 
-export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs: Doc[], layout: Layout, aspect?: number): OverviewArea[] {
+export function overview(state: Pick<AppState, "sessions" | "workspaces"> & { outside?: AppState["outside"] }, docs: Doc[], layout: Layout, aspect?: number): OverviewArea[] {
   const built = state.workspaces.map((w, index) => {
     const sessions = Object.values(state.sessions).filter((s) => s.workspace === w.id);
     const wsDocs = docsIn(docs, state.sessions, w.id);
@@ -294,7 +294,7 @@ export function overview(state: Pick<AppState, "sessions" | "workspaces">, docs:
       units.sort((a, b) => Number(b.some((x) => x.needs)) - Number(a.some((x) => x.needs)));
       groups[g] = units.flat();
     }
-    const counts: Counts = { needs: needsQueue(sessions, wsDocs).length, resume: groups.resume.length, progress: groups.progress.length, review: groups.review.length };
+    const counts: Counts = { needs: needsQueue(sessions, wsDocs, w.id === "personal" ? state.outside ?? [] : []).length, resume: groups.resume.length, progress: groups.progress.length, review: groups.review.length };
     return { workspace: w.id, name: w.name, index, folder: w.folder, counts, groups, w: AREA_W, h: areaHeight(groups) };
   });
   const at = place(built, layout, aspect);

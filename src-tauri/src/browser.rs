@@ -1021,7 +1021,7 @@ fn expire_crops(dir: &Path, days: u64) {
 
 /// Whether the peer runs as us. Anything else is dropped before it's read.
 #[cfg(unix)]
-fn same_user(s: &std::os::unix::net::UnixStream) -> bool {
+pub(crate) fn same_user(s: &std::os::unix::net::UnixStream) -> bool {
     use std::os::fd::AsRawFd;
     let fd = s.as_raw_fd();
     #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]

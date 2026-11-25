@@ -88,7 +88,7 @@ export default function App() {
     // Archived sessions stay reachable (focus, archive) but leave the wall's order.
     const mine = all.order.filter((id) => all.sessions[id].workspace === workspace);
     const order = mine.filter((id) => !all.sessions[id].archivedAt);
-    return { ...all, order, sessions: Object.fromEntries(mine.map((id) => [id, all.sessions[id]])) };
+    return { ...all, order, sessions: Object.fromEntries(mine.map((id) => [id, all.sessions[id]])), outside: workspace === "personal" ? all.outside : [] };
   }, [all, workspace]);
   const docs = useMemo(() => allDocs.filter((d) => (d.session_id ? all.sessions[d.session_id]?.workspace === workspace : workspace === "personal")), [allDocs, all, workspace]);
   const [focus, setFocusNow] = useState<string | null>(null);

@@ -110,7 +110,7 @@ export function PrReportScreen({ repo, cwd, onClose }: { repo: string; cwd: stri
           <CatalogView id={`pr-report:${repo}`} title="" blocks={blocks} onReply={() => {}} live={false} />
           {r.fixed_again.length > 0 && (
             <details data-mr="PrFixedAgain" data-mr-source={repo} style={{ padding: "8px 16px", background: "var(--mr-tile)" }}>
-              <summary>The {r.fixed_again.length} PRs fixed again within 7 days</summary>
+              <summary>{r.fixed_again.length === 1 ? "The PR" : `The ${r.fixed_again.length} PRs`} fixed again within 7 days</summary>
               <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
                 {r.fixed_again.map((x) => <li key={x.pr}><a href={x.pr_url} target="_blank" rel="noreferrer">#{x.pr}</a>, fixed by <a href={x.fix_url} target="_blank" rel="noreferrer">#{x.fix}</a></li>)}
               </ul>

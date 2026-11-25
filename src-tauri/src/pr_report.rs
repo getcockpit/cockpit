@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
 const DAY_MS: i64 = 86_400_000;
-const PAGE: u32 = 50;
 const FILES_PER_PR: u32 = 100;
 
 /// Phase 1: which PRs changed, newest first (cheap, 100 a page).
