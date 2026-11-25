@@ -5,8 +5,8 @@
 <h1 align="center">Cockpit</h1>
 
 <p align="center">
-  <b>Run ten Claude Code sessions. Read none of them.</b><br>
-  Cockpit turns Claude Code's wall of terminal text into cards you answer with one key, so you can run many sessions at once and stay in control.
+  <b>Run more Claude Code sessions without losing track.</b><br>
+  Cockpit runs your sessions side by side and pulls everything that needs you into one queue, with the exact command or question in front of you. One key each, and every session keeps moving.
 </p>
 
 <p align="center">
@@ -42,6 +42,12 @@ In its author's first four days: **10× more Claude Code sessions a day** (6.9 �
 **⚡ One queue for everything that needs you.**
 Permissions, questions and plan approvals from every session land in a single list. Answer each with one key: **A** to allow, **D** to deny, **1–3** to pick an option. Nothing waits on you without you knowing.
 
+**🖥 Keep your terminal.** *New*
+Already run Claude Code in tmux, iTerm or a plain terminal? Turn on **Terminal sessions** in Settings once, and every permission prompt from those sessions also lands in the queue, with the exact command, folder, repo and branch. Answer it in Cockpit or in the terminal, whichever comes first. With Cockpit closed, the terminal asks as it always has, and nothing is ever allowed without you. macOS and Linux; not on Windows yet.
+
+**📊 Know what your agents' PRs are doing.** *New*
+The PR report shows, for one repo: PRs a week, PR size, how many were approved, how many got changes requested, how many needed a fix to the same files within a week, and who carries the review load, split by PRs written with Claude Code and the rest. It reads GitHub on your machine through `gh`, with no Claude usage. Copy it as Markdown or an image, with names left out. Open it from **⌘K → Review**.
+
 **🧭 Ten sessions, zero collisions.**
 Every session works in its own copy of your repo, so they never trip over each other. Start a new one in a second with **⌘K**.
 
@@ -57,6 +63,12 @@ The timeline shows what each session did, what's next, and which one will need y
 **🔍 Code review without the wall of diff.**
 Pull requests are walked snippet by snippet, riskiest first. Note a finding with one key and it becomes a review comment.
 
+**📱 Answer from your phone.**
+Pair your iPhone once with a QR code; every prompt reaches it as a notification, and Face ID allows it. End-to-end encrypted through a public relay that can't read it, with no Cockpit account. Your computer has to be awake.
+
+**🤖 Reviews that start themselves.**
+Turn on auto-review, and a PR that asks for your review gets your `/review` by itself, in its own copy of the repo, waiting as findings. Nothing is posted until you publish.
+
 **🔓 Never locked in.**
 The full transcript is one key away, and any session can move to a real terminal whenever you want.
 
@@ -70,6 +82,14 @@ The full transcript is one key away, and any session can move to a real terminal
 
 <img src="site/assets/risk.jpg" alt="A production DROP TABLE flagged high risk" width="100%">
 <img src="site/assets/done.jpg" alt="After Deny, Claude proposes staging first" width="100%">
+
+**Prompts from your terminal sessions, in the same queue.** Answer here or in the pane; Jump to pane brings the terminal forward.
+
+<img src="site/assets/terminal.jpg" alt="A permission prompt from a Claude Code session in tmux, in Cockpit's queue" width="100%">
+
+**The PR report**, shown on an example repo. For one real five-person team over eight weeks it read: 96% approved, 3.5% ever got changes requested, and 46% needed a fix to the same files within a week (65% for PRs over 1,000 lines).
+
+<img src="site/assets/pr-report.jpg" alt="Cockpit's PR report with example data" width="100%">
 
 **Plans you can read in ten seconds.** Goal, scope, design, risks and open questions on one page.
 
@@ -117,6 +137,10 @@ Installing from the `.dmg` by hand? The app isn't notarized yet, so run `xattr -
 **Is it free?** Yes, completely. Your sessions use your existing Claude plan, just as they do in the terminal.
 
 **Do my skills, commands, hooks and settings still work?** Yes. It's your real Claude Code with your real setup.
+
+**How does Terminal sessions work, and what does it change?** It adds one hook to Claude Code's user settings (`~/.claude/settings.json`). When a terminal session asks for permission, the hook passes that request (the tool, the command, the folder) to Cockpit on your machine and waits; your terminal shows its prompt at the same time. It sees nothing else, apart from the session's log to notice when you've answered in the terminal. Turn it off and the file goes back exactly as it was.
+
+**Will more sessions use up my Claude plan faster?** Yes: every session uses your plan, exactly as in a terminal. Cockpit shows your 5-hour and weekly usage with when they reset, and you choose how many sessions may work at once.
 
 **Is this made by Anthropic?** No. Cockpit is an independent open-source project built on Anthropic's official Agent SDK. "Claude" and "Claude Code" are trademarks of Anthropic.
 

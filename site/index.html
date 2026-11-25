@@ -253,13 +253,42 @@
       <div class="us"><h3>Only the risk</h3><ul><li>The exact command, where it runs, and how hard it is to undo, highlighted before you press a key.</li></ul></div>
       <div class="us"><h3>Only what changed</h3><ul><li>The plan's progress and the files it touched, grouped by folder. Auth and migrations are flagged.</li></ul></div>
     </div>
-    <h3 style="margin:64px 0 18px;font-size:28px">What changed for me</h3>
+  </div>
+</section>
+
+<section class="band" id="terminal">
+  <div class="wrap">
+    <h2>Keep your terminal.</h2>
+    <p class="sub">Already run Claude Code in tmux, iTerm or a plain terminal? Turn on Terminal sessions in Settings once. From then on, every permission prompt from those sessions also lands in Cockpit's queue, with the exact command, folder, repo and branch. Answer it in Cockpit or in the terminal, whichever comes first.</p>
+    <div class="shot"><img src="assets/terminal.jpg" alt="A permission prompt from a Claude Code session in a tmux pane, in Cockpit's queue: terraform apply, high risk, with Deny, Allow and Jump to pane" loading="lazy"></div>
+    <p class="fine">With Cockpit closed, the terminal asks as it always has, and nothing is ever allowed without you. Nothing to migrate. Works on macOS and Linux; not on Windows yet.</p>
+  </div>
+</section>
+
+<section id="founder">
+  <div class="wrap">
+    <h3 style="margin:0 0 18px;font-size:28px">What changed for me</h3>
     <blockquote class="quote"><p>“The difference I didn't expect was how much less tired I was. Each decision arrives with only the context it needs, so I'm not rebuilding it from scrollback every time.”</p><cite>Bohdan Kostko, who built Cockpit</cite></blockquote>
     <div class="proof two">
       <div><b>~7 → ~70</b><span>Claude Code sessions a day</span></div>
       <div><b>4 → 11</b><span>sessions running at once at peak (14 on the busiest day)</span></div>
     </div>
     <p class="fine">My own numbers: 25 days in terminals vs the first 4 days in Cockpit. A small sample, and most of that week went into building Cockpit itself. Measured from session file timestamps; no content was read.</p>
+  </div>
+</section>
+
+<section class="band" id="pr-report">
+  <div class="wrap">
+    <h2>What agent PRs did to one team.</h2>
+    <p class="sub">A five-person team, eight weeks of real pull requests, most written with Claude Code:</p>
+    <div class="proof two">
+      <div><b>4 → 42</b><span>PRs a week. The median PR is 492 lines across 12 files; 37% are over 1,000 lines.</span></div>
+      <div><b>96%</b><span>approved. Only 3.5% ever got "changes requested": review rarely blocks anything.</span></div>
+      <div><b>46%</b><span>of merged PRs needed a fix to the same files within a week. 65% for PRs over 1,000 lines; 30% under 300.</span></div>
+      <div><b>1 reviewer</b><span>gave nearly half of all reviews.</span></div>
+    </div>
+    <p class="fine" style="margin-bottom:28px">Cockpit's PR report gives you the same numbers for your own repo. It reads GitHub on your machine, with no Claude usage. Copy it as Markdown or an image, with names left out. Open it from <span class="key">⌘K</span> → Review.</p>
+    <div class="shot"><img src="assets/pr-report.jpg" alt="Cockpit's PR report (example data): PRs a week, approval and changes-requested rates, fixed again within 7 days by PR size, and PRs written with Claude Code against the rest" loading="lazy"></div>
   </div>
 </section>
 
@@ -300,6 +329,10 @@
       <div><b>Your terminal, one key away</b>The raw transcript is <span class="key">⌘R</span>; hand any session to a real terminal with <span class="key">⌘T</span>.</div>
       <div><img src="assets/changes.jpg" alt="Plan progress and the change map" loading="lazy"><b>Change map</b>Every session's plan with live progress, and the files it touched grouped by folder. Auth and migrations are flagged.</div>
       <div><img src="assets/timeline.jpg" alt="Timeline of sessions with forecasts" loading="lazy"><b>Timeline</b>What every session did, what it does next, and who will need you in the next 15 minutes.</div>
+      <div><b>Answer from your phone</b>Pair your iPhone once; every prompt reaches it as a notification, and Face ID allows it. Your computer has to be awake. End-to-end encrypted through a public relay that can't read it; no Cockpit account.</div>
+      <div><b>Reviews that start themselves</b>Turn on auto-review and a PR that asks for your review gets your <code>/review</code> by itself, waiting as findings. Nothing is posted until you publish.</div>
+      <div><b>Point at the bug</b>Click what's wrong in the Cockpit browser; the session serving that page gets your note and a crop.</div>
+      <div><b>Talk to a session</b>Hold <span class="key">⌥ Space</span> and say it; transcribed on your Mac, never uploaded (macOS).</div>
     </div>
   </div>
 </section>
@@ -335,6 +368,8 @@
   <div class="wrap narrow">
     <h2>Questions</h2>
     <details><summary>I only run one session at a time. Is it for me?</summary><p>Probably yes, for different reasons: plans you can read in seconds, risky commands shown in full before you answer, and what changed grouped by folder.</p></details>
+    <details><summary>How does Terminal sessions work, and what does it change?</summary><p>It adds one hook to Claude Code's user settings (<code>~/.claude/settings.json</code>). When a terminal session asks for permission, the hook passes that request (the tool, the command, the folder) to Cockpit on your machine and waits; your terminal shows its prompt at the same time. It sees nothing else, apart from the session's log to notice when you've answered in the terminal. Turn it off and the file goes back exactly as it was.</p></details>
+    <details><summary>Will more sessions use up my Claude plan faster?</summary><p>Yes: every session uses your plan, exactly as in a terminal. Cockpit shows your 5-hour and weekly usage with when they reset, and you choose how many sessions may work at once.</p></details>
     <details><summary>How does it decide what's risky?</summary><p>Plain rules you can read, not a model guessing: force-push, <code>rm -rf</code>, <code>sudo</code>, <code>DROP TABLE</code>, <code>curl | sh</code>, writes outside the project. <a href="https://github.com/getcockpit/cockpit/blob/main/ui/src/picker/risk-rules.json">See the rules</a>.</p></details>
     <details><summary>Is it really free?</summary><p>Yes. Cockpit is MIT licensed. Your sessions use your existing Claude plan (Pro, Max, Team or API), exactly as they do in a terminal.</p></details>
     <details><summary>Do my skills, commands, hooks and settings still work?</summary><p>Yes. Cockpit runs your real Claude Code with your real setup. Workspaces keep memory and history separate per client while sharing your skills and settings.</p></details>

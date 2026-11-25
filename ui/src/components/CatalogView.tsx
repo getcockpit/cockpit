@@ -94,7 +94,7 @@ function Compare({ b }: { b: ViewBlock }) {
   return (
     <section style={{ ...card, overflowX: "auto" }}>
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead><tr>{["Option", ...criteria].map((c, i) => <th key={i} className="mr-dim" style={{ textAlign: "left", fontWeight: 600, fontSize: 12, padding: "4px 10px 6px 0" }}>{c}</th>)}</tr></thead>
+        <thead><tr>{[str(b.option_label) || "Option", ...criteria].map((c, i) => <th key={i} className="mr-dim" style={{ textAlign: "left", fontWeight: 600, fontSize: 12, padding: "4px 10px 6px 0" }}>{c}</th>)}</tr></thead>
         <tbody>
           {list(b.rows).map((r, i) => (
             <tr key={i} style={{ background: r.recommended ? "var(--mr-well)" : undefined }}>
