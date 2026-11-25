@@ -74,6 +74,12 @@ export function PrReportScreen({ repo, cwd, onClose }: { repo: string; cwd: stri
       .finally(() => setLoading(false));
   };
   useEffect(load, [repo, cwd, weeks]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Esc closes it wherever focus is (the picker that opened it has gone).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   useEffect(() => { if (!msg) return; const t = setTimeout(() => setMsg(""), 1800); return () => clearTimeout(t); }, [msg]);
   // On screen the names and repo are yours to see; the toggles only change what's shared.
   const blocks = useMemo(() => (r ? reportBlocks(r, { names: true, repo: true }) : []), [r]);
@@ -85,7 +91,7 @@ export function PrReportScreen({ repo, cwd, onClose }: { repo: string; cwd: stri
     await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]).then(() => setMsg("Copied as an image"), () => setMsg("Can't copy"));
   };
   return (
-    <div role="dialog" aria-label="PR report" className="mr-scrim" onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+    <div role="dialog" aria-label="PR report" className="mr-scrim"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "56px 24px", background: "rgba(21,24,27,.35)", zIndex: 12, overflowY: "auto" }}>
       <div className="mr-sheet" data-mr="PrReport" data-mr-source={repo} style={{ width: "100%", maxWidth: 960, background: "var(--mr-band)", display: "flex", flexDirection: "column", gap: "var(--mr-gap)", padding: 16 }}>
