@@ -61,11 +61,11 @@ export function reportBlocks(r: PrReport, o: ShareOpts): ViewBlock[] {
       { value: pctText(r.review_load.top_share_pct), label: "of reviews by one person", detail: top ? `${reviewerName(r, top.login, o.names)}, ${top.reviews} of ${r.review_load.reviews}` : "no reviews" },
       { value: hours(r.review_load.median_first_review_h), label: "to first review", detail: "median" },
     ] },
-    { type: "compare", criteria: ["PRs", "Approved", "Changes requested", "Fixed again in 7 days"], rows: r.by_band.map((b) => ({
+    { type: "compare", option_label: "Size", criteria: ["PRs", "Approved", "Changes requested", "Fixed again in 7 days"], rows: r.by_band.map((b) => ({
       option: b.band, values: [String(b.rates.prs), pctText(b.rates.approved_pct), pctText(b.rates.changes_requested_pct), pctText(b.rates.fixed_again_pct)],
     })) },
   ];
-  if (r.agent.agent.prs > 0) blocks.push({ type: "compare", criteria: ["PRs", "Approved", "Changes requested", "Fixed again in 7 days"], rows: [
+  if (r.agent.agent.prs > 0) blocks.push({ type: "compare", option_label: "Who wrote it", criteria: ["PRs", "Approved", "Changes requested", "Fixed again in 7 days"], rows: [
     { option: `Written with Claude Code (${pctText(r.agent.share_pct)})`, values: [String(r.agent.agent.prs), pctText(r.agent.agent.approved_pct), pctText(r.agent.agent.changes_requested_pct), pctText(r.agent.agent.fixed_again_pct)] },
     { option: "Everything else", values: [String(r.agent.other.prs), pctText(r.agent.other.approved_pct), pctText(r.agent.other.changes_requested_pct), pctText(r.agent.other.fixed_again_pct)] },
   ] });
