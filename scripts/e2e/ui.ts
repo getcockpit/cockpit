@@ -773,10 +773,13 @@ const flows: Flow[] = [
   } },
   { name: "Keys: Wall Enter acts on a suggestion, X dismisses it", run: async () => {
     await ui.open("busy");
+    // Three asks, then three suggestions: review changes, the weekly usage review, a tip.
+    await ui.tags("Suggestion", 3);
+    await ui.key("j", "j", "j", "j", "x"); // the second suggestion goes
     await ui.tags("Suggestion", 2);
-    await ui.key("j", "j", "j", "j", "x");
-    await ui.tags("Suggestion", 1);
-    await ui.key("Enter");
+    await ui.key("k");
+    if (!ui.selectedId("Suggestion").startsWith("diff:")) throw new Error(`expected the review-changes suggestion selected, got ${ui.selectedId("Suggestion")}`);
+    await ui.key("Enter"); // opens that session: the wall and its suggestions are gone
     await ui.tags("Suggestion", 0);
   } },
   { name: "Keys: Wall keys stay off while typing or under the picker", run: async () => {
@@ -878,9 +881,9 @@ const flows: Flow[] = [
     await ui.open("fresh");
     await ui.css('[data-mr="Onboarding"][data-mr-source="The wall"]', 1);
     await ui.key("ArrowRight");
-    await ui.css('[data-mr="Onboarding"][data-mr-source="Workspaces"]', 1);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Your projects"]', 1);
     await ui.key("ArrowRight", "ArrowLeft");
-    await ui.css('[data-mr="Onboarding"][data-mr-source="Workspaces"]', 1);
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Your projects"]', 1);
     await ui.key("Escape");
     await ui.tags("Onboarding", 0);
   } },
@@ -895,8 +898,8 @@ const flows: Flow[] = [
   } },
   { name: "Keys: intro Enter on the last step closes it", run: async () => {
     await ui.open("fresh");
-    for (let i = 0; i < 6; i++) await ui.key("ArrowRight");
-    await ui.css('[data-mr="Onboarding"][data-mr-source="Go"]', 1);
+    for (let i = 0; i < 3; i++) await ui.key("ArrowRight"); // four steps since MR-217
+    await ui.css('[data-mr="Onboarding"][data-mr-source="Your first task"]', 1);
     await ui.key("Enter");
     await ui.tags("Onboarding", 0);
     // With no sessions yet the wall's own quick start takes over; how often to ask comes first.
