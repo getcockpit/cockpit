@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>227 agent PRs in 8 weeks: 96% approved, 46% needed a fix within a week</title>
+<meta name="description" content="A five-person team went all in on Claude Code. What happened to their code review, in numbers, and what I'd try.">
+<meta property="og:title" content="227 agent PRs in 8 weeks: 96% approved, 46% needed a fix within a week">
+<meta property="og:description" content="4 → 42 PRs a week, median 492 lines, 96% approved, and 46% followed by a fix within a week. What happened to one team's code review.">
+<meta property="og:image" content="https://getcockpit.github.io/assets/pr-report.jpg">
+<meta property="og:url" content="https://getcockpit.github.io/blog/agent-prs.html">
+<meta property="og:type" content="article">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://getcockpit.github.io/assets/pr-report.jpg">
+<link rel="canonical" href="https://getcockpit.github.io/blog/agent-prs.html">
+<link rel="icon" href="../assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Same Control Room theme as the landing page: grey-first, square corners, colour only for state. */
+  :root {
+    --base: #d3d6d9; --band: #c3c7cb; --tile: #e4e7ea; --well: #c9cdd1;
+    --ink: #15181b; --ink-2: #3a4046; --ink-3: #545b61; --night: #15181b;
+    --needs: #ffb300; --error: #c62828;
+    --font: "Atkinson Hyperlegible Next", -apple-system, system-ui, sans-serif;
+    --mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--base); color: var(--ink); font: 19px/1.6 var(--font); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 28px; }
+  nav { background: var(--night); color: #fff; }
+  nav .wrap { display: flex; align-items: center; gap: 26px; height: 60px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; text-decoration: none; }
+  nav .brand img { width: 28px; height: 28px; }
+  nav .links { margin-left: auto; display: flex; gap: 24px; font-size: 15px; }
+  nav .links a { text-decoration: none; opacity: .78; }
+  nav .links a:hover { opacity: 1; }
+  article { max-width: 720px; margin: 0 auto; padding: 64px 28px 80px; }
+  h1 { font-size: clamp(34px, 5vw, 52px); line-height: 1.08; letter-spacing: -.02em; margin: 0 0 18px; font-weight: 800; }
+  .meta { color: var(--ink-3); font-size: 15px; margin-bottom: 40px; }
+  h2 { font-size: 26px; line-height: 1.2; margin: 48px 0 12px; font-weight: 800; }
+  p, li { color: var(--ink-2); }
+  ul, ol { padding-left: 1.2em; }
+  li { margin: 6px 0; }
+  code { font-family: var(--mono); font-size: .88em; background: var(--well); padding: 2px 6px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 36px 0 8px; }
+  .stat { background: var(--tile); padding: 16px 14px; }
+  .stat b { display: block; font: 700 28px/1.1 var(--mono); color: var(--ink); }
+  .stat span { font-size: 14px; color: var(--ink-3); }
+  .stat.bad b { color: var(--error); }
+  .bars { margin: 20px 0; }
+  .bar { display: grid; grid-template-columns: 150px 1fr 48px; align-items: center; gap: 12px; margin: 6px 0; font-size: 15px; color: var(--ink-2); }
+  .bar i { display: block; height: 22px; background: var(--well); }
+  .bar i em { display: block; height: 100%; background: var(--ink-3); }
+  .bar.hi i em { background: var(--error); }
+  .bar b { font: 600 15px var(--mono); color: var(--ink); text-align: right; }
+  .method { font-size: 15px; color: var(--ink-3); font-style: italic; margin-top: 40px; }
+  .about { background: var(--tile); padding: 22px 24px; margin-top: 48px; }
+  .about h2 { margin-top: 0; }
+  .btn { display: inline-block; margin-top: 8px; padding: 13px 20px; background: var(--needs); color: var(--ink); font-weight: 700; text-decoration: none; border-radius: 2px; }
+  footer { background: #0f1113; color: #8b939b; padding: 30px 0; font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  @media (max-width: 700px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .bar { grid-template-columns: 110px 1fr 44px; }
+  }
+</style>
+</head>
+<body>
+<nav data-mr="blog-nav">
+  <div class="wrap">
+    <a class="brand" href="../?ref=data-post"><img src="../assets/icon.png" alt="">Cockpit</a>
+    <div class="links">
+      <a href="../?ref=data-post">What is Cockpit</a>
+      <a href="https://github.com/getcockpit/cockpit">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<article data-mr="blog-post" data-mr-source="agent-prs">
+  <h1>227 agent PRs in 8 weeks: 96% approved, 46% needed a fix within a week</h1>
+  <div class="meta">Bohdan Kostko · November 2026</div>
+
+  <p>A five-person team I work with moved most of their work to Claude Code this autumn. After 8 weeks I pulled every PR they'd opened from GitHub - 227 of them - because review started to feel off and I wanted to see if it's just me</p>
+  <p>It's not just me haha</p>
+
+  <div class="stats">
+    <div class="stat"><b>4 → 42</b><span>PRs a week</span></div>
+    <div class="stat"><b>492</b><span>lines, median PR</span></div>
+    <div class="stat"><b>96%</b><span>approved</span></div>
+    <div class="stat bad"><b>46%</b><span>needed a fix within a week</span></div>
+  </div>
+
+  <h2>PRs got way more and way bigger</h2>
+  <ul>
+    <li>4 PRs a week went to 42. Same five people</li>
+    <li>Median PR is 492 lines across 12 files</li>
+    <li>37% are over 1,000 lines</li>
+  </ul>
+  <p>Nobody on that team writes 1,000 line PRs by hand. The agent does, in one go, and the diff looks tidy</p>
+
+  <h2>Review stopped blocking anything</h2>
+  <ul>
+    <li>96% got approved. Only 8 of 227 ever got "changes requested"</li>
+    <li>One person gave 48% of all reviews</li>
+  </ul>
+  <p>That last one is the part that worries me most. When PRs go 10x, review lands on whoever is the most conscientious, and that person becomes the bottleneck and the single point of failure at the same time</p>
+  <p>People still leave comments btw - 2,450 line comments in total. Tests 29%, error handling 18%, migrations 10%, security 8%, changed defaults 8%. So they do catch things, just in the parts they actually read</p>
+
+  <h2>And then the fixes</h2>
+  <ul>
+    <li>46% of merged PRs had a follow-up PR touching the same source files within 7 days</li>
+    <li>For PRs over 1,000 lines it's 65%. Under 300 lines - 30%</li>
+  </ul>
+  <div class="bars" role="img" aria-label="Share of merged PRs followed by a fix within 7 days: 30% under 300 lines, 46% overall, 65% over 1,000 lines">
+    <div class="bar"><span>Under 300 lines</span><i><em style="width:30%"></em></i><b>30%</b></div>
+    <div class="bar"><span>All PRs</span><i><em style="width:46%"></em></i><b>46%</b></div>
+    <div class="bar hi"><span>Over 1,000 lines</span><i><em style="width:65%"></em></i><b>65%</b></div>
+  </div>
+  <p>To be very fair, that's a loose proxy. It includes normal iteration ("now add the next field"), not only bugs. But the gap between big and small PRs is the part I trust, and it's big</p>
+  <p>The story behind it is the same almost every time. Clean looking agent diff, green tests, and somewhere inside it quietly changes a default, swallows an error or touches a shared helper. Someone skims it, approves it, and a week later there's a fix</p>
+
+  <h2>What I'd try</h2>
+  <p>None of it needs a tool:</p>
+  <ol>
+    <li>Cap PR size in the task, not in review. Ask the agent for the smallest PR that does X and to stop around 300 lines. Under 300 lines the fix rate was less than half</li>
+    <li>Make the agent list what it changed outside of the task - defaults, error handling, public functions, files nobody asked it to touch. Read that list first</li>
+    <li>Spread review on purpose. If one person does half of the reviews, that's a problem no matter how good that person is</li>
+    <li>Read the risky 10% properly and skim the rest, and be honest about which is which. Migrations, auth, money and config deserve the full read</li>
+  </ol>
+
+  <div class="about" data-mr="blog-about">
+    <h2>Why I'm writing this</h2>
+    <p>I'm building Cockpit - a free, open source desktop app for running a bunch of Claude Code sessions at once. It came out of exactly this: more sessions, more PRs, less attention per decision. Everything that needs you lands in one queue, and PR review starts with the riskiest finding</p>
+    <p>It also has a PR report that gives you these same numbers for your own repo. It runs <code>gh</code> on your machine, no Claude usage, and names are left out when you copy it</p>
+    <p>Would be really curious if your team looks the same. Or if you found something that actually works - keen to hear</p>
+    <a class="btn" href="../?ref=data-post">See Cockpit</a>
+  </div>
+
+  <p class="method">How I counted: GitHub API, every PR the team opened in 8 weeks. "Fix PR" = a later merged PR touching at least one of the same non-test source files within 7 days. Aggregates only, the team agreed to publish them.</p>
+</article>
+
+<footer>
+  <div class="wrap">
+    <span>Cockpit · MIT · anonymous, cookie-free visit counts via <a href="https://www.goatcounter.com">GoatCounter</a></span>
+    <span><a href="https://github.com/getcockpit/cockpit">GitHub</a> · <a href="https://github.com/getcockpit/cockpit/releases">Releases</a></span>
+  </div>
+</footer>
+<script>
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    if (!a || !window.goatcounter?.count) return;
+    const name = a.classList.contains("btn") ? "blog/agent-prs/cta" : /github\.com/.test(a.href) ? "blog/agent-prs/github" : /\?ref=data-post/.test(a.href) ? "blog/agent-prs/nav" : null;
+    if (name) window.goatcounter.count({ path: name, title: name, event: true });
+  });
+</script>
+<script data-goatcounter="https://getcockpit.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+</body>
+</html>
