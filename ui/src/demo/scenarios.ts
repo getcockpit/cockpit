@@ -317,6 +317,8 @@ export const SCENARIOS: Record<string, Scenario> = {
   neverask: { events: [...ready, { kind: "ui.permission_mode_set", payload: { mode: "never" }, at: 1 }, onboarded], docs: [] },
   empty: { events: [...ready, onboarded], docs: [] },
   busy: { events: busy, docs: [planDoc] },
+  // A prompt from a Claude Code session in a tmux pane (MR-219): ?demo=terminal
+  terminal: { events: [...busy, { kind: "hook.prompt", payload: { id: "hk_demo1", session_id: "9f1c", tool: "Bash", input: { command: "terraform apply -auto-approve", description: "Apply the staging plan" }, cwd: "/Users/me/code/infra", repo: "/Users/me/code/infra", branch: "staging-dns", pane: "%4", term: "tmux" }, at: 2310 }], docs: [planDoc] },
   // Spawned sessions (MR-179): C started two helpers, which sit with it in one block; one has reported back. ?demo=spawn
   spawn: { events: [...busy,
     ...start("S1", "Write release notes for the dependency bump", { cwd: "/Users/me/code/billing-worktrees/notes", repo: "/Users/me/code/billing", branch: "mr/notes", parent: "C" }, 2330),

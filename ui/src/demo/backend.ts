@@ -287,6 +287,16 @@ function handle(cmd: string, a: Record<string, unknown> = {}): unknown {
       : [{ number: 479, title: "Billing CSV export", url: "https://github.com/acme/billing/pull/479", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, reviewDecision: "CHANGES_REQUESTED", unresolved: 3, waiting: 2, feedback: [new Date(Date.now() - 3_600_000).toISOString()] },
         { number: 486, title: "Invoices: tax line per country", url: "https://github.com/acme/billing/pull/486", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/billing" }, unresolved: 1, waiting: 1, feedback: [new Date(Date.now() - 600_000).toISOString()] },
         { number: 490, title: "Shop: faster search index", url: "https://github.com/acme/shop/pull/490", updatedAt: new Date().toISOString(), repository: { nameWithOwner: "acme/shop" }, unresolved: 0, waiting: 0 }];
+    case "hook_status": return { installed: hookOn, settings: "/Users/me/.claude/settings.json", supported: true };
+    case "hook_install": hookOn = true; record(null, "ui.hook_installed", {}); return handle("hook_status", {});
+    case "hook_remove": hookOn = false; record(null, "ui.hook_removed", {}); return handle("hook_status", {});
+    case "hook_answer": {
+      if (!events.some((e) => e.kind === "hook.prompt" && e.payload.id === a.id) || events.some((e) => e.kind.startsWith("hook.") && e.kind !== "hook.prompt" && e.payload.id === a.id)) throw new Error("Already answered in the terminal");
+      record(null, "hook.answer", { id: a.id, behavior: a.behavior, message: a.message ?? null });
+      return null;
+    }
+    case "hook_jump": record(null, "ui.hook_jumped", { id: a.id }); return null;
+    case "pr_report": return demoPrReport(String(a.repo), Number(a.weeks ?? 8));
     case "selfbuild_list": return [];
     case "personal_history": return { worktree: "/Users/me/code/cockpit-worktrees/mine", changes: events.some((e) => e.kind === "ui.fix_applied") ? [{ sha: "a1b2c3d4", subject: "Fix: change box hides git's usage text", at: Date.now(), mine_only: true }] : [], pending: [] };
     case "app_repo_path": return "/Users/me/code/cockpit";
@@ -434,3 +444,23 @@ const DEMO_MODELS = [
   { value: "sonnet", resolved: "claude-sonnet-5-5", displayName: "Sonnet", description: "Sonnet 5.5 · everyday tasks", efforts: ["low", "medium", "high"] },
   { value: "haiku", resolved: "claude-haiku-5-5", displayName: "Haiku", description: "Haiku 5.5 · fastest for quick answers", efforts: [] },
 ];
+
+let hookOn = false;
+
+// A believable PR report (one real team's shape: high approval, few change requests, many follow-up fixes).
+function demoPrReport(repo: string, weeks: number) {
+  const r = (prs: number, a: number | null, c: number | null, f: number | null) => ({ prs, merged: Math.round(prs * 0.93), judged: Math.round(prs * 0.85), approved_pct: a, changes_requested_pct: c, fixed_again_pct: f });
+  const k = weeks / 8;
+  return {
+    repo, weeks, since: Date.now() - weeks * 7 * 86_400_000, until: Date.now(),
+    volume: { opened: Array.from({ length: weeks }, (_, i) => 24 + ((i * 7) % 9)), merged: Array.from({ length: weeks }, (_, i) => 21 + ((i * 5) % 8)), opened_total: Math.round(227 * k), merged_total: Math.round(211 * k) },
+    size: { median_lines: 412, median_files: 7, over_1000_pct: 18.5 },
+    rates: r(Math.round(227 * k), 96, 3.5, 46),
+    by_band: [{ band: "under 200 lines", rates: r(Math.round(80 * k), 97, 1.3, 30) }, { band: "200–999 lines", rates: r(Math.round(105 * k), 96, 3.8, 48) }, { band: "1,000+ lines", rates: r(Math.round(42 * k), 93, 7.1, 65) }],
+    fixed_again: [{ pr: 482, pr_url: `https://github.com/${repo}/pull/482`, fix: 486, fix_url: `https://github.com/${repo}/pull/486` }],
+    review_load: { reviews: 301, top_share_pct: 61.1, median_first_review_h: 2.5, reviewers: [{ login: "dana", reviews: 184 }, { login: "sam", reviews: 117 }] },
+    authors: [{ login: "lee", prs: 120 }],
+    agent: { share_pct: 70, agent: r(Math.round(159 * k), 96, 3.1, 50), other: r(Math.round(68 * k), 95, 4.4, 37) },
+    fetched: Math.round(227 * k), took_ms: 9200,
+  };
+}

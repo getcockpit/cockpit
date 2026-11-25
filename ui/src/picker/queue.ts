@@ -1,5 +1,5 @@
 import { isOpenQuestion, type Doc } from "../state/docs";
-import type { PendingAsk, SessionState } from "../state/types";
+import type { OutsideAsk, PendingAsk, SessionState } from "../state/types";
 import { flowWaiting, pickTile } from "./pick";
 import { parseReport } from "./report";
 
@@ -13,7 +13,8 @@ export type QueueItem =
   | { kind: "doc"; key: string; d: Doc; open: number; at: number }
   | { kind: "flow"; key: string; s: SessionState; what: string; at: number }
   | { kind: "fix"; key: string; s: SessionState; at: number }
-  | { kind: "signin"; key: string; s: SessionState; at: number };
+  | { kind: "signin"; key: string; s: SessionState; at: number }
+  | { kind: "outside"; key: string; o: OutsideAsk; at: number };
 
 /** A session that changes the app itself: a god-mode fix or a restyle (MR-47, MR-50). */
 export const isAppChange = (s: Pick<SessionState, "title">) => /^(God-mode mark|Restyle the app)/.test(s.title);
@@ -81,8 +82,12 @@ export function replyOptions(question: string): string[] {
   return parts.length === 1 ? ["Yes, go ahead", "No"] : [];
 }
 
-export function needsQueue(sessions: SessionState[], docs: Doc[]): QueueItem[] {
-  const out: QueueItem[] = [];
+/** A terminal session's prompt as the permission ask the cards already know how to show. */
+export const outsidePending = (o: OutsideAsk): PendingAsk => ({ kind: "permission", requestId: o.id, tool: o.tool, input: o.input, suggestions: null, reason: null, at: o.at });
+
+/** `outside`: prompts from terminal sessions (MR-219); they belong to Personal, whose config they use. */
+export function needsQueue(sessions: SessionState[], docs: Doc[], outside: OutsideAsk[] = []): QueueItem[] {
+  const out: QueueItem[] = outside.map((o) => ({ kind: "outside", key: `outside:${o.id}`, o, at: o.at }));
   for (const s of sessions) {
     if (s.archivedAt) continue;
     for (const a of s.pending) out.push({ kind: "ask", key: `ask:${a.requestId}`, s, a, at: a.at });

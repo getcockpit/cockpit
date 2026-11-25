@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static RESULTS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn enabled() -> bool {
-    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "attach" || v == "move" || v == "spawn" || v == "remote")
+    std::env::var("MR_SELFTEST").is_ok_and(|v| v == "1" || v == "doc" || v == "resume" || v == "sendended" || v == "flow" || v == "address" || v == "selfbuild" || v == "terminal" || v == "workspace" || v == "view" || v == "plan" || v == "title" || v == "update" || v == "bench" || v == "layer" || v == "skip" || v == "askfirst" || v == "attach" || v == "move" || v == "spawn" || v == "remote" || v == "hook")
 }
 
 /// Overhead benchmark: runs MR_BENCH_PROMPT in MR_BENCH_CWD and exits on the first result.
@@ -184,7 +184,34 @@ fn run_remote(app: AppHandle) {
     });
 }
 
+/// MR_SELFTEST=hook (scripts/selftest-hook.sh): no session of its own. A claude in a tmux pane
+/// prompts through the relay; this answers Allow to prompts whose command says ANSWER_IN_COCKPIT,
+/// the way a click would (through hook_answer), and leaves every other prompt to the pane.
+fn run_hook(app: AppHandle) {
+    std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        let mut answered = std::collections::HashSet::new();
+        while start.elapsed() < Duration::from_secs(600) {
+            std::thread::sleep(Duration::from_millis(200));
+            let Some(log) = app.try_state::<crate::eventlog::EventLog>() else { continue };
+            for e in log.list_kind("hook.prompt").unwrap_or_default() {
+                let id = e.payload["id"].as_str().unwrap_or_default().to_owned();
+                if e.payload["input"]["command"].as_str().is_some_and(|c| c.contains("ANSWER_IN_COCKPIT")) && answered.insert(id.clone()) {
+                    std::thread::sleep(Duration::from_millis(1500)); // the pane's own prompt is up meanwhile
+                    if let Err(err) = crate::hooks::hook_answer(app.clone(), id, "allow".into(), None) {
+                        eprintln!("[selftest] hook_answer: {err}");
+                    }
+                }
+            }
+        }
+        std::process::exit(1);
+    });
+}
+
 pub fn run(app: AppHandle) {
+    if std::env::var("MR_SELFTEST").is_ok_and(|v| v == "hook") {
+        return run_hook(app);
+    }
     if remote_mode() {
         return run_remote(app);
     }

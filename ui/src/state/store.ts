@@ -182,6 +182,12 @@ export const api = {
   move: (session: string, workspace: string) => invoke<string>("session_move", { session, workspace }),
   moveCancel: (session: string) => invoke("session_move_cancel", { session }),
   respond: (session: string, requestId: string, decision: Record<string, unknown>) => invoke("permission_respond", { session, requestId, decision }),
+  // Terminal sessions (MR-219): answer or jump to a prompt; install the hook that sends them.
+  hookAnswer: (id: string, behavior: "allow" | "deny", message?: string) => invoke("hook_answer", { id, behavior, message }),
+  hookJump: (id: string) => invoke("hook_jump", { id }),
+  hookStatus: () => invoke<{ installed: boolean; settings: string | null; supported: boolean }>("hook_status"),
+  hookInstall: () => invoke<{ installed: boolean; settings: string | null; supported: boolean }>("hook_install"),
+  hookRemove: () => invoke<{ installed: boolean; settings: string | null; supported: boolean }>("hook_remove"),
   log: (kind: string, payload: Record<string, unknown>, sessionId?: string, anchor?: string) => invoke("event_append", { sessionId, kind, payload, anchor }),
 };
 

@@ -101,7 +101,7 @@ export function wayOut(questions: { question: string }[], x: { kind: "reply"; te
 }
 
 // One card for every decision; the body depends on the picked spec.
-export function DecisionCard({ spec, onAnswer }: { spec: DecisionSpec; onAnswer: (a: Answer) => void }) {
+export function DecisionCard({ spec, onAnswer, noAlways }: { spec: DecisionSpec; onAnswer: (a: Answer) => void; noAlways?: boolean }) {
   if (spec.component === "QuestionCard") return <QuestionCard questions={spec.questions} onAnswer={onAnswer} />;
   const title = spec.component === "CommandCard" ? (spec.description || "Run a command")
     : spec.component === "DiffCard" ? `${spec.tool === "Write" ? "Create" : "Edit"} ${basename(spec.path)}`
@@ -117,7 +117,7 @@ export function DecisionCard({ spec, onAnswer }: { spec: DecisionSpec; onAnswer:
       <div className="mr-row" style={{ flexWrap: "wrap" }}>
         {spec.risk === "high" && <Key k="D" tone="primary" onClick={() => onAnswer({ kind: "deny" })}>Deny</Key>}
         <Key k="A" tone={spec.risk === "high" ? undefined : "needs"} onClick={() => onAnswer({ kind: "allow" })}>Allow</Key>
-        <Key k="S" onClick={() => onAnswer({ kind: "allow", always: true })}>Allow for this session</Key>
+        {!noAlways && <Key k="S" onClick={() => onAnswer({ kind: "allow", always: true })}>Allow for this session</Key>}
         {spec.risk !== "high" && <Key k="D" onClick={() => onAnswer({ kind: "deny" })}>Deny</Key>}
       </div>
     </>

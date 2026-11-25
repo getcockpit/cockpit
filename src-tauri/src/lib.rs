@@ -7,6 +7,7 @@ mod docs;
 mod eventlog;
 mod flows;
 mod gh;
+mod hooks;
 mod instances;
 mod folders;
 mod layer3;
@@ -16,6 +17,7 @@ mod layer2;
 mod migrate;
 mod notify;
 mod personal;
+mod pr_report;
 mod release_update;
 mod remote;
 mod remote_peer;
@@ -38,6 +40,11 @@ use tauri::Manager;
 /// Chrome's native-messaging host for the browser extension: relays to the running app and exits.
 pub fn browser_host(args: &[String]) -> i32 {
     browser::host_main(args)
+}
+
+/// Claude Code's PermissionRequest hook in a terminal session: relays the prompt and exits.
+pub fn hook_relay(args: &[String]) -> i32 {
+    hooks::relay_main(args)
 }
 
 /// Cockpit Remote's phone-side peer from a terminal (`Cockpit --remote-peer <state.json> …`).
@@ -69,6 +76,7 @@ pub fn run() {
         .manage(voice::Voice::default())
         .manage(runs::Runs::default())
         .manage(browser_launch::Launched::default())
+        .manage(hooks::Hooks::default())
         .setup(|app| {
             // MR_DATA_DIR keeps tests and self-builds away from the real event log.
             let dir = match std::env::var("MR_DATA_DIR") {
@@ -98,6 +106,7 @@ pub fn run() {
             // Recurring sessions and their start-at-login are gone (MR-200): unregister a leftover one.
             autostart_off(app.handle());
             browser::start(app.handle());
+            hooks::start(app.handle());
             remote::start(app.handle(), &dir);
             if selftest::enabled() {
                 selftest::run(app.handle().clone());
@@ -161,6 +170,12 @@ pub fn run() {
             layer3::layer3_diagram,
             sidecar::limits_refresh,
             gh::pr_repo,
+            pr_report::pr_report,
+            hooks::hook_answer,
+            hooks::hook_jump,
+            hooks::hook_status,
+            hooks::hook_install,
+            hooks::hook_remove,
             folders::recent_folders,
             folders::folder_exists,
             folders::folder_create,

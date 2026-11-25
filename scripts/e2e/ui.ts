@@ -233,6 +233,29 @@ const flows: Flow[] = [
     await ui.tags("CommandCard", 0);
     await ui.see("button", "2 need you");
   } },
+  { name: "J4 a prompt from a terminal session: answer it in the queue (MR-219)", run: async () => {
+    await ui.open("terminal");
+    await ui.tags("OutsideAsk", 1);
+    await ui.see("button", "4 need you");
+    await ui.see("button", "Jump to pane ↵");
+    const row = ui.text('[data-mr="OutsideAsk"]');
+    for (const want of ["terraform apply -auto-approve", "High risk", "staging-dns", "in tmux %4"]) if (!row.includes(want)) throw new Error(`terminal row lacks "${want}"`);
+    if (row.includes("Allow for this session")) throw new Error("session rules stay the pane's");
+    await ui.clickCss('[data-mr="OutsideAsk"] button[data-tone="primary"]'); // Deny: the high-risk default
+    await ui.tags("OutsideAsk", 0);
+    await ui.see("button", "3 need you");
+  } },
+  { name: "J8 PR report from the Review list: numbers, names off when shared (MR-219)", run: async () => {
+    await ui.open("busy");
+    await ui.press("Meta+k");
+    await ui.clickCss('[data-mr="KindTile"][data-mr-source="review"]');
+    await ui.clickCss('[data-mr="PrReportOpen"]');
+    await ui.tags("PrReport", 1);
+    await ui.tags("PrShare", 1);
+    await until("headline numbers", () => { const t = ui.text('[data-mr="PrReport"]'); if (!t.includes("fixed again within 7 days") || !t.includes("46%")) throw new Error("no numbers"); });
+    await ui.press("Escape");
+    await ui.tags("PrReport", 0);
+  } },
   { name: "J4 answer a structured question", run: async () => {
     await ui.open("busy");
     // Each answer re-renders the card: on a slow runner the next click can land mid-render and be lost,

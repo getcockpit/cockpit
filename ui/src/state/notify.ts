@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef } from "react";
 import { pickDecision } from "../picker/pick";
-import { needsQueue, type QueueItem } from "../picker/queue";
+import { needsQueue, outsidePending, type QueueItem } from "../picker/queue";
 import { sessionTitle } from "../picker/title";
 import { answerAsk } from "../screens/AskRow";
 import { wayOut } from "../components";
@@ -27,6 +27,12 @@ const base = (p: string) => basename(p) || p;
 
 /** What a queue item says on the lock screen: what kind of decision, where it's from, and the ask itself. */
 export function noteFor(item: QueueItem, sessions: Record<string, SessionState>, workspaceName: (id: string) => string | null): Note {
+  if (item.kind === "outside") {
+    const { spec } = pickDecision(outsidePending(item.o));
+    const where = clip(["Terminal", item.o.repo ? `${base(item.o.repo)}${item.o.branch ? ` · ${item.o.branch}` : ""}` : item.o.cwd].join(" · "), 90);
+    const body = spec.component === "CommandCard" ? `$ ${spec.command}` : spec.component === "DiffCard" ? `${base(spec.path)}  +${spec.added} −${spec.removed}` : spec.component === "ToolCard" ? spec.summary || spec.why : "";
+    return { key: item.key, session: null, title: spec.component === "CommandCard" && spec.risk === "high" ? "Allow a risky command?" : `Allow ${item.o.tool}?`, subtitle: where, body: clip(body.trim(), 240), actions: ["Allow", "Deny"], reply: false };
+  }
   const s = item.kind === "doc" ? (item.d.session_id ? sessions[item.d.session_id] : undefined) : item.s;
   const ws = s ? workspaceName(s.workspace) : null;
   const subtitle = clip([ws, s ? `${project(s)} / ${sessionTitle(s)}` : null].filter(Boolean).join(" · "), 90);
@@ -55,6 +61,7 @@ export function noteFor(item: QueueItem, sessions: Record<string, SessionState>,
 /** Where a click on the item lands: its session (in its workspace), or its doc. */
 export function targetFor(item: QueueItem, sessions: Record<string, SessionState>): Target {
   if (item.kind === "doc") return { workspace: (item.d.session_id && sessions[item.d.session_id]?.workspace) || "personal", session: null, doc: item.d.id };
+  if (item.kind === "outside") return { workspace: "personal", session: null, doc: null };
   return { workspace: item.s.workspace, session: item.s.id, doc: null };
 }
 
@@ -76,6 +83,11 @@ export async function answerFrom(item: QueueItem, r: Response): Promise<boolean>
       const label = q && pick(q.options.map((o) => o.label));
       if (!label) return false;
       await answerAsk(item.s, item.a, { kind: "answer", answers: { [q.question]: label } });
+      return true;
+    }
+    case "outside": {
+      if (r.value !== "Allow" && r.value !== "Deny") return false;
+      await api.hookAnswer(item.o.id, r.value === "Allow" ? "allow" : "deny");
       return true;
     }
     case "prose": {
@@ -106,7 +118,7 @@ const SETTLE_MS = 3000;
  *  Cockpit on another workspace, session or doc), and routes what you did with it: open →
  *  `onOpen(target)`, an answer → sent without opening. */
 export function useNotify(all: AppState, docs: Doc[], here: Here, onOpen: (t: Target) => void) {
-  const queue = useMemo(() => needsQueue(Object.values(all.sessions), docs), [all.sessions, docs]);
+  const queue = useMemo(() => needsQueue(Object.values(all.sessions), docs, all.outside), [all.sessions, docs, all.outside]);
   const seen = useRef<Set<string> | null>(null);
   const posted = useRef(new Set<string>());
   const mounted = useRef(Date.now());

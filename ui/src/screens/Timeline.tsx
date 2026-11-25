@@ -1,3 +1,4 @@
+import { api } from "../state/store";
 import { keyOf } from "../components/keys";
 import { useEffect, useMemo } from "react";
 import { pointer } from "../components/pointer";
@@ -27,7 +28,7 @@ type Lane = { s: SessionState; tile: TileSpec; f: Forecast };
 export function Timeline({ state, docs, onOpen, onOpenDoc, onWall }: { state: AppState; docs: Doc[]; onOpen: (id: string) => void; onOpenDoc: (id: string) => void; onWall: () => void }) {
   const now = useTick(true);
   const sessions = state.order.map((id) => state.sessions[id]);
-  const queue = useMemo(() => needsQueue(sessions, docs), [sessions, docs]);
+  const queue = useMemo(() => needsQueue(sessions, docs, state.outside), [sessions, docs, state.outside]);
   // Forecasts move once a minute; the clock ticks every second for the Now line only.
   const minute = Math.floor(now / MIN);
   const lanes: Lane[] = useMemo(() => {
@@ -42,7 +43,7 @@ export function Timeline({ state, docs, onOpen, onOpenDoc, onWall }: { state: Ap
   const upcoming: Upcoming[] = soonest(planned.flatMap((l) => (l.f.kind === "eta" ? [{ title: sessionTitle(l.s), f: l.f }] : [])));
   const rank = new Map(upcoming.map((u, i) => [u.f, i]));
   const top = queue[0];
-  const handle = () => { if (!top) return; if (top.kind === "doc") onOpenDoc(top.d.id); else onOpen(top.s.id); };
+  const handle = () => { if (!top) return; if (top.kind === "doc") onOpenDoc(top.d.id); else if (top.kind === "outside") void api.hookJump(top.o.id).catch(() => {}); else onOpen(top.s.id); };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -55,7 +56,7 @@ export function Timeline({ state, docs, onOpen, onOpenDoc, onWall }: { state: Ap
   });
 
   const ticks = [-30, -20, -10, 0, 10]; // sparse, so labels never touch at narrow widths
-  const topLabel = top ? (top.kind === "doc" ? top.d.title : sessionTitle(top.s)) : null;
+  const topLabel = top ? (top.kind === "doc" ? top.d.title : top.kind === "outside" ? `Terminal: ${top.o.tool}` : sessionTitle(top.s)) : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
       <header className="mr-band mr-row" style={{ padding: "10px 24px", gap: 6 }}>

@@ -63,7 +63,7 @@ type Item = { ref: string; title: string; meta: string; hot: boolean; value: str
 
 type Draft = { id: string | null; name: string; template: string; worktree: boolean };
 
-export function StartPicker({ state, workspace = "personal", onClose, onStarted, onOpen = onStarted, initialText = "", initialMode }: { state: AppState; workspace?: string; onClose: () => void; onStarted: (id: string) => void; onOpen?: (id: string) => void; initialText?: string; initialMode?: SessionKind }) {
+export function StartPicker({ state, workspace = "personal", onClose, onStarted, onOpen = onStarted, initialText = "", initialMode, onReport }: { state: AppState; workspace?: string; onClose: () => void; onStarted: (id: string) => void; onOpen?: (id: string) => void; initialText?: string; initialMode?: SessionKind; onReport?: (repo: string, cwd: string) => void }) {
   // Opens on the kind you used last (F6); dictated text always starts a blank session.
   const [modeRaw, setModeRaw] = useState<string>(() => { if (initialMode) return initialMode; if (initialText) return "blank"; try { return localStorage.getItem("mr.mode") || "blank"; } catch { return "blank"; } });
   const setMode = (m: string) => { setModeRaw(m); setDraft(null); try { localStorage.setItem("mr.mode", m); } catch { /* convenience only */ } };
@@ -254,6 +254,13 @@ export function StartPicker({ state, workspace = "personal", onClose, onStarted,
               title={only ? "Showing PRs from the folder's repo only. Click to show this workspace's repos" : "Show only PRs from one repo; pick it with the folder"}
               style={{ border: 0, font: "inherit", fontSize: 12, padding: "2px 10px", cursor: "pointer", whiteSpace: "nowrap", borderRadius: "var(--mr-radius)", background: only ? "var(--mr-selected)" : "var(--mr-well)", color: only ? "var(--mr-tile)" : "var(--mr-ink)" }}>
               {only ? "This repo only" : "This workspace"}
+            </button>
+          )}
+          {mode === "review" && onReport && (scope ?? repo ?? wsRepos?.[0]) && (
+            <button type="button" data-mr="PrReportOpen" data-mr-source={scope ?? repo ?? wsRepos?.[0]} onClick={() => onReport((scope ?? repo ?? wsRepos?.[0])!, cwd)}
+              title="PRs per week, size, approval, changes requested and fixed-again rates for this repo; no Claude usage"
+              style={{ border: 0, font: "inherit", fontSize: 12, padding: "2px 10px", cursor: "pointer", whiteSpace: "nowrap", borderRadius: "var(--mr-radius)", background: "var(--mr-well)", color: "var(--mr-ink)", marginLeft: 6 }}>
+              PR report · {scope ?? repo ?? wsRepos?.[0]}
             </button>
           )}
           {preset && <>

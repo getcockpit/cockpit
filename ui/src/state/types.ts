@@ -16,6 +16,9 @@ export type PendingAsk =
   | { kind: "permission"; requestId: string; tool: string; input: Record<string, unknown>; suggestions: unknown[] | null; reason: string | null; at: number }
   | { kind: "question"; requestId: string; questions: Question[]; input: Record<string, unknown>; at: number };
 
+/** A permission prompt from a Claude Code session running in a terminal (MR-219, attach). */
+export type OutsideAsk = { id: string; sessionId: string; tool: string; input: Record<string, unknown>; cwd: string; repo: string | null; branch: string | null; pane: string; term: string; at: number };
+
 export type Question = { question: string; header: string; options: { label: string; description: string; preview?: string }[]; multiSelect?: boolean };
 
 export type TranscriptItem = (
@@ -188,6 +191,7 @@ export type AppState = {
   selfbuild: { id: string; branch: string; sha: string; phase: "building" | "ready" } | null; // the latest self-build until relaunched or dismissed
   update: UpdateState;
   overviewLayout: Record<string, { x: number; y: number }>; // where each workspace sits on the Overview canvas (decision 40)
+  outside: OutsideAsk[]; // permission prompts from terminal sessions waiting now, oldest first (MR-219)
 };
 
 export type PermissionMode = "auto" | "acceptEdits" | "default" | "never";

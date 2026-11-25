@@ -5,7 +5,8 @@ import { plural, sessionTitle } from "../picker/title";
 import { shortError } from "../components/ErrorLine";
 import { pickDecision } from "../picker/pick";
 import { api } from "../state/store";
-import type { PendingAsk, SessionState } from "../state/types";
+import type { OutsideAsk, PendingAsk, SessionState } from "../state/types";
+import { outsidePending } from "../picker/queue";
 import { basename } from "../fspath";
 import { useDraft } from "../state/drafts";
 
@@ -16,6 +17,36 @@ export function answerAsk(s: SessionState, a: PendingAsk, x: Answer) {
     : x.kind === "answer" ? { behavior: "allow", updatedInput: { ...a.input, answers: x.answers } }
     : { behavior: "allow", updatedInput: a.input, ...(x.always && a.kind === "permission" && a.suggestions ? { updatedPermissions: a.suggestions } : {}) };
   return api.respond(s.id, a.requestId, decision);
+}
+
+// Answers a terminal session's prompt (MR-219). Only allow or deny: "always" rules stay the pane's.
+export function answerOutside(o: OutsideAsk, x: Answer) {
+  if (x.kind === "answer") return Promise.resolve();
+  return api.hookAnswer(o.id, x.kind === "deny" ? "deny" : "allow", x.kind === "deny" ? x.note : undefined)
+    .catch((e) => window.dispatchEvent(new CustomEvent("mr:toast", { detail: String(e).includes("terminal") ? "Already answered in the terminal" : `Not sent: ${String(e).split("\n")[0]}` })));
+}
+
+// A prompt from a Claude Code session in a terminal (MR-219): the same card, plus where it runs and
+// a jump to its pane. Answer here or in the pane; whichever comes first wins.
+export function OutsideRow({ o, selected }: { o: OutsideAsk; selected?: boolean }) {
+  const { spec } = useMemo(() => pickDecision(outsidePending(o)), [o]);
+  return (
+    <div className="mr-qrow" data-mr="OutsideAsk" data-mr-source={o.id} data-mr-layer="code" aria-current={selected || undefined} style={selected ? { outline: "2px solid var(--mr-selected)", outlineOffset: -2 } : undefined}>
+      <div className="mr-flag" />
+      <div className="mr-qbody">
+        <span className="mr-row" style={{ gap: 6, flexWrap: "wrap" }}>
+          <strong className="mr-ink2">Terminal</strong>
+          <span className="mr-dim">/</span>
+          <span className="mr-ink2">{basename(o.repo ?? o.cwd) || o.cwd}</span>
+          {o.branch && <span className="mr-mono mr-dim">{o.branch}</span>}
+          <span className="mr-dim mr-ellipsis" title={o.cwd}>{o.pane ? `in tmux ${o.pane}` : o.term ? `in ${o.term}` : ""} · {o.cwd}</span>
+          <span className="mr-grow" />
+          <button type="button" className="mr-key" data-mr="JumpToPane" data-mr-source={o.id} onClick={() => void api.hookJump(o.id).catch(() => {})} title="Bring its terminal (and tmux pane) forward">Jump to pane ↵</button>
+        </span>
+        <DecisionCard spec={spec} noAlways onAnswer={(x) => void answerOutside(o, x)} />
+      </div>
+    </div>
+  );
 }
 
 // A needs-you row: where it's from (project / session as context, then the ask), plus the card.
